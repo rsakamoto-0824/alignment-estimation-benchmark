@@ -407,7 +407,7 @@ const sigText = { better: '有意に改善', worse: '有意に悪化', ns: '差�
   const slide = newContentSlide(SECTION.intro, `結論を先に ― ${factorHelpsFrom} Shot 以上は GPR＋質的変数＋半径。T は加えない`, [
     '結論を先にお伝えします。',
     `全体で最も良かったのは、${gprFixed.label}でした。推定誤差のRMSEは、${mid}ショットで${f2(g(mid))}、${hi}ショットで${f2(g(hi))}ナノメートルです。`,
-    `Scan方向とMark番号を質的変数として入れると、GPRの誤差は${hi}ショットで平均${f0(-fxRel('basis-none', hi))}パーセント小さくなりました。ただし${lo}ショットでは${factorHurtsAtLo ? `逆に${f1(fxRel('basis-none', lo))}パーセント悪くなりました` : '効果がほとんどありませんでした'}。点が少ないと、質的変数の効果を面内の傾向と区別できないためです。${lo}ショットでは、質的変数なしのGPRとTPSが同程度に良い結果でした。`,
+    `Scan方向とMark番号を質的変数として入れると、GPRの誤差は${hi}ショットで平均${f0(-fxRel('basis-none', hi))}パーセント小さくなりました。ただし${lo}ショットでは${factorHurtsAtLo ? `逆に${f1(fxRel('basis-none', lo))}パーセント悪くなりました` : '効果がほとんどありませんでした'}。点が少ないと、質的変数の効果を面内の傾向と区別できないためです。${lo}ショットでは、TPSが最も良く、質的変数なしのGPRが続きました。`,
     `Backfittingで追い込んでも、基底関数として同時に推定した場合とほぼ同じ結果でした。差が0.01ナノメートル未満の場合が${pct(BV.share_within_001)}パーセントです。両者は同じ尤度を最大化しているためです。`,
     `説明変数は、半径を足すとGPRで数パーセント良くなり、接線方向の位置Tを足すと悪くなりました。ARDカーネルでは、Tが多くの場合に無視されました。`,
     'Kriging、XY5次、RTモデルは、GPRより大きく劣りました。',
@@ -701,7 +701,7 @@ const sigText = { better: '有意に改善', worse: '有意に悪化', ns: '差�
     ['RTモデル', C.rt, C.rtTint, 'rt', 'K = 4（34係数、XY換算5次）と K = 5（46係数）。並進・非対称倍率・直交度を含む'],
   ];
   const w = (CONTENT_W - 0.35) / 2;
-  const h = 2.5;
+  const h = 2.35;
   cards.forEach(([title, color, tint, formula, desc], i) => {
     const x = MARGIN_X + (i % 2) * (w + 0.35);
     const y = 1.55 + Math.floor(i / 2) * (h + 0.25);
@@ -710,7 +710,7 @@ const sigText = { better: '有意に改善', worse: '有意に悪化', ns: '差�
     addFormulaCard(slide, formula, x + 0.25, y + 0.65, w - 0.5, 0.85, { fill: tint, scale: Math.min(0.92, (w - 0.7) / formulaSize(formula).w), alt: title });
     addText(slide, desc, x + 0.3, y + 1.65, w - 0.6, 0.8, { fontSize: 12.5 });
   });
-  addText(slide, 'XY5次多項式：X・Y それぞれ x^{a}y^{b}（a + b ≤ 5）の21項を最小二乗', MARGIN_X, 6.62, CONTENT_W, 0.35, { fontSize: 12.5, color: C.muted });
+  addText(slide, 'XY5次多項式：X・Y それぞれ x^{a}y^{b}（a + b ≤ 5）の21項を最小二乗', MARGIN_X, 6.55, CONTENT_W, 0.35, { fontSize: 12.5, color: C.muted });
 }
 
 // =====================================================================
@@ -759,7 +759,7 @@ const sigText = { better: '有意に改善', worse: '有意に悪化', ns: '差�
 // =====================================================================
 {
   const families = FAMILY_ORDER;
-  const slide = newContentSlide(SECTION.s3, `全体像 ― ${factorHelpsFrom} Shot 以上は GPR が最良。${lo} Shot では TPS と同程度`, [
+  const slide = newContentSlide(SECTION.s3, `全体像 ― ${factorHelpsFrom} Shot 以上は GPR が最良。${lo} Shot では ${FAMILY_LABEL[bestFamilyAt(lo)]} が最良`, [
     '結果の全体像です。系統ごとに、全ショット数を通して平均の誤差が最も小さい設定を1つ選び、ショット数との関係を描きました。',
     `GPRは${factorHelpsFrom}ショット以上で最も良く、RMSEは${mid}ショットで${f2(familyRmse('GPR', mid))}、${hi}ショットで${f2(familyRmse('GPR', hi))}ナノメートルです。`,
     `${lo}ショットでは、この設定のGPRは${f2(familyRmse('GPR', lo))}ナノメートルで、TPSの${f2(familyRmse('TPS', lo))}と同程度かやや劣ります。${lo}ショットで最も良かったGPRは質的変数を入れない設定で、${f2(gprMode(lo, 'none').rmse)}ナノメートルでした。`,
@@ -835,11 +835,11 @@ const sigText = { better: '有意に改善', worse: '有意に悪化', ns: '差�
 // =====================================================================
 {
   const comparisonRows = ['GPR', 'TPS', 'OK', 'UK', 'GAM'];
-  const slide = newContentSlide(SECTION.s3, '説明変数の効果 ― 半径は数%効き、T を加えると悪化する', [
+  const slide = newContentSlide(SECTION.s3, '説明変数の効果 ― 半径は数%効き、T は悪化（GAM を除く）', [
     '説明変数を足した効果です。同じWaferで、X, Yだけの場合とのRMSEの比を、系統ごとの設定の平均で示しました。マイナスが改善です。',
     `GPRでは、半径を足すと${mid}ショットで${signed(feRel('XYR-XY', 'GPR', mid))}パーセントと良くなりましたが、さらにTを足すと${signed(feRel('XYRT-XY', 'GPR', mid))}パーセントと、X, Yだけより悪くなりました。`,
     `TPSとKrigingでも、Tを足すと悪化しました。TPSの${mid}ショットで${signed(feRel('XYRT-XY', 'TPS', mid))}パーセントです。値の変化に関係の薄い次元が距離に加わると、近さの判断がずれるためと考えられます。`,
-    `GAMでは、半径や周期的なTの項は罰則で抑えられ、影響は${signed(feRel('XYRT-XY', 'GAM', mid))}パーセント程度でした。`,
+    `GAMでは、Tを周期的なスプラインとして入れ、不要なら罰則で抑えられるため悪化しませんでした。${hi}ショットでは${signed(feRel('XYRT-XY', 'GAM', hi))}パーセントと、わずかに良くなりました。`,
     '右の表は、半径を足したとき有意に良くなった設定、悪くなった設定、差がなかった設定の数です。',
   ], { source: '値：同じ Wafer どうしの RMSE の比の平均（系統内のカーネル・バリオグラム・質的変数の扱いを平均）。マイナス＝改善' });
   addFigure(slide, 'fig05_feature_effect.png', MARGIN_X, 1.45, CONTENT_W, 2.85, '説明変数の効果');
@@ -912,7 +912,7 @@ const sigText = { better: '有意に改善', worse: '有意に悪化', ns: '差�
     showCatAxisTitle: true, catAxisTitle: '計測 Shot 数', valAxisMinVal: 0, valAxisLabelFormatCode: '0.0',
     showLegend: true, legendPos: 'b',
   });
-  addFigure(slide, 'fig06_factor_edge.png', MARGIN_X + 6.5, 1.45, CONTENT_W - 6.5, 2.55, '質的変数の扱いと外周');
+  addFigure(slide, 'fig06_factor_edge.png', MARGIN_X + 6.5, 1.45, CONTENT_W - 6.5, 2.3, '質的変数の扱いと外周');
   const rows = LEVELS.map((n) => [
     cell(`${n}`, { bold: true }),
     cell(`${signed(fxRel('basis-none', n))}%`, { color: FX['basis-none'][String(n)].sig === 'better' ? C.good : FX['basis-none'][String(n)].sig === 'worse' ? C.bad : C.muted, bold: true }),
@@ -920,7 +920,7 @@ const sigText = { better: '有意に改善', worse: '有意に悪化', ns: '差�
     cell(`${signed(fxRel('backfit-basis', n), 2)}%`),
   ]);
   addStyledTable(slide, [tableHead(['Shot', '同時推定 − なし', '改善した Wafer', 'Backfit − 同時']), ...rows],
-    MARGIN_X + 6.5, 4.05, CONTENT_W - 6.5, [0.9, 1.9, 1.8, CONTENT_W - 6.5 - 4.6], { fontSize: 11.5, rowH: 0.31 });
+    MARGIN_X + 6.5, 3.85, CONTENT_W - 6.5, [0.9, 1.9, 1.8, CONTENT_W - 6.5 - 4.6], { fontSize: 10.5, rowH: 0.3 });
   addText(slide, '表：同じ Wafer どうしの RMSE の比の平均（マイナス＝改善）', MARGIN_X + 6.5, 6.62, CONTENT_W - 6.5, 0.3, { fontSize: 10.5, color: C.muted });
 }
 
@@ -933,7 +933,7 @@ const sigText = { better: '有意に改善', worse: '有意に悪化', ns: '差�
   const fewLevels = [lo, mid];
   const classicIter = order ? fewLevels.flatMap((n) => classicKeys.map((k) => order[String(n)][k].iter_mean)) : [];
   const classicFail = order ? fewLevels.flatMap((n) => classicKeys.map((k) => 1 - order[String(n)][k].converged)) : [];
-  const slide = newContentSlide(SECTION.s3, 'Backfitting ― 収束すれば同時推定と同じ解。教科書どおりでは収束が遅い', [
+  const slide = newContentSlide(SECTION.s3, 'Backfitting ― 収束すれば同時推定と同じ。教科書どおりは遅い', [
     'Backfittingで追い込んだ場合と、基底関数として同時に推定した場合の比較です。',
     `同じWafer、同じ設定で比べると、RMSEの差が0.01ナノメートル未満の場合が${pct(BV.share_within_001)}パーセント、0.1ナノメートル未満が${pct(BV.share_within_01)}パーセントでした。反復は平均${f1(BV.iter_mean)}回で収束しました。`,
     '理由は、Backfittingが、同じ尤度をハイパーパラメータと平均の係数について交互に最大化する方法だからです。収束すれば、同時に最大化した解と同じ点に着きます。ハイパーパラメータを固定した場合、交互の当てはめの極限が一般化最小二乗の解に一致することも、テストで確かめました。',
@@ -964,21 +964,37 @@ const sigText = { better: '有意に改善', worse: '有意に悪化', ns: '差�
 // 20. カーネル
 // =====================================================================
 {
-  const kr = D.kernel_rank;
-  const slide = newContentSlide(SECTION.s3, `カーネル ― ${kr[0].kernel} が最良、exponential は不利`, [
-    'GPRのカーネルの比較です。質的変数を同時に推定した場合について、カーネルと説明変数の組ごとの平均RMSEを、最良との比の色で示しました。',
-    `全ショット数の平均で最も良かったのは${kr[0].kernel}で、${kr[1].kernel}、${kr[2].kernel}が続きました。`,
-    `最も悪かったのは${kr[kr.length - 1].kernel}です。指数カーネルは関数がなめらかでないため、Zernikeのようななめらかな面内傾向に対して、ノイズまで追いかけやすくなります。`,
-    'ARD版と等方版の差は小さく、ARDで長さスケールを増やしても大きな改善はありませんでした。',
-  ], { source: '質的変数は基底関数で同時推定。色は各 Shot 数での最良との比、数値は 1000 枚の平均 RMSE（X・Y）[nm]' });
-  addFigure(slide, 'fig07_kernel_heatmap.png', MARGIN_X, 1.45, 8.7, 5.45, 'カーネル比較', { align: 'left' });
-  const rx = MARGIN_X + 8.9;
-  const rw = SLIDE_W - MARGIN_X - rx;
+  const kf = D.kernel_by_feature;
+  const best = kf[0];
+  const worst = kf[kf.length - 1];
+  const ardBest = kf.find((k) => k.kernel.startsWith('ard'));
+  const isoPenalty = kf.filter((k) => !k.kernel.startsWith('ard')).map((k) => 100 * (k.XYRT / k.XYR - 1));
+  const slide = newContentSlide(SECTION.s3, `カーネル ― ${best.kernel} が最良。ARD は T を入れても崩れない`, [
+    'GPRのカーネルの比較です。質的変数を同時に推定した場合について、カーネルと説明変数の組ごとに、全ショット数の平均RMSEを示しました。',
+    `X, Y, 半径の組では、等方の${best.kernel}が${f3(best.XYR)}ナノメートルで最も良く、Matern系と有理2次が続きました。`,
+    `指数カーネルは最も悪く、${worst.kernel}で${f3(worst.XYR)}ナノメートルでした。関数がなめらかでないため、Zernikeのようななめらかな面内傾向に対して、ノイズまで追いかけやすくなります。`,
+    `ARD版は、X, Y, 半径では等方版よりわずかに悪くなりました。長さスケールが増える分、推定がぶれるためと考えられます。一方、Tを加えた組では、等方版が大きく悪化するのに対し、ARD版はTの長さスケールを大きくしてTを無視するので、ほとんど悪化しませんでした。たとえば${ardBest.kernel}は${f3(ardBest.XYR)}から${f3(ardBest.XYRT)}ナノメートルです。`,
+  ], { source: '質的変数は基底関数で同時推定。値は全 Shot 数（10〜40）の平均 RMSE（X・Y）[nm]、1000 枚' });
+  const tw = 7.6;
   addStyledTable(slide, [
-    tableHead(['順位', 'カーネル', '平均']),
-    ...kr.map((k, i) => [cell(`${i + 1}`), cell(k.kernel, { align: 'left', fontSize: 10 }), cell(f2(k.avg))]),
-  ], rx, 1.55, rw, [0.5, rw - 1.2, 0.7], { fontSize: 11, rowH: 0.42 });
-  addText(slide, '平均：全 Shot 数・説明変数3組の RMSE の平均 [nm]', rx, 6.3, rw, 0.5, { fontSize: 10.5, color: C.muted });
+    tableHead(['カーネル', 'X, Y', 'X, Y, 半径', 'X, Y, 半径, T']),
+    ...kf.map((k, i) => [
+      cell(k.kernel, { align: 'left', bold: i === 0, color: k.kernel.startsWith('ard') ? C.indigo : C.ink }),
+      cell(f3(k.XY)), cell(f3(k.XYR), { bold: true, color: i === 0 ? C.good : C.ink }), cell(f3(k.XYRT), { color: k.XYRT > k.XYR * 1.1 ? C.bad : C.ink }),
+    ]),
+  ], MARGIN_X, 1.55, tw, [2.8, 1.6, 1.6, 1.6], { fontSize: 12, rowH: 0.42 });
+  addText(slide, '並びは X, Y, 半径 の値の小さい順。赤：T を加えると 10% 以上悪化。Shot 数ごとの値は results/figures/fig07_kernel_heatmap.png',
+    MARGIN_X, 6.3, tw, 0.5, { fontSize: 10.5, color: C.muted });
+  const rx = MARGIN_X + tw + 0.35;
+  const rw = SLIDE_W - MARGIN_X - rx;
+  addCard(slide, rx, 1.55, rw, 5.2, { fill: C.gray });
+  addText(slide, '読み取れること', rx + 0.3, 1.7, rw - 0.6, 0.4, { fontSize: 15, bold: true, color: C.indigo });
+  addBullets(slide, [
+    `X, Y, 半径 では等方の ${best.kernel} が最良（${f3(best.XYR)} nm）。Matern 系・有理2次が続く`,
+    `exponential（指数）は最も悪い（${f3(worst.XYR)} nm）。なめらかでなくノイズを追いかける`,
+    'ARD 版は X, Y, 半径 では等方版よりわずかに悪い（長さスケールが増える分ぶれる）',
+    `T を加えると等方版は ${f0(Math.min(...isoPenalty))}〜${f0(Math.max(...isoPenalty))}% 悪化、ARD 版は T を無視するのでほぼ変わらない（${ardBest.kernel}：${f3(ardBest.XYR)} → ${f3(ardBest.XYRT)}）`,
+  ], rx + 0.3, 2.25, rw - 0.6, 4.4, { fontSize: 13, space: 12 });
 }
 
 // =====================================================================
@@ -992,8 +1008,8 @@ const sigText = { better: '有意に改善', worse: '有意に悪化', ns: '差�
     'KrigingとUniversal Krigingの、バリオグラムごとの比較です。',
     `最も良かったのは${FAMILY_LABEL[vr[0].family]}の${vr[0].variogram}バリオグラムでしたが、それでもGPRより大きく劣りました。`,
     'Krigingの予測式は、共分散を与えればGPRと同じです。違いはパラメータの決め方で、Krigingは距離の区間ごとの経験バリオグラムに曲線を当てはめるのに対し、GPRは周辺尤度を最大化します。',
-    `PyKrigeの既定の6区間では、最初の区間がおよそ50ミリと広く、ナゲット、つまりノイズにあたる値が過大に推定されました。ナゲットの中央値は${lo}ショットで${f1(nug[String(lo)])}平方ナノメートルで、GPRが推定したノイズの分散、およそ${f1(gn[String(lo)] ** 2)}平方ナノメートルより大きく、推定が平らになりすぎます。`,
-    'ガウス型のバリオグラムは、ナゲットがゼロになると計算が不安定になり、誤差が大きくなりました。',
+    `PyKrigeの既定の6区間では、最初の区間の幅が${f0(D.kriging_first_bin_mm[String(lo)])}から${f0(D.kriging_first_bin_mm[String(hi)])}ミリと広く、その中の面内傾向の変化までナゲット、つまりノイズにあたる値として推定されました。ナゲットの中央値は${hi}ショットで${f1(nug[String(hi)])}平方ナノメートルで、GPRが推定したノイズの分散${f2(gn[String(hi)] ** 2)}平方ナノメートルより大きく、推定が平らになりすぎます。`,
+    `ガウス型のバリオグラムは、${pct(D.kriging_gaussian.zero_nugget_rate)}パーセントの当てはめでナゲットがほぼゼロになり、計算が不安定になりました。RMSEが20ナノメートルを超えたWaferが${D.kriging_gaussian.n_over_20nm}件あり、すべてガウス型でした。`,
   ], { source: 'バリオグラムの式と当てはめ方は PyKrige の既定（6区間、soft L1 損失）。ナゲット・GPR のノイズは X・Y の中央値' });
   addFigure(slide, 'fig08_variogram.png', MARGIN_X, 1.45, 8.9, 3.45, 'バリオグラムの比較', { align: 'left' });
   addStyledTable(slide, [
@@ -1019,7 +1035,7 @@ const sigText = { better: '有意に改善', worse: '有意に悪化', ns: '差�
     '決定係数、自由度調整済み決定係数、RMSE、MAEの4つの指標の比較です。',
     'どの指標でも、系統の順序はほぼ同じでした。',
     `RMSEの順位との順位相関は、MAEで${f3(ag[String(mid)].MAE.spearman)}、決定係数で${f3(ag[String(mid)].R2.spearman)}、自由度調整済み決定係数で${f3(ag[String(mid)].adjR2.spearman)}でした（${mid}ショット）。`,
-    '自由度調整済み決定係数は、有効自由度の大きい手法、たとえば指数カーネルのGPRや、ナゲットが小さいKrigingに厳しくなります。同じ精度なら、より単純なモデルを選ぶための指標として使えます。',
+    '自由度調整済み決定係数は、有効自由度の大きい手法、たとえば指数カーネルのGPRや指数バリオグラムのKrigingに厳しくなります。40ショットでは、これらの有効自由度は学習点320個のうち300前後で、ほぼ補間に近い当てはめです。同じ精度なら、より単純なモデルを選ぶための指標として使えます。',
     'ただし、推定精度そのものを比べるならRMSEかMAEを、ばらつきの何割を説明できたかを見るなら決定係数を使うのが分かりやすいです。',
   ], { source: '系統ごとの最良の設定（全 Shot 数の平均 RMSE で選んだもの）。順位相関は全 123 設定の平均値の Spearman 相関' });
   addFigure(slide, 'fig09_metrics.png', MARGIN_X, 1.45, CONTENT_W, 2.95, '4指標の比較');
@@ -1040,7 +1056,8 @@ const sigText = { better: '有意に改善', worse: '有意に悪化', ns: '差�
 // =====================================================================
 {
   const e = (n, f) => D.edge[String(n)][f];
-  const slide = newContentSlide(SECTION.s3, '外周 ― 誤差は内側の約2倍。外周は推定が外挿になりノイズも大きい', [
+  const edgeRatio = e(hi, 'GPR').outer / e(hi, 'GPR').inner;
+  const slide = newContentSlide(SECTION.s3, `外周 ― 誤差は内側の約${f1(edgeRatio)}倍。外挿になり、ノイズも大きい`, [
     '外周、半径120ミリ以上のマークと、内側のマークに分けた誤差です。',
     `どの手法も外周の方が誤差が大きく、GPRの${mid}ショットで外周${f2(e(mid, 'GPR').outer)}、内側${f2(e(mid, 'GPR').inner)}ナノメートルでした。`,
     '外周では、計測ノイズが大きいことに加えて、推定が計測点の外側への外挿になるためです。',
@@ -1057,7 +1074,7 @@ const sigText = { better: '有意に改善', worse: '有意に悪化', ns: '差�
     ]),
   ], MARGIN_X + 9.0, 1.55, tw, [1.3, (tw - 1.3) / 2, (tw - 1.3) / 2], { fontSize: 10.5, rowH: 0.42 });
   addCard(slide, MARGIN_X, 5.3, CONTENT_W, 1.5, { fill: C.tint });
-  addText(slide, `GPR（${hi} Shot）：外周 ${f2(e(hi, 'GPR').outer)} nm は内側 ${f2(e(hi, 'GPR').inner)} nm の ${f1(e(hi, 'GPR').outer / e(hi, 'GPR').inner)} 倍。外周の Mark は全体の ${pct(D.data.n_outer_marks / D.data.n_marks)}% だが、誤差の2乗和の多くを占める`,
+  addText(slide, `GPR（${hi} Shot）：外周 ${f2(e(hi, 'GPR').outer)} nm は内側 ${f2(e(hi, 'GPR').inner)} nm の ${f1(edgeRatio)} 倍（外周の Mark は全 ${D.data.n_marks} Mark の ${pct(D.data.n_outer_marks / D.data.n_marks)}%）。外周の計測ノイズは内側の最大約3倍（±3 nm）`,
     MARGIN_X + 0.3, 5.3, CONTENT_W - 0.6, 1.5, { fontSize: 14, valign: 'middle', bold: true });
 }
 
@@ -1065,11 +1082,10 @@ const sigText = { better: '有意に改善', worse: '有意に悪化', ns: '差�
 // 24. 誤差マップ
 // =====================================================================
 {
-  const slide = newContentSlide(SECTION.s3, '推定誤差のマップ ― 質的変数を入れると Mark ごとの縞が消える', [
-    '1枚目のWaferで、X方向の推定誤差を地図にしました。上の段が10ショット、下の段が40ショットです。左端は真値で、丸が計測したマークです。',
-    '質的変数を入れたGPRとGAMは、40ショットでは誤差がほぼ一様に小さくなります。',
-    'TPSとXY5次は、マークごとのOffsetを表せないため、同じショットの中でマークごとに正負が入れ替わる、細かい縞が残ります。',
-    '10ショットでは、どの手法も計測点から離れた外周で誤差が大きくなります。',
+  const slide = newContentSlide(SECTION.s3, `誤差マップ ― ${lo} Shot では質的変数が Mark ごとの縞を作る`, [
+    '1枚目のWaferで、X方向の推定誤差を地図にしました。上の段が10ショット、下の段が40ショットです。左端は真値で、丸が計測したマークです。各手法は系統ごとの代表の設定です。',
+    '40ショットでは、質的変数を入れたGPRとGAMの誤差がほぼ一様に小さくなります。TPSとXY5次には、マークごとのOffsetを表せないため、同じショットの中でマークごとに色が変わる誤差が残ります。',
+    '10ショットでは逆に、質的変数を入れたGPRとGAMで、マークごとに正負が入れ替わる強い縞が出ています。点が少ないとマークごとのOffsetを誤って推定し、その誤りが全ショットに同じように広がるためです。この1枚では、質的変数を使わないTPSの方が誤差が小さくなりました。',
   ], { source: 'Wafer 0 の X 成分。灰色の点は計測した Mark（誤差は計算しない）。誤差 = 推定値 − 真値' });
   addFigure(slide, 'fig11_error_maps.png', MARGIN_X, 1.45, CONTENT_W, 5.45, '推定誤差マップ');
 }
@@ -1079,15 +1095,15 @@ const sigText = { better: '有意に改善', worse: '有意に悪化', ns: '差�
 // =====================================================================
 {
   const g = (n) => fixedAt('GPR', n);
-  const slide = newContentSlide(SECTION.s3, 'Waferごとのばらつき ― 平均だけでなく悪い Wafer でも順序は同じ', [
-    'Waferごとの誤差の分布です。箱は25から75パーセント点、線は中央値です。',
-    `GPRの${mid}ショットでは、中央値が${f2(g(mid).RMSE_XY_median)}、90パーセント点が${f2(g(mid).RMSE_XY_q90)}ナノメートルでした。`,
-    '面内傾向の大きさや形はWaferごとに違うので、誤差にも幅があります。',
-    '系統の順序は、中央値でも上側の点でもほぼ同じで、悪いWaferだけで順序が入れ替わることはありませんでした。',
-  ], { source: '系統ごとの最良の設定。外れ値は表示していない' });
+  const slide = newContentSlide(SECTION.s3, `ばらつき ― ${mid} Shot 以上は GPR が安定。${lo} Shot は悪い側が広い`, [
+    'Waferごとの誤差の分布です。箱は25から75パーセント点、線は中央値、ひげは箱の端から箱の長さの1.5倍までです。',
+    `GPRの${mid}ショットでは、中央値が${f2(g(mid).RMSE_XY_median)}、90パーセント点が${f2(g(mid).RMSE_XY_q90)}ナノメートルで、ほかの系統と重なりません。`,
+    `${lo}ショットでは、質的変数を入れたGPRの中央値は${f2(g(lo).RMSE_XY_median)}ナノメートルとTPSに近い一方、90パーセント点は${f2(g(lo).RMSE_XY_q90)}ナノメートルと悪い側が広がりました。マークごとのOffsetを誤って推定するWaferがあるためです。`,
+    '面内傾向の大きさや形はWaferごとに違うので、どの手法の誤差にも幅があります。',
+  ], { source: '系統ごとの代表の設定（全 Shot 数の平均 RMSE が最小、GPR は同時推定）。外れ値は表示していない' });
   addFigure(slide, 'fig14_distribution.png', MARGIN_X, 1.45, CONTENT_W, 4.4, 'ばらつき');
   addStyledTable(slide, [
-    tableHead(['GPR（最良の設定）', ...LEVELS.map((n) => `${n}`)]),
+    tableHead(['GPR（代表の設定）', ...LEVELS.map((n) => `${n}`)]),
     [cell('中央値 [nm]', { align: 'left', bold: true }), ...LEVELS.map((n) => cell(f2(g(n).RMSE_XY_median)))],
     [cell('90%点 [nm]', { align: 'left', bold: true }), ...LEVELS.map((n) => cell(f2(g(n).RMSE_XY_q90)))],
   ], MARGIN_X, 5.95, CONTENT_W, [3.0, ...LEVELS.map(() => (CONTENT_W - 3.0) / LEVELS.length)], { fontSize: 11.5, rowH: 0.3 });
@@ -1098,12 +1114,12 @@ const sigText = { better: '有意に改善', worse: '有意に悪化', ns: '差�
 // =====================================================================
 {
   const t = D.timing_ms;
-  const slide = newContentSlide(SECTION.s3, '計算時間 ― GPR でも 1 Wafer 数十ミリ秒、Backfitting は数倍', [
+  const slide = newContentSlide(SECTION.s3, `計算時間 ― GPR は 1 Wafer 約 ${f1(t[String(hi)].GPR_basis / 1000)} 秒、Backfitting はその約 ${f1(t[String(hi)].GPR_backfit / t[String(hi)].GPR_basis)} 倍`, [
     '1枚のWaferの推定にかかった時間です。XとYの合計で、Pythonでの計測値です。',
-    `GPRは、${hi}ショットで、質的変数なしが${f1(t[String(hi)].GPR_none)}ミリ秒、同時推定が${f1(t[String(hi)].GPR_basis)}ミリ秒、Backfittingが${f1(t[String(hi)].GPR_backfit)}ミリ秒でした。`,
-    'Backfittingはハイパーパラメータの推定を繰り返すので、同時推定の数倍かかります。同じ結果になるので、同時推定で十分です。',
+    `GPRは、${hi}ショットで、質的変数なしが${f0(t[String(hi)].GPR_none)}ミリ秒、同時推定が${f0(t[String(hi)].GPR_basis)}ミリ秒、Backfittingが${f0(t[String(hi)].GPR_backfit)}ミリ秒でした。`,
+    'Backfittingはハイパーパラメータの推定を繰り返すので、同時推定より時間がかかります。同じ結果になるので、同時推定で十分です。',
     'XY5次、RT、TPSは線形の計算なので1ミリ秒未満です。',
-    'いずれも、露光装置のスループットに影響する時間ではありません。ただし、並列で動かしたM1での値で、装置側の計算機とは異なります。',
+    'この時間は、M1のパソコンで6つの計算を並べて動かしたときの値で、1つだけ動かすともっと短くなります。装置側の計算機での時間は確認していません。',
   ], { source: 'Python 3.14、M1（6並列で実行中の計測値）。カーネル・説明変数を平均' });
   addFigure(slide, 'fig12_timing.png', MARGIN_X, 1.45, 8.2, 4.4, '計算時間', { align: 'left' });
   const groups = [['GPR_none', 'GPR（なし）'], ['GPR_basis', 'GPR（同時推定）'], ['GPR_backfit', 'GPR（Backfitting）'], ['TPS', 'TPS'], ['OK', 'Kriging'], ['UK', 'Universal Kriging'], ['GAM', 'GAM'], ['XY', 'XY5次'], ['RT', 'RT']];
@@ -1130,7 +1146,7 @@ const sigText = { better: '有意に改善', worse: '有意に悪化', ns: '差�
   const rows = [
     [`基本（${factorHelpsFrom} Shot 以上）`, `GPR ${gprFixed.variant}`, 'X, Y, 半径', '同時推定（基底関数）', `RMSE ${f2(familyRmse('GPR', mid))} nm（${mid} Shot）`],
     [`少ない（${lo} Shot 前後）`, 'GPR（質的変数なし）か TPS', 'X, Y, 半径', '入れない', `RMSE ${f2(gprMode(lo, 'none').rmse)} nm（${lo} Shot）`],
-    ['実装を簡単にしたい', 'GAM（質的変数あり）', 'X, Y', '説明変数に追加', `RMSE ${f2(familyRmse('GAM', hi))} nm（${hi} Shot）`],
+    ['GPR を使えない場合', 'GAM（質的変数あり）', FEATURE_LABEL[gamFixed.feature_set], '説明変数に追加', `RMSE ${f2(familyRmse('GAM', hi))} nm（${hi} Shot）`],
     ['線形の補正式が必要', 'XY5次（参考）', '－', '－', `RMSE ${f2(familyRmse('XY', hi))} nm（${hi} Shot）`],
   ];
   addStyledTable(slide, [
@@ -1139,7 +1155,7 @@ const sigText = { better: '有意に改善', worse: '有意に悪化', ns: '差�
   ], MARGIN_X, 1.55, CONTENT_W, [2.6, 2.6, 1.7, 2.4, CONTENT_W - 9.3], { fontSize: 13, rowH: 0.62 });
   const dont = [
     ['T（方位角）を加える', 'ARD では多くが無視され、等方カーネル・TPS・Kriging では悪化'],
-    ['Backfitting を別に実装する', '同時推定と同じ解。計算は数倍'],
+    ['Backfitting を別に実装する', `同時推定と同じ解。計算は約 ${f1(D.timing_ms[String(hi)].GPR_backfit / D.timing_ms[String(hi)].GPR_basis)} 倍（${hi} Shot）`],
     ['Kriging（PyKrige 既定の当てはめ）', 'ナゲットを過大に推定して平らになりすぎる'],
   ];
   const w = (CONTENT_W - 2 * 0.3) / 3;

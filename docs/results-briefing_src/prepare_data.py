@@ -238,6 +238,8 @@ def main(argv=None):
     data["kernels"] = kernels
     kernel_avg = gpr_basis.groupby("variant")["RMSE_XY_mean"].mean().sort_values()
     data["kernel_rank"] = [{"kernel": k, "avg": r(v)} for k, v in kernel_avg.items()]
+    by_feature = gpr_basis.groupby(["variant", "feature_set"])["RMSE_XY_mean"].mean().unstack().sort_values("XYR")
+    data["kernel_by_feature"] = [{"kernel": k, **{fs: r(row[fs]) for fs in by_feature.columns}} for k, row in by_feature.iterrows()]
 
     # バリオグラム
     krig = summary[summary["family"].isin(["OK", "UK"])]
@@ -249,6 +251,23 @@ def main(argv=None):
     data["variogram_rank"] = [{"family": row["family"], "variogram": row["variant"], "avg": r(row["RMSE_XY_mean"])} for _, row in vg_avg.iterrows()]
     nugget = frame[frame["family"].isin(["OK", "UK"])].groupby(["n_shots"])[["aux_X", "aux_Y"]].median()
     data["kriging_nugget_median"] = {int(n): r(row.mean(), 3) for n, row in nugget.iterrows()}
+    # 経験バリオグラムの最初の区間の幅（PyKrige 既定の6区間、説明変数 X, Y のとき）[mm]
+    layout = build_layout(config)
+    bin_width = {}
+    for _, plan in plans.iterrows():
+        chosen = {int(v) for v in plan["shotNo"].split()}
+        mask = layout.marks["shotNo"].isin(chosen).to_numpy()
+        points = np.column_stack([layout.x_mm[mask], layout.y_mm[mask]])
+        dist = np.sqrt(((points[:, None, :] - points[None, :, :]) ** 2).sum(-1))[np.triu_indices(mask.sum(), 1)]
+        bin_width[int(plan["n_shots"])] = r((dist.max() - dist.min()) / int(config["methods"]["kriging_nlags"]), 1)
+    data["kriging_first_bin_mm"] = bin_width
+    gaussian = frame[frame["family"].isin(["OK", "UK"]) & (frame["variant"] == "gaussian")]
+    data["kriging_gaussian"] = {
+        "zero_nugget_rate": r(np.mean(gaussian[["aux_X", "aux_Y"]].to_numpy() < 1e-6), 3),
+        "n_over_20nm": int((gaussian["RMSE_XY"] > 20).sum()),
+        "n_over_20nm_other": int(((frame["family"].isin(["OK", "UK"])) & (frame["variant"] != "gaussian") & (frame["RMSE_XY"] > 20)).sum()),
+        "n_fits": int(len(gaussian)),
+    }
     gp_noise = frame[(frame["family"] == "GPR") & (frame["factor_mode"] == "basis")].groupby("n_shots")[["aux_X", "aux_Y"]].median()
     data["gpr_noise_median"] = {int(n): r(row.mean(), 3) for n, row in gp_noise.iterrows()}
 

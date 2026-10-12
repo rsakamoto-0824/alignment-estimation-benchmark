@@ -31,3 +31,6 @@ docs/results-briefing_src/formulas/
 # Wafer ごとの全条件の結果（大きいので Git に入れない。python -m src.simulation で再生成できる）
 results/tables/per_wafer_metrics.csv.gz
 results_backfit_order/backfit_order_metrics.csv.gz
+
+# 代表 Wafer の推定値（12 MB。python -m src.simulation で再生成できる。図は results/figures に登録済み）
+results/samples/
