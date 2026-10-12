@@ -4,3 +4,30 @@ __pycache__/
 *.pyc
 .env
 .env.local
+
+# Python の仮想環境・キャッシュ
+.venv/
+.pytest_cache/
+.cache/
+
+# 動作確認の出力（再生成できる）
+results_smoke/
+results_partial/
+results/run_status.txt
+# chunk ごとの途中結果（per_wafer_metrics.csv.gz にまとめ直せる）
+results/chunks/
+
+# Office が開いている間に作るロックファイル
+~$*
+
+# 実行ログ
+*.log
+
+# 説明資料の途中生成物（docs/results-briefing_src で再生成できる。完成版は docs/ の PPTX）
+docs/results-briefing_src/deck_raw.pptx
+docs/results-briefing_src/deck.building.pptx
+docs/results-briefing_src/formulas/
+
+# Wafer ごとの全条件の結果（大きいので Git に入れない。python -m src.simulation で再生成できる）
+results/tables/per_wafer_metrics.csv.gz
+results_backfit_order/backfit_order_metrics.csv.gz
