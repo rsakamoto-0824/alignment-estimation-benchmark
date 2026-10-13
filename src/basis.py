@@ -66,3 +66,15 @@ def factor_design(direction: np.ndarray, mark_number: np.ndarray, n_marks_per_sh
     scan = effect_coding(direction, np.array([1, 2]))
     mark = effect_coding(mark_number, np.arange(1, n_marks_per_shot + 1))
     return np.hstack([scan, mark])
+
+
+def interaction_design(direction: np.ndarray, mark_number: np.ndarray, n_marks_per_shot: int) -> np.ndarray:
+    """Scan方向 × Mark番号 の交互作用（効果コードの積、水準数−1列）。Scan方向で Mark ごとのずれが変わる成分を表す。"""
+    scan = effect_coding(direction, np.array([1, 2]))
+    mark = effect_coding(mark_number, np.arange(1, n_marks_per_shot + 1))
+    return scan * mark
+
+
+def interaction_levels(direction: np.ndarray, mark_number: np.ndarray) -> np.ndarray:
+    """Scan方向と Mark番号の組を1つの水準にした番号（加法カーネルの交互作用の項に使う）。"""
+    return np.asarray(direction) * 100 + np.asarray(mark_number)

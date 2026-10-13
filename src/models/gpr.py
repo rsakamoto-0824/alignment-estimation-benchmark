@@ -14,6 +14,14 @@ fitrgp の既定（FitMethod = 'exact'、BasisFunction = 'constant'）に合わ�
 質的変数（Scan方向・Mark番号）の扱い方
 - none    : 使わない（基底は定数のみ）
 - basis   : 効果コードを基底関数 H に加え、β と同時に推定する（fitrgp の BasisFunction に行列を渡すのと同じ）
+- basis_int : basis に Scan方向 × Mark番号 の交互作用の列（効果コードの積）を加える
+- additive  : 加法カーネル。k = k_空間 + τ_scan²·[Scan方向が同じ] + τ_mark²·[Mark番号が同じ]、基底は定数のみ。
+              質的変数の効果を平均0・分散 τ² の確率変数とみなす（変量効果）ので、点が少ないと効果を0へ縮める。
+              τ も周辺尤度で推定する。τ → ∞ の極限が basis と同じになる（tests/test_gpr_additive.py で確認）
+- additive_int : additive に τ_int²·[Scan方向と Mark番号の両方が同じ] を加える（交互作用）
+- mixed     : 混合。Scan方向（2水準）は基底関数（固定効果）、Mark番号は加法カーネル（変量効果）。
+              2水準しかない Scan方向は τ の推定が不安定で 0 に縮みやすいため、固定効果にする
+- mixed_int : mixed に交互作用の項 τ_int²·[両方が同じ] を加える
 - backfit : Backfitting。質的変数の効果を計測値の群平均で初期化し、
             ① 効果を除いた残差で GPR の超パラメータを推定し直す（前回の値から開始）
             ② 超パラメータを固定して GPR と質的変数を交互に当てはめ直す
@@ -43,7 +51,9 @@ KERNEL_NAMES = (
     "ardmatern52",
     "ardrationalquadratic",
 )
-FACTOR_MODES = ("none", "basis", "backfit")
+FACTOR_MODES = ("none", "basis", "backfit", "basis_int", "additive", "additive_int", "mixed", "mixed_int")
+ADDITIVE_MODES = ("additive", "additive_int", "mixed", "mixed_int")  # 質的変数のカーネル項を持つ扱い方
+MIXED_MODES = ("mixed", "mixed_int")  # Scan方向を基底関数にも入れる扱い方
 LOG_2PI = np.log(2.0 * np.pi)
 SQRT3 = np.sqrt(3.0)
 SQRT5 = np.sqrt(5.0)
@@ -52,6 +62,8 @@ LENGTH_SCALE_BOUNDS = (1e-3, 1e3)
 SIGNAL_STD_BOUNDS = (1e-3, 1e3)
 NOISE_STD_BOUNDS = (1e-2, 1e1)  # 下限は fitrgp の SigmaLowerBound 既定（1e-2 × std(y)）に合わせる
 ALPHA_BOUNDS = (1e-3, 1e3)
+CATEGORICAL_STD_BOUNDS = (1e-4, 1e1)  # 質的変数のカーネル項 τ（学習データの標準偏差に対する倍率）。下限は「効果なし」まで縮められる値
+CATEGORICAL_STD_START = 0.2  # τ の初期値（学習データの標準偏差に対する倍率）
 FAILED_OBJECTIVE = 1e20
 BACKFIT_PARAM_TOLERANCE = 1e-3  # 超パラメータ（対数）の変化がこれ未満で収束とみなす
 
@@ -106,6 +118,25 @@ class PairwiseGeometry:
         return self.train_sq.shape[0]
 
 
+@dataclass(frozen=True)
+class CategoricalComponent:
+    """質的変数のカーネル項 τ²·[水準が同じ] の 0/1 行列（学習点どうし、評価点 × 学習点）。"""
+
+    name: str
+    train_same: np.ndarray  # (n, n)
+    cross_same: np.ndarray  # (m, n)
+
+    @classmethod
+    def build(cls, name: str, train_levels: np.ndarray, test_levels: np.ndarray) -> "CategoricalComponent":
+        train_levels = np.asarray(train_levels)
+        test_levels = np.asarray(test_levels)
+        return cls(
+            name,
+            (train_levels[:, None] == train_levels[None, :]).astype(float),
+            (test_levels[:, None] == train_levels[None, :]).astype(float),
+        )
+
+
 @dataclass
 class GPFit:
     log_params: np.ndarray
@@ -121,19 +152,31 @@ class GPFit:
 class GaussianProcess:
     """1つのカーネル・1つの説明変数の組での GPR。学習点・評価点は固定し、目的変数だけを差し替えて使う。"""
 
-    def __init__(self, kernel: KernelSpec, geometry: PairwiseGeometry, max_iterations: int = 300):
+    def __init__(
+        self,
+        kernel: KernelSpec,
+        geometry: PairwiseGeometry,
+        max_iterations: int = 300,
+        categorical: tuple[CategoricalComponent, ...] = (),
+    ):
         self.kernel = kernel
         self.geometry = geometry
         self.max_iterations = int(max_iterations)
+        self.categorical = tuple(categorical)
         self.n_length = geometry.n_groups if kernel.ard else 1
         self.n_train = geometry.train_sq.shape[1]
         self._train_sq_total = geometry.train_sq.sum(axis=0)
         self._cross_sq_total = geometry.cross_sq.sum(axis=0)
 
-    # ---- パラメータの並び：[log ℓ (1 または G 個), log σf, (log α), log σn]
+    # ---- パラメータの並び：[log ℓ (1 または G 個), log σf, (log α), log τ (質的変数の項ごと), log σn]
     @property
     def n_params(self) -> int:
-        return self.n_length + 1 + (1 if self.kernel.family == "rq" else 0) + 1
+        return self.n_length + 1 + (1 if self.kernel.family == "rq" else 0) + len(self.categorical) + 1
+
+    @property
+    def categorical_offset(self) -> int:
+        """log τ が始まる位置。"""
+        return self.n_length + 1 + (1 if self.kernel.family == "rq" else 0)
 
     def initial_log_params(self, y: np.ndarray) -> np.ndarray:
         """fitrgp の既定の初期値：ℓ = 説明変数の標準偏差（等方は平均）、σf = σn = std(y)/√2、α = 1。"""
@@ -145,6 +188,7 @@ class GaussianProcess:
         params = list(np.log(lengths)) + [np.log(std_y / np.sqrt(2.0))]
         if self.kernel.family == "rq":
             params.append(0.0)
+        params += [np.log(CATEGORICAL_STD_START * std_y)] * len(self.categorical)
         params.append(np.log(std_y / np.sqrt(2.0)))
         return np.array(params)
 
@@ -154,15 +198,23 @@ class GaussianProcess:
         result.append((np.log(SIGNAL_STD_BOUNDS[0] * std_y), np.log(SIGNAL_STD_BOUNDS[1] * std_y)))
         if self.kernel.family == "rq":
             result.append(tuple(np.log(ALPHA_BOUNDS)))
+        result += [(np.log(CATEGORICAL_STD_BOUNDS[0] * std_y), np.log(CATEGORICAL_STD_BOUNDS[1] * std_y))] * len(self.categorical)
         result.append((np.log(NOISE_STD_BOUNDS[0] * std_y), np.log(NOISE_STD_BOUNDS[1] * std_y)))
         return result
 
-    def _split(self, log_params: np.ndarray) -> tuple[np.ndarray, float, float, float]:
+    def _split(self, log_params: np.ndarray) -> tuple[np.ndarray, float, float, np.ndarray, float]:
         lengths = np.exp(log_params[: self.n_length])
         signal_var = float(np.exp(2.0 * log_params[self.n_length]))
         alpha = float(np.exp(log_params[self.n_length + 1])) if self.kernel.family == "rq" else 1.0
+        start = self.categorical_offset
+        categorical_var = np.exp(2.0 * log_params[start : start + len(self.categorical)])
         noise_var = float(np.exp(2.0 * log_params[-1]))
-        return lengths, signal_var, alpha, noise_var
+        return lengths, signal_var, alpha, categorical_var, noise_var
+
+    def categorical_std(self, log_params: np.ndarray) -> dict[str, float]:
+        """推定した質的変数の項の τ（名前ごと）。"""
+        _, _, _, categorical_var, _ = self._split(log_params)
+        return {component.name: float(np.sqrt(var)) for component, var in zip(self.categorical, categorical_var)}
 
     def _scaled_sq(self, sq_by_group: np.ndarray, sq_total: np.ndarray, lengths: np.ndarray) -> np.ndarray:
         if self.kernel.ard:
@@ -196,7 +248,7 @@ class GaussianProcess:
         raise ValueError(family)
 
     def _kernel_and_grads(self, log_params: np.ndarray) -> tuple[np.ndarray, list[np.ndarray], float]:
-        lengths, signal_var, alpha, noise_var = self._split(log_params)
+        lengths, signal_var, alpha, categorical_var, noise_var = self._split(log_params)
         r2 = self._scaled_sq(self.geometry.train_sq, self._train_sq_total, lengths)
         g, h, dalpha = self._profile(r2, alpha)
         kernel = signal_var * g
@@ -209,12 +261,18 @@ class GaussianProcess:
         grads.append(2.0 * kernel)
         if dalpha is not None:
             grads.append(signal_var * dalpha)
+        for component, var in zip(self.categorical, categorical_var):
+            kernel = kernel + var * component.train_same
+            grads.append(2.0 * var * component.train_same)
         return kernel, grads, noise_var
 
     def cross_kernel(self, log_params: np.ndarray) -> np.ndarray:
-        lengths, signal_var, alpha, _ = self._split(log_params)
+        lengths, signal_var, alpha, categorical_var, _ = self._split(log_params)
         r2 = self._scaled_sq(self.geometry.cross_sq, self._cross_sq_total, lengths)
-        return signal_var * self._profile(r2, alpha)[0]
+        cross = signal_var * self._profile(r2, alpha)[0]
+        for component, var in zip(self.categorical, categorical_var):
+            cross = cross + var * component.cross_same
+        return cross
 
     def objective(self, log_params: np.ndarray, y: np.ndarray, basis: np.ndarray) -> tuple[float, np.ndarray]:
         """負の対数周辺尤度（β を消去したプロファイル尤度）とその勾配。"""
@@ -308,9 +366,20 @@ def fit_predict_gpr(
     if mode == "none":
         fit = gp.fit(y, ones_train)
         return FactorGPResult(gp.predict(fit, ones_test), fit.edf, fit.log_params, 0, True, fit.converged, np.zeros(0))
-    if mode == "basis":
+    if mode in ("basis", "basis_int"):
+        # basis_int では factors_train / factors_test に交互作用の列を含めて渡す
         basis_train = np.hstack([ones_train, factors_train])
         basis_test = np.hstack([ones_test, factors_test])
+        fit = gp.fit(y, basis_train)
+        return FactorGPResult(gp.predict(fit, basis_test), fit.edf, fit.log_params, 0, True, fit.converged, fit.beta[1:])
+    if mode in ADDITIVE_MODES:
+        if not gp.categorical:
+            raise ValueError("加法カーネルには質的変数のカーネル項（categorical）を持つ GaussianProcess を渡す")
+        if mode in MIXED_MODES:
+            # factors_train / factors_test には固定効果にする列（Scan方向の効果コード）だけを渡す
+            basis_train, basis_test = np.hstack([ones_train, factors_train]), np.hstack([ones_test, factors_test])
+        else:
+            basis_train, basis_test = ones_train, ones_test
         fit = gp.fit(y, basis_train)
         return FactorGPResult(gp.predict(fit, basis_test), fit.edf, fit.log_params, 0, True, fit.converged, fit.beta[1:])
     if mode != "backfit":

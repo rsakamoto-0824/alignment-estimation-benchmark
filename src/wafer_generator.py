@@ -6,6 +6,8 @@
    係数の標準偏差は高次ほど小さくする（σ_n = σ_0 · decay^n）。X と Y は別々に項を選ぶ。
 2. Shot形状ばらつき：Mark番号ごとのオフセット（全Shot共通）。基準パターンに Wafer ごとの正規乱数を足す。
 3. Scan方向の差：Wafer ごとの差 δ（基準値＋正規乱数）を、Scan方向1に +δ/2、方向2に −δ/2 として足す。
+   補足検証用の交互作用（設定 scan_mark_interaction_std_nm、既定は0）を入れると、差が Mark 番号ごとに変わる：
+   δ_k = δ + c_k（c_k は Wafer・Mark ごとの正規乱数）。Scan 方向で Shot の形が変わる状況にあたる。
 4. 計測ノイズ：一様分布 U(−a, a)。幅 a は半径とともに増え、最外周の Mark で最大（初期設定 ±3 nm）。
    a(r) = a_中心 + (a_端 − a_中心)·(r / r_最外周)^p
 
@@ -24,6 +26,7 @@ from .zernike import zernike_matrix_xy, zernike_modes
 TREND_STREAM = 0
 OFFSET_STREAM = 1
 NOISE_STREAM = 2
+INTERACTION_STREAM = 3  # 交互作用は別の系列にし、既定（0）のときに他の成分の値を変えない
 AXES = ("X", "Y")
 
 
@@ -41,6 +44,7 @@ class GenerationSettings:
     noise_halfwidth_center_nm: float
     noise_halfwidth_edge_nm: float
     noise_radial_power: float
+    scan_mark_interaction_std_nm: float = 0.0
 
     @classmethod
     def from_config(cls, config: dict) -> "GenerationSettings":
@@ -59,6 +63,7 @@ class GenerationSettings:
             noise_halfwidth_center_nm=float(gen["noise_halfwidth_center_nm"]),
             noise_halfwidth_edge_nm=float(gen["noise_halfwidth_edge_nm"]),
             noise_radial_power=float(gen["noise_radial_power"]),
+            scan_mark_interaction_std_nm=float(gen.get("scan_mark_interaction_std_nm", 0.0)),
         )
         settings.validate()
         return settings
@@ -79,6 +84,8 @@ class GenerationSettings:
             raise ValueError("ノイズ幅は 0 ≤ 中心 ≤ 端 にする")
         if self.noise_radial_power <= 0:
             raise ValueError("noise_radial_power は正の値にする")
+        if self.scan_mark_interaction_std_nm < 0:
+            raise ValueError("scan_mark_interaction_std_nm は0以上にする")
 
 
 @dataclass(frozen=True)
@@ -92,7 +99,8 @@ class WaferSample:
     noise: np.ndarray
     trend_coefficients: np.ndarray  # (モード数, 2)。選ばなかった項は0
     mark_offset_by_mark: np.ndarray  # (Mark番号数, 2)
-    scan_difference: np.ndarray  # (2,) 方向1 − 方向2
+    scan_difference: np.ndarray  # (2,) 方向1 − 方向2（Mark によらない部分）
+    scan_mark_interaction: np.ndarray  # (Mark番号数, 2) Mark ごとの Scan 差の上乗せ c_k（既定は0）
 
     @property
     def truth(self) -> np.ndarray:
@@ -139,7 +147,11 @@ class WaferGenerator:
         scan_difference = s.scan_difference_base_nm + rng_offset.normal(0.0, s.scan_difference_wafer_std_nm, 2)
         mark_offset = by_mark[self.layout.mark_number - 1]
         sign = np.where(self.layout.direction == SCAN_UP, 0.5, -0.5)
-        scan_offset = sign[:, None] * scan_difference[None, :]
+        interaction = np.zeros_like(s.mark_offset_base_nm)
+        if s.scan_mark_interaction_std_nm > 0:
+            rng_interaction = self._rng(wafer_id, INTERACTION_STREAM)
+            interaction = rng_interaction.normal(0.0, s.scan_mark_interaction_std_nm, s.mark_offset_base_nm.shape)
+        scan_offset = sign[:, None] * (scan_difference[None, :] + interaction[self.layout.mark_number - 1])
 
         rng_noise = self._rng(wafer_id, NOISE_STREAM)
         noise = rng_noise.uniform(-1.0, 1.0, (self.layout.n_marks, 2)) * self.noise_halfwidth[:, None]
@@ -152,6 +164,7 @@ class WaferGenerator:
             trend_coefficients=coefficients,
             mark_offset_by_mark=by_mark,
             scan_difference=scan_difference,
+            scan_mark_interaction=interaction,
         )
 
 

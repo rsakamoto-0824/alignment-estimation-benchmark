@@ -34,3 +34,23 @@ results_backfit_order/backfit_order_metrics.csv.gz
 
 # 代表 Wafer の推定値（12 MB。python -m src.simulation で再生成できる。図は results/figures に登録済み）
 results/samples/
+
+# 追加検証の資料の途中生成物
+docs/additive-kernel-briefing_src/deck_raw.pptx
+docs/additive-kernel-briefing_src/deck.building.pptx
+docs/additive-kernel-briefing_src/formulas/
+# 追加検証の Wafer ごとの結果・途中結果・代表 Wafer の推定値（再生成できる）
+results_additive/tables/per_wafer_metrics.csv.gz
+results_additive/chunks/
+results_additive/samples/
+results_additive/run_status.txt
+results_interaction/tables/per_wafer_metrics.csv.gz
+results_interaction/chunks/
+results_interaction/samples/
+results_interaction/run_status.txt
+results_smoke_add/
+results_smoke_int/
+results_mixed/tables/per_wafer_metrics.csv.gz
+results_mixed/chunks/
+results_mixed/samples/
+results_mixed/run_status.txt

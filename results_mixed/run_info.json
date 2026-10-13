@@ -1,0 +1,10 @@
+{
+  "seconds_total": 2244.2994591250026,
+  "n_wafers": 1000,
+  "n_rows": 280000,
+  "n_errors": 0,
+  "python": "3.14.6",
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "numpy": "2.5.4",
+  "pandas": "3.0.6"
+}
