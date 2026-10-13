@@ -18,15 +18,15 @@
 ../../.venv/bin/python prepare_data.py
 ../../.venv/bin/python render_formulas.py
 NODE_PATH="$(npm root -g)" node build_deck.js deck_raw.pptx
-../../.venv/bin/python postprocess.py deck_raw.pptx deck.building.pptx
+../../.venv/bin/python ../deck_common/postprocess.py deck_raw.pptx deck.building.pptx
 ```
 
 | ファイル | 役割 |
 | --- | --- |
 | `prepare_data.py` | 計算結果の CSV から、スライドで使う数値を `deck_data.json` に書き出す |
 | `render_formulas.py` | 数式を画像（`formulas/`）にする。PowerPoint の数式機能は使わない |
-| `build_deck.js` | スライドを作る。見た目は「技術レポートPowerPoint」テンプレートに合わせている。図は `results/figures/` から読む |
-| `postprocess.py` | フォント指定（和文 BIZ UDGothic、欧文 Arial）の修正、PowerPoint が修復を求める部品の正規化、再圧縮（wafer_rt_simulation と同じもの） |
+| `build_deck.js` | スライドを作る。図は `results/figures/` から読む。文字・図形・表などの部品は `../deck_common/deck_kit.js`（「技術レポートPowerPoint」テンプレートの見た目） |
+| `../deck_common/postprocess.py` | フォント指定（和文 BIZ UDGothic、欧文 Arial）の修正、PowerPoint が修復を求める部品の正規化、再圧縮（wafer_rt_simulation と同じもの） |
 
 `deck.building.pptx` を確認してから、`docs/` の完成版と置き換えます（PowerPoint で開いているときは置き換えない）。
 `deck_raw.pptx`、`deck.building.pptx`、`formulas/` は再生成できるので Git に入れていません。

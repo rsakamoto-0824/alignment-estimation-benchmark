@@ -43,6 +43,26 @@
 - **Kriging**：PyKrige 既定の経験バリオグラム（6区間）ではナゲットを過大に推定し、GPR に大きく劣る。ガウス型はナゲットが 0 になると不安定（RMSE > 20 nm が 211 件、すべてガウス型）。
 - **指標**：R²・調整済み R²・RMSE・MAE の順位相関は 0.97 以上。調整済み R² は有効自由度の大きいモデル（指数カーネル・指数バリオグラム）に厳しい。
 
+### 追加検証：GPR の質的変数を加法カーネルで扱う（2026-10-14）
+
+「GPR の同時推定は加法カーネルか？」（答え：いいえ。質的変数は平均の基底関数＝固定効果）を受けて、
+質的変数を加法カーネル（変量効果）で扱う方法などを同じ1000枚・同じ計画で比べました。
+資料：[docs/GPRの質的変数を加法カーネルで扱う_追加検証.pptx](docs/GPRの質的変数を加法カーネルで扱う_追加検証.pptx)（17枚、生成元は [docs/additive-kernel-briefing_src/](docs/additive-kernel-briefing_src/README.md)）
+
+| GPR matern52・X, Y, 半径 | 10 Shot | 15 Shot | 20 Shot | 30 Shot | 40 Shot |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| 質的変数なし | 3.80 | 3.14 | 2.75 | 2.46 | 2.36 |
+| 基底関数で同時推定（前回） | 3.91 | 2.55 | 1.65 | 1.03 | 0.77 |
+| 加法カーネル（Scan・Mark とも変量効果） | **3.51** | **2.43** | 1.71 | 1.04 | 0.77 |
+| 混合（Scan 固定効果・Mark 変量効果） | 3.98 | 2.59 | 1.67 | **1.03** | **0.77** |
+
+- 加法カーネルは 10 Shot で同時推定より 8.2%（同じ Wafer どうしの比の平均）良く、少ない Shot の逆効果が消える。ただし 20〜30 Shot では最大 5.4% 悪い。
+- 原因は2水準しかない Scan 方向の分散 τ が 0 に縮むこと（10 Shot で 92%、20 Shot で 73% の Wafer）。少ない Shot では縮める方が良く、20 Shot 前後では縮みすぎる。
+- 混合は 25 Shot 以上で同時推定よりわずかに良い（0.3〜0.9%）が、10〜20 Shot では劣る。
+- 使い分け（15 Shot 以下：加法カーネル、20 Shot 以上：混合または同時推定）なら最良との差は 1.3% 以内。1つに決めるなら加法カーネル（最大の損 5.4%）。
+- 交互作用の項は、不要なとき同時推定では +4.5〜11.5% の損、変量効果では約 +1%。交互作用のあるデータ（σ = 1 nm）では 20 Shot 以上で混合＋交互作用が最良。
+- τ → ∞ で加法カーネルが同時推定と一致することをテストで確認（tests/test_gpr_additive.py）。
+
 ## 必要な環境
 
 - Python 3.14.5 以上（動作確認は Python 3.14.6）
@@ -57,7 +77,7 @@ python3.14 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-ユニットテスト（33件、数秒）：
+ユニットテスト（46件、数秒）：
 
 ```bash
 .venv/bin/python -m pytest
@@ -74,6 +94,15 @@ python3.14 -m venv .venv
 ```bash
 .venv/bin/python -m src.summarize --results results
 .venv/bin/python -m src.plotting --results results
+```
+
+追加検証（加法カーネル・混合・交互作用。本計算と同じ Wafer・計画で新しい扱い方だけを計算。合計約2時間）と集計・図：
+
+```bash
+.venv/bin/python -m src.simulation --config config/additive_kernel.json --workers 6
+.venv/bin/python -m src.simulation --config config/mixed_kernel.json --workers 6
+.venv/bin/python -m src.simulation --config config/interaction_scenario.json --workers 6
+.venv/bin/python -m src.additive_study
 ```
 
 補足検証（Backfitting の始め方の比較、50枚）：
@@ -102,7 +131,9 @@ src/metrics.py             R²・調整済み R²・RMSE・MAE
 src/simulation.py          本計算（並列・途中再開）
 src/summarize.py           要約表
 src/plotting.py            図
-src/backfit_order_study.py 補足検証
+src/backfit_order_study.py 補足検証（Backfitting の始め方）
+src/additive_study.py      追加検証（加法カーネル・混合・交互作用）の集計と図
+docs/deck_common/          2つの説明資料で共有する部品（スライドの部品・数式画像・後処理）
 results/tables/            要約表（per_wafer_metrics.csv.gz は大きいので Git に入れない）
 results/figures/           図
 ```

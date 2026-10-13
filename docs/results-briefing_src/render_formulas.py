@@ -1,26 +1,14 @@
-"""スライドに載せる数式を PNG 画像にする（matplotlib の mathtext を使用）。
+"""スライドに載せる数式を PNG 画像にする（描き方は ../deck_common/formula_renderer.py）。
 
-画像は「指定したポイント数の文字サイズ」で描き、formulas/formulas.json にインチ単位の幅・高さを書き出す。
-スライド側はその寸法のまま配置する。
 使い方: ../../.venv/bin/python render_formulas.py
 """
-import json
+import sys
 from pathlib import Path
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-from PIL import Image  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "deck_common"))
+from formula_renderer import render_all  # noqa: E402
 
 OUTPUT_DIR = Path(__file__).with_name("formulas")
-DPI = 300
-PAD_INCH = 0.04
-INK_COLOR = "#1E1C33"
-WHITE_COLOR = "#FFFFFF"
-
-plt.rcParams["mathtext.fontset"] = "stix"
-plt.rcParams["font.family"] = "STIXGeneral"
 
 # key: (数式, 文字サイズpt)
 FORMULAS = {
@@ -45,27 +33,5 @@ FORMULAS = {
 WHITE_KEYS = {"gpr_white"}
 
 
-def render(key, tex, size_pt, color):
-    fig = plt.figure(figsize=(0.01, 0.01))
-    fig.text(0, 0, tex, fontsize=size_pt, color=color)
-    path = OUTPUT_DIR / f"{key}.png"
-    fig.savefig(path, dpi=DPI, transparent=True, bbox_inches="tight", pad_inches=PAD_INCH)
-    plt.close(fig)
-    with Image.open(path) as image:
-        width_px, height_px = image.size
-    return {"file": path.name, "w": width_px / DPI, "h": height_px / DPI}
-
-
-def main():
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    sizes = {}
-    for key, (tex, size_pt) in FORMULAS.items():
-        color = WHITE_COLOR if key in WHITE_KEYS else INK_COLOR
-        sizes[key] = render(key, tex, size_pt, color)
-    (OUTPUT_DIR / "formulas.json").write_text(json.dumps(sizes, indent=2), encoding="utf-8")
-    for key, info in sizes.items():
-        print(f"{key:14s} {info['w']:.2f} x {info['h']:.2f} in")
-
-
 if __name__ == "__main__":
-    main()
+    render_all(FORMULAS, OUTPUT_DIR, WHITE_KEYS)

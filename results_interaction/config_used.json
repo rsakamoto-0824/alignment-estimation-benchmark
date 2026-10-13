@@ -1,0 +1,155 @@
+{
+  "description": "補足検証：Scan方向で Mark ごとのずれが変わる（交互作用あり）模擬データでの GPR の質的変数の扱い",
+  "random": {
+    "master_seed": 20261012
+  },
+  "wafer": {
+    "diameter_mm": 300.0,
+    "edge_exclusion_mm": 3.0
+  },
+  "shot": {
+    "size_mm": [
+      22.0,
+      26.0
+    ],
+    "grid_offset_mm": [
+      0.0,
+      0.0
+    ],
+    "marks_rel_mm": [
+      [
+        -10.0,
+        -12.0
+      ],
+      [
+        10.0,
+        -12.0
+      ],
+      [
+        10.0,
+        12.0
+      ],
+      [
+        -10.0,
+        12.0
+      ]
+    ],
+    "scan_direction_pattern": "alternate_column"
+  },
+  "generation": {
+    "n_wafers": 1000,
+    "zernike_max_order": 10,
+    "n_terms_range": [
+      10,
+      30
+    ],
+    "coef_std_order0_nm": 8.0,
+    "coef_std_decay_per_order": 0.75,
+    "mark_offset_base_nm": [
+      [
+        1.5,
+        -1.0
+      ],
+      [
+        -1.0,
+        -1.5
+      ],
+      [
+        -1.5,
+        1.0
+      ],
+      [
+        1.0,
+        1.5
+      ]
+    ],
+    "mark_offset_wafer_std_nm": 1.0,
+    "scan_difference_base_nm": [
+      2.0,
+      -1.5
+    ],
+    "scan_difference_wafer_std_nm": 1.0,
+    "noise_halfwidth_center_nm": 1.0,
+    "noise_halfwidth_edge_nm": 3.0,
+    "noise_radial_power": 3.0,
+    "scan_mark_interaction_std_nm": 1.0
+  },
+  "sampling": {
+    "n_shots": [
+      10,
+      15,
+      20,
+      25,
+      30,
+      35,
+      40
+    ],
+    "criterion": "I",
+    "design_xy_order": 5,
+    "constraints": {
+      "radial_zone_edges": [
+        0.0,
+        0.45,
+        0.7,
+        1.0
+      ],
+      "quadrants": true,
+      "scan_direction": true,
+      "slack": 1
+    },
+    "exchange_starts": 30,
+    "exchange_max_iterations": 300
+  },
+  "methods": {
+    "feature_sets": [
+      "XYR"
+    ],
+    "gpr_kernels": [
+      "matern52"
+    ],
+    "gpr_factor_modes": [
+      "none",
+      "basis",
+      "basis_int",
+      "additive",
+      "additive_int",
+      "mixed",
+      "mixed_int"
+    ],
+    "gpr_backfit_max_iterations": 20,
+    "gpr_backfit_tolerance_nm": 0.001,
+    "gpr_optimizer_max_iterations": 300,
+    "kriging_variograms": [
+      "linear",
+      "gaussian",
+      "power",
+      "exponential"
+    ],
+    "kriging_nlags": 6,
+    "tps_lambda_grid": {
+      "log10_min": -8.0,
+      "log10_max": 3.0,
+      "n": 45
+    },
+    "gam_basis_per_axis": 8,
+    "gam_basis_radius": 8,
+    "gam_basis_angle": 8,
+    "polynomial_order": 5,
+    "rt_orders": [
+      4,
+      5
+    ],
+    "families": [
+      "GPR",
+      "TPS"
+    ]
+  },
+  "evaluation": {
+    "outer_radius_ratio": 0.8
+  },
+  "output": {
+    "results_dir": "results_interaction",
+    "n_workers": 6,
+    "wafers_per_chunk": 10
+  }
+}
