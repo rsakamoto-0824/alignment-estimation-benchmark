@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="アライメント計測値の面内推定 検証ツール（MATLAB アプリ）を Windows で使うための手順書。MATLAB での起動、スタンドアローン版（exe）の作成と配布、画面の使い方。">
+  <title>検証ツール Windows 手順書</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="procedure-guide.css">
+  <style>
+    /* 画面の画像と、表の中のコード（テンプレートに無い部品だけを足す） */
+    .screen-figure {
+      margin: 16px 0 22px;
+    }
+
+    .screen-figure img {
+      display: block;
+      width: 100%;
+      max-width: 1000px;
+      height: auto;
+      border: 1px solid var(--color-slate-200);
+      border-radius: var(--radius-medium-px);
+    }
+
+    .screen-figure figcaption {
+      margin-top: 6px;
+      color: var(--color-slate-600);
+      font-size: 0.8rem;
+    }
+
+    .sub-heading {
+      margin-top: 30px;
+      padding-left: 10px;
+      border-left: 3px solid var(--color-blue-500);
+    }
+
+    /* 長いコマンドや URL は表や段落の幅で折り返す（横にはみ出さない） */
+    td code,
+    li code,
+    p code {
+      overflow-wrap: anywhere;
+    }
+  </style>
+  <script src="procedure-guide.js" defer></script>
+</head>
+<body id="top">
+  <a class="skip-link" href="#main-content">本文へ移動</a>
+
+  <button
+    id="toc-toggle"
+    class="toc-toggle"
+    type="button"
+    aria-controls="sidebar"
+    aria-expanded="false"
+  >
+    <span aria-hidden="true">☰</span> 目次
+  </button>
+
+  <aside id="sidebar" class="sidebar" aria-label="目次">
+    <div class="sidebar-header">
+      <p class="eyebrow">Internal Procedure</p>
+      <p class="sidebar-title">面内推定 検証ツール</p>
+      <p class="sidebar-subtitle">Windows 手順書</p>
+    </div>
+    <nav>
+      <ol class="toc-list">
+        <li><a href="#overview">1. 目的と対象</a></li>
+        <li><a href="#prerequisites">2. 作業前の確認</a></li>
+        <li><a href="#workflow">3. 全体の流れ</a></li>
+        <li><a href="#place-folder">4. フォルダを置く</a></li>
+        <li><a href="#run-in-matlab">5. MATLAB で使う</a></li>
+        <li><a href="#build-exe">6. exe を作る</a></li>
+        <li><a href="#install-exe">7. exe を配る・使う</a></li>
+        <li><a href="#how-to-use">8. 画面の使い方</a></li>
+        <li><a href="#data-format">9. 読み込むデータの形</a></li>
+        <li><a href="#verification">10. 完了確認</a></li>
+        <li><a href="#troubleshooting">11. 困ったとき</a></li>
+      </ol>
+    </nav>
+    <div class="sidebar-footer">
+      <span class="status-dot" aria-hidden="true"></span>
+      社内利用
+    </div>
+  </aside>
+  <div id="sidebar-overlay" class="sidebar-overlay" aria-hidden="true"></div>
+
+  <main id="main-content" class="main-content">
+    <header class="hero">
+      <div class="hero-content">
+        <p class="eyebrow">Operating Guide · Internal Use</p>
+        <h1>アライメント計測値の面内推定 検証ツール<br><span>Windows 手順書</span></h1>
+        <p class="hero-lead">
+          会社の Windows PC で検証ツール（MATLAB アプリ）を動かし、実データ（Excel）で面内推定の手法を比べるための手順です。
+          MATLAB の中で使う方法と、MATLAB の無い PC でも使えるようにスタンドアローン版（exe）を作って配る方法を説明します。
+        </p>
+        <div class="hero-badges" aria-label="文書情報">
+          <span>対象: Windows 11 ＋ MATLAB R2021a 以上</span>
+          <span>exe の作成: MATLAB Compiler が必要</span>
+          <span>更新日: 2026/10/17</span>
+        </div>
+      </div>
+    </header>
+
+    <section id="overview" class="content-section">
+      <div class="section-heading">
+        <span class="section-number">01</span>
+        <div>
+          <p class="section-kicker">Overview</p>
+          <h2>目的と対象</h2>
+        </div>
+      </div>
+      <p>
+        このツールは、Excel のアライメント計測データを読み込み、学習に使う Shot から残りの Shot の値を推定して、
+        推定の手法（GPR・TPS・Kriging・GAM・XY 多項式・RT モデル）を同じ条件で比べます。
+        使い方は次の3通りです。自分の PC の環境に合うものを選んでください。
+      </p>
+
+      <div class="card-grid three-columns">
+        <article class="feature-card">
+          <span class="card-label">Use A</span>
+          <h3>MATLAB の中で使う</h3>
+          <p>MATLAB が入っている PC。いちばん手軽です（4章 → 5章）。Toolbox は不要です。</p>
+        </article>
+        <article class="feature-card">
+          <span class="card-label">Use B</span>
+          <h3>exe を作る</h3>
+          <p>MATLAB と MATLAB Compiler が入っている PC で、配るための exe（とインストーラー）を作ります（4章 → 6章）。</p>
+        </article>
+        <article class="feature-card">
+          <span class="card-label">Use C</span>
+          <h3>exe を使う</h3>
+          <p>MATLAB が入っていない PC。無料の MATLAB Runtime を入れて exe を起動します（7章）。</p>
+        </article>
+      </div>
+
+      <p class="note">
+        対象者：MATLAB でフォルダを開き、コマンドウィンドウにコマンドを入力できる人。exe を使うだけなら MATLAB の知識は不要です。
+      </p>
+    </section>
+
+    <section id="prerequisites" class="content-section">
+      <div class="section-heading">
+        <span class="section-number">02</span>
+        <div>
+          <p class="section-kicker">Prerequisites</p>
+          <h2>作業前の確認</h2>
+        </div>
+      </div>
+      <ul class="check-list">
+        <li>Windows 10 または 11（64 ビット）であること。</li>
+        <li>（使い方 A・B）MATLAB の版が R2021a 以上であること。コマンドウィンドウで <code>version</code> と入力すると表示されます（このツールは R2022b で動作確認済み）。</li>
+        <li>（使い方 B）MATLAB Compiler が使えること。コマンドウィンドウで <code>license('test','Compiler')</code> と入力して <code>1</code> が返れば使えます。</li>
+        <li>（使い方 C）MATLAB Runtime のインストールに管理者権限が必要な場合があります。空き容量は数 GB 必要です。</li>
+        <li>自作の exe を社内の PC で配布・実行してよいか、社内のソフトウェア利用ルールを確認してあること。</li>
+        <li>置き場所は、日本語や空白を含まないフォルダ（例：<code>C:\work\matlab_app</code>）にします。ファイルの場所の問題を避けるためです。</li>
+      </ul>
+
+      <div class="callout warning">
+        <div class="callout-icon" aria-hidden="true">!</div>
+        <div>
+          <h3>実データの扱い</h3>
+          <p>
+            実データと、書き出した結果の Excel は社内の PC の中だけで扱ってください。GitHub へ上げたり、社外のサービスへ送ったりしないでください。
+            リポジトリに入っているサンプルデータは乱数で作った模擬データです。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="workflow" class="content-section">
+      <div class="section-heading">
+        <span class="section-number">03</span>
+        <div>
+          <p class="section-kicker">Workflow</p>
+          <h2>全体の流れ</h2>
+        </div>
+      </div>
+      <div class="workflow">
+        <div class="workflow-step"><span>1</span><strong>フォルダを置く</strong><small>matlab_app を C:\work へ</small></div>
+        <div class="workflow-arrow" aria-hidden="true">→</div>
+        <div class="workflow-step"><span>2</span><strong>MATLAB で確認</strong><small>起動とテスト</small></div>
+        <div class="workflow-arrow" aria-hidden="true">→</div>
+        <div class="workflow-step"><span>3</span><strong>exe を作る</strong><small>Compiler のある PC で</small></div>
+        <div class="workflow-arrow" aria-hidden="true">→</div>
+        <div class="workflow-step"><span>4</span><strong>配る・入れる</strong><small>Runtime と exe</small></div>
+        <div class="workflow-arrow" aria-hidden="true">→</div>
+        <div class="workflow-step"><span>5</span><strong>評価する</strong><small>データを読み込んで実行</small></div>
+      </div>
+      <p class="note">MATLAB の中で使うだけなら、手順 1・2・5 だけで使えます。</p>
+    </section>
+
+    <section id="place-folder" class="content-section">
+      <div class="section-heading">
+        <span class="section-number">04</span>
+        <div>
+          <p class="section-kicker">Preparation</p>
+          <h2>フォルダを置く</h2>
+        </div>
+      </div>
+      <ol class="numbered-steps">
+        <li><div>
+          <strong>ツール一式を手に入れる</strong>
+          <p>
+            ブラウザで <code>https://github.com/rsakamoto-0824/alignment-estimation-benchmark</code> を開き、
+            緑の「Code」ボタン →「Download ZIP」を押します。社外のサイトに出られない場合は、作成者からフォルダを受け取ってください。
+          </p>
+        </div></li>
+        <li><div>
+          <strong>matlab_app フォルダだけを置く</strong>
+          <p>
+            ZIP を展開し、中の <code>matlab_app</code> フォルダを <code>C:\work\matlab_app</code> に置きます。
+            ほかのフォルダ（Python 版の評価や資料）は、このツールには不要です。
+          </p>
+        </div></li>
+        <li><div>
+          <strong>中身を確かめる</strong>
+          <p>
+            <code>C:\work\matlab_app</code> の中に、<code>runAlignmentEstimationApp.m</code>・<code>AlignmentEstimationApp.m</code>・
+            <code>+alignest</code>・<code>build</code>・<code>sample_data</code>・<code>tests</code>・<code>docs</code> があれば準備完了です。
+          </p>
+        </div></li>
+      </ol>
+    </section>
+
+    <section id="run-in-matlab" class="content-section">
+      <div class="section-heading">
+        <span class="section-number">05</span>
+        <div>
+          <p class="section-kicker">Use A</p>
+          <h2>MATLAB で使う</h2>
+        </div>
+      </div>
+      <ol class="numbered-steps">
+        <li><div>
+          <strong>現在のフォルダを matlab_app にする</strong>
+          <p>MATLAB を起動し、コマンドウィンドウに次を入力して Enter を押します。</p>
+        </div></li>
+      </ol>
+      <div class="code-block" data-language="MATLAB">
+        <button class="copy-button" type="button">コピー</button>
+        <pre><code>cd C:\work\matlab_app</code></pre>
+      </div>
+      <ol class="numbered-steps" start="2" style="counter-reset: steps 1;">
+        <li><div>
+          <strong>ツールを起動する</strong>
+          <p>次を入力すると、ツールの画面が開きます（初回は画面が出るまで数十秒かかることがあります）。使い方は8章を見てください。</p>
+        </div></li>
+      </ol>
+      <div class="code-block" data-language="MATLAB">
+        <button class="copy-button" type="button">コピー</button>
+        <pre><code>runAlignmentEstimationApp</code></pre>
+      </div>
+      <ol class="numbered-steps" start="3" style="counter-reset: steps 2;">
+        <li><div>
+          <strong>（初めてのときだけ）動作確認のテストを行う</strong>
+          <p>
+            次を入力すると、自動テストが走ります（数分）。最後に「成功 29 件、失敗 0 件、未完了 0 件」と出れば、
+            この PC の MATLAB で正しく計算できています。
+          </p>
+        </div></li>
+      </ol>
+      <div class="code-block" data-language="MATLAB">
+        <button class="copy-button" type="button">コピー</button>
+        <pre><code>cd C:\work\matlab_app\tests
+runAllTests
+cd C:\work\matlab_app</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <div class="callout-icon" aria-hidden="true">✓</div>
+        <div>
+          <h3>テストで確かめていること</h3>
+          <p>
+            模擬データの評価に使った Python 版と同じ計算結果になること（8件）、データの読み込みと前処理（9件）、
+            評価・集計・書き出し・設定の保存（9件）、画面の一連の操作（3件）です。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="build-exe" class="content-section">
+      <div class="section-heading">
+        <span class="section-number">06</span>
+        <div>
+          <p class="section-kicker">Use B</p>
+          <h2>exe を作る</h2>
+        </div>
+      </div>
+      <p>MATLAB と MATLAB Compiler が入った Windows PC で行います。Mac では Windows 用の exe は作れません。</p>
+
+      <h3>配り方を選ぶ</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>配り方</th><th>作るコマンド</th><th>使う PC に必要なもの</th><th>向いている場合</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>exe だけ</td>
+              <td><code>buildStandaloneApp</code></td>
+              <td>同じ版の MATLAB Runtime を別に入れる</td>
+              <td>Runtime がすでに入っている PC</td>
+            </tr>
+            <tr>
+              <td>インストーラー（ネットから Runtime）</td>
+              <td><code>buildStandaloneApp(makeInstaller=true)</code></td>
+              <td>インストール時にインターネット接続</td>
+              <td>社外のサイトに出られる PC</td>
+            </tr>
+            <tr>
+              <td>インストーラー（Runtime 入り）</td>
+              <td><code>buildStandaloneApp(makeInstaller=true, runtimeDelivery="installer")</code></td>
+              <td>なし（ファイルが数 GB になる）</td>
+              <td>社外のサイトに出られない PC</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>作り方</h3>
+      <ol class="numbered-steps">
+        <li><div>
+          <strong>MATLAB Compiler があることを確かめる</strong>
+          <p>次を入力して <code>ans = 1</code> と出れば使えます。<code>0</code> なら 11章の「MATLAB Compiler が使えません」を見てください。</p>
+        </div></li>
+      </ol>
+      <div class="code-block" data-language="MATLAB">
+        <button class="copy-button" type="button">コピー</button>
+        <pre><code>license('test','Compiler')</code></pre>
+      </div>
+      <ol class="numbered-steps" start="2" style="counter-reset: steps 1;">
+        <li><div>
+          <strong>作成のコマンドを実行する</strong>
+          <p>
+            <code>C:\work\matlab_app</code> を現在のフォルダにしてから、上の表で選んだコマンドを入力します。
+            次の例は、ネットから Runtime を入れるインストーラーを作る場合です。数分かかります。
+          </p>
+        </div></li>
+      </ol>
+      <div class="code-block" data-language="MATLAB">
+        <button class="copy-button" type="button">コピー</button>
+        <pre><code>cd C:\work\matlab_app
+addpath build
+buildStandaloneApp(makeInstaller=true)</code></pre>
+      </div>
+      <ol class="numbered-steps" start="3" style="counter-reset: steps 2;">
+        <li><div>
+          <strong>できたファイルを確かめる</strong>
+          <p>
+            「作成しました」と表示されれば完了です。<code>build\output\win64\</code> に <code>AlignmentEstimationApp.exe</code> などが、
+            インストーラーを作った場合は <code>build\output\win64\installer\</code> に <code>AlignmentEstimationApp_Installer.exe</code> ができます。
+          </p>
+        </div></li>
+      </ol>
+
+      <div class="callout info">
+        <div class="callout-icon" aria-hidden="true">i</div>
+        <div>
+          <h3>作った exe の性質</h3>
+          <p>
+            画面だけのアプリとして作ります（黒いコマンド画面は出ません）。Toolbox は使っていないので、MATLAB 本体の Runtime だけで動きます。
+            使う PC の MATLAB Runtime は、exe を作った MATLAB と <strong>同じ版</strong>（例：R2022b で作ったら R2022b）が必要です。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="install-exe" class="content-section">
+      <div class="section-heading">
+        <span class="section-number">07</span>
+        <div>
+          <p class="section-kicker">Use C</p>
+          <h2>exe を配る・使う</h2>
+        </div>
+      </div>
+
+      <h3 class="sub-heading">インストーラーを使う場合</h3>
+      <ol class="numbered-steps">
+        <li><div>
+          <strong>インストーラーを実行する</strong>
+          <p>
+            <code>AlignmentEstimationApp_Installer.exe</code> を使う PC にコピーしてダブルクリックし、画面の指示に従ってインストール先を選びます。
+            MATLAB Runtime が入っていなければ、一緒にインストールされます（ネットから入れる形では、インターネット接続が必要です）。
+          </p>
+        </div></li>
+        <li><div>
+          <strong>ツールを起動する</strong>
+          <p>インストール時に選んだインストール先にある <code>AlignmentEstimationApp.exe</code>（またはインストール時に作ったショートカット）から起動します。初回は画面が出るまで時間がかかることがあります。</p>
+        </div></li>
+      </ol>
+
+      <h3 class="sub-heading">exe だけを使う場合</h3>
+      <ol class="numbered-steps">
+        <li><div>
+          <strong>MATLAB Runtime を入れる</strong>
+          <p>
+            MathWorks のサイト <code>https://www.mathworks.com/products/compiler/matlab-runtime.html</code> から、
+            exe を作った MATLAB と同じ版の MATLAB Runtime（Windows 用）を入れます。
+          </p>
+        </div></li>
+        <li><div>
+          <strong>exe を起動する</strong>
+          <p><code>AlignmentEstimationApp.exe</code> を任意のフォルダ（例：<code>C:\work\app</code>）にコピーしてダブルクリックします。</p>
+        </div></li>
+      </ol>
+
+      <div class="callout warning">
+        <div class="callout-icon" aria-hidden="true">!</div>
+        <div>
+          <h3>Windows の警告が出た場合</h3>
+          <p>
+            自作の exe は署名が無いため、Windows やウイルス対策ソフトが警告を出すことがあります。
+            実行してよいかは社内のルールに従い、分からなければ情報システムの担当者に確認してください。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="how-to-use" class="content-section">
+      <div class="section-heading">
+        <span class="section-number">08</span>
+        <div>
+          <p class="section-kicker">How to use</p>
+          <h2>画面の使い方</h2>
+        </div>
+      </div>
+      <p>
+        画面上のタブを左から順に進めます。MATLAB の中で起動しても exe で起動しても、画面は同じです。
+        初めてのときは、<code>sample_data\sample_alignment.xlsx</code>（模擬データ5枚）で一度通して試してください。
+        exe を配るときは、このサンプルの Excel も一緒に渡すと試しやすくなります。
+      </p>
+      <p class="note">画像は Mac で撮影したものです。Windows ではウィンドウの枠や文字の形が少し違いますが、配置は同じです。</p>
+
+      <h3 class="sub-heading">8-1. データを読み込む（1. データの読み込み）</h3>
+      <ol class="numbered-steps">
+        <li><div><strong>「ファイルを選ぶ…」を押す</strong><p>Excel（.xlsx）または CSV を選びます。Excel に複数のシートがあれば、「シート」で選び直せます。</p></div></li>
+        <li><div><strong>列の対応を確かめる</strong><p>
+          左の表の「ファイルの列」に、標準の項目にあたるファイルの列が入っていれば正しく対応づいています。
+          列名が違うときは、その欄を押して選び直します。必須の項目（Xmm・Ymm・markXmm・markYmm・measX・measY）は必ず選びます。
+        </p></div></li>
+        <li><div><strong>「この対応で読み込む」を押す</strong><p>
+          右の「読み込み結果」に、Wafer の枚数、Shot 数・Mark 数、除いた点（未測定・半径 150 mm 以上）、まとめた重複行が出ます。
+          下の図で計測値の矢印を確かめます。
+        </p></div></li>
+      </ol>
+      <figure class="screen-figure">
+        <img src="images/01_data.jpg" alt="データの読み込みタブ。左に列の対応の表、右に読み込み結果と計測値の矢印の図" loading="lazy">
+        <figcaption>図 1　データの読み込み（サンプルデータを読み込んだところ）</figcaption>
+      </figure>
+
+      <h3 class="sub-heading">8-2. 比べ方を決める（2. 評価の設定）</h3>
+      <ol class="numbered-steps">
+        <li><div><strong>学習に使う Shot の選び方を決める</strong><p>
+          「制約付き I 最適」は前回の評価と同じ選び方です。「制約つきランダム」は同じ条件でランダムに選んで何回か繰り返します。
+          「手動で指定」は、shotNo を空白区切りで1行に1パターン書きます（例：<code>1 5 9 13 17</code>）。
+        </p></div></li>
+        <li><div><strong>学習 Shot 数を入れる</strong><p>空白区切りで入れます（例：<code>10 15 20 25 30 35 40</code>）。入力に誤りがあると、欄の下に理由が出ます。</p></div></li>
+        <li><div><strong>比べる手法を選ぶ</strong><p>
+          初期設定は「推奨の組み合わせ」（各系統の代表 9 手法）です。画面の下に計算回数と時間の目安が出るので、長すぎる場合は手法や Shot 数を減らします。
+          「設定を保存…」で設定をファイルに残し、次回「設定を読み込む…」で同じ条件に戻せます。
+        </p></div></li>
+      </ol>
+      <figure class="screen-figure">
+        <img src="images/02_settings.jpg" alt="評価の設定タブ。左に学習 Shot の選び方と制約、右に比べる手法の選択" loading="lazy">
+        <figcaption>図 2　評価の設定</figcaption>
+      </figure>
+
+      <h3 class="sub-heading">8-3. 実行する（3. 実行）</h3>
+      <ol class="numbered-steps">
+        <li><div><strong>「評価を始める」を押す</strong><p>進み具合と残り時間の目安が出ます。途中で止めたいときは「止める」を押すと、それまでの結果が残ります。</p></div></li>
+        <li><div><strong>終わったら結果一覧に切り替わる</strong><p>「記録」に、推定できなかった組み合わせや学習パターンの注意が出ます。</p></div></li>
+      </ol>
+      <figure class="screen-figure">
+        <img src="images/03_progress.jpg" alt="実行タブで評価中の進み具合のダイアログが出ているところ" loading="lazy">
+        <figcaption>図 3　実行中（「止める」で途中までの結果を残して止められる）</figcaption>
+      </figure>
+
+      <h3 class="sub-heading">8-4. 結果を見る（4. 結果一覧）</h3>
+      <p>
+        上の「指標」（RMSE・MAE・R²・調整済み R²、X・Y・合計）と「集計」（平均・中央値）を切り替えると、下の表・グラフ・比較が変わります。
+        「結果を Excel に書き出す…」で、集計・Wafer ごとの値・学習に使った Shot・設定を1つのファイルに保存します。
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>中のタブ</th><th>見るもの</th></tr></thead>
+          <tbody>
+            <tr><td>表（手法 × 学習パターン）</td><td>手法ごと・学習 Shot 数ごとの値。各列で最も良い手法に「★」と色が付きます。</td></tr>
+            <tr><td>グラフ</td><td>学習 Shot 数による変化。右の一覧で描く手法を選べます。「グラフを画像で保存…」で PNG にできます。</td></tr>
+            <tr><td>基準の手法との比較</td><td>上で選んだ基準の手法と、同じ Wafer・同じ学習パターンどうしで比べた差、95% 区間、基準より良かった Wafer の割合。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <figure class="screen-figure">
+        <img src="images/04_table.jpg" alt="結果一覧の表。手法ごとに 10〜40 Shot の RMSE が並び、各列の最良に星が付いている" loading="lazy">
+        <figcaption>図 4　結果一覧（表）</figcaption>
+      </figure>
+      <figure class="screen-figure">
+        <img src="images/05_chart.jpg" alt="結果一覧のグラフ。横軸が学習 Shot 数、縦軸が RMSE の折れ線" loading="lazy">
+        <figcaption>図 5　結果一覧（グラフ）</figcaption>
+      </figure>
+      <figure class="screen-figure">
+        <img src="images/06_compare.jpg" alt="基準の手法との比較の表。差の割合、95% 区間、基準より良かった割合、Wafer 数" loading="lazy">
+        <figcaption>図 6　基準の手法との比較</figcaption>
+      </figure>
+
+      <h3 class="sub-heading">8-5. Wafer ごとに見る（5. Wafer ごとのマップ）</h3>
+      <p>
+        Wafer・学習パターン・手法を選ぶと、評価した Shot の計測値・推定値・残差（計測値 − 推定値）を並べて表示します。
+        灰色の四角は学習に使った Mark です。「表示」で矢印と色（X・Y）を切り替えられます。下の行に、その組み合わせの指標が出ます。
+      </p>
+      <figure class="screen-figure">
+        <img src="images/07_map.jpg" alt="Wafer ごとのマップ。計測値・推定値・残差の矢印の図が3つ並ぶ" loading="lazy">
+        <figcaption>図 7　Wafer ごとのマップ</figcaption>
+      </figure>
+
+      <div class="callout info">
+        <div class="callout-icon" aria-hidden="true">i</div>
+        <div>
+          <h3>評価の考え方</h3>
+          <p>
+            実データには真の値が無いので、学習しなかった Shot の <strong>計測値</strong> と推定値を比べます。
+            計測値には計測ノイズが含まれるため、誤差は模擬データでの評価より少し大きく出ます。手法どうしの比べ方は同じです。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="data-format" class="content-section">
+      <div class="section-heading">
+        <span class="section-number">09</span>
+        <div>
+          <p class="section-kicker">Data format</p>
+          <h2>読み込むデータの形</h2>
+        </div>
+      </div>
+      <p>1行目が項目名、2行目からデータの表です。項目名はアライメント計測テーブルの標準に合わせます（違っていても画面で対応づけられます）。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>項目名</th><th>意味</th><th>必須</th><th>無いとき</th></tr></thead>
+          <tbody>
+            <tr><td><code>Wafer</code></td><td>ウェハ ID</td><td>任意</td><td>全行を1枚とみなす</td></tr>
+            <tr><td><code>DateTime</code></td><td>測定日時</td><td>任意</td><td>同じ Wafer でも日時が違えば別の計測として扱う</td></tr>
+            <tr><td><code>shotNo</code></td><td>ショット番号</td><td>任意</td><td>座標から番号を付ける（上の行から左→右）</td></tr>
+            <tr><td><code>Direction</code></td><td>Scan 方向（1 または 2）</td><td>任意</td><td>Scan 方向を質的変数・制約に使わない</td></tr>
+            <tr><td><code>Xmm</code>, <code>Ymm</code></td><td>ショット中心の座標 [mm]</td><td>必須</td><td>—</td></tr>
+            <tr><td><code>Radius</code></td><td>ショット中心の半径 [mm]</td><td>任意</td><td>あれば Xmm・Ymm からの計算値と合うか確かめる</td></tr>
+            <tr><td><code>markNo</code></td><td>ショット内のマーク番号</td><td>任意</td><td>マーク座標の組ごとに番号を付ける</td></tr>
+            <tr><td><code>markXmm</code>, <code>markYmm</code></td><td>ショット中心から見たマーク座標 [mm]</td><td>必須</td><td>—</td></tr>
+            <tr><td><code>measX</code>, <code>measY</code></td><td>マークの測定値 [nm]</td><td>必須</td><td>—</td></tr>
+            <tr><td><code>StsX</code>, <code>StsY</code></td><td>ステータス（0 = 有効、−1 = 未測定）</td><td>任意</td><td>測定値が空でなければ有効</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>読み込むときに自動で行うこと</h3>
+      <ul class="check-list">
+        <li>解析座標は x = Xmm + markXmm、y = Ymm + markYmm。半径 150 mm 以上の点は除きます（画面の「有効半径」で変更可）。</li>
+        <li>X には StsX = 0 の measX、Y には StsY = 0 の measY だけを使います。未測定を 0 として扱いません。</li>
+        <li>Wafer・DateTime・Xmm・Ymm・markXmm・markYmm が同じ行は重複とみなし、測定値を X・Y それぞれ平均します。</li>
+      </ul>
+    </section>
+
+    <section id="verification" class="content-section">
+      <div class="section-heading">
+        <span class="section-number">10</span>
+        <div>
+          <p class="section-kicker">Verification</p>
+          <h2>完了確認</h2>
+        </div>
+      </div>
+      <div class="checklist-grid">
+        <article>
+          <h3>導入の確認</h3>
+          <label><input type="checkbox"> （MATLAB で使う）テストが「成功 29 件、失敗 0 件」になった</label>
+          <label><input type="checkbox"> （exe）exe が起動し、サンプルデータを読み込めた</label>
+          <label><input type="checkbox"> サンプルデータで評価が最後まで終わり、結果一覧に表が出た</label>
+          <label><input type="checkbox"> 結果を Excel に書き出し、開いて中身を確かめられた</label>
+        </article>
+        <article>
+          <h3>実データでの確認</h3>
+          <label><input type="checkbox"> 列の対応がすべて正しく、読み込み結果の枚数・Shot 数が想定どおり</label>
+          <label><input type="checkbox"> 除いた点（未測定・半径 150 mm 以上）の数が想定どおり</label>
+          <label><input type="checkbox"> 実データと結果ファイルを社外に出していない</label>
+          <label><input type="checkbox"> 使った設定を「設定を保存…」で残した</label>
+        </article>
+      </div>
+    </section>
+
+    <section id="troubleshooting" class="content-section">
+      <div class="section-heading">
+        <span class="section-number">11</span>
+        <div>
+          <p class="section-kicker">Troubleshooting</p>
+          <h2>困ったとき</h2>
+        </div>
+      </div>
+      <div class="faq-list">
+        <details>
+          <summary>「MATLAB Compiler が使えません」と出る</summary>
+          <div><p>
+            その PC の MATLAB に MATLAB Compiler のライセンスまたはインストールがありません。<code>ver</code> と入力して一覧に「MATLAB Compiler」があるか確かめ、
+            無ければ MATLAB の管理者に相談してください。exe を作らなくても、5章のとおり MATLAB の中では使えます。
+          </p></div>
+        </details>
+        <details>
+          <summary>exe が起動しない、またはすぐ閉じる</summary>
+          <div><p>
+            MATLAB Runtime が入っていないか、版が違う可能性があります。exe を作った MATLAB と同じ版の Runtime が入っているか確かめてください。
+            インストーラーで入れ直すのが確実です。
+          </p></div>
+        </details>
+        <details>
+          <summary>「ファイルを読み込めませんでした」と出る</summary>
+          <div><p>
+            ファイルを Excel で開いたままにしていないか、1行目が項目名になっているかを確かめてください。
+            読めるのは .xlsx・.xlsm・.xls・.csv です。
+          </p></div>
+        </details>
+        <details>
+          <summary>「必須の項目が対応づけられていません」と出る</summary>
+          <div><p>「列の対応」の表で、メッセージに書かれた項目の「ファイルの列」を選んでから、もう一度「この対応で読み込む」を押してください。</p></div>
+        </details>
+        <details>
+          <summary>「Direction（Scan方向）は 1 か 2 にしてください」と出る</summary>
+          <div><p>
+            Direction の列に 1・2 以外の値があります。対応づけた列が正しいか確かめてください。Scan 方向を使わない場合は、Direction の対応を「（なし）」にします。
+          </p></div>
+        </details>
+        <details>
+          <summary>記録に「学習パターンを作れませんでした」「制約を満たす組が見つからず」と出る</summary>
+          <div><p>
+            学習 Shot 数が Wafer の Shot 数に対して多すぎるか、制約が厳しすぎます。学習 Shot 数を減らすか、
+            「許容幅」を大きくする、または「4象限」「Scan 方向」の制約を外してください。
+          </p></div>
+        </details>
+        <details>
+          <summary>計算に時間がかかりすぎる</summary>
+          <div><p>
+            「2. 評価の設定」の下の目安を見ながら、比べる手法（「推奨の組み合わせ」が目安）や学習 Shot 数を減らしてください。
+            「すべて選ぶ」（273 手法）は数時間かかることがあります。I 最適の「交換法の初期配置の数」を減らすと、学習パターンを作る時間が短くなります。
+          </p></div>
+        </details>
+        <details>
+          <summary>結果を Excel に書き出せない</summary>
+          <div><p>同じ名前のファイルを Excel で開いていると書き出せません。閉じてからもう一度書き出すか、別の名前で保存してください。</p></div>
+        </details>
+        <details>
+          <summary>CSV の Wafer ID が文字化けする</summary>
+          <div><p>CSV は UTF-8 で保存したものを読みます。Excel（.xlsx）のまま読み込むのが確実です。</p></div>
+        </details>
+        <details>
+          <summary>テストが失敗した</summary>
+          <div><p>失敗したテストの名前と、表示されたメッセージを控えて、ツールの管理者に連絡してください。</p></div>
+        </details>
+      </div>
+
+      <div class="callout info">
+        <div class="callout-icon" aria-hidden="true">i</div>
+        <div>
+          <h3>解決しない場合</h3>
+          <p>
+            ツールの管理者へ、発生日時・操作した画面・表示されたメッセージを連絡してください。
+            実データそのものは送らず、必要なら列名や行数だけを伝えてください。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="page-footer">
+      <p>アライメント計測値の面内推定 検証ツール Windows 手順書 · matlab_app/docs/windows_guide</p>
+      <p>更新日: 2026/10/17 · 版: 1.0</p>
+    </footer>
+  </main>
+
+  <button id="back-to-top" class="back-to-top" type="button" aria-label="ページ上部へ戻る">
+    <span aria-hidden="true">↑</span>
+    トップへ戻る
+  </button>
+</body>
+</html>

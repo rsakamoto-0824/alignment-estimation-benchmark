@@ -85,7 +85,9 @@ classdef AlignmentEstimationApp < handle
             app.Data = [];
             clearResults(app);
             c = app.Controls;
-            c.filePath.Text = app.FilePath;
+            % 長いパスは切れて読めないので、ファイル名だけを出し、フォルダはマウスを重ねたときに出す
+            [~, name, extension] = fileparts(app.FilePath);
+            c.filePath.Text = name + extension;
             c.filePath.Tooltip = char(app.FilePath);
             if all(sheets == "")
                 c.sheet.Items = {'（CSV にはシートがありません）'};
@@ -287,7 +289,7 @@ classdef AlignmentEstimationApp < handle
             place(previewLabel, 2, 1);
             c.previewWafer = uidropdown(resultGrid, 'Items', {'—'}, 'ValueChangedFcn', @(~, ~) app.drawPreview());
             place(c.previewWafer, 2, 2);
-            c.previewAxes = uiaxes(resultGrid);
+            c.previewAxes = uiaxes(resultGrid, 'Visible', 'off');  % 読み込むまでは空の枠を出さない
             place(c.previewAxes, 3, [1, 2]);
             app.Controls = mergeStruct(app.Controls, c);
         end
@@ -351,6 +353,7 @@ classdef AlignmentEstimationApp < handle
             ax = app.Controls.previewAxes;
             if isempty(app.Data)
                 cla(ax);
+                ax.Visible = 'off';
                 return
             end
             unit = app.Data.units(app.Controls.previewWafer.Value);
