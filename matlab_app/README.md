@@ -4,6 +4,7 @@
 Excel の計測データを読み込み、画面で比べ方を決めて実行し、結果の表・グラフ・Wafer ごとの図を画面で確認します。
 推定の計算は、模擬データで評価した Python 版（リポジトリの `src/`）を MATLAB に移したもので、同じ計算結果になることを照合しています（下の「動作確認」）。
 
+- **Windows での使い方・exe の作り方の手順書（HTML）**：[docs/windows_guide/windows_guide.html](docs/windows_guide/windows_guide.html)（ブラウザで開く。画像・CSS が同じフォルダにあるので、フォルダごと扱う）
 - 計算部分は **MATLAB 本体だけ** で動きます（Toolbox は不要。依存解析で確認）。
 - **スタンドアローン版（Windows の .exe）** は、MATLAB Compiler の入った PC で `build/buildStandaloneApp.m` を実行して作ります。
 
@@ -49,6 +50,7 @@ MATLAB Compiler の入った Windows PC で行います（Mac では Windows 用
    addpath build
    buildStandaloneApp                       % .exe だけ作る
    buildStandaloneApp(makeInstaller=true)   % インストーラーも作る（MATLAB Runtime をネットから入れる形）
+   buildStandaloneApp(makeInstaller=true, runtimeDelivery="installer")  % Runtime 入りのインストーラー（ネットに出られない PC 用）
    ```
 
 3. `build/output/win64/` に `AlignmentEstimationApp.exe` ができる。使う PC に同じ版の MATLAB Runtime を入れてから起動する
@@ -167,6 +169,7 @@ AlignmentEstimationApp.m      画面（5つのタブ）
   +optim/                     上下限つき最適化（Optimization Toolbox の代わり）
   +plot/                      Wafer の図
 build/buildStandaloneApp.m    スタンドアローン版を作る（MATLAB Compiler が必要）
+docs/windows_guide/           Windows 手順書（HTML。画面の画像つき）
 sample_data/                  サンプルデータ（模擬データ）と作り方
 tests/                        自動テストと Python 版の基準値
 ```

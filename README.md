@@ -5,7 +5,7 @@
 決定係数・自由度調整済み決定係数・RMSE・MAE で評価します。
 
 - 結果の説明資料（PowerPoint、30枚・ノートつき）：[docs/アライメント計測値の面内推定_手法比較_説明資料.pptx](docs/アライメント計測値の面内推定_手法比較_説明資料.pptx)（生成元は [docs/results-briefing_src/](docs/results-briefing_src/README.md)）
-- **実データ検証ツール（MATLAB アプリ、画面つき・スタンドアローン版を作れる）**：[matlab_app/](matlab_app/README.md)
+- **実データ検証ツール（MATLAB アプリ、画面つき・スタンドアローン版を作れる）**：[matlab_app/](matlab_app/README.md)（Windows 手順書：[matlab_app/docs/windows_guide/windows_guide.html](matlab_app/docs/windows_guide/windows_guide.html)）
 - 設計メモ（指定と、確認して決めたこと・仮定）：[design.md](design.md)
 - 課題・確認事項：[issues.md](issues.md)
 
