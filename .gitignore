@@ -54,3 +54,16 @@ results_mixed/tables/per_wafer_metrics.csv.gz
 results_mixed/chunks/
 results_mixed/samples/
 results_mixed/run_status.txt
+
+# MATLAB アプリ：実データ・社内データを入れない（サンプルの模擬データだけ登録する）
+matlab_app/**/*.xlsx
+matlab_app/**/*.xls
+matlab_app/**/*.xlsm
+matlab_app/**/*.csv
+!matlab_app/sample_data/sample_alignment.xlsx
+!matlab_app/sample_data/sample_alignment.csv
+# スタンドアローン版の出力（build/buildStandaloneApp.m で作り直せる）
+matlab_app/build/output/
+# MATLAB の自動保存・一時ファイル
+*.asv
+*.m~

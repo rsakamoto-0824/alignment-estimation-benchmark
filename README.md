@@ -5,6 +5,7 @@
 決定係数・自由度調整済み決定係数・RMSE・MAE で評価します。
 
 - 結果の説明資料（PowerPoint、30枚・ノートつき）：[docs/アライメント計測値の面内推定_手法比較_説明資料.pptx](docs/アライメント計測値の面内推定_手法比較_説明資料.pptx)（生成元は [docs/results-briefing_src/](docs/results-briefing_src/README.md)）
+- **実データ検証ツール（MATLAB アプリ、画面つき・スタンドアローン版を作れる）**：[matlab_app/](matlab_app/README.md)
 - 設計メモ（指定と、確認して決めたこと・仮定）：[design.md](design.md)
 - 課題・確認事項：[issues.md](issues.md)
 
@@ -62,6 +63,15 @@
 - 使い分け（15 Shot 以下：加法カーネル、20 Shot 以上：混合または同時推定）なら最良との差は 1.3% 以内。1つに決めるなら加法カーネル（最大の損 5.4%）。
 - 交互作用の項は、不要なとき同時推定では +4.5〜11.5% の損、変量効果では約 +1%。交互作用のあるデータ（σ = 1 nm）では 20 Shot 以上で混合＋交互作用が最良。
 - τ → ∞ で加法カーネルが同時推定と一致することをテストで確認（tests/test_gpr_additive.py）。
+
+### 実データ検証ツール（MATLAB アプリ、2026-10-17）
+
+模擬データでの比較を実データで確かめるための画面つきアプリです（[matlab_app/README.md](matlab_app/README.md)）。
+Excel のアライメント計測データ（Overlay 計測ルールの標準の項目）を読み込み、学習 Shot の選び方・Shot 数・比べる手法を画面で選んで実行し、
+結果の表・グラフ・Wafer ごとの図を画面で確認し、Excel に書き出します。実データには真の値が無いので、学習しなかった Shot の計測値と比べます。
+
+- 計算は Python 版（`src/`）を MATLAB 本体だけで動くように移したもの（Toolbox 不要）。Python 版と同じ計算結果になることを29件の自動テストで確認。
+- Windows の .exe は MATLAB Compiler の入った PC で `matlab_app/build/buildStandaloneApp.m` を実行して作る（この Mac には MATLAB Compiler が無く、.exe は未確認）。
 
 ## 必要な環境
 
@@ -134,6 +144,7 @@ src/plotting.py            図
 src/backfit_order_study.py 補足検証（Backfitting の始め方）
 src/additive_study.py      追加検証（加法カーネル・混合・交互作用）の集計と図
 docs/deck_common/          2つの説明資料で共有する部品（スライドの部品・数式画像・後処理）
+matlab_app/                実データ検証ツール（MATLAB アプリ、画面・計算・テスト・スタンドアローン版の作成）
 results/tables/            要約表（per_wafer_metrics.csv.gz は大きいので Git に入れない）
 results/figures/           図
 ```
