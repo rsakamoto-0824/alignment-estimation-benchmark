@@ -6,6 +6,8 @@ settings.version = 1;
 settings.data.waferRadiusMm = 150;      % 座標を割って単位をそろえる値（説明変数・基底関数）
 settings.data.validRadiusMm = 150;      % この半径以上の点は除く
 settings.data.coordinateUnits = alignest.coordinateUnits();
+settings.data.excludeZeroMeasurements = false; % measX・measY がともに0の入力行を除く
+settings.data.excludeUnmeasuredRecords = false; % StsX・StsY のどちらかが−1の入力行を除く
 settings.factors.shotRowParity = false; % Shot 配列の行（上から1行目）の奇数・偶数を追加する
 
 % 学習に使う Shot の選び方

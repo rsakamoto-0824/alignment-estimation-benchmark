@@ -12,6 +12,8 @@ arguments
     mapping struct
     options.validRadiusMm (1, 1) double = 150
     options.coordinateUnits (1, 1) struct = struct()
+    options.excludeZeroMeasurements (1, 1) logical = false
+    options.excludeUnmeasuredRecords (1, 1) logical = false
 end
 RADIUS_TOLERANCE_MM = 1e-3;
 COORDINATE_DIGITS = 4;  % 重複・Shot の判定で座標を丸める桁（0.1 µm）
@@ -57,6 +59,10 @@ statusX = defaultNumeric(column("StsX"), nRows, 0);
 statusY = defaultNumeric(column("StsY"), nRows, 0);
 validX = statusX == 0 & ~isnan(measX);
 validY = statusY == 0 & ~isnan(measY);
+% 元の入力行で判定する。重複の平均後にゼロになった値は除かない。
+zeroMeasurements = options.excludeZeroMeasurements & measX == 0 & measY == 0;
+unmeasuredRecords = options.excludeUnmeasuredRecords & (statusX == -1 | statusY == -1);
+excludedRecords = zeroMeasurements | unmeasuredRecords;
 
 summary.nRowsRead = nRows;
 noCoordinate = any(~isfinite([Xmm, Ymm, markXmm, markYmm]), 2) | wafer == "";
@@ -78,22 +84,34 @@ if summary.nOutsideRadius > 0
     messages(end + 1) = sprintf("半径 %g mm 以上の %d 行を除きました（有効な点は r < %g mm）。", ...
         options.validRadiusMm, summary.nOutsideRadius, options.validRadiusMm);
 end
+eligible = ~noCoordinate & ~outside;
+summary.nZeroMeasurementsExcluded = nnz(zeroMeasurements & eligible);
+summary.nUnmeasuredRecordsExcluded = nnz(unmeasuredRecords & eligible);
+summary.nRecordsExcluded = nnz(excludedRecords & eligible);
+if options.excludeZeroMeasurements || options.excludeUnmeasuredRecords
+    messages(end + 1) = sprintf(['入力行の選択除外（座標・半径による除外後、重複を平均する前）：' ...
+        '測定値X・Yがともに0 %d 行、StsXまたはStsYが−1 %d 行。重なりを除く合計 %d 行を除きました。'], ...
+        summary.nZeroMeasurementsExcluded, summary.nUnmeasuredRecordsExcluded, summary.nRecordsExcluded);
+end
+if options.excludeUnmeasuredRecords && (~isMapped(mapping, "StsX") || ~isMapped(mapping, "StsY"))
+    messages(end + 1) = "未測定行の選択除外：対応づけられていない Sts 列は判定できません。対応づけられた列だけで判定しました。";
+end
+keep = eligible & ~excludedRecords;
 if hasDirection
-    badDirection = ~isnan(direction) & ~ismember(direction, [1, 2]);
+    badDirection = ~isnan(direction) & ~ismember(direction, [1, 2]) & ~excludedRecords;
     if any(badDirection)
         error('alignest:direction', ['Direction（Scan方向）は 1 か 2 にしてください。', ...
             'ほかの値が %d 行あります（例：%g）。列の対応が正しいか確かめてください。'], ...
             nnz(badDirection), direction(find(badDirection, 1)));
     end
-    if any(isnan(direction) & ~noCoordinate & ~outside)
+    if any(isnan(direction) & keep)
         messages(end + 1) = "Direction が空の行があります。その行を含む Wafer では Scan 方向を質的変数に使いません。";
     end
 end
-if hasMarkNo && any(isnan(markNo) & ~noCoordinate & ~outside)
+if hasMarkNo && any(isnan(markNo) & keep)
     error('alignest:markNo', 'markNo が空の行が %d 行あります。値を入れるか、markNo の対応を「（なし）」にしてください。', ...
-        nnz(isnan(markNo) & ~noCoordinate & ~outside));
+        nnz(isnan(markNo) & keep));
 end
-keep = ~noCoordinate & ~outside;
 summary.nInvalidX = nnz(~validX & keep);
 summary.nInvalidY = nnz(~validY & keep);
 if summary.nInvalidX + summary.nInvalidY > 0
@@ -110,7 +128,7 @@ end
 
 % 評価の単位：Wafer × DateTime
 unitKey = wafer + char(31) + dateTime;
-% 半径で上端の行が消えても、残った行の奇偶を付け直さない。
+% 半径・測定値・ステータスで上端の行が消えても、残った行の奇偶を付け直さない。
 shotRow = nan(nRows, 1);
 for key = unique(unitKey(~noCoordinate)).'
     rows = find(unitKey == key & ~noCoordinate);
@@ -123,7 +141,7 @@ unitKey(~keep) = missing;
 rowsKept = find(keep);
 nUnits = numel(unitKeys);
 if nUnits == 0
-    error('alignest:noData', '解析できる行がありません。座標の列と有効半径を確かめてください。');
+    error('alignest:noData', '解析できる行がありません。座標の列・有効半径・入力行の除外条件を確かめてください。');
 end
 waferOfUnit = strings(nUnits, 1);
 for u = 1:nUnits
@@ -213,12 +231,14 @@ summary.nShotsRange = [min(nShotsPerUnit), max(nShotsPerUnit)];
 summary.nMarksRange = [min(nMarksPerUnit), max(nMarksPerUnit)];
 summary.markLevels = unique(markNo(keep)).';
 summary.hasDirection = hasDirection;
-messages(end + 1) = "Shot 行は、Wafer・測定日時ごとに入力の Ymm を上から数えます（0.001 mm 刻み、半径除外前）。1=奇数行、2=偶数行。入力にない行は数えません。";
+messages(end + 1) = "Shot 行は、Wafer・測定日時ごとに入力の Ymm を上から数えます（0.001 mm 刻み、半径・入力行の除外前）。1=奇数行、2=偶数行。入力にない行は数えません。";
 summary.messages = messages;
 data.units = units;
 data.summary = summary;
 data.validRadiusMm = options.validRadiusMm;
 data.coordinateUnits = inputUnits;
+data.excludeZeroMeasurements = options.excludeZeroMeasurements;
+data.excludeUnmeasuredRecords = options.excludeUnmeasuredRecords;
 end
 
 function values = columnValues(raw, mapping, name)
