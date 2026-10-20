@@ -34,6 +34,7 @@ classdef AlignmentEstimationApp < handle
         FilePath = ""
         SheetName = ""
         Data = []
+        AppliedMapping = struct()
         Settings
         Results = []
         MapCache
@@ -98,8 +99,8 @@ classdef AlignmentEstimationApp < handle
                 c.sheet.Enable = 'on';
             end
             fillMappingTable(app, alignest.guessColumnMapping(raw.Properties.VariableNames));
-            c.mappingStatus.Text = sprintf(['%d 行・%d 列を読みました。列の対応を確かめ（違っていれば右端の列を選び直し）、' ...
-                '「この対応で読み込む」を押してください。'], height(raw), width(raw));
+            c.mappingStatus.Text = sprintf(['%d 行・%d 列を読みました。「ファイルの列」の対応を確かめ、' ...
+                '座標の入力単位を選び、「この対応で読み込む」を押してください。'], height(raw), width(raw));
             c.mappingStatus.FontColor = [0, 0, 0];
             c.applyMapping.Enable = 'on';
             c.summary.Value = {''};
@@ -112,9 +113,13 @@ classdef AlignmentEstimationApp < handle
                 error('alignest:noFile', '先に「ファイルを選ぶ…」で計測データを読み込んでください。');
             end
             mapping = currentMapping(app);
-            app.Data = alignest.prepareData(app.RawTable, mapping, validRadiusMm=app.Controls.validRadius.Value);
+            units = currentCoordinateUnits(app);
+            invalidatePreparedData(app);
+            app.Data = alignest.prepareData(app.RawTable, mapping, validRadiusMm=app.Controls.validRadius.Value, ...
+                coordinateUnits=units);
+            app.AppliedMapping = mapping;
             app.Settings.data.validRadiusMm = app.Controls.validRadius.Value;
-            clearResults(app);
+            app.Settings.data.coordinateUnits = units;
             summary = app.Data.summary;
             lines = [sprintf("Wafer（評価の単位）：%d 枚", summary.nUnits); ...
                 sprintf("Shot 数：%d〜%d／Wafer、Mark 数：%d〜%d／Wafer", summary.nShotsRange, summary.nMarksRange); ...
@@ -134,6 +139,17 @@ classdef AlignmentEstimationApp < handle
 
         function setSettings(app, settings)
             %SETSETTINGS 設定を画面に反映する（設定ファイルの読み込みと同じ）。
+            if ~isfield(settings.data, "coordinateUnits")
+                settings.data.coordinateUnits = alignest.coordinateUnits();
+            end
+            settings.data.coordinateUnits = alignest.coordinateUnits(settings.data.coordinateUnits);
+            if ~isfield(settings, "factors")
+                settings.factors.shotRowParity = false;
+            end
+            if ~isempty(app.Data) && (settings.data.validRadiusMm ~= app.Data.validRadiusMm || ...
+                    ~isequal(settings.data.coordinateUnits, app.Data.coordinateUnits))
+                invalidatePreparedData(app);
+            end
             app.Settings = settings;
             settingsToControls(app);
             refreshRunSummary(app);
@@ -143,6 +159,11 @@ classdef AlignmentEstimationApp < handle
             %RUNEVALUATIONNOW 評価を実行して結果の画面を更新する。
             if nargin < 2
                 showProgress = true;
+            end
+            if ~isempty(app.Data) && (~isequal(currentMapping(app), app.AppliedMapping) || ...
+                    ~isequal(currentCoordinateUnits(app), app.Data.coordinateUnits) || ...
+                    app.Controls.validRadius.Value ~= app.Data.validRadiusMm)
+                invalidatePreparedData(app);
             end
             if isempty(app.Data)
                 error('alignest:noData', '先に「1. データの読み込み」でデータを読み込んでください。');
@@ -265,23 +286,24 @@ classdef AlignmentEstimationApp < handle
             c.sheet.Layout.Row = 3;
             c.sheet.Layout.Column = 3;
             c.validRadius = uieditfield(fileGrid, 'numeric', 'Value', app.Settings.data.validRadiusMm, 'Limits', [1, 1000], ...
-                'ValueDisplayFormat', '%.1f');
+                'ValueDisplayFormat', '%.1f', 'ValueChangedFcn', @(~, ~) app.invalidatePreparedData());
             c.validRadius.Layout.Row = 3;
             c.validRadius.Layout.Column = 4;
 
-            lower = uigridlayout(grid, [1, 2], 'ColumnWidth', {'1x', '1.15x'}, 'Padding', 0, 'ColumnSpacing', 12);
+            lower = uigridlayout(grid, [1, 2], 'ColumnWidth', {'1.3x', '1x'}, 'Padding', 0, 'ColumnSpacing', 12);
             mappingPanel = uipanel(lower, 'Title', '列の対応（標準の項目 ← ファイルの列）');
             mappingGrid = uigridlayout(mappingPanel, [3, 1], 'RowHeight', {'1x', 'fit', 'fit'}, 'Padding', 10);
-            c.mapping = uitable(mappingGrid, 'ColumnName', {'標準の項目', '意味', '必須', 'ファイルの列'}, ...
-                'ColumnEditable', [false, false, false, true], 'RowName', {}, ...
-                'ColumnWidth', {130, 'auto', 60, 170});
+            c.mapping = uitable(mappingGrid, 'ColumnName', {'標準の項目', '意味（変換後）', '必須', 'ファイルの列', '座標の入力単位'}, ...
+                'ColumnEditable', [false, false, false, true, true], 'RowName', {}, ...
+                'ColumnWidth', {100, 300, 50, 130, 110}, ...
+                'CellEditCallback', @(~, event) app.onMappingEdited(event));
             c.mappingStatus = uilabel(mappingGrid, 'WordWrap', 'on', ...
                 'Text', '「ファイルを選ぶ…」で計測データを読み込んでください。');
             c.applyMapping = primaryButton(app, mappingGrid, 'この対応で読み込む', @(~, ~) app.onApplyMapping());
             c.applyMapping.Enable = 'off';
 
             resultPanel = uipanel(lower, 'Title', '読み込み結果');
-            resultGrid = uigridlayout(resultPanel, [3, 2], 'RowHeight', {130, 'fit', '1x'}, ...
+            resultGrid = uigridlayout(resultPanel, [3, 2], 'RowHeight', {130, 32, '1x'}, ...
                 'ColumnWidth', {'fit', '1x'}, 'Padding', 10);
             c.summary = uitextarea(resultGrid, 'Editable', 'off', 'Value', {''});
             place(c.summary, 1, [1, 2]);
@@ -312,7 +334,7 @@ classdef AlignmentEstimationApp < handle
 
         function onApplyMapping(app)
             ok = runWithAlert(app, @() app.applyMapping(), "データを整理できませんでした", ...
-                "列の対応（右端の列）を選び直してから、もう一度「この対応で読み込む」を押してください。");
+                "「ファイルの列」と「座標の入力単位」を選び直してから、もう一度「この対応で読み込む」を押してください。");
             if ~ok
                 app.Controls.mappingStatus.Text = "⚠ 読み込めませんでした。列の対応を確かめてください。";
                 app.Controls.mappingStatus.FontColor = app.ERROR_COLOR;
@@ -322,7 +344,7 @@ classdef AlignmentEstimationApp < handle
         function fillMappingTable(app, mapping)
             columns = alignest.standardColumns();
             options = [app.NONE_LABEL, string(app.RawTable.Properties.VariableNames)];
-            data = cell(numel(columns), 4);
+            data = cell(numel(columns), 5);
             for k = 1:numel(columns)
                 data{k, 1} = columns(k).name;
                 data{k, 2} = columns(k).meaning;
@@ -332,9 +354,51 @@ classdef AlignmentEstimationApp < handle
                     value = app.NONE_LABEL;
                 end
                 data{k, 4} = char(value);
+                data{k, 5} = '—';
+                if isfield(app.Settings.data.coordinateUnits, columns(k).name)
+                    data{k, 5} = char(app.Settings.data.coordinateUnits.(columns(k).name));
+                end
             end
             app.Controls.mapping.Data = data;
-            app.Controls.mapping.ColumnFormat = {'char', 'char', 'char', cellstr(options)};
+            app.Controls.mapping.ColumnFormat = {'char', 'char', 'char', cellstr(options), {'—', 'm', 'mm', 'um', 'nm'}};
+        end
+
+        function units = currentCoordinateUnits(app)
+            units = app.Settings.data.coordinateUnits;
+            values = app.Controls.mapping.Data;
+            for k = 1:size(values, 1)
+                name = values{k, 1};
+                if isfield(units, name)
+                    units.(name) = string(values{k, 5});
+                end
+            end
+            units = alignest.coordinateUnits(units);
+        end
+
+        function onMappingEdited(app, event)
+            row = event.Indices(1);
+            if event.Indices(2) == 5
+                name = app.Controls.mapping.Data{row, 1};
+                if ~isfield(app.Settings.data.coordinateUnits, name)
+                    app.Controls.mapping.Data{row, 5} = '—';
+                elseif string(event.NewData) == "—"
+                    app.Controls.mapping.Data{row, 5} = event.PreviousData;
+                end
+            end
+            app.Settings.data.coordinateUnits = currentCoordinateUnits(app);
+            invalidatePreparedData(app);
+        end
+
+        function invalidatePreparedData(app)
+            app.Data = [];
+            clearResults(app);
+            app.Controls.summary.Value = {''};
+            cla(app.Controls.previewAxes);
+            app.Controls.previewAxes.Visible = 'off';
+            if ~isempty(app.RawTable)
+                app.Controls.mappingStatus.Text = "列の対応・座標の入力単位・有効半径を確認し、「この対応で読み込む」を押してください。";
+            end
+            refreshRunSummary(app);
         end
 
         function mapping = currentMapping(app)
@@ -424,7 +488,7 @@ classdef AlignmentEstimationApp < handle
             place(c.removeLinear, 24, [1, 2]);
 
             methodPanel = uipanel(grid, 'Title', '比べる手法');
-            m = uigridlayout(methodPanel, [14, 4], 'RowHeight', repmat({'fit'}, 1, 14), 'ColumnWidth', {'1x', '1x', '1x', '1x'}, ...
+            m = uigridlayout(methodPanel, [15, 4], 'RowHeight', repmat({'fit'}, 1, 15), 'ColumnWidth', {'1x', '1x', '1x', '1x'}, ...
                 'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
             presetGrid = uigridlayout(m, [1, 3], 'Padding', 0, 'ColumnWidth', {'fit', 'fit', 'fit'});
             place(presetGrid, 1, [1, 4]);
@@ -438,47 +502,51 @@ classdef AlignmentEstimationApp < handle
             place(c.featureXYR, 3, 2);
             c.featureXYRT = uicheckbox(m, 'Text', 'X, Y, 半径, T', 'ValueChangedFcn', onChange);
             place(c.featureXYRT, 3, 3);
+            c.shotRowParity = uicheckbox(m, 'Text', 'Shot 行の奇数・偶数を質的変数に追加（GPR・GAM）', ...
+                'Tooltip', '各 Wafer・測定日時で、入力の Shot 中心 Y 座標を上から1行目として数えます。半径除外前に判定。入力にない行は数えません。', ...
+                'ValueChangedFcn', onChange);
+            place(c.shotRowParity, 4, [1, 4]);
             c.gpr = uicheckbox(m, 'Text', 'GPR（ガウス過程回帰）', 'ValueChangedFcn', onChange);
-            place(c.gpr, 4, [1, 4]);
-            label(m, 'カーネル（Ctrl・Shift で複数選ぶ）', 5, [1, 2]);
-            label(m, '質的変数（Scan 方向・Mark 番号）の扱い', 5, [3, 4]);
+            place(c.gpr, 5, [1, 4]);
+            label(m, 'カーネル（Ctrl・Shift で複数選ぶ）', 6, [1, 2]);
+            label(m, '質的変数の扱い（Scan・Mark・任意の行奇偶）', 6, [3, 4]);
             c.kernels = uilistbox(m, 'Items', cellstr(alignest.models.gprKernelNames()), 'Multiselect', 'on', ...
                 'ValueChangedFcn', onChange);
-            place(c.kernels, 6, [1, 2]);
+            place(c.kernels, 7, [1, 2]);
             [modeNames, modeLabels] = alignest.models.gprFactorModes();
             modeGrid = uigridlayout(m, [numel(modeNames), 1], 'Padding', 0, 'RowSpacing', 2, ...
                 'RowHeight', repmat({'fit'}, 1, numel(modeNames)));
-            place(modeGrid, 6, [3, 4]);
+            place(modeGrid, 7, [3, 4]);
             c.factorModes = gobjects(1, numel(modeNames));
             for k = 1:numel(modeNames)
                 c.factorModes(k) = uicheckbox(modeGrid, 'Text', modeLabels(k), 'UserData', modeNames(k), ...
                     'ValueChangedFcn', onChange);
             end
-            m.RowHeight{6} = 300;
+            m.RowHeight{7} = 300;
             c.tps = uicheckbox(m, 'Text', 'TPS（薄板スプライン）', 'ValueChangedFcn', onChange);
-            place(c.tps, 7, [1, 4]);
+            place(c.tps, 8, [1, 4]);
             c.ordinaryKriging = uicheckbox(m, 'Text', 'Kriging（通常）', 'ValueChangedFcn', onChange);
-            place(c.ordinaryKriging, 8, [1, 2]);
+            place(c.ordinaryKriging, 9, [1, 2]);
             c.universalKriging = uicheckbox(m, 'Text', 'Universal Kriging', 'ValueChangedFcn', onChange);
-            place(c.universalKriging, 8, [3, 4]);
-            label(m, 'バリオグラム', 9, [1, 4]);
+            place(c.universalKriging, 9, [3, 4]);
+            label(m, 'バリオグラム', 10, [1, 4]);
             variograms = ["linear", "gaussian", "power", "exponential"];
             c.variograms = gobjects(1, numel(variograms));
             for k = 1:numel(variograms)
                 c.variograms(k) = uicheckbox(m, 'Text', variograms(k), 'UserData', variograms(k), 'ValueChangedFcn', onChange);
-                place(c.variograms(k), 10, k);
+                place(c.variograms(k), 11, k);
             end
             c.gam = uicheckbox(m, 'Text', 'GAM（一般化加法モデル。Scan 方向・Mark 番号を含む）', 'ValueChangedFcn', onChange);
-            place(c.gam, 11, [1, 4]);
+            place(c.gam, 12, [1, 4]);
             c.polynomial = uicheckbox(m, 'Text', 'XY 多項式　次数：', 'ValueChangedFcn', onChange);
-            place(c.polynomial, 12, 1);
+            place(c.polynomial, 13, 1);
             c.polynomialOrder = uispinner(m, 'Limits', [1, 8], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
-            place(c.polynomialOrder, 12, 2);
+            place(c.polynomialOrder, 13, 2);
             c.rt = uicheckbox(m, 'Text', 'RT モデル　次数 K：', 'ValueChangedFcn', onChange);
-            place(c.rt, 13, 1);
+            place(c.rt, 14, 1);
             c.rtOrders = uieditfield(m, 'text', 'ValueChangedFcn', onChange);
-            place(c.rtOrders, 13, 2);
-            c.rtError = errorLabel(app, m, 14, [1, 4]);
+            place(c.rtOrders, 14, 2);
+            c.rtError = errorLabel(app, m, 15, [1, 4]);
 
             footer = uigridlayout(grid, [1, 4], 'ColumnWidth', {'fit', 'fit', 'fit', '1x'}, 'Padding', 0);
             place(footer, 2, [1, 2]);
@@ -493,6 +561,14 @@ classdef AlignmentEstimationApp < handle
             c = app.Controls;
             s = app.Settings;
             c.validRadius.Value = s.data.validRadiusMm;
+            values = c.mapping.Data;
+            for k = 1:size(values, 1)
+                if isfield(s.data.coordinateUnits, values{k, 1})
+                    values{k, 5} = char(s.data.coordinateUnits.(values{k, 1}));
+                end
+            end
+            c.mapping.Data = values;
+            c.shotRowParity.Value = s.factors.shotRowParity;
             c.samplingMethod.Value = char(s.sampling.method);
             c.nShots.Value = char(strjoin(string(s.sampling.nShots), " "));
             c.randomRepeats.Value = s.sampling.randomRepeats;
@@ -535,6 +611,8 @@ classdef AlignmentEstimationApp < handle
             c = app.Controls;
             s = app.Settings;
             s.data.validRadiusMm = c.validRadius.Value;
+            s.data.coordinateUnits = currentCoordinateUnits(app);
+            s.factors.shotRowParity = c.shotRowParity.Value;
             s.sampling.method = string(c.samplingMethod.Value);
             [values, ok] = parseNumbers(c.nShots.Value);
             if ok && ~isempty(values) && all(values >= 1 & values == round(values))
@@ -635,6 +713,7 @@ classdef AlignmentEstimationApp < handle
         end
 
         function onPreset(app, selection)
+            controlsToSettings(app);
             app.Settings.methods = alignest.recommendedMethods(selection);
             settingsToControls(app);
             refreshRunSummary(app);

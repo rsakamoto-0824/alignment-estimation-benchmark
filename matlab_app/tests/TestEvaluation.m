@@ -15,6 +15,59 @@ classdef TestEvaluation < matlab.unittest.TestCase
     end
 
     methods (Test)
+        function rowParityRunsInEveryFactorModeAndGam(testCase)
+            settings = alignest.defaultSettings();
+            settings.factors.shotRowParity = true;
+            settings.methods = alignest.recommendedMethods("none");
+            settings.methods.gpr.enabled = true;
+            settings.methods.gpr.factorModes = alignest.models.gprFactorModes();
+            settings.methods.gam.enabled = true;
+            unit = testCase.Data.units(1);
+            unit.hasDirection = false;
+            shots = 1:3:numel(unit.shots.shotNo);
+            for method = alignest.buildMethodList(settings.methods)
+                out = alignest.estimateWafer(unit, shots, method, settings);
+                testCase.verifyTrue(all(isfinite([out.estimate.X; out.estimate.Y])), method.id);
+                if startsWith(method.factorMode, "additive")
+                    testCase.verifyTrue(isfield(out.extra, "tau_row_X"));
+                end
+            end
+            % Scan と行の奇偶が同じでも固定効果・Backfitting・GAMを推定できる
+            unit.hasDirection = true;
+            unit.marks.direction = unit.marks.shotRowParity;
+            settings.methods.gpr.factorModes = ["basis_int", "backfit"];
+            for method = alignest.buildMethodList(settings.methods)
+                out = alignest.estimateWafer(unit, shots, method, settings);
+                testCase.verifyTrue(all(isfinite([out.estimate.X; out.estimate.Y])), method.id);
+            end
+        end
+
+        function parityEffectChangesPredictionAndNoneIgnoresIt(testCase)
+            settings = alignest.defaultSettings();
+            settings.methods = alignest.recommendedMethods("none");
+            settings.methods.gpr.enabled = true;
+            settings.methods.gpr.factorModes = ["none", "basis"];
+            settings.methods.gam.enabled = true;
+            unit = testCase.Data.units(1);
+            unit.hasDirection = false;
+            unit.marks.measX = 20 * (unit.marks.shotRowParity == 1);
+            unit.marks.measY = -unit.marks.measX;
+            shots = 1:3:numel(unit.shots.shotNo);
+            for method = alignest.buildMethodList(settings.methods)
+                settings.factors.shotRowParity = false;
+                without = alignest.estimateWafer(unit, shots, method, settings);
+                settings.factors.shotRowParity = true;
+                with = alignest.estimateWafer(unit, shots, method, settings);
+                if method.factorMode == "none" && method.family == "GPR"
+                    testCase.verifyEqual(with.estimate.X, without.estimate.X, 'AbsTol', 1e-10);
+                else
+                    actual = unit.marks.measX(with.testIndex.X);
+                    testCase.verifyLessThan(sqrt(mean((with.estimate.X - actual).^2)), 1e-3);
+                    testCase.verifyGreaterThan(norm(with.estimate.X - without.estimate.X), 1);
+                end
+            end
+        end
+
         function planSpecsFollowTheMethod(testCase)
             sampling = alignest.defaultSettings().sampling;
             sampling.nShots = [20, 10];
@@ -153,9 +206,17 @@ classdef TestEvaluation < matlab.unittest.TestCase
             cleanup2 = onCleanup(@() deleteIfExists(settingsFile));
             settings.sampling.manualPlans = ["1 2 3"; "4 5 6"];
             settings.methods.featureSets = ["XY", "XYR"];
+            settings.data.coordinateUnits.Xmm = "um";
+            settings.factors.shotRowParity = true;
             alignest.saveSettings(settings, settingsFile);
             loaded = alignest.loadSettings(settingsFile);
             testCase.verifyEqual(loaded, settings);
+            legacy = rmfield(settings, "factors");
+            legacy.data = rmfield(legacy.data, "coordinateUnits");
+            alignest.saveSettings(legacy, settingsFile);
+            loaded = alignest.loadSettings(settingsFile);
+            testCase.verifyEqual(loaded.data.coordinateUnits, alignest.coordinateUnits());
+            testCase.verifyFalse(loaded.factors.shotRowParity);
         end
     end
 end

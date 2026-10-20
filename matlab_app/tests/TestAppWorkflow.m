@@ -16,6 +16,35 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
     end
 
     methods (Test)
+        function inputUnitsAndParityPersistAndRequireReimport(testCase)
+            app = testCase.App;
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
+            app.applyMapping();
+            settings = app.Settings;
+            settings.data.coordinateUnits.markXmm = "um";
+            settings.factors.shotRowParity = true;
+            app.setSettings(settings);
+            testCase.verifyEmpty(app.Data);
+            testCase.verifyTrue(app.Controls.shotRowParity.Value);
+            row = find(string(app.Controls.mapping.Data(:, 1)) == "markXmm");
+            testCase.verifyEqual(string(app.Controls.mapping.Data{row, 5}), "um");
+            app.applyMapping();
+            testCase.verifyEqual(app.Data.coordinateUnits.markXmm, "um");
+            testCase.verifyEqual(max(abs(app.Data.units(1).marks.markXmm)), ...
+                max(abs(app.RawTable.markXmm)) / 1000, 'AbsTol', 1e-12);
+            % コールバックを通さない変更でも、古い解析データで実行しない
+            app.Controls.mapping.Data{row, 5} = 'nm';
+            testCase.verifyError(@() app.runEvaluationNow(false), 'alignest:noData');
+            testCase.verifyEmpty(app.Data);
+            event = struct("Indices", [row, 5], "NewData", 'nm', "PreviousData", 'um');
+            app.Controls.mapping.CellEditCallback([], event);
+            testCase.verifyEqual(app.Settings.data.coordinateUnits.markXmm, "nm");
+            app.applyMapping();
+            app.applyMapping(); % 元の入力から変換するため、二重に倍率を掛けない
+            testCase.verifyEqual(max(abs(app.Data.units(1).marks.markXmm)), ...
+                max(abs(app.RawTable.markXmm)) / 1e6, 'AbsTol', 1e-12);
+        end
+
         function fullWorkflow(testCase)
             app = testCase.App;
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.xlsx'));
