@@ -100,21 +100,35 @@ MATLAB Compiler の入った Windows PC で行います（Mac では Windows 用
 - **集計**：Wafer ごとの値（ランダムのくり返しは平均）を、Wafer 間で平均または中央値にする。
   基準の手法との比較は、同じ Wafer・同じ学習パターンどうしの差の平均・95% 区間・基準より良かった Wafer の割合。
 
-比べられる手法（前回の評価と同じ）
+比べられる手法
 
 | 系統 | 選べるもの |
 | --- | --- |
 | GPR | fitrgp と同じ10カーネル × 説明変数（X,Y／X,Y,半径／X,Y,半径,T）× 質的変数（Scan 方向・Mark 番号）の8通りの扱い（使わない・同時推定・Backfitting・同時推定＋交互作用・加法カーネル・加法カーネル＋交互作用・混合・混合＋交互作用） |
-| TPS | 平滑化つき薄板スプライン（λ は GCV） |
-| Kriging | 通常 Kriging・Universal Kriging × バリオグラム（linear・gaussian・power・exponential） |
+| TPS | 平滑化つき薄板スプライン（λ は GCV）× 質的変数なし／Backfitting |
+| RBF | ガウス型の動径基底関数＋1次多項式。広がりと平滑化は GCV で選択 |
+| Kriging | 通常 Kriging・Universal Kriging × バリオグラム（linear・gaussian・power・exponential）× 質的変数なし／Backfitting |
 | GAM | P-spline（λ は REML）＋ Scan 方向・Mark 番号 |
 | XY 多項式・RT モデル | 次数を指定 |
 
 前処理として「XY 1次（並進・倍率・回転・直交度）を学習点で除いてから推定する」も選べます（実データで1次成分が大きいとき用。初期設定は使わない）。
 
+### RBF と TPS・Kriging の Backfitting
+
+「2. 評価の設定」で **RBF（ガウス型・平滑化つき）** を選ぶと、RBF を手法比較に追加できます。説明変数は既存手法と同じ XY／XYR／XYRT です。RBF 自体には質的変数を追加しません。
+
+TPS・Kriging（通常）・Universal Kriging の右側では、それぞれ **質的変数なし／Backfitting／なし・Backfitting を比較** を選べます。両方を選ぶと、同じ学習 Shot でそれぞれの結果が出ます。
+
+- Backfitting は Scan 方向・Mark 番号と、チェックした場合は Shot 行奇偶を固定効果として扱う。質的変数の効果を除いた残差から空間成分を推定し、質的変数の効果を更新する。
+- TPS は平滑化を、Kriging はバリオグラムを残差から選び直す。学習点で平滑化を固定した内側の交互反復は収束値を直接計算し、外側を最大20回、変化が 0.001 nm 未満になるまで繰り返す。評価点の計測値は当てはめにも設定選択にも使わない。
+- 収束しなかった場合は「3. 実行」の記録と Excel の「説明」に通知し、最終反復の結果を残す。「Waferごと」の「最適化の収束」は false になる。有効自由度には質的変数と空間成分の両方を含める（最終パラメータ固定時の値）。
+- RBF の基底は `exp(-r² / (2ℓ²))`。Wafer 半径で正規化した説明変数の距離で、ℓ の初期候補は 0.05・0.1・0.2・0.4・0.8・1.6。平滑化と合わせて学習データの GCV（一般化交差検証）が最小の候補を使う。選択した値は Excel の「超パラメータ」に残る。
+- 詳細設定は JSON の `methods.options.rbfLengthScales`、`rbfLog10Lambda`（最小・最大・候補数）、`backfitMaxIterations`、`backfitToleranceNm` で指定する。RBF の候補や Backfitting の反復が増えると計算時間も増える。
+- 従来の設定と結果を再現できるよう、「推奨の組み合わせ」は従来の9手法を維持する。RBF と追加の Backfitting は個別に選ぶか「すべて選ぶ」で追加する。古い設定JSONでは RBF はオフ、TPS・Kriging の質的変数は「なし」になる。
+
 ### Shot 配列の行の奇数・偶数を使う
 
-「2. 評価の設定」の「比べる手法」にある **Shot 行の奇数・偶数を質的変数に追加（GPR・GAM）** を選びます。初期値はオフです。
+「2. 評価の設定」の「比べる手法」にある **Shot 行の奇数・偶数を質的変数に追加** を選びます。GPR・GAM と、Backfitting を選んだ TPS・Kriging に適用します。初期値はオフです。
 
 - 各 Wafer・測定日時について、Shot 中心の `Ymm` を大きい順（上から）に並べ、1行目を奇数行、2行目を偶数行として扱う。同じ Y 座標の Shot とその Mark は同じ分類になる。座標は変換後の mm を小数点以下3桁に丸めて判定する。
 - Excel の行番号や `shotNo` の奇偶ではない。半径で点を除く前の入力座標を使うため、有効半径を変えても分類は変わらない。ただし、入力に一切含まれない Shot 行は数えられない。欠落行を含む装置側の行番号を再現する機能ではない。
@@ -139,7 +153,7 @@ M1 Mac（MATLAB R2022b、Intel 版を Rosetta で実行）で、約150 Shot・60
 - 1回の推定（X・Y）：GPR・GAM 約0.08 秒、Kriging 0.03 秒、TPS 0.02 秒、XY 多項式・RT 0.01 秒
 - I 最適の計画：Shot 数1つあたり約5〜10 秒（同じ配置の Wafer では1回だけ）
 - 推奨の組み合わせ（9手法）× 7つの Shot 数 × 25枚：約2〜3分
-- 「すべて選ぶ」（273手法）× 7つの Shot 数 × 25枚：数時間（目安は画面の「2. 評価の設定」の下に出る）
+- 「すべて選ぶ」は追加機能込みで303手法。Backfitting の反復を含むため、所要時間は従来の273手法より長くなる（画面の目安では追加 Backfitting に反復上限を掛けている）。
 
 ## 動作確認
 
@@ -148,7 +162,7 @@ cd tests
 runAllTests
 ```
 
-37件（Python 版との照合 8件、読み込みと前処理 12件、評価・集計・書き出し・設定 11件、質的変数の設計 2件、画面の流れ 4件）。単位変換、Shot 行奇偶、GPR の全質的変数モードと GAM、設定保存、画面の再読み込みを含め、MATLAB R2022b で成功を確認（2026-10-20）。
+46件（Python 版との照合 8件、読み込みと前処理 12件、評価・集計・書き出し・設定 11件、質的変数の設計 2件、RBF・空間モデルの Backfitting 8件、画面の流れ 5件）。単位変換、Shot 行奇偶、既存手法との互換性、新手法の数値照合、評価点の計測値を学習に使わないこと、画面操作から Excel 出力までを含め、MATLAB R2022b で全件成功を確認（2026-10-21）。
 
 Python 版との照合（[tests/TestPythonReference.m](tests/TestPythonReference.m)）は、模擬データ3枚・10/20 Shot で行う。
 
@@ -177,7 +191,7 @@ Python 版との照合（[tests/TestPythonReference.m](tests/TestPythonReference
 runAlignmentEstimationApp.m   起動（スタンドアローン版の入口）
 AlignmentEstimationApp.m      画面（5つのタブ）
 +alignest/                    計算（読み込み・前処理・学習 Shot の選び方・推定・指標・集計・書き出し）
-  +models/                    GPR・TPS・Kriging・GAM・XY 多項式・RT モデル
+  +models/                    GPR・TPS・RBF・Kriging・GAM・XY 多項式・RT モデル
   +basis/                     説明変数・効果コード・多項式・Zernike・B スプライン
   +optim/                     上下限つき最適化（Optimization Toolbox の代わり）
   +plot/                      Wafer の図

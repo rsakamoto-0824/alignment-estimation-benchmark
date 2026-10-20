@@ -16,6 +16,44 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
     end
 
     methods (Test)
+        function spatialMethodsRunFromControlsAndExport(testCase)
+            app = testCase.App;
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
+            app.applyMapping();
+            settings = app.Settings;
+            settings.methods = alignest.recommendedMethods('none');
+            settings.sampling.method = "manual";
+            settings.sampling.manualPlans = "1 4 7 10 13 16 19 22 25 28 31 34 37 40 43";
+            settings.factors.shotRowParity = true;
+            app.setSettings(settings);
+            app.Controls.rbf.Value = true;
+            app.Controls.tps.Value = true;
+            app.Controls.ordinaryKriging.Value = true;
+            app.Controls.universalKriging.Value = true;
+            app.Controls.tpsFactors.Value = 'both';
+            app.Controls.ordinaryFactors.Value = 'backfit';
+            app.Controls.universalFactors.Value = 'backfit';
+            app.Controls.rbf.ValueChangedFcn([], []);
+            testCase.verifyEqual(app.Settings.methods.tps.factorModes, ["none", "backfit"]);
+            testCase.verifyEqual(string(app.Controls.universalFactors.Enable), "on");
+            result = app.runEvaluationNow(false);
+            testCase.verifyEqual(height(result.table), 25);
+            testCase.verifyTrue(all(result.table.note == ""));
+            testCase.verifyTrue(all(isfinite(result.table.RMSE_XY)));
+            rbfIndex = find(string({result.methods.family}) == "RBF");
+            app.showMap(1, result.plans(1).label, rbfIndex, "Y");
+            testCase.verifyTrue(contains(app.Controls.mapInfo.Text, "RBF"));
+            file = [tempname, '.xlsx'];
+            cleanup = onCleanup(@() delete(file));
+            app.exportResultsTo(file);
+            exported = readtable(file, 'Sheet', 'Waferごと', 'VariableNamingRule', 'preserve');
+            testCase.verifyTrue(any(contains(string(exported.("手法の識別子")), "RBF_gaussian")));
+            testCase.verifyTrue(any(contains(string(exported.("手法の識別子")), "UK_exponential_XYR_backfit")));
+            app.setSettings(result.settings);
+            testCase.verifyTrue(app.Controls.rbf.Value);
+            testCase.verifyEqual(string(app.Controls.tpsFactors.Value), "both");
+        end
+
         function inputUnitsAndParityPersistAndRequireReimport(testCase)
             app = testCase.App;
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));

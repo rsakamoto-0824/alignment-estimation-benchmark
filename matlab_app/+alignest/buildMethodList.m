@@ -1,9 +1,11 @@
 function methods = buildMethodList(config)
-%BUILDMETHODLIST 比べる手法の一覧（構造体配列）。並びは Python 版と同じ（説明変数の組ごとに GPR → TPS → Kriging → GAM、最後に XY・RT）。
+%BUILDMETHODLIST 手法一覧。説明変数の組ごとに GPR → TPS → RBF → Kriging → GAM、最後に XY・RT。
 %   id の書き方は Python 版と同じ：GPR_<カーネル>_<説明変数>_<質的変数の扱い>、TPS_<説明変数>、
 %   OK_<バリオグラム>_<説明変数>（通常 Kriging）、UK_<バリオグラム>_<説明変数>（Universal Kriging）、
 %   GAM_<説明変数>、XY<次数>、RT<次数>。
+%   RBF_gaussian_<説明変数> を追加。TPS・OK・UK の Backfitting は既存 id に _backfit を付ける。
 [modeNames, modeLabels] = alignest.models.gprFactorModes();
+config = alignest.completeMethodSettings(config);
 methods = struct("id", {}, "family", {}, "featureSet", {}, "variant", {}, "factorMode", {}, "label", {});
 for featureSet = string(config.featureSets(:)).'
     featureLabel = featureSetLabel(featureSet);
@@ -16,15 +18,24 @@ for featureSet = string(config.featureSets(:)).'
         end
     end
     if config.tps.enabled
-        methods(end + 1) = item("TPS_" + featureSet, "TPS", featureSet, "tps", "none", "TPS｜" + featureLabel); %#ok<AGROW>
+        for mode = spatialModes(config.tps.factorModes)
+            methods(end + 1) = spatialItem("TPS_" + featureSet, "TPS", featureSet, "tps", mode, "TPS｜" + featureLabel); %#ok<AGROW>
+        end
+    end
+    if config.rbf.enabled
+        methods(end + 1) = item("RBF_gaussian_" + featureSet, "RBF", featureSet, "gaussian", "none", ...
+            "RBF Gaussian｜" + featureLabel); %#ok<AGROW>
     end
     kinds = [config.kriging.ordinary, config.kriging.universal];
     families = ["OK", "UK"];
     names = ["Kriging", "Universal Kriging"];
+    factorModes = {config.kriging.ordinaryFactorModes, config.kriging.universalFactorModes};
     for k = find(kinds)
         for variogram = string(config.kriging.variograms(:)).'
-            methods(end + 1) = item(sprintf("%s_%s_%s", families(k), variogram, featureSet), families(k), featureSet, ...
-                variogram, "none", sprintf("%s %s｜%s", names(k), variogram, featureLabel)); %#ok<AGROW>
+            for mode = spatialModes(factorModes{k})
+                methods(end + 1) = spatialItem(sprintf("%s_%s_%s", families(k), variogram, featureSet), families(k), featureSet, ...
+                    variogram, mode, sprintf("%s %s｜%s", names(k), variogram, featureLabel)); %#ok<AGROW>
+            end
         end
     end
     if config.gam.enabled
@@ -42,6 +53,21 @@ if config.rt.enabled
             sprintf("RT モデル K=%d", order)); %#ok<AGROW>
     end
 end
+end
+
+function modes = spatialModes(value)
+modes = unique(string(value(:)).', 'stable');
+if isempty(modes) || any(~ismember(modes, ["none", "backfit"]))
+    error('alignest:spatialFactorMode', '質的変数の扱いは none・backfit のいずれか、または両方を選んでください。');
+end
+end
+
+function method = spatialItem(id, family, featureSet, variant, mode, label)
+if mode == "backfit"
+    id = string(id) + "_backfit";
+    label = string(label) + "｜Backfitting";
+end
+method = item(id, family, featureSet, variant, mode, label);
 end
 
 function method = item(id, family, featureSet, variant, factorMode, label)

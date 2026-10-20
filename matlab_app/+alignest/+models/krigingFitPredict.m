@@ -9,6 +9,7 @@ arguments
     model struct
     y (:, 1) double
     options.fixedParams double = []
+    options.returnSmoother (1, 1) logical = false
 end
 JITTER_RELATIVE = 1e-6;
 if model.krigingType == "universal"
@@ -45,4 +46,9 @@ smoother = gammaTrain * weights(1:model.n, :) + model.drift * weights(model.n + 
 result.edf = trace(smoother);
 result.params = params;
 result.nugget = params(end);
+if options.returnSmoother
+    % 学習点でも対角をゼロにせず、ナゲットを測定誤差として空間成分を平滑化する。
+    result.smoother = smoother;
+    result.predictionMatrix = [gammaTest, model.driftTest] * weights;
+end
 end
