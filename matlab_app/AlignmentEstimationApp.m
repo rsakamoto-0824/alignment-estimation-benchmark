@@ -117,10 +117,13 @@ classdef AlignmentEstimationApp < handle
             units = currentCoordinateUnits(app);
             invalidatePreparedData(app);
             app.Data = alignest.prepareData(app.RawTable, mapping, validRadiusMm=app.Controls.validRadius.Value, ...
-                coordinateUnits=units);
+                coordinateUnits=units, excludeZeroMeasurements=app.Controls.excludeZeroMeasurements.Value, ...
+                excludeUnmeasuredRecords=app.Controls.excludeUnmeasuredRecords.Value);
             app.AppliedMapping = mapping;
             app.Settings.data.validRadiusMm = app.Controls.validRadius.Value;
             app.Settings.data.coordinateUnits = units;
+            app.Settings.data.excludeZeroMeasurements = app.Data.excludeZeroMeasurements;
+            app.Settings.data.excludeUnmeasuredRecords = app.Data.excludeUnmeasuredRecords;
             summary = app.Data.summary;
             lines = [sprintf("Wafer（評価の単位）：%d 枚", summary.nUnits); ...
                 sprintf("Shot 数：%d〜%d／Wafer、Mark 数：%d〜%d／Wafer", summary.nShotsRange, summary.nMarksRange); ...
@@ -145,11 +148,18 @@ classdef AlignmentEstimationApp < handle
                 settings.data.coordinateUnits = alignest.coordinateUnits();
             end
             settings.data.coordinateUnits = alignest.coordinateUnits(settings.data.coordinateUnits);
+            for name = ["excludeZeroMeasurements", "excludeUnmeasuredRecords"]
+                if ~isfield(settings.data, name)
+                    settings.data.(name) = false;
+                end
+            end
             if ~isfield(settings, "factors")
                 settings.factors.shotRowParity = false;
             end
             if ~isempty(app.Data) && (settings.data.validRadiusMm ~= app.Data.validRadiusMm || ...
-                    ~isequal(settings.data.coordinateUnits, app.Data.coordinateUnits))
+                    ~isequal(settings.data.coordinateUnits, app.Data.coordinateUnits) || ...
+                    settings.data.excludeZeroMeasurements ~= app.Data.excludeZeroMeasurements || ...
+                    settings.data.excludeUnmeasuredRecords ~= app.Data.excludeUnmeasuredRecords)
                 invalidatePreparedData(app);
             end
             app.Settings = settings;
@@ -164,6 +174,8 @@ classdef AlignmentEstimationApp < handle
             end
             if ~isempty(app.Data) && (~isequal(currentMapping(app), app.AppliedMapping) || ...
                     ~isequal(currentCoordinateUnits(app), app.Data.coordinateUnits) || ...
+                    app.Controls.excludeZeroMeasurements.Value ~= app.Data.excludeZeroMeasurements || ...
+                    app.Controls.excludeUnmeasuredRecords.Value ~= app.Data.excludeUnmeasuredRecords || ...
                     app.Controls.validRadius.Value ~= app.Data.validRadiusMm)
                 invalidatePreparedData(app);
             end
@@ -268,8 +280,8 @@ classdef AlignmentEstimationApp < handle
         function buildDataTab(app)
             grid = uigridlayout(app.Tabs.data, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 12, 'RowSpacing', 12);
             filePanel = uipanel(grid, 'Title', '計測データのファイル');
-            fileGrid = uigridlayout(filePanel, [3, 4], 'ColumnWidth', {'fit', '1x', 260, 300}, ...
-                'RowHeight', {'fit', 'fit', 'fit'}, 'Padding', 10);
+            fileGrid = uigridlayout(filePanel, [4, 4], 'ColumnWidth', {'fit', '1x', 260, 300}, ...
+                'RowHeight', {'fit', 'fit', 'fit', 'fit'}, 'Padding', 10);
             help = uilabel(fileGrid, 'WordWrap', 'on', 'Text', ['Excel（.xlsx）または CSV。1行目に項目名、2行目からデータ。' ...
                 '項目名がアライメント計測テーブルの標準（Wafer, DateTime, shotNo, Direction, Xmm, Ymm, Radius, markNo, ' ...
                 'markXmm, markYmm, measX, measY, StsX, StsY）なら自動で対応づけます。']);
@@ -291,6 +303,14 @@ classdef AlignmentEstimationApp < handle
                 'ValueDisplayFormat', '%.1f', 'ValueChangedFcn', @(~, ~) app.invalidatePreparedData());
             c.validRadius.Layout.Row = 3;
             c.validRadius.Layout.Column = 4;
+            c.excludeZeroMeasurements = uicheckbox(fileGrid, 'Text', '測定値 X・Y が両方 0 の行を除外', ...
+                'Tooltip', 'measX = 0 かつ measY = 0 の入力行を、重複の平均前に除外します。', ...
+                'ValueChangedFcn', @(~, ~) app.onRecordFiltersChanged());
+            place(c.excludeZeroMeasurements, 4, [1, 2]);
+            c.excludeUnmeasuredRecords = uicheckbox(fileGrid, 'Text', 'StsX または StsY が −1 の行を除外', ...
+                'Tooltip', 'どちらかが−1なら行全体を除外します。オフの場合も、無効な軸の測定値は解析に使いません。', ...
+                'ValueChangedFcn', @(~, ~) app.onRecordFiltersChanged());
+            place(c.excludeUnmeasuredRecords, 4, [3, 4]);
 
             lower = uigridlayout(grid, [1, 2], 'ColumnWidth', {'1.3x', '1x'}, 'Padding', 0, 'ColumnSpacing', 12);
             mappingPanel = uipanel(lower, 'Title', '列の対応（標準の項目 ← ファイルの列）');
@@ -398,9 +418,15 @@ classdef AlignmentEstimationApp < handle
             cla(app.Controls.previewAxes);
             app.Controls.previewAxes.Visible = 'off';
             if ~isempty(app.RawTable)
-                app.Controls.mappingStatus.Text = "列の対応・座標の入力単位・有効半径を確認し、「この対応で読み込む」を押してください。";
+                app.Controls.mappingStatus.Text = "列の対応・座標の入力単位・有効半径・行の除外条件を確認し、「この対応で読み込む」を押してください。";
             end
             refreshRunSummary(app);
+        end
+
+        function onRecordFiltersChanged(app)
+            app.Settings.data.excludeZeroMeasurements = app.Controls.excludeZeroMeasurements.Value;
+            app.Settings.data.excludeUnmeasuredRecords = app.Controls.excludeUnmeasuredRecords.Value;
+            invalidatePreparedData(app);
         end
 
         function mapping = currentMapping(app)
@@ -571,6 +597,8 @@ classdef AlignmentEstimationApp < handle
             c = app.Controls;
             s = app.Settings;
             c.validRadius.Value = s.data.validRadiusMm;
+            c.excludeZeroMeasurements.Value = s.data.excludeZeroMeasurements;
+            c.excludeUnmeasuredRecords.Value = s.data.excludeUnmeasuredRecords;
             values = c.mapping.Data;
             for k = 1:size(values, 1)
                 if isfield(s.data.coordinateUnits, values{k, 1})
@@ -626,6 +654,8 @@ classdef AlignmentEstimationApp < handle
             s = app.Settings;
             s.data.validRadiusMm = c.validRadius.Value;
             s.data.coordinateUnits = currentCoordinateUnits(app);
+            s.data.excludeZeroMeasurements = c.excludeZeroMeasurements.Value;
+            s.data.excludeUnmeasuredRecords = c.excludeUnmeasuredRecords.Value;
             s.factors.shotRowParity = c.shotRowParity.Value;
             s.sampling.method = string(c.samplingMethod.Value);
             [values, ok] = parseNumbers(c.nShots.Value);

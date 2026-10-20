@@ -16,6 +16,71 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
     end
 
     methods (Test)
+        function recordFiltersPersistInvalidateAndExport(testCase)
+            app = testCase.App;
+            raw = alignest.readMeasurementFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
+            raw.StsX(:) = 0;
+            raw.StsY(:) = 0;
+            raw.measX(1) = 0;
+            raw.measY(1) = 0;
+            raw.StsX(2) = -1;
+            raw.StsY(3) = -1;
+            folder = tempname;
+            mkdir(folder);
+            cleanup = onCleanup(@() rmdir(folder, 's'));
+            file = fullfile(folder, 'input.csv');
+            writetable(raw, file);
+            app.loadFile(file);
+            app.applyMapping();
+            testCase.verifyEqual(app.Data.summary.nRecordsExcluded, 0);
+            app.Controls.excludeZeroMeasurements.Value = true;
+            app.Controls.excludeZeroMeasurements.ValueChangedFcn([], []);
+            testCase.verifyEmpty(app.Data);
+            testCase.verifyTrue(app.Settings.data.excludeZeroMeasurements);
+            app.applyMapping();
+            testCase.verifyEqual(app.Data.summary.nRecordsExcluded, 1);
+            app.Controls.excludeUnmeasuredRecords.Value = true;
+            % コールバックを経ない変更でも、以前のデータでは評価できない
+            testCase.verifyError(@() app.runEvaluationNow(false), 'alignest:noData');
+            app.applyMapping();
+            testCase.verifyEqual(app.Data.summary.nRecordsExcluded, 3);
+            testCase.verifyTrue(any(contains(string(app.Controls.summary.Value), "合計 3 行")));
+            settings = app.Settings;
+            settings.methods = alignest.recommendedMethods('none');
+            settings.methods.polynomial.enabled = true;
+            settings.methods.polynomial.order = 1;
+            settings.sampling.method = "manual";
+            settings.sampling.manualPlans = "1 4 7 10 13 16 19 22 25 28";
+            file = fullfile(folder, 'settings.json');
+            alignest.saveSettings(settings, file);
+            restored = alignest.loadSettings(file);
+            testCase.verifyEqual(restored, settings);
+            app.setSettings(restored);
+            testCase.verifyNotEmpty(app.Data);
+            result = app.runEvaluationNow(false);
+            testCase.verifyTrue(all(result.table.note == ""));
+            file = fullfile(folder, 'result.xlsx');
+            app.exportResultsTo(file);
+            explanation = readcell(file, 'Sheet', '説明');
+            testCase.verifyTrue(any(contains(string(explanation(:)), "合計 3 行")));
+            restored.data.excludeUnmeasuredRecords = false;
+            app.setSettings(restored);
+            testCase.verifyEmpty(app.Data);
+            testCase.verifyEmpty(app.Results);
+            testCase.verifyFalse(app.Controls.excludeUnmeasuredRecords.Value);
+            % 追加項目を持たない従来の設定も、除外なしとして読み込める
+            legacy = settings;
+            legacy.data = rmfield(legacy.data, {'excludeZeroMeasurements', 'excludeUnmeasuredRecords'});
+            app.setSettings(legacy);
+            testCase.verifyFalse(app.Controls.excludeZeroMeasurements.Value);
+            testCase.verifyFalse(app.Controls.excludeUnmeasuredRecords.Value);
+            file = fullfile(folder, 'legacy.json');
+            alignest.saveSettings(legacy, file);
+            loaded = alignest.loadSettings(file);
+            testCase.verifyFalse(loaded.data.excludeZeroMeasurements);
+            testCase.verifyFalse(loaded.data.excludeUnmeasuredRecords);
+        end
+
         function spatialMethodsRunFromControlsAndExport(testCase)
             app = testCase.App;
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));

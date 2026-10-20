@@ -8,6 +8,93 @@ classdef TestDataPreparation < matlab.unittest.TestCase
     end
 
     methods (Test)
+        function recordFiltersApplyIndependentlyAndCountOverlap(testCase)
+            raw = smallTable();
+            raw.measX(:) = 10;
+            raw.measY(:) = 20;
+            raw.StsX(:) = 0;
+            raw.measX([1, 2, 6]) = 0;
+            raw.measY([1, 3, 6]) = 0;
+            raw.StsX([4, 6]) = -1;
+            raw.StsY([5, 6]) = -1;
+            raw.StsX(7) = 2; % −1以外は行を残し、従来どおりその軸だけ無効
+            mapping = alignest.guessColumnMapping(raw.Properties.VariableNames);
+            for excludeZero = [false, true]
+                for excludeUnmeasured = [false, true]
+                    removed = (excludeZero & raw.measX == 0 & raw.measY == 0) | ...
+                        (excludeUnmeasured & (raw.StsX == -1 | raw.StsY == -1));
+                    data = alignest.prepareData(raw, mapping, excludeZeroMeasurements=excludeZero, ...
+                        excludeUnmeasuredRecords=excludeUnmeasured);
+                    expected = alignest.prepareData(raw(~removed, :), mapping);
+                    testCase.verifyEqual(data.units, expected.units);
+                    testCase.verifyEqual(data.summary.nRowsRead, height(raw));
+                    testCase.verifyEqual(data.summary.nRecordsExcluded, nnz(removed));
+                    testCase.verifyEqual(data.summary.nZeroMeasurementsExcluded, 2*double(excludeZero));
+                    testCase.verifyEqual(data.summary.nUnmeasuredRecordsExcluded, 3*double(excludeUnmeasured));
+                end
+            end
+        end
+
+        function recordFiltersPrecedeDuplicateMeans(testCase)
+            raw = smallTable();
+            extra = raw([1, 1], :);
+            extra.measX = [0; 1000];
+            extra.measY = [0; 1000];
+            extra.StsY = [0; -1];
+            mapping = alignest.guessColumnMapping(raw.Properties.VariableNames);
+            expected = alignest.prepareData(raw, mapping, excludeUnmeasuredRecords=true);
+            actual = alignest.prepareData([raw; extra], mapping, ...
+                excludeZeroMeasurements=true, excludeUnmeasuredRecords=true);
+            testCase.verifyEqual(actual.units, expected.units);
+            testCase.verifyEqual(actual.summary.nDuplicateRows, 0);
+            testCase.verifyEqual(actual.summary.nRecordsExcluded, 3);
+            % 元の値は非ゼロでも、平均した結果がX・Yとも0になる点は残す
+            raw.StsX(:) = 0;
+            opposite = raw(1, :);
+            opposite.measX = -opposite.measX;
+            opposite.measY = -opposite.measY;
+            actual = alignest.prepareData([raw; opposite], mapping, excludeZeroMeasurements=true);
+            testCase.verifyEqual(actual.summary.nRecordsExcluded, 0);
+            testCase.verifyEqual(actual.summary.nDuplicateRows, 1);
+            testCase.verifyTrue(any(actual.units(1).marks.measX == 0 & actual.units(1).marks.measY == 0));
+        end
+
+        function recordFiltersHandleMissingStatusAndTextColumns(testCase)
+            raw = removevars(smallTable(), 'StsY');
+            raw.StsX = string(raw.StsX);
+            raw.measX = string(raw.measX);
+            raw.measY = string(raw.measY);
+            raw.measX(1) = "0";
+            raw.measY(1) = "0";
+            mapping = alignest.guessColumnMapping(raw.Properties.VariableNames);
+            data = alignest.prepareData(raw, mapping, excludeZeroMeasurements=true, excludeUnmeasuredRecords=true);
+            testCase.verifyEqual(data.summary.nRecordsExcluded, 2);
+            testCase.verifyTrue(any(contains(data.summary.messages, "対応づけられていない Sts 列")));
+            raw = removevars(raw, 'StsX');
+            data = alignest.prepareData(raw, alignest.guessColumnMapping(raw.Properties.VariableNames), ...
+                excludeUnmeasuredRecords=true);
+            testCase.verifyEqual(data.summary.nRecordsExcluded, 0);
+            testCase.verifyEqual(numel(data.units(1).marks.x), height(raw));
+        end
+
+        function recordFiltersPreserveRowParityAndReportEmptyData(testCase)
+            raw = smallTable();
+            top = raw.Ymm == max(raw.Ymm);
+            raw.measX(top) = 0;
+            raw.measY(top) = 0;
+            raw.Direction(top) = 3;
+            raw.markNo(top) = NaN; % 除外した行の補助項目は解析を妨げない
+            mapping = alignest.guessColumnMapping(raw.Properties.VariableNames);
+            data = alignest.prepareData(raw, mapping, excludeZeroMeasurements=true);
+            testCase.verifyEqual(data.summary.nRecordsExcluded, nnz(top));
+            testCase.verifyEqual(data.units(1).shots.rowParity(data.units(1).shots.Ymm == 0), repmat(2, 3, 1));
+            raw.measX(:) = 0;
+            raw.measY(:) = 0;
+            testCase.verifyError(@() alignest.prepareData(raw, mapping, excludeZeroMeasurements=true), 'alignest:noData');
+            raw.StsY(:) = -1;
+            testCase.verifyError(@() alignest.prepareData(raw, mapping, excludeUnmeasuredRecords=true), 'alignest:noData');
+        end
+
         function coordinateConversionPrecedesAllFiltering(testCase)
             raw = smallTable();
             raw = [raw; raw(1, :)];
