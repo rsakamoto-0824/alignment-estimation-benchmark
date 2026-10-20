@@ -11,11 +11,13 @@ arguments
     raw table
     mapping struct
     options.validRadiusMm (1, 1) double = 150
+    options.coordinateUnits (1, 1) struct = struct()
 end
 RADIUS_TOLERANCE_MM = 1e-3;
 COORDINATE_DIGITS = 4;  % 重複・Shot の判定で座標を丸める桁（0.1 µm）
+SHOT_COORDINATE_DIGITS = 3; % Shot 中心と配列の行を判定する桁（1 µm）
 nRows = height(raw);
-messages = strings(0, 1);
+[inputUnits, scale] = alignest.coordinateUnits(options.coordinateUnits);
 
 required = alignest.standardColumns();
 required = string({required([required.required]).name});
@@ -25,10 +27,10 @@ if ~isempty(missingColumns)
         '「列の対応」の表で、ファイルのどの列にあたるかを選んでください。'], strjoin(missingColumns, "、"));
 end
 column = @(name) columnValues(raw, mapping, name);
-Xmm = toNumeric(column("Xmm"));
-Ymm = toNumeric(column("Ymm"));
-markXmm = toNumeric(column("markXmm"));
-markYmm = toNumeric(column("markYmm"));
+Xmm = toNumeric(column("Xmm")) * scale.Xmm;
+Ymm = toNumeric(column("Ymm")) * scale.Ymm;
+markXmm = toNumeric(column("markXmm")) * scale.markXmm;
+markYmm = toNumeric(column("markYmm")) * scale.markYmm;
 measX = toNumeric(column("measX"));
 measY = toNumeric(column("measY"));
 wafer = defaultText(column("Wafer"), nRows, "Wafer");
@@ -36,7 +38,16 @@ dateTime = defaultText(column("DateTime"), nRows, "");
 shotNo = defaultNumeric(column("shotNo"), nRows);
 direction = defaultNumeric(column("Direction"), nRows);
 markNo = defaultNumeric(column("markNo"), nRows);
-radius = defaultNumeric(column("Radius"), nRows);
+radius = defaultNumeric(column("Radius"), nRows) * scale.Radius;
+coordinateNames = string(fieldnames(inputUnits));
+messages = strings(numel(coordinateNames), 1);
+for k = 1:numel(coordinateNames)
+    name = coordinateNames(k);
+    if isMapped(mapping, name)
+        messages(k) = sprintf("%s：入力 %s → mm（倍率 %g）。", name, inputUnits.(name), scale.(name));
+    end
+end
+messages = messages(messages ~= "");
 hasDirection = isMapped(mapping, "Direction");
 hasShotNo = isMapped(mapping, "shotNo");
 hasMarkNo = isMapped(mapping, "markNo");
@@ -48,10 +59,10 @@ validX = statusX == 0 & ~isnan(measX);
 validY = statusY == 0 & ~isnan(measY);
 
 summary.nRowsRead = nRows;
-noCoordinate = any(isnan([Xmm, Ymm, markXmm, markYmm]), 2) | wafer == "";
+noCoordinate = any(~isfinite([Xmm, Ymm, markXmm, markYmm]), 2) | wafer == "";
 summary.nNoCoordinate = nnz(noCoordinate);
 if summary.nNoCoordinate > 0
-    messages(end + 1) = sprintf("座標または Wafer が空の %d 行を除きました。", summary.nNoCoordinate);
+    messages(end + 1) = sprintf("座標が空・非有限値、または Wafer が空の %d 行を除きました。", summary.nNoCoordinate);
 end
 summary.nRadiusMismatch = nnz(abs(radius - hypot(Xmm, Ymm)) > RADIUS_TOLERANCE_MM);
 if summary.nRadiusMismatch > 0
@@ -99,6 +110,14 @@ end
 
 % 評価の単位：Wafer × DateTime
 unitKey = wafer + char(31) + dateTime;
+% 半径で上端の行が消えても、残った行の奇偶を付け直さない。
+shotRow = nan(nRows, 1);
+for key = unique(unitKey(~noCoordinate)).'
+    rows = find(unitKey == key & ~noCoordinate);
+    rowCoordinates = round(Ymm(rows), SHOT_COORDINATE_DIGITS);
+    levels = sort(unique(rowCoordinates), 'descend');
+    [~, shotRow(rows)] = ismember(rowCoordinates, levels);
+end
 unitKey(~keep) = missing;
 [unitKeys, ~, unitOfRow] = unique(unitKey(keep), 'stable');
 rowsKept = find(keep);
@@ -127,6 +146,8 @@ for u = 1:nUnits
     marks.markYmm = markYmm(pick);
     marks.markNo = markNo(pick);
     marks.direction = direction(pick);
+    marks.shotRow = shotRow(pick);
+    marks.shotRowParity = 1 + mod(marks.shotRow - 1, 2); % 1 = 奇数行、2 = 偶数行
     marks.x = x(pick);
     marks.y = y(pick);
     marks.r = r(pick);
@@ -136,7 +157,7 @@ for u = 1:nUnits
     marks.validX = anyX;
     marks.validY = anyY;
     % Shot：Shot 中心の座標が同じ Mark の集まり。番号は shotNo の列、無ければ上の行から左→右
-    shotKey = round([marks.Xmm, marks.Ymm], 3);
+    shotKey = round([marks.Xmm, marks.Ymm], SHOT_COORDINATE_DIGITS);
     [shotCoordinates, firstOfShot, shotOfMark] = unique(shotKey, 'rows');
     nShots = size(shotCoordinates, 1);
     [~, order] = sortrows([-shotCoordinates(:, 2), shotCoordinates(:, 1)]);
@@ -147,6 +168,8 @@ for u = 1:nUnits
     shots.Xmm = marks.Xmm(firstOfShot);
     shots.Ymm = marks.Ymm(firstOfShot);
     shots.radius = hypot(shots.Xmm, shots.Ymm);
+    shots.row = marks.shotRow(firstOfShot);
+    shots.rowParity = marks.shotRowParity(firstOfShot);
     if hasShotNo
         shots.shotNo = shotNo(pick(firstOfShot));
     else
@@ -190,10 +213,12 @@ summary.nShotsRange = [min(nShotsPerUnit), max(nShotsPerUnit)];
 summary.nMarksRange = [min(nMarksPerUnit), max(nMarksPerUnit)];
 summary.markLevels = unique(markNo(keep)).';
 summary.hasDirection = hasDirection;
+messages(end + 1) = "Shot 行は、Wafer・測定日時ごとに入力の Ymm を上から数えます（0.001 mm 刻み、半径除外前）。1=奇数行、2=偶数行。入力にない行は数えません。";
 summary.messages = messages;
 data.units = units;
 data.summary = summary;
 data.validRadiusMm = options.validRadiusMm;
+data.coordinateUnits = inputUnits;
 end
 
 function values = columnValues(raw, mapping, name)

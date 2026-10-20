@@ -65,7 +65,7 @@ switch method.family
             y = measured.(axisNames(k));
             switch method.family
                 case "GPR"
-                    factors = factorLevels(unit, marks, train, test);
+                    factors = factorLevels(unit, marks, train, test, settings);
                     result = alignest.models.gprFitPredict(features(train, :), features(test, :), ...
                         alignest.basis.featureGroups(method.featureSet), y, method.variant, method.factorMode, factors, ...
                         maxIterations=options.gprMaxIterations, backfitMaxIterations=options.backfitMaxIterations, ...
@@ -86,13 +86,17 @@ switch method.family
                     out.aux(k) = result.nugget;
                 case "GAM"
                     points = gamPoints(marks, radius);
-                    factors = factorLevels(unit, marks, train, test);
+                    factors = factorLevels(unit, marks, train, test, settings);
                     [scanTrain, scanTest] = alignest.basis.effectCoding(factors.scanTrain, factors.scanTest);
                     [markTrain, markTest] = alignest.basis.effectCoding(factors.markTrain, factors.markTest);
+                    [rowTrain, rowTest] = alignest.basis.effectCoding(factors.rowTrain, factors.rowTest);
+                    [factorTrain, factorTest] = alignest.basis.independentColumns( ...
+                        [ones(numel(train), 1), scanTrain, markTrain, rowTrain], ...
+                        [ones(numel(test), 1), scanTest, markTest, rowTest]);
                     nBasis = struct("axis", options.gamBasisAxis, "radius", options.gamBasisRadius, ...
                         "angle", options.gamBasisAngle);
                     model = alignest.models.gamSetup(subsetPoints(points, train), subsetPoints(points, test), ...
-                        method.featureSet, [scanTrain, markTrain], [scanTest, markTest], nBasis);
+                        method.featureSet, factorTrain(:, 2:end), factorTest(:, 2:end), nBasis);
                     result = alignest.models.gamFitPredict(model, y);
                     out.aux(k) = mean(result.log10Lambda);
                 otherwise
@@ -116,7 +120,7 @@ out.trainIndex = trainIndex;
 out.seconds = toc(timer);
 end
 
-function factors = factorLevels(unit, marks, train, test)
+function factors = factorLevels(unit, marks, train, test, settings)
 % 質的変数の水準（Scan方向が使えない Wafer では空にする）
 factors.markTrain = marks.markNo(train);
 factors.markTest = marks.markNo(test);
@@ -124,8 +128,14 @@ if unit.hasDirection
     factors.scanTrain = marks.direction(train);
     factors.scanTest = marks.direction(test);
 else
-    factors.scanTrain = [];
-    factors.scanTest = [];
+    factors.scanTrain = nan(numel(train), 1);
+    factors.scanTest = nan(numel(test), 1);
+end
+factors.rowTrain = nan(numel(train), 1);
+factors.rowTest = nan(numel(test), 1);
+if isfield(settings, "factors") && settings.factors.shotRowParity
+    factors.rowTrain = marks.shotRowParity(train);
+    factors.rowTest = marks.shotRowParity(test);
 end
 end
 

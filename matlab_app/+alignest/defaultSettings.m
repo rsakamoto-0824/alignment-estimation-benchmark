@@ -5,6 +5,8 @@ settings.version = 1;
 % データ（Overlay 計測ルール：300 mm Wafer、有効な点は r < 150 mm）
 settings.data.waferRadiusMm = 150;      % 座標を割って単位をそろえる値（説明変数・基底関数）
 settings.data.validRadiusMm = 150;      % この半径以上の点は除く
+settings.data.coordinateUnits = alignest.coordinateUnits();
+settings.factors.shotRowParity = false; % Shot 配列の行（上から1行目）の奇数・偶数を追加する
 
 % 学習に使う Shot の選び方
 settings.sampling.method = "ioptimal";  % ioptimal（制約付き I 最適）／random（制約つきランダム）／manual（手動）

@@ -8,6 +8,67 @@ classdef TestDataPreparation < matlab.unittest.TestCase
     end
 
     methods (Test)
+        function coordinateConversionPrecedesAllFiltering(testCase)
+            raw = smallTable();
+            raw = [raw; raw(1, :)];
+            raw.Xmm(end) = 150;
+            raw.markXmm(end) = 0;
+            raw.Ymm(end) = 0;
+            raw.markYmm(end) = 0;
+            raw.Radius(end) = 150;
+            raw = [raw; raw(1, :)];
+            mapping = alignest.guessColumnMapping(raw.Properties.VariableNames);
+            expected = alignest.prepareData(raw, mapping);
+            for unit = ["m", "um", "nm"]
+                units = struct("Xmm", unit, "Ymm", unit, "markXmm", unit, "markYmm", unit, "Radius", unit);
+                [~, scale] = alignest.coordinateUnits(units);
+                converted = raw;
+                for name = string(fieldnames(scale)).'
+                    converted.(name) = raw.(name) / scale.(name);
+                end
+                actual = alignest.prepareData(converted, mapping, coordinateUnits=units);
+                testCase.verifyEqual(actual.units, expected.units, 'AbsTol', 1e-10);
+                testCase.verifyEqual(actual.summary.nOutsideRadius, 1);
+                testCase.verifyEqual(actual.summary.nDuplicateRows, 1);
+                testCase.verifyEqual(actual.summary.nRadiusMismatch, 0);
+            end
+        end
+
+        function coordinateColumnsCanUseDifferentUnits(testCase)
+            raw = smallTable();
+            mapping = alignest.guessColumnMapping(raw.Properties.VariableNames);
+            expected = alignest.prepareData(raw, mapping);
+            units = struct("Xmm", "m", "Ymm", "um", "markXmm", "nm", "markYmm", "µm");
+            [~, scale] = alignest.coordinateUnits(units);
+            for name = string(fieldnames(scale)).'
+                raw.(name) = raw.(name) / scale.(name);
+            end
+            actual = alignest.prepareData(raw, mapping, coordinateUnits=units);
+            testCase.verifyEqual(actual.units, expected.units, 'AbsTol', 1e-10);
+            testCase.verifyEqual(actual.coordinateUnits.markYmm, "um");
+            testCase.verifyError(@() alignest.prepareData(raw, mapping, coordinateUnits=struct("Xmm", "inch")), ...
+                'alignest:coordinateUnit');
+        end
+
+        function rowParityUsesShotYBeforeFilteringAndIgnoresInputOrder(testCase)
+            raw = smallTable();
+            raw.shotNo = 1000 - raw.shotNo; % Shot 番号の奇偶とは独立
+            raw.Ymm(raw.Ymm == 33) = 200;  % 最上段を全て半径の外にする
+            raw.Radius = hypot(raw.Xmm, raw.Ymm);
+            raw = raw(end:-1:1, :);
+            data = alignest.prepareData(raw, alignest.guessColumnMapping(raw.Properties.VariableNames));
+            unit = data.units(1);
+            testCase.verifyEqual(unit.shots.row(unit.shots.Ymm == 0), repmat(2, 3, 1));
+            testCase.verifyEqual(unit.shots.rowParity(unit.shots.Ymm == 0), repmat(2, 3, 1));
+            testCase.verifyEqual(unit.shots.rowParity(unit.shots.Ymm == -33), ones(3, 1));
+            testCase.verifyEqual(unit.marks.shotRowParity, unit.shots.rowParity(unit.marks.shotIndex));
+            % 同じ Wafer でも測定日時ごとに最上段から数え直す
+            second = raw(raw.Ymm ~= 200, :);
+            second.DateTime(:) = "2026/10/18 09:00:00";
+            data = alignest.prepareData([raw; second], alignest.guessColumnMapping(raw.Properties.VariableNames));
+            testCase.verifyEqual(data.units(2).shots.rowParity(data.units(2).shots.Ymm == 0), ones(3, 1));
+        end
+
         function statusDuplicatesAndRadiusFollowTheRules(testCase)
             raw = smallTable();
             % 重複：同じ座標の行を足す（X は有効な値どうしの平均、Y は片方が未測定）
