@@ -33,7 +33,8 @@ if settings.evaluation.removeLinear
     end
 end
 
-options = settings.methods.options;
+methodSettings = alignest.completeMethodSettings(settings.methods);
+options = methodSettings.options;
 out.extra = struct();
 out.converged = true;
 out.aux = [NaN, NaN];
@@ -56,7 +57,7 @@ switch method.family
         out.edf = [result.edfU, result.edfV];
     otherwise
         features = [];
-        if any(method.family == ["GPR", "TPS", "OK", "UK"])
+        if any(method.family == ["GPR", "TPS", "RBF", "OK", "UK"])
             features = alignest.basis.distanceFeatures(marks.x, marks.y, method.featureSet, radius);
         end
         for k = 1:2
@@ -76,31 +77,40 @@ switch method.family
                 case "TPS"
                     grid = linspace(options.tpsLog10Lambda(1), options.tpsLog10Lambda(2), options.tpsLog10Lambda(3));
                     model = alignest.models.tpsSetup(features(train, :), features(test, :), grid);
-                    result = alignest.models.tpsFitPredict(model, y);
+                    fitSpatial = @(values) alignest.models.tpsFitPredict(model, values, returnSmoother=method.factorMode == "backfit");
+                    result = fitWithFactors(fitSpatial, unit, train, test, y, method, settings);
                     out.aux(k) = result.log10Lambda;
+                    out.extra.("log10Lambda_" + axisNames(k)) = result.log10Lambda;
+                case "RBF"
+                    grid = linspace(options.rbfLog10Lambda(1), options.rbfLog10Lambda(2), options.rbfLog10Lambda(3));
+                    model = alignest.models.rbfSetup(features(train, :), features(test, :), options.rbfLengthScales, grid);
+                    result = alignest.models.rbfFitPredict(model, y);
+                    out.aux(k) = result.log10Lambda;
+                    out.extra.("rbfLengthScale_" + axisNames(k)) = result.lengthScale;
+                    out.extra.("log10Lambda_" + axisNames(k)) = result.log10Lambda;
                 case {"OK", "UK"}
                     kinds = struct("OK", "ordinary", "UK", "universal");
                     model = alignest.models.krigingSetup(features(train, :), features(test, :), ...
                         kinds.(method.family), method.variant, options.krigingLags);
-                    result = alignest.models.krigingFitPredict(model, y);
+                    fitSpatial = @(values) alignest.models.krigingFitPredict(model, values, returnSmoother=method.factorMode == "backfit");
+                    result = fitWithFactors(fitSpatial, unit, train, test, y, method, settings);
                     out.aux(k) = result.nugget;
                 case "GAM"
                     points = gamPoints(marks, radius);
                     factors = factorLevels(unit, marks, train, test, settings);
-                    [scanTrain, scanTest] = alignest.basis.effectCoding(factors.scanTrain, factors.scanTest);
-                    [markTrain, markTest] = alignest.basis.effectCoding(factors.markTrain, factors.markTest);
-                    [rowTrain, rowTest] = alignest.basis.effectCoding(factors.rowTrain, factors.rowTest);
-                    [factorTrain, factorTest] = alignest.basis.independentColumns( ...
-                        [ones(numel(train), 1), scanTrain, markTrain, rowTrain], ...
-                        [ones(numel(test), 1), scanTest, markTest, rowTest]);
+                    [factorTrain, factorTest] = factorCodes(factors);
                     nBasis = struct("axis", options.gamBasisAxis, "radius", options.gamBasisRadius, ...
                         "angle", options.gamBasisAngle);
                     model = alignest.models.gamSetup(subsetPoints(points, train), subsetPoints(points, test), ...
-                        method.featureSet, factorTrain(:, 2:end), factorTest(:, 2:end), nBasis);
+                        method.featureSet, factorTrain, factorTest, nBasis);
                     result = alignest.models.gamFitPredict(model, y);
                     out.aux(k) = mean(result.log10Lambda);
                 otherwise
                     error('alignest:family', '未知の手法です: %s', method.id);
+            end
+            if any(method.family == ["TPS", "OK", "UK"]) && method.factorMode == "backfit"
+                out.converged = out.converged && result.backfitConverged;
+                out.extra.("backfitIterations_" + axisNames(k)) = result.nBackfitIterations;
             end
             estimate.(axisNames(k)) = result.prediction;
             out.edf(k) = result.edf;
@@ -118,6 +128,31 @@ out.estimate = estimate;
 out.testIndex = testIndex;
 out.trainIndex = trainIndex;
 out.seconds = toc(timer);
+end
+
+function result = fitWithFactors(fitSpatial, unit, train, test, y, method, settings)
+if method.factorMode == "none"
+    result = fitSpatial(y);
+elseif method.factorMode == "backfit"
+    factors = factorLevels(unit, unit.marks, train, test, settings);
+    [codes, codesTest] = factorCodes(factors);
+    result = alignest.models.spatialBackfit(fitSpatial, y, codes, codesTest, ...
+        maxIterations=settings.methods.options.backfitMaxIterations, ...
+        tolerance=settings.methods.options.backfitToleranceNm);
+else
+    error('alignest:spatialFactorMode', '質的変数の扱いは none または backfit を選んでください。');
+end
+end
+
+function [train, test] = factorCodes(factors)
+[scanTrain, scanTest] = alignest.basis.effectCoding(factors.scanTrain, factors.scanTest);
+[markTrain, markTest] = alignest.basis.effectCoding(factors.markTrain, factors.markTest);
+[rowTrain, rowTest] = alignest.basis.effectCoding(factors.rowTrain, factors.rowTest);
+[train, test] = alignest.basis.independentColumns( ...
+    [ones(numel(factors.markTrain), 1), scanTrain, markTrain, rowTrain], ...
+    [ones(numel(factors.markTest), 1), scanTest, markTest, rowTest]);
+train = train(:, 2:end);
+test = test(:, 2:end);
 end
 
 function factors = factorLevels(unit, marks, train, test, settings)

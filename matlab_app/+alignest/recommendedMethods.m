@@ -11,9 +11,13 @@ methods.gpr.enabled = true;
 methods.gpr.kernels = "matern52";
 methods.gpr.factorModes = ["none", "basis", "additive", "mixed"];
 methods.tps.enabled = true;
+methods.tps.factorModes = "none";
+methods.rbf.enabled = false;
 methods.kriging.ordinary = true;
 methods.kriging.universal = false;
 methods.kriging.variograms = "exponential";
+methods.kriging.ordinaryFactorModes = "none";
+methods.kriging.universalFactorModes = "none";
 methods.gam.enabled = true;
 methods.polynomial.enabled = true;
 methods.polynomial.order = 5;
@@ -25,12 +29,18 @@ methods.options.backfitMaxIterations = 20;
 methods.options.backfitToleranceNm = 1e-3;
 methods.options.krigingLags = 6;
 methods.options.tpsLog10Lambda = [-8, 3, 45];  % 最小・最大・点数
+methods.options.rbfLengthScales = [0.05, 0.1, 0.2, 0.4, 0.8, 1.6];
+methods.options.rbfLog10Lambda = [-8, 3, 45];
 methods.options.gamBasisAxis = 8;
 methods.options.gamBasisRadius = 8;
 methods.options.gamBasisAngle = 8;
 switch selection
     case "recommended"
     case "all"
+        methods.rbf.enabled = true;
+        methods.tps.factorModes = ["none", "backfit"];
+        methods.kriging.ordinaryFactorModes = ["none", "backfit"];
+        methods.kriging.universalFactorModes = ["none", "backfit"];
         methods.featureSets = ["XY", "XYR", "XYRT"];
         methods.gpr.kernels = alignest.models.gprKernelNames();
         methods.gpr.factorModes = alignest.models.gprFactorModes();

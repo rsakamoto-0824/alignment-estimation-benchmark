@@ -1,5 +1,5 @@
 function features = distanceFeatures(xMm, yMm, featureSet, waferRadiusMm)
-%DISTANCEFEATURES 距離で類似度を測る手法（GPR・TPS・Kriging）に渡す説明変数の行列（点数 × 次元）。
+%DISTANCEFEATURES 距離で類似度を測る手法（GPR・TPS・RBF・Kriging）に渡す説明変数の行列（点数 × 次元）。
 %   座標は Wafer 半径で割って単位をそろえる。
 %   XY   : (x, y)
 %   XYR  : (x, y, r)

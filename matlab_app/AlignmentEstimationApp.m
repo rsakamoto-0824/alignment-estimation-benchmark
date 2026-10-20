@@ -21,7 +21,8 @@ classdef AlignmentEstimationApp < handle
         PROGRESS_INTERVAL_SECONDS = 0.2
         RESIDUAL_COLOR = [0.75, 0.25, 0.10]
         % 1回の当てはめ（X・Y）の計算時間の目安 [秒]（M1 Mac・約150 Shot の Wafer で測った値を切り上げ）
-        SECONDS_PER_FIT = struct("GPR", 0.1, "TPS", 0.03, "OK", 0.05, "UK", 0.05, "GAM", 0.1, "XY", 0.01, "RT", 0.02)
+        % RBF は候補数からの概算。TPS・Kriging の Backfitting は反復上限を掛けた保守的な目安。
+        SECONDS_PER_FIT = struct("GPR", 0.1, "TPS", 0.03, "RBF", 0.1, "OK", 0.05, "UK", 0.05, "GAM", 0.1, "XY", 0.01, "RT", 0.02)
         SECONDS_PER_IOPTIMAL_PLAN = 8   % I 最適の計画1つ（同じ配置の Wafer では1回だけ計算する）
     end
 
@@ -139,6 +140,7 @@ classdef AlignmentEstimationApp < handle
 
         function setSettings(app, settings)
             %SETSETTINGS 設定を画面に反映する（設定ファイルの読み込みと同じ）。
+            settings.methods = alignest.completeMethodSettings(settings.methods);
             if ~isfield(settings.data, "coordinateUnits")
                 settings.data.coordinateUnits = alignest.coordinateUnits();
             end
@@ -488,21 +490,21 @@ classdef AlignmentEstimationApp < handle
             place(c.removeLinear, 24, [1, 2]);
 
             methodPanel = uipanel(grid, 'Title', '比べる手法');
-            m = uigridlayout(methodPanel, [15, 4], 'RowHeight', repmat({'fit'}, 1, 15), 'ColumnWidth', {'1x', '1x', '1x', '1x'}, ...
+            m = uigridlayout(methodPanel, [17, 4], 'RowHeight', repmat({'fit'}, 1, 17), 'ColumnWidth', {'1x', '1x', '1x', '1x'}, ...
                 'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
             presetGrid = uigridlayout(m, [1, 3], 'Padding', 0, 'ColumnWidth', {'fit', 'fit', 'fit'});
             place(presetGrid, 1, [1, 4]);
             uibutton(presetGrid, 'Text', '推奨の組み合わせ', 'ButtonPushedFcn', @(~, ~) app.onPreset("recommended"));
             uibutton(presetGrid, 'Text', 'すべて選ぶ', 'ButtonPushedFcn', @(~, ~) app.onPreset("all"));
             uibutton(presetGrid, 'Text', 'すべて外す', 'ButtonPushedFcn', @(~, ~) app.onPreset("none"));
-            label(m, '説明変数（GPR・TPS・Kriging・GAM に共通。T は方位角）', 2, [1, 4]);
+            label(m, '説明変数（GPR・TPS・RBF・Kriging・GAM に共通。T は方位角）', 2, [1, 4]);
             c.featureXY = uicheckbox(m, 'Text', 'X, Y', 'ValueChangedFcn', onChange);
             place(c.featureXY, 3, 1);
             c.featureXYR = uicheckbox(m, 'Text', 'X, Y, 半径', 'ValueChangedFcn', onChange);
             place(c.featureXYR, 3, 2);
             c.featureXYRT = uicheckbox(m, 'Text', 'X, Y, 半径, T', 'ValueChangedFcn', onChange);
             place(c.featureXYRT, 3, 3);
-            c.shotRowParity = uicheckbox(m, 'Text', 'Shot 行の奇数・偶数を質的変数に追加（GPR・GAM）', ...
+            c.shotRowParity = uicheckbox(m, 'Text', 'Shot 行の奇数・偶数を質的変数に追加', ...
                 'Tooltip', '各 Wafer・測定日時で、入力の Shot 中心 Y 座標を上から1行目として数えます。半径除外前に判定。入力にない行は数えません。', ...
                 'ValueChangedFcn', onChange);
             place(c.shotRowParity, 4, [1, 4]);
@@ -524,29 +526,37 @@ classdef AlignmentEstimationApp < handle
             end
             m.RowHeight{7} = 300;
             c.tps = uicheckbox(m, 'Text', 'TPS（薄板スプライン）', 'ValueChangedFcn', onChange);
-            place(c.tps, 8, [1, 4]);
+            place(c.tps, 8, [1, 2]);
+            c.tpsFactors = spatialFactorDropdown(m, onChange);
+            place(c.tpsFactors, 8, [3, 4]);
+            c.rbf = uicheckbox(m, 'Text', 'RBF（ガウス型・平滑化つき）', 'ValueChangedFcn', onChange);
+            place(c.rbf, 9, [1, 4]);
             c.ordinaryKriging = uicheckbox(m, 'Text', 'Kriging（通常）', 'ValueChangedFcn', onChange);
-            place(c.ordinaryKriging, 9, [1, 2]);
+            place(c.ordinaryKriging, 10, [1, 2]);
+            c.ordinaryFactors = spatialFactorDropdown(m, onChange);
+            place(c.ordinaryFactors, 10, [3, 4]);
             c.universalKriging = uicheckbox(m, 'Text', 'Universal Kriging', 'ValueChangedFcn', onChange);
-            place(c.universalKriging, 9, [3, 4]);
-            label(m, 'バリオグラム', 10, [1, 4]);
+            place(c.universalKriging, 11, [1, 2]);
+            c.universalFactors = spatialFactorDropdown(m, onChange);
+            place(c.universalFactors, 11, [3, 4]);
+            label(m, 'バリオグラム（通常・Universal 共通）', 12, [1, 4]);
             variograms = ["linear", "gaussian", "power", "exponential"];
             c.variograms = gobjects(1, numel(variograms));
             for k = 1:numel(variograms)
                 c.variograms(k) = uicheckbox(m, 'Text', variograms(k), 'UserData', variograms(k), 'ValueChangedFcn', onChange);
-                place(c.variograms(k), 11, k);
+                place(c.variograms(k), 13, k);
             end
             c.gam = uicheckbox(m, 'Text', 'GAM（一般化加法モデル。Scan 方向・Mark 番号を含む）', 'ValueChangedFcn', onChange);
-            place(c.gam, 12, [1, 4]);
+            place(c.gam, 14, [1, 4]);
             c.polynomial = uicheckbox(m, 'Text', 'XY 多項式　次数：', 'ValueChangedFcn', onChange);
-            place(c.polynomial, 13, 1);
+            place(c.polynomial, 15, 1);
             c.polynomialOrder = uispinner(m, 'Limits', [1, 8], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
-            place(c.polynomialOrder, 13, 2);
+            place(c.polynomialOrder, 15, 2);
             c.rt = uicheckbox(m, 'Text', 'RT モデル　次数 K：', 'ValueChangedFcn', onChange);
-            place(c.rt, 14, 1);
+            place(c.rt, 16, 1);
             c.rtOrders = uieditfield(m, 'text', 'ValueChangedFcn', onChange);
-            place(c.rtOrders, 14, 2);
-            c.rtError = errorLabel(app, m, 15, [1, 4]);
+            place(c.rtOrders, 16, 2);
+            c.rtError = errorLabel(app, m, 17, [1, 4]);
 
             footer = uigridlayout(grid, [1, 4], 'ColumnWidth', {'fit', 'fit', 'fit', '1x'}, 'Padding', 0);
             place(footer, 2, [1, 2]);
@@ -592,6 +602,10 @@ classdef AlignmentEstimationApp < handle
                 c.factorModes(k).Value = any(methods.gpr.factorModes == c.factorModes(k).UserData);
             end
             c.tps.Value = methods.tps.enabled;
+            c.rbf.Value = methods.rbf.enabled;
+            c.tpsFactors.Value = modeSelection(methods.tps.factorModes);
+            c.ordinaryFactors.Value = modeSelection(methods.kriging.ordinaryFactorModes);
+            c.universalFactors.Value = modeSelection(methods.kriging.universalFactorModes);
             c.ordinaryKriging.Value = methods.kriging.ordinary;
             c.universalKriging.Value = methods.kriging.universal;
             for k = 1:numel(c.variograms)
@@ -639,6 +653,10 @@ classdef AlignmentEstimationApp < handle
             s.methods.gpr.kernels = string(c.kernels.Value);
             s.methods.gpr.factorModes = checkedValues(c.factorModes);
             s.methods.tps.enabled = c.tps.Value;
+            s.methods.rbf.enabled = c.rbf.Value;
+            s.methods.tps.factorModes = selectedModes(c.tpsFactors.Value);
+            s.methods.kriging.ordinaryFactorModes = selectedModes(c.ordinaryFactors.Value);
+            s.methods.kriging.universalFactorModes = selectedModes(c.universalFactors.Value);
             s.methods.kriging.ordinary = c.ordinaryKriging.Value;
             s.methods.kriging.universal = c.universalKriging.Value;
             s.methods.kriging.variograms = checkedValues(c.variograms);
@@ -701,6 +719,9 @@ classdef AlignmentEstimationApp < handle
             c.manualPlans.Enable = onOff(method == "manual");
             set([c.kernels, c.factorModes], 'Enable', onOff(c.gpr.Value));
             set(c.variograms, 'Enable', onOff(c.ordinaryKriging.Value || c.universalKriging.Value));
+            c.tpsFactors.Enable = onOff(c.tps.Value);
+            c.ordinaryFactors.Enable = onOff(c.ordinaryKriging.Value);
+            c.universalFactors.Enable = onOff(c.universalKriging.Value);
             c.polynomialOrder.Enable = onOff(c.polynomial.Value);
             c.rtOrders.Enable = onOff(c.rt.Value);
         end
@@ -782,7 +803,11 @@ classdef AlignmentEstimationApp < handle
             total = numel(methods) * nPlans * nUnits;
             seconds = 0;
             for k = 1:numel(methods)
-                seconds = seconds + app.SECONDS_PER_FIT.(methods(k).family);
+                repeats = 1;
+                if any(methods(k).family == ["TPS", "OK", "UK"]) && methods(k).factorMode == "backfit"
+                    repeats = app.Settings.methods.options.backfitMaxIterations;
+                end
+                seconds = seconds + repeats * app.SECONDS_PER_FIT.(methods(k).family);
             end
             seconds = seconds * nPlans * nUnits;
             if string(app.Settings.sampling.method) == "ioptimal"
@@ -1230,6 +1255,31 @@ end
 
 function state = onOff(condition)
 state = matlab.lang.OnOffSwitchState(condition);
+end
+
+function control = spatialFactorDropdown(parent, callback)
+control = uidropdown(parent, 'Items', {'質的変数なし', 'Backfitting', 'なし・Backfitting を比較'}, ...
+    'ItemsData', {'none', 'backfit', 'both'}, 'ValueChangedFcn', callback, ...
+    'Tooltip', 'Scan 方向・Mark 番号（選択時は Shot 行奇偶も）を固定効果として空間成分と交互に推定します。');
+end
+
+function selection = modeSelection(modes)
+modes = unique(string(modes));
+if numel(modes) == 2 && all(ismember(modes, ["none", "backfit"]))
+    selection = 'both';
+elseif isscalar(modes) && any(modes == ["none", "backfit"])
+    selection = char(modes);
+else
+    error('alignest:spatialFactorMode', '質的変数の扱いは none・backfit のいずれか、または両方を選んでください。');
+end
+end
+
+function modes = selectedModes(selection)
+if string(selection) == "both"
+    modes = ["none", "backfit"];
+else
+    modes = string(selection);
+end
 end
 
 function [values, ok] = parseNumbers(text)

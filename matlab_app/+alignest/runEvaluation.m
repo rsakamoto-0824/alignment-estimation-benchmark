@@ -57,6 +57,10 @@ for u = 1:numel(units)
                 try
                     out = alignest.estimateWafer(unit, plan.shotIndex, methods(m), settings);
                     row = fillMetrics(row, unit, out, settings);
+                    if ~out.converged
+                        logLines(end + 1) = unit.label + "｜" + plan.label + "｜" + methods(m).label + ...
+                            "：最適化または Backfitting が反復上限内に収束しませんでした。最終反復の推定値を出力しています。"; %#ok<AGROW>
+                    end
                 catch err
                     row.note = string(err.message);
                     logLines(end + 1) = unit.label + "｜" + plan.label + "｜" + methods(m).label + "：" + err.message; %#ok<AGROW>
