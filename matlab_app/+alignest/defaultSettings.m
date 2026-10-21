@@ -10,7 +10,11 @@ settings.data.excludeZeroMeasurements = false; % measX・measY がともに0の�
 settings.data.excludeUnmeasuredRecords = false; % StsX・StsY のどちらかが−1の入力行を除く
 settings.data.directionRule = "none";   % Direction が無い行に Scan 方向を付ける規則（alignest.directionRules）
 settings.data.invertDirection = false;  % 規則で付ける 1 と 2 を入れ替える
-settings.factors.shotRowParity = false; % Shot 配列の行（上から1行目）の奇数・偶数を追加する
+% 質的変数（GPR・GAM・TPS／RBF／Kriging の Backfitting で使う）
+settings.factors.scan = true;           % Scan 方向（Direction）
+settings.factors.mark = true;           % Mark 番号（markNo）
+settings.factors.shotRowParity = false; % Shot 配列の行（上から1行目）の奇数・偶数
+settings.factors.columns = strings(1, 0);  % ファイルのその他の列（標準の項目に対応づけなかった列）の名前
 
 % 学習に使う Shot の選び方
 settings.sampling.method = "ioptimal";  % ioptimal（制約付き I 最適）／random（制約つきランダム）／manual（手動）

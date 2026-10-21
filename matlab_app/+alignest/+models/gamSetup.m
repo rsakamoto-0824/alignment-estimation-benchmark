@@ -1,19 +1,18 @@
 function model = gamSetup(trainPoints, testPoints, featureSet, factorsTrain, factorsTest, nBasis, options)
 %GAMSETUP 一般化加法モデル（GAM、正規分布・恒等リンク）の前計算。
-%   y = β₀ + s(x, y) [+ s(r)] [+ s_周期(θ)] + Scan方向の効果 + Mark番号の効果 + ε
-%   形状関数（平滑項）は項ごとに、スプライン（既定）かガウス過程回帰を選ぶ（options.shapes.xy・r・theta = "spline"・"gp"）。
+%   y = β₀ + s(x, y) [+ s(r)] + 質的変数の効果 + ε
+%   形状関数（平滑項）は項ごとに、スプライン（既定）かガウス過程回帰を選ぶ（options.shapes.xy・r = "spline"・"gp"）。
 %   スプライン
 %   - s(x, y)   : 3次 B スプラインのテンソル積（各軸 nBasis.axis 個、[−1, 1]）。罰則は各軸の2階差分の和（P-spline）。
 %   - s(r)      : 3次 B スプライン（nBasis.radius 個、[0, 1]）、2階差分の罰則。
-%   - s_周期(θ) : 周期3次 B スプライン（nBasis.angle 個、[−π, π)）、周期的な2階差分の罰則。
 %   ガウス過程回帰（Matérn 5/2 カーネル、長さスケール options.lengthScales.<項>、Wafer 半径で割った単位）
 %   - 節点 κ でのカーネルによる低ランクの近似：s(z) = 線形部分 + Σ_k b_k k(z, κ_k)、罰則 bᵀK(κ, κ)b（λ と組で
 %     事前分布 b ~ N(0, σ²/λ·K⁻¹) のガウス過程と同じ）。線形部分（x・y、r）は罰則なし（スプラインの2階差分と同じ）。
 %   - 節点：s(x, y) は [−1, 1]² の options.gpGridKnots × 同数の格子のうち Wafer の内側（半径 1 + 格子の間隔 以下）、
-%     s(r) は [0, 1] の options.gpKnots 点、s(θ) は円周上の options.gpKnots 点（距離は (cos θ, sin θ) の弦の長さ）。
+%     s(r) は [0, 1] の options.gpKnots 点。
 %   - 質的変数  : 効果コード（罰則なし）。factorsTrain / factorsTest に列として渡す。
 %   各平滑項は学習点での和が0になるよう制約する（mgcv と同じ QR 分解による吸収）。
-%   trainPoints / testPoints は x, y, r, theta のフィールドを持つ構造体（x, y, r は Wafer 半径で割った値）。
+%   trainPoints / testPoints は x, y, r のフィールドを持つ構造体（Wafer 半径で割った値）。
 %   model.logPseudoDetPenalty は罰則行列の擬似行列式の対数の和（長さスケールの違う模型の REML を比べるときに使う）。
 arguments
     trainPoints struct
@@ -29,8 +28,8 @@ arguments
 end
 RIDGE = 1e-9;
 DEFAULT_LENGTH_SCALE = 0.3;
-if ~any(featureSet == ["XY", "XYR", "XYRT"])
-    error('alignest:featureSet', '説明変数の組は XY・XYR・XYRT のいずれかです: %s', featureSet);
+if ~any(featureSet == ["XY", "XYR"])
+    error('alignest:featureSet', '説明変数の組は XY・XYR のいずれかです: %s', featureSet);
 end
 shape = @(name) shapeOf(options.shapes, name);
 lengthScale = @(name) valueOr(options.lengthScales, name, DEFAULT_LENGTH_SCALE);
@@ -42,24 +41,13 @@ else
     smooths(end + 1) = struct("name", "xy", "build", @(p) tensorBasis(p, nBasis.axis), ...
         "penalty", tensorPenalty(nBasis.axis));
 end
-if any(featureSet == ["XYR", "XYRT"])
+if featureSet == "XYR"
     if shape("r") == "gp"
         smooths(end + 1) = gpSmooth("r", @(p) p.r(:), linspace(0, 1, options.gpKnots).', @(p) p.r(:), 1, lengthScale("r"));
     else
         smooths(end + 1) = struct("name", "r", ...
             "build", @(p) alignest.basis.bsplineBasis(p.r, 0, 1, nBasis.radius), ...
             "penalty", alignest.basis.differencePenalty(nBasis.radius));
-    end
-end
-if featureSet == "XYRT"
-    if shape("theta") == "gp"
-        angles = -pi + 2 * pi * (0:options.gpKnots - 1).' / options.gpKnots;
-        smooths(end + 1) = gpSmooth("theta", @(p) [cos(p.theta(:)), sin(p.theta(:))], [cos(angles), sin(angles)], ...
-            @(p) zeros(numel(p.theta), 0), 0, lengthScale("theta"));
-    else
-        smooths(end + 1) = struct("name", "theta", ...
-            "build", @(p) alignest.basis.cyclicBsplineBasis(p.theta, -pi, 2 * pi, nBasis.angle), ...
-            "penalty", alignest.basis.differencePenalty(nBasis.angle, true));
     end
 end
 nTrain = numel(trainPoints.x);

@@ -84,7 +84,8 @@ switch method.family
                 case "RBF"
                     grid = linspace(options.rbfLog10Lambda(1), options.rbfLog10Lambda(2), options.rbfLog10Lambda(3));
                     model = alignest.models.rbfSetup(features(train, :), features(test, :), options.rbfLengthScales, grid);
-                    result = alignest.models.rbfFitPredict(model, y);
+                    fitSpatial = @(values) alignest.models.rbfFitPredict(model, values, returnSmoother=method.factorMode == "backfit");
+                    result = fitWithFactors(fitSpatial, unit, train, test, y, method, settings);
                     out.aux(k) = result.log10Lambda;
                     out.extra.("rbfLengthScale_" + axisNames(k)) = result.lengthScale;
                     out.extra.("log10Lambda_" + axisNames(k)) = result.log10Lambda;
@@ -98,9 +99,8 @@ switch method.family
                 case "GAM"
                     points = gamPoints(marks, radius);
                     factors = factorLevels(unit, marks, train, test, settings);
-                    [factorTrain, factorTest] = factorCodes(factors);
-                    nBasis = struct("axis", options.gamBasisAxis, "radius", options.gamBasisRadius, ...
-                        "angle", options.gamBasisAngle);
+                    [factorTrain, factorTest] = factorCodes(factors, numel(train), numel(test));
+                    nBasis = struct("axis", options.gamBasisAxis, "radius", options.gamBasisRadius);
                     gpTerms = gamGpTerms(method.variant);
                     shapes = struct();
                     for term = gpTerms
@@ -117,7 +117,7 @@ switch method.family
                 otherwise
                     error('alignest:family', '未知の手法です: %s', method.id);
             end
-            if any(method.family == ["TPS", "OK", "UK"]) && method.factorMode == "backfit"
+            if any(method.family == ["TPS", "RBF", "OK", "UK"]) && method.factorMode == "backfit"
                 out.converged = out.converged && result.backfitConverged;
                 out.extra.("backfitIterations_" + axisNames(k)) = result.nBackfitIterations;
             end
@@ -144,7 +144,7 @@ if method.factorMode == "none"
     result = fitSpatial(y);
 elseif method.factorMode == "backfit"
     factors = factorLevels(unit, unit.marks, train, test, settings);
-    [codes, codesTest] = factorCodes(factors);
+    [codes, codesTest] = factorCodes(factors, numel(train), numel(test));
     result = alignest.models.spatialBackfit(fitSpatial, y, codes, codesTest, ...
         maxIterations=settings.methods.options.backfitMaxIterations, ...
         tolerance=settings.methods.options.backfitToleranceNm);
@@ -153,34 +153,53 @@ else
 end
 end
 
-function [train, test] = factorCodes(factors)
-[scanTrain, scanTest] = alignest.basis.effectCoding(factors.scanTrain, factors.scanTest);
-[markTrain, markTest] = alignest.basis.effectCoding(factors.markTrain, factors.markTest);
-[rowTrain, rowTest] = alignest.basis.effectCoding(factors.rowTrain, factors.rowTest);
-[train, test] = alignest.basis.independentColumns( ...
-    [ones(numel(factors.markTrain), 1), scanTrain, markTrain, rowTrain], ...
-    [ones(numel(factors.markTest), 1), scanTest, markTest, rowTest]);
+function [train, test] = factorCodes(factors, nTrain, nTest)
+% 選んだ質的変数の効果コードを並べ、学習点で一次従属な列（変数どうしが重なる場合）を除く
+blocksTrain = {ones(nTrain, 1)};
+blocksTest = {ones(nTest, 1)};
+for name = alignest.factorNames(factors)
+    [codesTrain, codesTest] = alignest.basis.effectCoding(factors.(name + "Train"), factors.(name + "Test"));
+    blocksTrain{end + 1} = codesTrain; %#ok<AGROW>
+    blocksTest{end + 1} = codesTest; %#ok<AGROW>
+end
+[train, test] = alignest.basis.independentColumns([blocksTrain{:}], [blocksTest{:}]);
 train = train(:, 2:end);
 test = test(:, 2:end);
 end
 
 function factors = factorLevels(unit, marks, train, test, settings)
-% 質的変数の水準（Scan方向が使えない Wafer では空にする）
-factors.markTrain = marks.markNo(train);
-factors.markTest = marks.markNo(test);
-if unit.hasDirection
-    factors.scanTrain = marks.direction(train);
-    factors.scanTest = marks.direction(test);
-else
-    factors.scanTrain = nan(numel(train), 1);
-    factors.scanTest = nan(numel(test), 1);
+% 選んだ質的変数の水準（数値の符号）。Scan 方向が使えない Wafer・値の欠けがある列は NaN にして、推定では使わない。
+% その他の列は Wafer ごとに文字列の水準を番号にする（項目名は col_<列名>）。
+choice = alignest.factorChoice(settings);
+factors = struct();
+if choice.scan
+    direction = nan(numel(marks.x), 1);
+    if unit.hasDirection
+        direction = marks.direction;
+    end
+    factors = addFactor(factors, "scan", direction, train, test);
 end
-factors.rowTrain = nan(numel(train), 1);
-factors.rowTest = nan(numel(test), 1);
-if isfield(settings, "factors") && settings.factors.shotRowParity
-    factors.rowTrain = marks.shotRowParity(train);
-    factors.rowTest = marks.shotRowParity(test);
+if choice.mark
+    factors = addFactor(factors, "mark", marks.markNo, train, test);
 end
+if choice.row
+    factors = addFactor(factors, "row", marks.shotRowParity, train, test);
+end
+for column = choice.columns
+    position = find(string(unit.attributeNames) == column, 1);
+    if isempty(position)
+        error('alignest:factorColumn', '質的変数に選んだ列「%s」が、読み込んだデータにありません。', column);
+    end
+    [~, ~, codes] = unique(marks.attributes(:, position));
+    codes = double(codes);
+    codes(marks.attributes(:, position) == "") = NaN;
+    factors = addFactor(factors, alignest.factorFieldName(column), codes, train, test);
+end
+end
+
+function factors = addFactor(factors, name, levels, train, test)
+factors.(name + "Train") = levels(train);
+factors.(name + "Test") = levels(test);
 end
 
 function terms = gamGpTerms(variant)
@@ -196,7 +215,6 @@ function points = gamPoints(marks, radius)
 points.x = marks.x / radius;
 points.y = marks.y / radius;
 points.r = marks.r / radius;
-points.theta = marks.theta;
 end
 
 function subset = subsetPoints(points, index)

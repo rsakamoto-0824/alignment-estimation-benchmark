@@ -33,6 +33,36 @@ classdef TestDataPreparation < matlab.unittest.TestCase
             testCase.verifyEmpty(data.summary.operations);
         end
 
+        function lotIdAndOtherColumnsAreKept(testCase)
+            raw = smallTable();
+            raw.LotID = repmat("LOT1", height(raw), 1);
+            raw.Chuck = repmat(["A"; "B"; "A"; "B"], height(raw) / 4, 1);
+            raw.Temp = (1:height(raw)).' / 10;
+            raw.Temp(5) = NaN;
+            mapping = alignest.guessColumnMapping(raw.Properties.VariableNames);
+            testCase.verifyEqual(mapping.LotID, "LotID");
+            other = raw;
+            other.LotID(:) = "LOT2";
+            data = alignest.prepareData([raw; other], mapping);
+            % 同じ Wafer ID でもロットが違えば別の計測。表示名にロットを付ける
+            testCase.verifyEqual(numel(data.units), 2);
+            testCase.verifyEqual(string({data.units.label}), ["W01 (LOT1)", "W01 (LOT2)"]);
+            testCase.verifyEqual(data.summary.lotIds, ["LOT1", "LOT2"]);
+            testCase.verifyEqual(data.summary.nDuplicateRows, 0);
+            % 標準の項目に対応づけなかった列は、Mark ごとの文字列として残る（数値の欠けは空）
+            testCase.verifyEqual(data.attributeNames, ["Chuck", "Temp"]);
+            unit = data.units(1);
+            testCase.verifyEqual(unit.attributeNames, ["Chuck", "Temp"]);
+            first = find(unit.marks.x == raw.Xmm(1) + raw.markXmm(1) & unit.marks.y == raw.Ymm(1) + raw.markYmm(1));
+            testCase.verifyEqual(unit.marks.attributes(first, :), ["A", "0.1"]);
+            fifth = find(unit.marks.x == raw.Xmm(5) + raw.markXmm(5) & unit.marks.y == raw.Ymm(5) + raw.markYmm(5));
+            testCase.verifyEqual(unit.marks.attributes(fifth, 2), "");
+            % 標準の項目に対応づけた列は、その他の列に入らない
+            mapping.LotID = "";
+            data = alignest.prepareData(raw, mapping);
+            testCase.verifyEqual(data.attributeNames, ["LotID", "Chuck", "Temp"]);
+        end
+
         function directionRulesFillOnlyBlankRows(testCase)
             raw = removevars(smallTable(), "Direction");
             mapping = alignest.guessColumnMapping(raw.Properties.VariableNames);

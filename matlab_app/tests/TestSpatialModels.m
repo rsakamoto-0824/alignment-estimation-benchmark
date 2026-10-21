@@ -108,11 +108,13 @@ classdef TestSpatialModels < matlab.unittest.TestCase
             testCase.verifyEqual(alignest.loadSettings(file), settings);
             settings.methods = alignest.recommendedMethods('all');
             methods = alignest.buildMethodList(settings.methods);
-            % 303 手法に、ν を指定する Matérn（ν = 2、等方・ARD × 3説明変数 × 8扱い = 48）と spherical（12）を足した数
-            testCase.verifyEqual(numel(methods), 363);
+            % 説明変数 X,Y・X,Y,半径 の2組 ×（GPR 12カーネル × 8扱い、TPS・RBF・通常 Kriging（5バリオグラム）・
+            % Universal Kriging の質的変数なし／Backfitting、GAM）＋ XY5・RT4・RT5
+            testCase.verifyEqual(numel(methods), 2 * (12 * 8 + 2 + 2 + 10 + 10 + 1) + 3);
             testCase.verifyEqual(numel(unique(string({methods.id}))), numel(methods));
             testCase.verifyTrue(all(ismember(["RBF_gaussian_XY", "TPS_XY_backfit", ...
-                "OK_linear_XY_backfit", "UK_linear_XY_backfit", "GPR_matern_nu2_XY_none", "OK_spherical_XYRT_backfit"], ...
+                "OK_linear_XY_backfit", "UK_linear_XY_backfit", "GPR_matern_nu2_XY_none", "OK_spherical_XYR_backfit", ...
+                "RBF_gaussian_XYR_backfit"], ...
                 string({methods.id}))));
             alignest.saveSettings(settings, file);
             testCase.verifyEqual(alignest.loadSettings(file), settings);
@@ -126,8 +128,9 @@ classdef TestSpatialModels < matlab.unittest.TestCase
             settings = alignest.defaultSettings();
             settings.factors.shotRowParity = true;
             settings.methods = alignest.recommendedMethods('none');
-            settings.methods.featureSets = ["XY", "XYR", "XYRT"];
+            settings.methods.featureSets = ["XY", "XYR"];
             settings.methods.rbf.enabled = true;
+            settings.methods.rbf.factorModes = ["none", "backfit"];
             settings.methods.tps.enabled = true;
             settings.methods.tps.factorModes = "backfit";
             settings.methods.kriging.ordinary = true;
@@ -163,6 +166,8 @@ classdef TestSpatialModels < matlab.unittest.TestCase
             settings.methods = alignest.recommendedMethods('none');
             settings.methods.tps.enabled = true;
             settings.methods.tps.factorModes = "backfit";
+            settings.methods.rbf.enabled = true;
+            settings.methods.rbf.factorModes = "backfit";
             settings.methods.kriging.ordinary = true;
             settings.methods.kriging.universal = true;
             settings.methods.kriging.ordinaryFactorModes = "backfit";
@@ -172,6 +177,53 @@ classdef TestSpatialModels < matlab.unittest.TestCase
                 testCase.verifyEqual(out.estimate.X, unit.marks.measX(out.testIndex.X), 'AbsTol', 1e-3, method.id);
                 testCase.verifyEqual(out.estimate.Y, unit.marks.measY(out.testIndex.Y), 'AbsTol', 1e-3, method.id);
             end
+        end
+
+        function selectedFactorsIncludingFileColumnsAreUsed(testCase)
+            root = fileparts(fileparts(mfilename('fullpath')));
+            raw = alignest.readMeasurementFile(fullfile(root, 'sample_data', 'sample_alignment.csv'));
+            raw.Chuck = "C" + string(mod(raw.shotNo, 2));  % Shot ごとに2水準の、ファイルのその他の列（学習 Shot にも両方ある）
+            data = alignest.prepareData(raw, alignest.guessColumnMapping(raw.Properties.VariableNames));
+            unit = data.units(1);
+            chuck = unit.marks.attributes(:, unit.attributeNames == "Chuck");
+            unit.marks.measX = 12 * (chuck == "C1") + 3 * unit.marks.markNo;
+            unit.marks.measY = -unit.marks.measX;
+            settings = alignest.defaultSettings();
+            settings.factors.scan = false;
+            settings.factors.columns = "Chuck";
+            settings.methods = alignest.recommendedMethods('none');
+            settings.methods.gpr.enabled = true;
+            settings.methods.gpr.factorModes = ["basis", "mixed"];
+            settings.methods.tps.enabled = true;
+            settings.methods.tps.factorModes = "backfit";
+            settings.methods.rbf.enabled = true;
+            settings.methods.rbf.factorModes = "backfit";
+            settings.methods.kriging.ordinary = true;
+            settings.methods.kriging.ordinaryFactorModes = "backfit";
+            settings.methods.gam.enabled = true;
+            shots = 1:3:numel(unit.shots.shotNo);
+            for method = alignest.buildMethodList(settings.methods)
+                out = alignest.estimateWafer(unit, shots, method, settings);
+                testCase.verifyEqual(out.estimate.X, unit.marks.measX(out.testIndex.X), 'AbsTol', 1e-3, method.id);
+            end
+            % 加法カーネルでは、その他の列の項の τ が超パラメータに残る
+            settings.methods.gpr.factorModes = "additive";
+            settings.methods.tps.enabled = false;
+            settings.methods.rbf.enabled = false;
+            settings.methods.kriging.ordinary = false;
+            settings.methods.gam.enabled = false;
+            out = alignest.estimateWafer(unit, shots, alignest.buildMethodList(settings.methods), settings);
+            testCase.verifyTrue(all(isfield(out.extra, ["tau_col_Chuck_X", "tau_mark_X"])));
+            testCase.verifyFalse(isfield(out.extra, "tau_scan_X"), "Scan 方向を選ばなければ使わない");
+            % 列を選ばなければ、その列の効果は推定できない
+            settings.factors.columns = strings(1, 0);
+            settings.methods.gpr.factorModes = "basis";
+            out = alignest.estimateWafer(unit, shots, alignest.buildMethodList(settings.methods), settings);
+            testCase.verifyGreaterThan(sqrt(mean((out.estimate.X - unit.marks.measX(out.testIndex.X)) .^ 2)), 1);
+            % データに無い列を選ぶと評価を始めない
+            settings.factors.columns = "Nozzle";
+            data.units = data.units(1);
+            testCase.verifyError(@() alignest.runEvaluation(data, settings), 'alignest:factorColumn');
         end
 
         function iterationLimitIsReportedWithUsableResults(testCase)

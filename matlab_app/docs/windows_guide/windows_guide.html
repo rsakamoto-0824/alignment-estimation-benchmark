@@ -254,7 +254,7 @@
         <li><div>
           <strong>（初めてのときだけ）動作確認のテストを行う</strong>
           <p>
-            次を入力すると、自動テストが走ります（数分）。最後に「成功 72 件、失敗 0 件、未完了 0 件」と出れば、
+            次を入力すると、自動テストが走ります（数分）。最後に「成功 75 件、失敗 0 件、未完了 0 件」と出れば、
             この PC の MATLAB で正しく計算できています。
           </p>
         </div></li>
@@ -271,9 +271,9 @@ cd C:\work\matlab_app</code></pre>
         <div>
           <h3>テストで確かめていること</h3>
           <p>
-            模擬データの評価に使った Python 版と同じ計算結果になること（8件）、データの読み込みと前処理（20件）、
-            評価・集計・書き出し・設定の保存（15件）、質的変数の設計（2件）、RBF・空間モデルの Backfitting（8件）、
-            画面の一連の操作（10件）、正規性検定・ANOVA が SciPy と同じ結果になること（5件）、
+            模擬データの評価に使った Python 版と同じ計算結果になること（8件）、データの読み込みと前処理（21件）、
+            評価・集計・書き出し・設定の保存（15件）、質的変数の設計（2件）、RBF・空間モデルの Backfitting と質的変数の選択（9件）、
+            画面の一連の操作（11件）、正規性検定・ANOVA が SciPy と同じ結果になること（5件）、
             追加したモデルの選択肢（Matérn の ν・spherical・GAM の形状関数、4件）です。
           </p>
         </div>
@@ -482,13 +482,18 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
           「開始」「終了」「刻み（スイープ幅）」で決めます（例：10・40・5 で 10, 15, …, 40）。欄の下に比べる Shot 数の並びが出ます。
           組み合わせに誤りがあると、欄の下に理由が出ます。
         </p></div></li>
+        <li><div><strong>質的変数を選ぶ</strong><p>
+          「比べる手法」の「質的変数」で、推定に使う質的変数（Scan 方向・Mark 番号・Shot 行の奇数・偶数）と、
+          ファイルのその他の列（標準の項目に対応づけなかった列。例：Chuck）を選びます。初期設定は Scan 方向と Mark 番号です。
+        </p></div></li>
         <li><div><strong>比べる手法を選ぶ</strong><p>
           初期設定は「推奨の組み合わせ」（各系統の代表 9 手法）です。画面の下に計算回数と時間の目安が出るので、長すぎる場合は手法や Shot 数を減らします。
           「設定を保存…」で設定をファイルに残し、次回「設定を読み込む…」で同じ条件に戻せます。
         </p></div></li>
         <li><div><strong>（必要なとき）モデルの細かい選択肢を決める</strong><p>
           GPR のカーネルで「matern（ν を指定）」「ardmatern（ν を指定）」を選んだときは、「Matérn の ν」に値を空白区切りで入れます（例：<code>0.75 1 2</code>）。
-          Kriging のバリオグラムには spherical（球形）も選べます。GAM は「形状関数」で、X・Y、半径、方位角の項ごとにスプラインかガウス過程回帰を選べます。
+          Kriging のバリオグラムには spherical（球形）も選べます。GAM は「形状関数」で、X・Y、半径の項ごとにスプラインかガウス過程回帰を選べます。
+          RBF も TPS・Kriging と同じく、質的変数の Backfitting を選べます。
         </p></div></li>
         <li><div><strong>（必要なとき）処理時間を記録する</strong><p>
           1 枚あたりの推定時間で手法を選ぶときは、左下の「条件ごとの処理時間を記録する」をオンにします。
@@ -523,7 +528,7 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
             <tr><td>表（手法 × 学習パターン）</td><td>手法ごと・学習 Shot 数ごとの値。各列で最も良い手法に「★」と色が付きます。</td></tr>
             <tr><td>グラフ</td><td>学習 Shot 数による変化。右の一覧で描く手法を選べます。「横軸」を「I 基準と D 基準」にすると、学習 Shot の組の I 基準・D 基準（I 最適計画の評価指標。小さいほど良い計画）に対する推定誤差の図を2つ並べます。「グラフを画像で保存…」で PNG にできます。</td></tr>
             <tr><td>基準の手法との比較</td><td>上で選んだ基準の手法と、同じ Wafer・同じ学習パターンどうしで比べた差、95% 区間、基準より良かった Wafer の割合。</td></tr>
-            <tr><td>推定値と誤差の分布</td><td>手法・学習パターン・Wafer を選んで「分析する」を押すと、残差（計測値 − 推定値）のヒストグラム、正規性検定（Shapiro–Wilk・Anderson–Darling・Jarque–Bera）、質的変数（Scan 方向・Mark 番号・Shot 行の奇偶・工程・装置）の ANOVA が出ます。「推定値を Excel に書き出す…」で、評価点ごとの計測値・推定値・残差と検定の結果を保存します。</td></tr>
+            <tr><td>推定値と誤差の分布</td><td>手法・学習パターン・Wafer を選んで「分析する」を押すと、残差（計測値 − 推定値）のヒストグラム、正規性検定（Shapiro–Wilk・Anderson–Darling・Jarque–Bera）、質的変数（Scan 方向・Mark 番号・Shot 行の奇偶・工程・装置・ロットと、選んだその他の列）の ANOVA が出ます。「推定値を Excel に書き出す…」で、評価点ごとの計測値・推定値・残差と検定の結果を保存します。</td></tr>
           </tbody>
         </table>
       </div>
@@ -586,6 +591,7 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
           <tbody>
             <tr><td><code>Operation</code></td><td>工程名</td><td>任意</td><td>工程が違えば別の計測として扱う</td></tr>
             <tr><td><code>EqpId</code></td><td>装置 ID</td><td>任意</td><td>装置が違えば別の計測として扱う</td></tr>
+            <tr><td><code>LotID</code></td><td>ロット ID</td><td>任意</td><td>ロットが違えば別の計測として扱う</td></tr>
             <tr><td><code>Wafer</code></td><td>ウェハ ID</td><td>任意</td><td>全行を1枚とみなす</td></tr>
             <tr><td><code>DateTime</code></td><td>測定日時</td><td>任意</td><td>同じ Wafer でも日時が違えば別の計測として扱う</td></tr>
             <tr><td><code>shotNo</code></td><td>ショット番号</td><td>任意</td><td>座標から番号を付ける（上の行から左→右）</td></tr>
@@ -619,7 +625,7 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
       <div class="checklist-grid">
         <article>
           <h3>導入の確認</h3>
-          <label><input type="checkbox"> （MATLAB で使う）テストが「成功 72 件、失敗 0 件」になった</label>
+          <label><input type="checkbox"> （MATLAB で使う）テストが「成功 75 件、失敗 0 件」になった</label>
           <label><input type="checkbox"> （exe）exe が起動し、サンプルデータを読み込めた</label>
           <label><input type="checkbox"> サンプルデータで評価が最後まで終わり、結果一覧に表が出た</label>
           <label><input type="checkbox"> 結果を Excel に書き出し、開いて中身を確かめられた</label>
@@ -685,7 +691,7 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
           <summary>計算に時間がかかりすぎる</summary>
           <div><p>
             「2. 評価の設定」の下の目安を見ながら、比べる手法（「推奨の組み合わせ」が目安）や学習 Shot 数を減らしてください。
-            「すべて選ぶ」（363 手法）は数時間かかることがあります。I 最適の「交換法の初期配置の数」を減らすと、学習パターンを作る時間が短くなります。
+            「すべて選ぶ」（245 手法）は数時間かかることがあります。I 最適の「交換法の初期配置の数」を減らすと、学習パターンを作る時間が短くなります。
           </p></div>
         </details>
         <details>

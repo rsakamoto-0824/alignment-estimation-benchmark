@@ -1,5 +1,5 @@
 function result = spatialBackfit(fitSpatial, y, factorsTrain, factorsTest, options)
-%SPATIALBACKFIT TPS・Kriging の空間成分と質的変数の固定効果を交互に推定。
+%SPATIALBACKFIT TPS・RBF・Kriging の空間成分と質的変数の固定効果を交互に推定。
 % 平滑化・バリオグラムを残差から更新し、その固定時の内側の交互反復は
 % C'*(I-S)*(y-C*beta)=0 の解で収束まで進める（GPR の Backfitting と同じ考え方）。
 % 自由度は最終パラメータを固定した合成平滑化行列の trace。選択の不確実性は含めない。

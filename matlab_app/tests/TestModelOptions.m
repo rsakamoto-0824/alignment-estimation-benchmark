@@ -84,25 +84,25 @@ classdef TestModelOptions < matlab.unittest.TestCase
             config.kriging.variograms = "spherical";
             config.gam.enabled = true;
             config.gam.shapes.xy = "gp";
-            config.featureSets = ["XY", "XYRT"];
+            config.featureSets = ["XY", "XYR"];
             methods = alignest.buildMethodList(config);
             ids = string({methods.id});
-            testCase.verifyTrue(all(ismember(["GPR_matern_nu0.75_XY_basis", "GPR_ardmatern_nu2_XYRT_basis", ...
-                "OK_spherical_XY", "GAM_XY_gp-xy", "GAM_XYRT_gp-xy"], ids)));
+            testCase.verifyTrue(all(ismember(["GPR_matern_nu0.75_XY_basis", "GPR_ardmatern_nu2_XYR_basis", ...
+                "OK_spherical_XY", "GAM_XY_gp-xy", "GAM_XYR_gp-xy"], ids)));
             testCase.verifyEqual(nnz(startsWith(ids, "GPR_")), 2 * 5);
             gpr = methods(ids == "GPR_matern_nu0.75_XY_basis");
             testCase.verifyTrue(contains(gpr.label, "ν=0.75"));
-            gam = methods(ids == "GAM_XYRT_gp-xy");
+            gam = methods(ids == "GAM_XYR_gp-xy");
             testCase.verifyEqual(gam.variant, "gp:xy");
             testCase.verifyTrue(contains(gam.label, "ガウス過程：X・Y"));
             % 半径の項は XY には無いので、XY の GAM の id には入らない
             config.gam.shapes.r = "gp";
             ids = string({alignest.buildMethodList(config).id});
-            testCase.verifyTrue(all(ismember(["GAM_XY_gp-xy", "GAM_XYRT_gp-xy-r"], ids)));
+            testCase.verifyTrue(all(ismember(["GAM_XY_gp-xy", "GAM_XYR_gp-xy-r"], ids)));
             config.gpr.maternNu = [];
             testCase.verifyError(@() alignest.buildMethodList(config), 'alignest:maternNu');
             config.gpr.maternNu = 2;
-            config.gam.shapes.theta = "kriging";
+            config.gam.shapes.r = "kriging";
             testCase.verifyError(@() alignest.buildMethodList(config), 'alignest:gamShape');
             % 以前の設定（ν・形状関数が無い）には初期値を補う
             legacy = alignest.recommendedMethods();
@@ -114,31 +114,38 @@ classdef TestModelOptions < matlab.unittest.TestCase
             testCase.verifyEqual(string({alignest.buildMethodList(legacy).id}), ...
                 string({alignest.buildMethodList(alignest.recommendedMethods()).id}));
             allIds = string({alignest.buildMethodList(alignest.recommendedMethods("all")).id});
-            testCase.verifyTrue(all(ismember(["GPR_ardmatern_nu2_XYRT_mixed_int", "UK_spherical_XYR_backfit"], allIds)));
+            testCase.verifyTrue(all(ismember(["GPR_ardmatern_nu2_XYR_mixed_int", "UK_spherical_XYR_backfit"], allIds)));
+            testCase.verifyFalse(any(contains(allIds, "XYRT")));
+            % 以前の設定の XYRT（方位角 T）は除き、何も残らなければ X,Y,半径 にする
+            legacy.featureSets = ["XY", "XYRT"];
+            testCase.verifyEqual(alignest.completeMethodSettings(legacy).featureSets, "XY");
+            legacy.featureSets = "XYRT";
+            testCase.verifyEqual(alignest.completeMethodSettings(legacy).featureSets, "XYR");
+            testCase.verifyError(@() alignest.basis.distanceFeatures(1, 1, 'XYRT', 150), 'alignest:featureSet');
         end
 
         function gamShapesSelectSplineOrGaussianProcess(testCase)
             unit = testCase.Data.units(1);
             marks = unit.marks;
-            points = struct("x", marks.x / 150, "y", marks.y / 150, "r", marks.r / 150, "theta", marks.theta);
+            points = struct("x", marks.x / 150, "y", marks.y / 150, "r", marks.r / 150);
             train = (1:2:numel(marks.x)).';
             test = (2:2:numel(marks.x)).';
             pick = @(index) structfun(@(values) values(index), points, 'UniformOutput', false);
-            nBasis = struct("axis", 8, "radius", 8, "angle", 8);
+            nBasis = struct("axis", 8, "radius", 8);
             % 滑らかな関数（X・Y の項と半径の項）にガウス過程の形状関数を当てはめる
             truth = @(p) 3 * sin(2 * p.x) .* cos(1.5 * p.y) + 4 * p.r .^ 2;
             y = truth(pick(train));
             empty = zeros(numel(train), 0);
             emptyTest = zeros(numel(test), 0);
-            setup = @(scales) alignest.models.gamSetup(pick(train), pick(test), "XYRT", empty, emptyTest, nBasis, ...
-                shapes=struct("xy", "gp", "r", "gp", "theta", "gp"), lengthScales=scales);
+            setup = @(scales) alignest.models.gamSetup(pick(train), pick(test), "XYR", empty, emptyTest, nBasis, ...
+                shapes=struct("xy", "gp", "r", "gp"), lengthScales=scales);
             candidates = [0.15, 0.3, 0.6];
-            result = alignest.models.gamShapeFit(setup, ["xy", "r", "theta"], candidates, y);
+            result = alignest.models.gamShapeFit(setup, ["xy", "r"], candidates, y);
             testCase.verifyLessThan(sqrt(mean((result.prediction - truth(pick(test))) .^ 2)), 0.05);
-            testCase.verifyEqual(result.nFits, 1 + 3 * 2);
+            testCase.verifyEqual(result.nFits, 1 + 2 * 2);
             testCase.verifyTrue(all(ismember(cell2mat(struct2cell(result.lengthScales)), candidates)));
             model = setup(result.lengthScales);
-            testCase.verifyEqual(model.shapes, ["gp", "gp", "gp"]);
+            testCase.verifyEqual(model.shapes, ["gp", "gp"]);
             testCase.verifyTrue(isfinite(model.logPseudoDetPenalty));
             % ガウス過程の項が無ければ、スプラインだけの GAM と同じ結果
             splineSetup = @(~) alignest.models.gamSetup(pick(train), pick(test), "XYR", empty, emptyTest, nBasis);

@@ -5,10 +5,12 @@ function data = prepareData(raw, mapping, options)
 %   - X の解析には StsX = 0 の measX、Y の解析には StsY = 0 の measY だけを使う（未測定を0として扱わない）。
 %   - Wafer・DateTime・Xmm・Ymm・markXmm・markYmm が同じ行は重複とみなし、計測値を X・Y それぞれ平均する。
 %   - Radius の列があれば、Xmm・Ymm から計算した値と 0.001 mm より違う行の数を知らせる。
-%   - 同じ Wafer でも Operation（工程）・EqpId（装置）・DateTime が違えば別の計測（評価の単位）として扱う。
+%   - 同じ Wafer でも Operation（工程）・EqpId（装置）・LotID（ロット）・DateTime が違えば別の計測（評価の単位）として扱う。
+%   - 標準の項目に対応づけなかったファイルの列は、Mark ごとの値（文字列、空は ""）を marks.attributes に残す
+%     （列の名前は data.attributeNames・unit.attributeNames。質的変数に選べる。重複行は最初の行の値）。
 %   - Direction（Scan 方向）が無い行には、options.directionRule の規則で 1・2 を付ける（"none" なら付けない）。
 %     規則は alignest.directionRules を参照。invertDirection が true なら付ける 1 と 2 を入れ替える。
-%   data.units は評価の単位（Operation × EqpId × Wafer × DateTime）の構造体配列、data.summary は確認用の件数と注意。
+%   data.units は評価の単位（Operation × EqpId × LotID × Wafer × DateTime）の構造体配列、data.summary は確認用の件数と注意。
 arguments
     raw table
     mapping struct
@@ -46,6 +48,8 @@ measX = toNumeric(column("measX"));
 measY = toNumeric(column("measY"));
 operation = defaultText(column("Operation"), nRows, "");
 eqpId = defaultText(column("EqpId"), nRows, "");
+lotId = defaultText(column("LotID"), nRows, "");
+[attributeNames, attributes] = otherColumns(raw, mapping);
 wafer = defaultText(column("Wafer"), nRows, "Wafer");
 dateTime = defaultText(column("DateTime"), nRows, "");
 shotNo = defaultNumeric(column("shotNo"), nRows);
@@ -97,8 +101,8 @@ if summary.nOutsideRadius > 0
 end
 eligible = ~noCoordinate & ~outside;
 
-% 評価の単位：Operation × EqpId × Wafer × DateTime
-unitKey = operation + char(31) + eqpId + char(31) + wafer + char(31) + dateTime;
+% 評価の単位：Operation × EqpId × LotID × Wafer × DateTime
+unitKey = operation + char(31) + eqpId + char(31) + lotId + char(31) + wafer + char(31) + dateTime;
 % Shot の行（上から）と列（左から）。半径・測定値・ステータスで端の行が消えても、残った行の番号を付け直さない。
 shotRow = nan(nRows, 1);
 shotColumn = nan(nRows, 1);
@@ -200,11 +204,11 @@ for u = 1:nUnits
     marks.x = x(pick);
     marks.y = y(pick);
     marks.r = r(pick);
-    marks.theta = atan2(marks.y, marks.x);
     marks.measX = meanX;
     marks.measY = meanY;
     marks.validX = anyX;
     marks.validY = anyY;
+    marks.attributes = attributes(pick, :);
     % Shot：Shot 中心の座標が同じ Mark の集まり。番号は shotNo の列、無ければ上の行から左→右
     shotKey = round([marks.Xmm, marks.Ymm], SHOT_COORDINATE_DIGITS);
     [shotCoordinates, firstOfShot, shotOfMark] = unique(shotKey, 'rows');
@@ -238,6 +242,8 @@ for u = 1:nUnits
     marks.shotNo = shots.shotNo(shotOfMark);
     units(u).operation = operation(rows(1));
     units(u).eqpId = eqpId(rows(1));
+    units(u).lotId = lotId(rows(1));
+    units(u).attributeNames = attributeNames;
     units(u).wafer = waferOfUnit(u);
     units(u).dateTime = dateTime(rows(1));
     units(u).label = waferOfUnit(u);
@@ -256,7 +262,7 @@ for u = 1:nUnits
     same = find(waferOfUnit == waferOfUnit(u));
     if numel(same) > 1
         parts = strings(1, 0);
-        for field = ["operation", "eqpId", "dateTime"]
+        for field = ["lotId", "operation", "eqpId", "dateTime"]
             values = arrayfun(@(k) string(units(k).(field)), same);
             if numel(unique(values)) > 1
                 parts(end + 1) = ternary(units(u).(field) == "", "—", units(u).(field)); %#ok<AGROW>
@@ -281,6 +287,8 @@ summary.markLevels = unique(markNo(keep)).';
 summary.hasDirection = hasDirection;
 summary.operations = unique(operation(keep & operation ~= "")).';
 summary.eqpIds = unique(eqpId(keep & eqpId ~= "")).';
+summary.lotIds = unique(lotId(keep & lotId ~= "")).';
+summary.attributeNames = attributeNames;
 shotSizes = vertcat(units.shotSizeMm);
 summary.shotSizeRangeMm = [min(shotSizes, [], 1); max(shotSizes, [], 1)];
 messages(end + 1) = "Shot 行は、Wafer・測定日時ごとに入力の Ymm を上から数えます（0.001 mm 刻み、半径・入力行の除外前）。1=奇数行、2=偶数行。入力にない行は数えません。";
@@ -291,6 +299,7 @@ data.validRadiusMm = options.validRadiusMm;
 data.coordinateUnits = inputUnits;
 data.excludeZeroMeasurements = options.excludeZeroMeasurements;
 data.excludeUnmeasuredRecords = options.excludeUnmeasuredRecords;
+data.attributeNames = attributeNames;
 data.directionRule = options.directionRule;
 data.invertDirection = options.invertDirection;
 end
@@ -407,7 +416,42 @@ anyValid = counts > 0;
 averages(~anyValid) = NaN;
 end
 
+function [names, values] = otherColumns(raw, mapping)
+% 標準の項目に対応づけなかった列（質的変数の候補）を、行ごとの文字列にする（空・欠けは ""）
+mapped = string(struct2cell(mapping));
+names = string(raw.Properties.VariableNames);
+names = names(~ismember(names, mapped(mapped ~= "")));
+values = strings(height(raw), numel(names));
+for k = 1:numel(names)
+    column = raw.(names(k));
+    if isnumeric(column) || islogical(column)
+        text = string(column);
+        text(isnan(double(column))) = "";  % 数値の欠け（NaN）は水準にしない
+    elseif iscell(column)
+        text = string(cellfun(@cellText, column, 'UniformOutput', false));
+    else
+        text = defaultText(column, height(raw), "");
+    end
+    text(ismissing(text)) = "";
+    values(:, k) = strtrim(text(:));
+end
+end
+
+function text = cellText(value)
+% 型の混ざった列（readtable がセル配列で返す列）の1つの値を文字列にする
+if isempty(value) || (isnumeric(value) && isscalar(value) && isnan(value))
+    text = "";
+elseif isdatetime(value)
+    text = string(value, 'yyyy/MM/dd HH:mm:ss');
+else
+    text = string(value);
+    if ~isscalar(text)
+        text = strjoin(text(:).', " ");
+    end
+end
+end
+
 function unit = emptyUnit()
-unit = struct("operation", "", "eqpId", "", "wafer", "", "dateTime", "", "label", "", "marks", struct(), "shots", struct(), ...
+unit = struct("operation", "", "eqpId", "", "lotId", "", "attributeNames", strings(1, 0), "wafer", "", "dateTime", "", "label", "", "marks", struct(), "shots", struct(), ...
     "hasDirection", false, "shotSizeMm", [NaN, NaN]);
 end

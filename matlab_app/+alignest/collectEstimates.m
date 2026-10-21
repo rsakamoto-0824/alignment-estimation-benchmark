@@ -8,6 +8,7 @@ function [estimates, messages, cancelled] = collectEstimates(data, results, sele
 %   options.progressFcn ：progressFcn(完了数, 全体数) が false を返すと途中で止める（cancelled = true）
 %   options.maxRows     ：表の行数の上限。超えそうなら計算する前に止める（Excel の行数の上限のため）
 %   推定できなかった組み合わせは飛ばし、理由を messages に入れる。
+%   質的変数に選んだファイルのその他の列（results.settings.factors.columns）は「質的変数:<列名>」の列として加える。
 arguments
     data struct
     results struct
@@ -29,6 +30,7 @@ if upperBound > options.maxRows
         '手法・学習パターン・Wafer を絞ってください。'], upperBound, options.maxRows);
 end
 nTotal = numel(planIndex) * numel(methodIndex);
+columns = alignest.factorChoice(results.settings).columns;
 parts = cell(nTotal, 1);
 messages = strings(0, 1);
 cancelled = false;
@@ -41,7 +43,7 @@ for p = planIndex
         method = results.methods(m);
         try
             out = cachedEstimate(options.cache, unit, plan, p, m, method, results.settings);
-            parts{done} = pointTable(unit, plan, method, out);
+            parts{done} = pointTable(unit, plan, method, out, columns);
         catch err
             messages(end + 1) = unit.label + "｜" + plan.label + "｜" + method.label + "：" + err.message; %#ok<AGROW>
         end
@@ -56,7 +58,7 @@ for p = planIndex
 end
 parts = parts(~cellfun(@isempty, parts));
 if isempty(parts)
-    estimates = pointTable(emptyUnit(), struct("label", "", "group", ""), struct("label", "", "id", ""), []);
+    estimates = pointTable(emptyUnit(), struct("label", "", "group", ""), struct("label", "", "id", ""), [], columns);
 else
     estimates = vertcat(parts{:});
 end
@@ -75,7 +77,7 @@ if useCache
 end
 end
 
-function points = pointTable(unit, plan, method, out)
+function points = pointTable(unit, plan, method, out, columns)
 % 1つの Wafer × 学習パターン × 手法 の評価点の表
 marks = unit.marks;
 if isempty(out)
@@ -103,13 +105,22 @@ if n > 0 && unit.hasDirection
     direction = marks.direction(index);
 end
 text = @(value) repmat(string(value), n, 1);
-points = table(text(unit.operation), text(unit.eqpId), text(unit.label), text(unit.dateTime), text(plan.label), ...
-    text(plan.group), text(method.label), text(method.id), pick(marks, "shotNo", index), pick(marks, "markNo", index), ...
+points = table(text(unit.operation), text(unit.eqpId), text(unit.lotId), text(unit.label), text(unit.dateTime), ...
+    text(plan.label), text(plan.group), text(method.label), text(method.id), pick(marks, "shotNo", index), ...
+    pick(marks, "markNo", index), ...
     direction, pick(marks, "shotRowParity", index), pick(marks, "x", index), pick(marks, "y", index), ...
     pick(marks, "r", index), measX, estimateX, measX - estimateX, measY, estimateY, measY - estimateY, ...
-    'VariableNames', ["Operation", "EqpId", "Wafer", "DateTime", "plan", "group", "methodLabel", "methodId", ...
+    'VariableNames', ["Operation", "EqpId", "LotID", "Wafer", "DateTime", "plan", "group", "methodLabel", "methodId", ...
     "shotNo", "markNo", "direction", "shotRowParity", "x", "y", "r", "measX", "estimateX", "residualX", ...
     "measY", "estimateY", "residualY"]);
+for column = columns
+    values = strings(n, 1);
+    position = find(string(unit.attributeNames) == column, 1);
+    if n > 0 && ~isempty(position)
+        values = marks.attributes(index, position);
+    end
+    points.("質的変数:" + column) = values;
+end
 end
 
 function values = pick(marks, name, index)
@@ -122,6 +133,7 @@ values = values(:);
 end
 
 function unit = emptyUnit()
-unit = struct("operation", "", "eqpId", "", "label", "", "dateTime", "", "hasDirection", false, ...
+unit = struct("operation", "", "eqpId", "", "lotId", "", "attributeNames", strings(1, 0), "label", "", "dateTime", "", ...
+    "hasDirection", false, ...
     "marks", struct("x", zeros(0, 1)));
 end

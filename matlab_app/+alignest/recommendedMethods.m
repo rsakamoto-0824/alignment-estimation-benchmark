@@ -14,13 +14,14 @@ methods.gpr.maternNu = 2;  % カーネル matern・ardmatern（ν を指定）�
 methods.tps.enabled = true;
 methods.tps.factorModes = "none";
 methods.rbf.enabled = false;
+methods.rbf.factorModes = "none";   % none（質的変数なし）・backfit（Backfitting）、両方なら比べる
 methods.kriging.ordinary = true;
 methods.kriging.universal = false;
 methods.kriging.variograms = "exponential";
 methods.kriging.ordinaryFactorModes = "none";
 methods.kriging.universalFactorModes = "none";
 methods.gam.enabled = true;
-methods.gam.shapes = struct("xy", "spline", "r", "spline", "theta", "spline");  % 形状関数：spline・gp（項ごと）
+methods.gam.shapes = struct("xy", "spline", "r", "spline");  % 形状関数：spline・gp（項ごと）
 methods.polynomial.enabled = true;
 methods.polynomial.order = 5;
 methods.rt.enabled = true;
@@ -35,18 +36,18 @@ methods.options.rbfLengthScales = [0.05, 0.1, 0.2, 0.4, 0.8, 1.6];
 methods.options.rbfLog10Lambda = [-8, 3, 45];
 methods.options.gamBasisAxis = 8;
 methods.options.gamBasisRadius = 8;
-methods.options.gamBasisAngle = 8;
 methods.options.gamGpLengthScales = [0.15, 0.3, 0.6];  % GAM のガウス過程の長さスケールの候補（Wafer 半径で割った単位）
-methods.options.gamGpKnots = 10;      % GAM のガウス過程の節点の数（半径・方位角）
+methods.options.gamGpKnots = 10;      % GAM のガウス過程の節点の数（半径）
 methods.options.gamGpGridKnots = 7;   % GAM のガウス過程の節点の格子（X・Y、各軸）
 switch selection
     case "recommended"
     case "all"
         methods.rbf.enabled = true;
+        methods.rbf.factorModes = ["none", "backfit"];
         methods.tps.factorModes = ["none", "backfit"];
         methods.kriging.ordinaryFactorModes = ["none", "backfit"];
         methods.kriging.universalFactorModes = ["none", "backfit"];
-        methods.featureSets = ["XY", "XYR", "XYRT"];
+        methods.featureSets = ["XY", "XYR"];
         methods.gpr.kernels = alignest.models.gprKernelChoices();
         methods.gpr.factorModes = alignest.models.gprFactorModes();
         methods.kriging.universal = true;

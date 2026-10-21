@@ -1,8 +1,10 @@
 function [gp, basisTrain, basisTest, factorTrain, factorTest] = gprModeSetup(trainFeatures, testFeatures, groups, kernelName, factorMode, factors, maxIterations)
 %GPRMODESETUP 質的変数の扱い方 factorMode に合わせて、GPR の前計算と平均の基底関数を作る。
-%   factors は質的変数の水準：scanTrain/Test、markTrain/Test、任意の rowTrain/Test（Shot行の奇偶）。
+%   factors は質的変数の水準：<名前>Train/Test の組（scan：Scan 方向、mark：Mark 番号、row：Shot 行の奇偶、
+%   col_<列名>：ファイルのその他の列）。並びは alignest.factorNames の順。
 %   basisTrain / basisTest は平均の基底関数（定数と、固定効果にする質的変数の効果コード）。
-%   factorTrain / factorTest は Scan方向・Mark番号の効果コード（Backfitting で使う）。
+%   factorTrain / factorTest は全質的変数の効果コード（Backfitting で使う）。
+%   混合（mixed）は Mark 番号を変量効果（加法カーネル）、それ以外の質的変数を固定効果（基底関数）にする。
 %   水準が学習点に1つしかない質的変数は推定できないので使わない（その扱い方は「使わない」と同じ式になる）。
 if nargin < 7
     maxIterations = 300;
@@ -56,7 +58,7 @@ function design = factorDesigns(factors, nTrain, nTest)
 % 効果コードの列と、加法カーネルの項（水準が同じなら1の行列）を作る
 empty = struct("name", {}, "trainSame", {}, "crossSame", {});
 design.noComponents = empty;
-names = ["scan", "mark", "row"];
+names = alignest.factorNames(factors);
 codesTrain = cell(1, numel(names));
 codesTest = cell(1, numel(names));
 components = cell(1, numel(names));
@@ -65,13 +67,14 @@ for k = 1:numel(names)
     [codesTrain{k}, codesTest{k}] = alignest.basis.effectCoding(train, test);
     components{k} = component(names(k), train, test);
 end
-design.mainTrain = [codesTrain{:}];
-design.mainTest = [codesTest{:}];
-design.mainComponents = vertcat(components{:});
-% 混合モデルでは Scan と行の奇偶を固定効果、Mark を変量効果にする。
-design.fixedTrain = [codesTrain{1}, codesTrain{3}];
-design.fixedTest = [codesTest{1}, codesTest{3}];
-design.markComponent = components{2};
+design.mainTrain = [zeros(nTrain, 0), codesTrain{:}];
+design.mainTest = [zeros(nTest, 0), codesTest{:}];
+design.mainComponents = vertcat(empty, components{:});
+% 混合モデルでは Mark を変量効果、それ以外（Scan・行の奇偶・その他の列）を固定効果にする。
+isMark = names == "mark";
+design.fixedTrain = [zeros(nTrain, 0), codesTrain{~isMark}];
+design.fixedTest = [zeros(nTest, 0), codesTest{~isMark}];
+design.markComponent = vertcat(empty, components{isMark});
 % 交互作用ありの場合は有効な質的変数の全ペアを加える（3変数の積は加えない）。
 design.interactionTrain = zeros(nTrain, 0);
 design.interactionTest = zeros(nTest, 0);

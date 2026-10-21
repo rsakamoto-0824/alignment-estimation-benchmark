@@ -387,6 +387,57 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyTrue(app.Controls.variograms(end).Value);
         end
 
+        function factorColumnsAndLotIdFlowToResults(testCase)
+            app = testCase.App;
+            raw = alignest.readMeasurementFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
+            raw.LotID = "LOT" + extractAfter(raw.Wafer, "SIM");
+            raw.Chuck = "C" + string(mod(raw.shotNo, 2));
+            folder = tempname;
+            mkdir(folder);
+            cleanup = onCleanup(@() rmdir(folder, 's'));
+            file = fullfile(folder, 'with_lot.csv');
+            writetable(raw, file);
+            app.loadFile(file);
+            app.applyMapping();
+            testCase.verifyTrue(any(contains(string(app.Controls.summary.Value), "LOT01、LOT02")));
+            testCase.verifyEqual(string(app.Controls.factorColumns.ItemsData), "Chuck", "LotID は標準の項目なので選択肢に出ない");
+            settings = app.Settings;
+            settings.methods = alignest.recommendedMethods("none");
+            settings.methods.rbf.enabled = true;
+            settings.methods.rbf.factorModes = "backfit";
+            settings.sampling.nShots = 15;
+            app.setSettings(settings);
+            testCase.verifyEqual(app.Controls.rbfFactors.Value, 'backfit');
+            app.Controls.factorScan.Value = false;
+            app.Controls.factorColumns.Value = {'Chuck'};
+            app.Controls.factorColumns.ValueChangedFcn([], []);
+            testCase.verifyEqual(app.Settings.factors.columns, "Chuck");
+            testCase.verifyFalse(app.Settings.factors.scan);
+            results = app.runEvaluationNow(false);
+            testCase.verifyEqual(results.table.methodId(1), "RBF_gaussian_XYR_backfit");
+            testCase.verifyTrue(all(results.table.note == ""));
+            testCase.verifyEqual(unique(results.table.LotID).', "LOT0" + (1:5));
+            analysis = app.analyzeResiduals(1, "15 Shot", 0);
+            testCase.verifyTrue(all(ismember(["Chuck", "ロット（LotID）"], analysis.anova.factor)));
+            estimatesFile = fullfile(folder, 'estimates.xlsx');
+            app.exportEstimatesTo(estimatesFile, "selected");
+            points = readtable(estimatesFile, 'Sheet', '推定値', 'VariableNamingRule', 'preserve');
+            testCase.verifyTrue(all(ismember(["LotID", "質的変数:Chuck"], string(points.Properties.VariableNames))));
+            resultsFile = fullfile(folder, 'results.xlsx');
+            app.exportResultsTo(resultsFile);
+            perWafer = readtable(resultsFile, 'Sheet', 'Waferごと', 'VariableNamingRule', 'preserve');
+            testCase.verifyTrue(any(string(perWafer.Properties.VariableNames) == "LotID"));
+            explanation = readcell(resultsFile, 'Sheet', '説明');
+            testCase.verifyTrue(any(contains(string(explanation(:, 2)), "Mark 番号、列 Chuck")));
+            % 設定の列がデータに無いときは、選択肢に「データに無い」と出て、評価を始めない
+            settings = app.Settings;
+            settings.factors.columns = ["Chuck", "Nozzle"];
+            app.setSettings(settings);
+            testCase.verifyTrue(any(contains(string(app.Controls.factorColumns.Items), "Nozzle（データに無い）")));
+            testCase.verifyTrue(contains(app.Controls.factorColumnsError.Text, "Nozzle"));
+            testCase.verifyError(@() app.runEvaluationNow(false), 'alignest:settings');
+        end
+
         function reloadingDataClearsResults(testCase)
             app = testCase.App;
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
