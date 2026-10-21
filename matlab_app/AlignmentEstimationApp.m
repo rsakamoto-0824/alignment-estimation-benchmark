@@ -31,6 +31,8 @@ classdef AlignmentEstimationApp < handle
         TABLE_FONT_SIZE = 13            % 列の多い表（座標の単位・検定の結果）の文字の大きさ
         LIST_PREVIEW_COUNT = 12         % 学習 Shot 数の並びを画面に出す数（多いときは途中を省く）
         EXCEL_MAX_DATA_ROWS = 1048575   % Excel の最大行数から見出しの1行を除いた数
+        MAX_MATERN_NU = 50              % Matérn の ν の上限（alignest.models.maternNuCheck と同じ）
+        MATERN_NU_COST_FACTOR = 2       % ν を指定する Matérn の計算時間（matern52 に対する倍率の保守的な目安）
     end
 
     properties (SetAccess = private)
@@ -784,7 +786,7 @@ classdef AlignmentEstimationApp < handle
             place(c.recordTiming, 26, [1, 2]);
 
             methodPanel = uipanel(grid, 'Title', '比べる手法');
-            m = uigridlayout(methodPanel, [17, 4], 'RowHeight', repmat({'fit'}, 1, 17), 'ColumnWidth', {'1x', '1x', '1x', '1x'}, ...
+            m = uigridlayout(methodPanel, [20, 4], 'RowHeight', repmat({'fit'}, 1, 20), 'ColumnWidth', {'1x', '1x', '1x', '1x'}, ...
                 'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
             presetGrid = uigridlayout(m, [1, 3], 'Padding', 0, 'ColumnWidth', {'fit', 'fit', 'fit'});
             place(presetGrid, 1, [1, 4]);
@@ -806,7 +808,8 @@ classdef AlignmentEstimationApp < handle
             place(c.gpr, 5, [1, 4]);
             label(m, 'カーネル（Ctrl・Shift で複数選ぶ）', 6, [1, 2]);
             label(m, '質的変数の扱い（Scan・Mark・任意の行奇偶）', 6, [3, 4]);
-            c.kernels = uilistbox(m, 'Items', cellstr(alignest.models.gprKernelNames()), 'Multiselect', 'on', ...
+            [kernelNames, kernelLabels] = alignest.models.gprKernelChoices();
+            c.kernels = uilistbox(m, 'Items', cellstr(kernelLabels), 'ItemsData', cellstr(kernelNames), 'Multiselect', 'on', ...
                 'ValueChangedFcn', onChange);
             place(c.kernels, 7, [1, 2]);
             [modeNames, modeLabels] = alignest.models.gprFactorModes();
@@ -819,38 +822,63 @@ classdef AlignmentEstimationApp < handle
                     'ValueChangedFcn', onChange);
             end
             m.RowHeight{7} = 300;
+            label(m, 'Matérn の ν（matern・ardmatern を選んだとき。空白区切り）', 8, [1, 2]);
+            c.maternNu = uieditfield(m, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['Matérn カーネルの次数 ν' ...
+                '（0 より大きく 50 以下）。大きいほど滑らか。0.5・1.5・2.5 は exponential・matern32・matern52 と同じ。' ...
+                '複数入れると ν ごとに比べます（例：0.75 1 2 3.5）。']);
+            place(c.maternNu, 8, [3, 4]);
+            c.maternNuError = errorLabel(app, m, 9, [1, 4]);
             c.tps = uicheckbox(m, 'Text', 'TPS（薄板スプライン）', 'ValueChangedFcn', onChange);
-            place(c.tps, 8, [1, 2]);
+            place(c.tps, 10, [1, 2]);
             c.tpsFactors = spatialFactorDropdown(m, onChange);
-            place(c.tpsFactors, 8, [3, 4]);
+            place(c.tpsFactors, 10, [3, 4]);
             c.rbf = uicheckbox(m, 'Text', 'RBF（ガウス型・平滑化つき）', 'ValueChangedFcn', onChange);
-            place(c.rbf, 9, [1, 4]);
+            place(c.rbf, 11, [1, 4]);
             c.ordinaryKriging = uicheckbox(m, 'Text', 'Kriging（通常）', 'ValueChangedFcn', onChange);
-            place(c.ordinaryKriging, 10, [1, 2]);
+            place(c.ordinaryKriging, 12, [1, 2]);
             c.ordinaryFactors = spatialFactorDropdown(m, onChange);
-            place(c.ordinaryFactors, 10, [3, 4]);
+            place(c.ordinaryFactors, 12, [3, 4]);
             c.universalKriging = uicheckbox(m, 'Text', 'Universal Kriging', 'ValueChangedFcn', onChange);
-            place(c.universalKriging, 11, [1, 2]);
+            place(c.universalKriging, 13, [1, 2]);
             c.universalFactors = spatialFactorDropdown(m, onChange);
-            place(c.universalFactors, 11, [3, 4]);
-            label(m, 'バリオグラム（通常・Universal 共通）', 12, [1, 4]);
-            variograms = ["linear", "gaussian", "power", "exponential"];
+            place(c.universalFactors, 13, [3, 4]);
+            label(m, 'バリオグラム（通常・Universal 共通）', 14, [1, 4]);
+            variograms = ["linear", "gaussian", "power", "exponential", "spherical"];
+            variogramGrid = uigridlayout(m, [1, numel(variograms)], 'Padding', 0, ...
+                'ColumnWidth', repmat({'1x'}, 1, numel(variograms)));
+            place(variogramGrid, 15, [1, 4]);
             c.variograms = gobjects(1, numel(variograms));
             for k = 1:numel(variograms)
-                c.variograms(k) = uicheckbox(m, 'Text', variograms(k), 'UserData', variograms(k), 'ValueChangedFcn', onChange);
-                place(c.variograms(k), 13, k);
+                c.variograms(k) = uicheckbox(variogramGrid, 'Text', variograms(k), 'UserData', variograms(k), ...
+                    'ValueChangedFcn', onChange);
             end
+            c.variograms(end).Tooltip = ['球形モデル（range より遠い点の相関は 0）。説明変数が3次元まで（X,Y・X,Y,半径）なら' ...
+                '正定値が保証されます。X,Y,半径,T（5列）では保証されません。'];
             c.gam = uicheckbox(m, 'Text', 'GAM（一般化加法モデル。Scan 方向・Mark 番号を含む）', 'ValueChangedFcn', onChange);
-            place(c.gam, 14, [1, 4]);
+            place(c.gam, 16, [1, 4]);
+            shapeGrid = uigridlayout(m, [1, 7], 'Padding', 0, 'ColumnWidth', {'fit', 'fit', '1x', 'fit', '1x', 'fit', '1x'});
+            place(shapeGrid, 17, [1, 4]);
+            label(shapeGrid, '形状関数：', 1, 1);
+            [termNames, termLabels] = alignest.models.gamTerms("XYRT");
+            c.gamShapes = gobjects(1, numel(termNames));
+            for k = 1:numel(termNames)
+                label(shapeGrid, termLabels(k), 1, 2 * k);
+                c.gamShapes(k) = uidropdown(shapeGrid, 'Items', {'スプライン', 'ガウス過程回帰'}, ...
+                    'ItemsData', {'spline', 'gp'}, 'UserData', termNames(k), 'ValueChangedFcn', onChange, ...
+                    'Tooltip', ['スプライン：P-spline（B スプライン＋2階差分の罰則）。ガウス過程回帰：Matérn 5/2 の' ...
+                    'ガウス過程（節点で近似、線形部分は罰則なし）。長さスケールは候補から REML で選び、罰則の強さは' ...
+                    'どちらも REML で選びます。半径は X,Y,半径 以上、方位角は X,Y,半径,T のときだけ使います。']);
+                place(c.gamShapes(k), 1, 2 * k + 1);
+            end
             c.polynomial = uicheckbox(m, 'Text', 'XY 多項式　次数：', 'ValueChangedFcn', onChange);
-            place(c.polynomial, 15, 1);
+            place(c.polynomial, 18, 1);
             c.polynomialOrder = uispinner(m, 'Limits', [1, 8], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
-            place(c.polynomialOrder, 15, 2);
+            place(c.polynomialOrder, 18, 2);
             c.rt = uicheckbox(m, 'Text', 'RT モデル　次数 K：', 'ValueChangedFcn', onChange);
-            place(c.rt, 16, 1);
+            place(c.rt, 19, 1);
             c.rtOrders = uieditfield(m, 'text', 'ValueChangedFcn', onChange);
-            place(c.rtOrders, 16, 2);
-            c.rtError = errorLabel(app, m, 17, [1, 4]);
+            place(c.rtOrders, 19, 2);
+            c.rtError = errorLabel(app, m, 20, [1, 4]);
 
             footer = uigridlayout(grid, [1, 4], 'ColumnWidth', {'fit', 'fit', 'fit', '1x'}, 'Padding', 0);
             place(footer, 2, [1, 2]);
@@ -894,6 +922,10 @@ classdef AlignmentEstimationApp < handle
             c.featureXYRT.Value = any(methods.featureSets == "XYRT");
             c.gpr.Value = methods.gpr.enabled;
             c.kernels.Value = cellstr(methods.gpr.kernels);
+            c.maternNu.Value = char(strjoin(string(methods.gpr.maternNu), " "));
+            for k = 1:numel(c.gamShapes)
+                c.gamShapes(k).Value = char(methods.gam.shapes.(c.gamShapes(k).UserData));
+            end
             for k = 1:numel(c.factorModes)
                 c.factorModes(k).Value = any(methods.gpr.factorModes == c.factorModes(k).UserData);
             end
@@ -956,6 +988,13 @@ classdef AlignmentEstimationApp < handle
             s.methods.featureSets = featureNames([c.featureXY.Value, c.featureXYR.Value, c.featureXYRT.Value]);
             s.methods.gpr.enabled = c.gpr.Value;
             s.methods.gpr.kernels = string(c.kernels.Value);
+            [values, ok] = parseNumbers(c.maternNu.Value);
+            if ok && ~isempty(values) && all(values > 0 & values <= app.MAX_MATERN_NU)
+                s.methods.gpr.maternNu = unique(values, 'stable');
+            end
+            for k = 1:numel(c.gamShapes)
+                s.methods.gam.shapes.(c.gamShapes(k).UserData) = string(c.gamShapes(k).Value);
+            end
             s.methods.gpr.factorModes = checkedValues(c.factorModes);
             s.methods.tps.enabled = c.tps.Value;
             s.methods.rbf.enabled = c.rbf.Value;
@@ -1011,6 +1050,14 @@ classdef AlignmentEstimationApp < handle
             end
             c.zoneError.Text = text;
             messages = [messages; text(text ~= "")];
+            [values, ok] = parseNumbers(c.maternNu.Value);
+            text = "";
+            if usesMaternNu(c) && (~ok || isempty(values) || any(values <= 0 | values > app.MAX_MATERN_NU))
+                text = sprintf("⚠ Matérn の ν は 0 より大きく %g 以下の数を空白で区切って入れてください（例：0.75 1 2）。", ...
+                    app.MAX_MATERN_NU);
+            end
+            c.maternNuError.Text = text;
+            messages = [messages; text(text ~= "")];
             [values, ok] = parseNumbers(c.rtOrders.Value);
             text = "";
             if c.rt.Value && (~ok || isempty(values) || any(values < 1 | values > 10 | values ~= round(values)))
@@ -1030,6 +1077,8 @@ classdef AlignmentEstimationApp < handle
             set([c.designOrder, c.exchangeStarts], 'Enable', onOff(method == "ioptimal"));
             c.manualPlans.Enable = onOff(method == "manual");
             set([c.kernels, c.factorModes], 'Enable', onOff(c.gpr.Value));
+            c.maternNu.Enable = onOff(usesMaternNu(c));
+            set(c.gamShapes, 'Enable', onOff(c.gam.Value));
             set(c.variograms, 'Enable', onOff(c.ordinaryKriging.Value || c.universalKriging.Value));
             c.tpsFactors.Enable = onOff(c.tps.Value);
             c.ordinaryFactors.Enable = onOff(c.ordinaryKriging.Value);
@@ -1118,6 +1167,13 @@ classdef AlignmentEstimationApp < handle
                 repeats = 1;
                 if any(methods(k).family == ["TPS", "OK", "UK"]) && methods(k).factorMode == "backfit"
                     repeats = app.Settings.methods.options.backfitMaxIterations;
+                elseif methods(k).family == "GAM" && startsWith(methods(k).variant, "gp:")
+                    % ガウス過程の項ごとに長さスケールの候補を試す
+                    nTerms = numel(split(extractAfter(methods(k).variant, "gp:"), "+"));
+                    nCandidates = numel(app.Settings.methods.options.gamGpLengthScales);
+                    repeats = 1 + nTerms * max(nCandidates - 1, 0);
+                elseif methods(k).family == "GPR" && contains(methods(k).variant, "_nu")
+                    repeats = app.MATERN_NU_COST_FACTOR;  % ベッセル関数の計算のぶん遅い
                 end
                 seconds = seconds + repeats * app.SECONDS_PER_FIT.(methods(k).family);
             end
@@ -1807,6 +1863,11 @@ end
 
 function state = onOff(condition)
 state = matlab.lang.OnOffSwitchState(condition);
+end
+
+function used = usesMaternNu(c)
+% GPR で ν を指定する Matérn（matern・ardmatern）を選んでいるか
+used = c.gpr.Value && any(ismember(string(c.kernels.Value), ["matern", "ardmatern"]));
 end
 
 function control = spatialFactorDropdown(parent, callback)

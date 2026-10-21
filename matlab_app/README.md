@@ -154,11 +154,11 @@ MATLAB Compiler の入った Windows PC で行います（Mac では Windows 用
 
 | 系統 | 選べるもの |
 | --- | --- |
-| GPR | fitrgp と同じ10カーネル × 説明変数（X,Y／X,Y,半径／X,Y,半径,T）× 質的変数（Scan 方向・Mark 番号）の8通りの扱い（使わない・同時推定・Backfitting・同時推定＋交互作用・加法カーネル・加法カーネル＋交互作用・混合・混合＋交互作用） |
+| GPR | fitrgp と同じ10カーネル、または ν を指定する Matérn（matern・ardmatern）× 説明変数（X,Y／X,Y,半径／X,Y,半径,T）× 質的変数（Scan 方向・Mark 番号）の8通りの扱い（使わない・同時推定・Backfitting・同時推定＋交互作用・加法カーネル・加法カーネル＋交互作用・混合・混合＋交互作用） |
 | TPS | 平滑化つき薄板スプライン（λ は GCV）× 質的変数なし／Backfitting |
 | RBF | ガウス型の動径基底関数＋1次多項式。広がりと平滑化は GCV で選択 |
-| Kriging | 通常 Kriging・Universal Kriging × バリオグラム（linear・gaussian・power・exponential）× 質的変数なし／Backfitting |
-| GAM | P-spline（λ は REML）＋ Scan 方向・Mark 番号 |
+| Kriging | 通常 Kriging・Universal Kriging × バリオグラム（linear・gaussian・power・exponential・spherical）× 質的変数なし／Backfitting |
+| GAM | 形状関数を項（X・Y、半径、方位角）ごとに P-spline かガウス過程回帰から選ぶ（λ は REML）＋ Scan 方向・Mark 番号 |
 | XY 多項式・RT モデル | 次数を指定 |
 
 前処理として「XY 1次（並進・倍率・回転・直交度）を学習点で除いてから推定する」も選べます（実データで1次成分が大きいとき用。初期設定は使わない）。
@@ -193,6 +193,27 @@ MATLAB Compiler の入った Windows PC で行います（Mac では Windows 用
 | ANOVA | 手法 × 学習パターンの列 × 軸 × 質的変数ごとの検定の結果 |
 
 Excel の行数の上限（1,048,576 行）を超える場合は、計算する前に止めて範囲を絞るよう案内します。
+
+### Matérn の ν・spherical バリオグラム・GAM の形状関数
+
+**GPR の Matérn カーネルの ν（次数）**
+
+- 「カーネル」で **matern（ν を指定）**・**ardmatern（ν を指定）** を選び、「Matérn の ν」に値を空白区切りで入れる（例：`0.75 1 2 3.5`）。値ごとに別の手法として比べる（id は `GPR_matern_nu1.2_XYR_basis` のように ν を含む）。初期値は 2。
+- 式は σf² · 2^(1−ν)/Γ(ν) · (√(2ν) r)^ν · K_ν(√(2ν) r)（r は長さスケールで割った距離、K_ν は第2種変形ベッセル関数）。ν が大きいほど滑らかで、ν = 0.5・1.5・2.5 で exponential・matern32・matern52 と同じ式になる（テストで 1e−12 以内の一致を確認）。使える範囲は 0 < ν ≤ 50。
+- 超パラメータ（長さスケール・σf・σn など）は他のカーネルと同じく対数周辺尤度の最大化で推定する。ν は推定せず、入れた値に固定する。勾配は解析的に求め、数値微分との一致をテストで確認。MATLAB 本体の `besselk`・`gammaln` を使う（Toolbox 不要）。
+
+**Kriging の spherical（球形）バリオグラム**
+
+- 「バリオグラム」の **spherical** を選ぶ。γ(d) = psill·(3d/(2·range) − d³/(2·range³)) + nugget（d ≤ range）、psill + nugget（d > range）。PyKrige の spherical と同じ式・初期値・範囲・soft_l1 損失で当てはめる。
+- 球形モデルは説明変数が3次元まで（X,Y・X,Y,半径）なら正定値が保証される。X,Y,半径,T（5列）では保証されないので、結果を他のバリオグラムと比べて使う。
+
+**GAM の形状関数（スプライン・ガウス過程回帰）**
+
+- 「GAM」の下の **形状関数** で、X・Y（2次元の項）、半径、方位角 θ の項ごとに **スプライン**（従来の P-spline）か **ガウス過程回帰** を選ぶ。半径の項は説明変数が X,Y,半径 以上、方位角の項は X,Y,半径,T のときだけ使う。初期値はすべてスプライン（従来と同じ結果）。
+- ガウス過程回帰の項は Matérn 5/2 カーネルを節点で近似した低ランクのガウス過程：s(z) = 線形部分 + Σ b_k k(z, κ_k)、罰則 bᵀK(κ, κ)b。線形部分（X・Y の項は x・y、半径の項は r）は罰則なし（スプラインの2階差分の罰則と同じく、1次の変化は罰しない）。節点は X・Y が [−1, 1]² の 7 × 7 格子のうち Wafer の内側、半径は [0, 1] の 10 点、方位角は円周上の 10 点（距離は弦の長さ）。
+- 罰則の強さ λ は、スプラインと同じく REML で項ごとに選ぶ。長さスケールは候補（0.15・0.3・0.6。Wafer 半径で割った単位）から、項ごとに順に REML の基準が最も小さいものを選ぶ（候補の数だけ当てはめ直すので、スプラインより時間がかかる）。選んだ長さスケールは Excel の「Waferごと」の超パラメータに `gpLength_<項>_<軸>` として残る。
+- id は、ガウス過程回帰にした項を `_gp-` の後に付ける（例：`GAM_XYR_gp-xy-r`）。
+- 詳細設定は JSON の `methods.gpr.maternNu`、`methods.gam.shapes`（`xy`・`r`・`theta` に `spline` か `gp`）、`methods.options.gamGpLengthScales`・`gamGpKnots`・`gamGpGridKnots`。古い設定 JSON では ν は 2、形状関数はすべてスプラインになる。
 
 ### RBF と TPS・Kriging の Backfitting
 
@@ -236,7 +257,8 @@ M1 Mac（MATLAB R2022b、Intel 版を Rosetta で実行）で、約150 Shot・60
 - 1回の推定（X・Y）：GPR・GAM 約0.08 秒、Kriging 0.03 秒、TPS 0.02 秒、XY 多項式・RT 0.01 秒
 - I 最適の計画：Shot 数1つあたり約5〜10 秒（同じ配置の Wafer では1回だけ）
 - 推奨の組み合わせ（9手法）× 7つの Shot 数 × 25枚：約2〜3分
-- 「すべて選ぶ」は追加機能込みで303手法。Backfitting の反復を含むため、所要時間は従来の273手法より長くなる（画面の目安では追加 Backfitting に反復上限を掛けている）。
+- 「すべて選ぶ」は追加機能込みで363手法（ν を指定する Matérn は ν = 2 の1つ、spherical を含む）。Backfitting の反復を含むため、所要時間は従来の273手法より長くなる（画面の目安では追加 Backfitting に反復上限を掛けている）。
+- ν を指定する Matérn はベッセル関数を使うぶん、目安では matern52 の2倍とみている。GAM のガウス過程回帰の項は、長さスケールの候補を試す回数を掛けた保守的な目安。
 
 ## 動作確認
 
@@ -245,7 +267,7 @@ cd tests
 runAllTests
 ```
 
-67件（Python 版との照合 8件、読み込みと前処理 20件、評価・集計・書き出し・設定 15件、質的変数の設計 2件、RBF・空間モデルの Backfitting 8件、画面の流れ 9件、統計の検定 5件）。入力行の選択除外、単位変換と単位の推定、Operation・EqpId による計測の区別、Scan 方向の付与、Shot の大きさの推定、Shot 行奇偶、学習 Shot 数の開始・終了・刻み、I 基準・D 基準、ワースト値・95%値、処理時間の記録、推定値の表と評価指標の一致、正規性検定・ANOVA の SciPy との照合、既存手法との互換性、評価点の計測値を学習に使わないこと、画面操作（Wafer マップ・Shot レイアウト・誤差の分布）から Excel 出力までを含め、MATLAB R2022b で全件成功を確認（2026-10-21）。
+72件（Python 版との照合 8件、読み込みと前処理 20件、評価・集計・書き出し・設定 15件、質的変数の設計 2件、RBF・空間モデルの Backfitting 8件、画面の流れ 10件、統計の検定 5件、モデルの選択肢 4件）。入力行の選択除外、単位変換と単位の推定、Operation・EqpId による計測の区別、Scan 方向の付与、Shot の大きさの推定、Shot 行奇偶、学習 Shot 数の開始・終了・刻み、I 基準・D 基準、ワースト値・95%値、処理時間の記録、推定値の表と評価指標の一致、正規性検定・ANOVA の SciPy との照合、ν を指定する Matérn と既存カーネルの一致・勾配、spherical バリオグラム、GAM のガウス過程の形状関数、既存手法との互換性、評価点の計測値を学習に使わないこと、画面操作（Wafer マップ・Shot レイアウト・誤差の分布）から Excel 出力までを含め、MATLAB R2022b で全件成功を確認（2026-10-21）。
 
 Python 版との照合（[tests/TestPythonReference.m](tests/TestPythonReference.m)）は、模擬データ3枚・10/20 Shot で行う。
 

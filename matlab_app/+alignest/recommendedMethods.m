@@ -10,6 +10,7 @@ methods.featureSets = "XYR";
 methods.gpr.enabled = true;
 methods.gpr.kernels = "matern52";
 methods.gpr.factorModes = ["none", "basis", "additive", "mixed"];
+methods.gpr.maternNu = 2;  % カーネル matern・ardmatern（ν を指定）を選んだときの ν（複数なら ν ごとに比べる）
 methods.tps.enabled = true;
 methods.tps.factorModes = "none";
 methods.rbf.enabled = false;
@@ -19,6 +20,7 @@ methods.kriging.variograms = "exponential";
 methods.kriging.ordinaryFactorModes = "none";
 methods.kriging.universalFactorModes = "none";
 methods.gam.enabled = true;
+methods.gam.shapes = struct("xy", "spline", "r", "spline", "theta", "spline");  % 形状関数：spline・gp（項ごと）
 methods.polynomial.enabled = true;
 methods.polynomial.order = 5;
 methods.rt.enabled = true;
@@ -34,6 +36,9 @@ methods.options.rbfLog10Lambda = [-8, 3, 45];
 methods.options.gamBasisAxis = 8;
 methods.options.gamBasisRadius = 8;
 methods.options.gamBasisAngle = 8;
+methods.options.gamGpLengthScales = [0.15, 0.3, 0.6];  % GAM のガウス過程の長さスケールの候補（Wafer 半径で割った単位）
+methods.options.gamGpKnots = 10;      % GAM のガウス過程の節点の数（半径・方位角）
+methods.options.gamGpGridKnots = 7;   % GAM のガウス過程の節点の格子（X・Y、各軸）
 switch selection
     case "recommended"
     case "all"
@@ -42,10 +47,10 @@ switch selection
         methods.kriging.ordinaryFactorModes = ["none", "backfit"];
         methods.kriging.universalFactorModes = ["none", "backfit"];
         methods.featureSets = ["XY", "XYR", "XYRT"];
-        methods.gpr.kernels = alignest.models.gprKernelNames();
+        methods.gpr.kernels = alignest.models.gprKernelChoices();
         methods.gpr.factorModes = alignest.models.gprFactorModes();
         methods.kriging.universal = true;
-        methods.kriging.variograms = ["linear", "gaussian", "power", "exponential"];
+        methods.kriging.variograms = ["linear", "gaussian", "power", "exponential", "spherical"];
         methods.rt.orders = [4, 5];
     case "none"
         methods.gpr.enabled = false;

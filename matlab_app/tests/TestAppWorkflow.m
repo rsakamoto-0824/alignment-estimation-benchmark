@@ -343,6 +343,50 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
                 string(perWafer.Properties.VariableNames))));
         end
 
+        function modelOptionsFromControls(testCase)
+            app = testCase.App;
+            settings = app.Settings;
+            settings.methods = alignest.recommendedMethods("none");
+            app.setSettings(settings);
+            app.Controls.gpr.Value = true;
+            app.Controls.kernels.Value = {'matern52', 'ardmatern'};
+            set(app.Controls.factorModes, 'Value', false);
+            app.Controls.factorModes(1).Value = true;
+            app.Controls.maternNu.Value = '0.5 1.2';
+            app.Controls.ordinaryKriging.Value = true;
+            set(app.Controls.variograms, 'Value', false);
+            app.Controls.variograms(end).Value = true;
+            app.Controls.gam.Value = true;
+            app.Controls.gamShapes(1).Value = 'gp';
+            app.Controls.gam.ValueChangedFcn([], []);
+            settings = app.Settings.methods;
+            testCase.verifyEqual(settings.gpr.maternNu, [0.5, 1.2]);
+            testCase.verifyEqual(settings.kriging.variograms, "spherical");
+            testCase.verifyEqual(settings.gam.shapes.xy, "gp");
+            testCase.verifyEqual(string(app.Controls.maternNu.Enable), "on");
+            ids = string({alignest.buildMethodList(settings).id});
+            testCase.verifyEqual(ids, ["GPR_matern52_XYR_none", "GPR_ardmatern_nu0.5_XYR_none", ...
+                "GPR_ardmatern_nu1.2_XYR_none", "OK_spherical_XYR", "GAM_XYR_gp-xy"]);
+            testCase.verifyTrue(contains(app.Controls.countLabel.Text, "手法 5 種類"));
+            % 正しくない ν は欄の下に理由を出し、前の値のまま
+            app.Controls.maternNu.Value = '0 2';
+            app.Controls.maternNu.ValueChangedFcn([], []);
+            testCase.verifyTrue(startsWith(app.Controls.maternNuError.Text, "⚠"));
+            testCase.verifyEqual(app.Settings.methods.gpr.maternNu, [0.5, 1.2]);
+            % 設定の保存・読み込みで元に戻る
+            file = [tempname, '.json'];
+            cleanup = onCleanup(@() delete(file));
+            app.Controls.maternNu.Value = '0.5 1.2';
+            app.Controls.maternNu.ValueChangedFcn([], []);
+            alignest.saveSettings(app.Settings, file);
+            app.setSettings(alignest.defaultSettings());
+            testCase.verifyEqual(app.Controls.gamShapes(1).Value, 'spline');
+            app.setSettings(alignest.loadSettings(file));
+            testCase.verifyEqual(app.Controls.gamShapes(1).Value, 'gp');
+            testCase.verifyEqual(app.Controls.maternNu.Value, '0.5 1.2');
+            testCase.verifyTrue(app.Controls.variograms(end).Value);
+        end
+
         function reloadingDataClearsResults(testCase)
             app = testCase.App;
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));

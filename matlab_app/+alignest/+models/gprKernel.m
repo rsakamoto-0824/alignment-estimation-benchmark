@@ -21,7 +21,7 @@ if gp.ard
 else
     r2 = total / p.lengths(1)^2;
 end
-[profile, slope, alphaDerivative] = kernelProfile(gp.family, r2, p.alpha);
+[profile, slope, alphaDerivative] = kernelProfile(gp, r2, p.alpha);
 kernel = p.signalVar * profile;
 noiseVar = p.noiseVar;
 wantGrads = nargout >= 2 && part == "train";
@@ -64,9 +64,10 @@ p.categoricalVar = exp(2 * logParams(gp.categoricalOffset:gp.categoricalOffset +
 p.noiseVar = exp(2 * logParams(end));
 end
 
-function [profile, slope, alphaDerivative] = kernelProfile(family, r2, alpha)
+function [profile, slope, alphaDerivative] = kernelProfile(gp, r2, alpha)
 % g(r²)、h = dg/d(r²)、dg/dlog α（σf² を掛ける前）
 alphaDerivative = [];
+family = gp.family;
 switch family
     case "se"
         profile = exp(-0.5 * r2);
@@ -92,7 +93,25 @@ switch family
         e = exp(-sqrt(5) * r);
         profile = (1 + sqrt(5) * r + (5 / 3) * r2) .* e;
         slope = -(5 / 6) * (1 + sqrt(5) * r) .* e;
+    case "mnu"
+        [profile, slope] = maternProfile(gp.nu, r2);
     otherwise
         error('alignest:kernel', '未知のカーネルの種類です: %s', family);
 end
+end
+
+function [profile, slope] = maternProfile(nu, r2)
+% 任意の ν の Matérn：g = c z^ν K_ν(z)、z = √(2ν) r、c = 2^(1−ν)/Γ(ν)。
+% dg/dz = −c z^ν K_{ν−1}(z)、dz/d(r²) = ν/z より h = dg/d(r²) = −c ν z^(ν−1) K_{ν−1}(z)。
+% 大きい z で桁あふれ・桁落ちしないよう、指数で尺度を変えたベッセル関数（besselk(·, ·, 1) = K·e^z）を対数で使う。
+% r = 0 では g = 1。h は勾配で r² を掛けて使うだけなので 0 にしておく（ν ≤ 1 では r → 0 で発散するため）。
+r = sqrt(max(r2, 0));
+z = sqrt(2 * nu) * r;
+profile = ones(size(z));
+slope = zeros(size(z));
+positive = z > 0;
+logC = (1 - nu) * log(2) - gammaln(nu);
+zp = z(positive);
+profile(positive) = exp(logC + nu * log(zp) + log(besselk(nu, zp, 1)) - zp);
+slope(positive) = -nu * exp(logC + (nu - 1) * log(zp) + log(besselk(nu - 1, zp, 1)) - zp);
 end

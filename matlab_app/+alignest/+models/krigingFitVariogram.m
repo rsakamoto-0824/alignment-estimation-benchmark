@@ -70,12 +70,21 @@ switch variogramName
         width = max(params(2) / 3, 1e-12);
         e = exp(-d / width);
         J = [1 - e, -params(1) * e .* (d / width^2) / 3, ones(size(d))];
+    case "spherical"
+        range = max(params(2), 1e-12);
+        inside = d <= range;
+        ratio = min(d / range, 1);
+        J = [1.5 * ratio - 0.5 * ratio .^ 3, params(1) * inside .* (-1.5 * d / range^2 + 1.5 * d .^ 3 / range^4), ...
+            ones(size(d))];
 end
 end
 
 function start = linearStart(variogramName, shape, lags, semivariance, lower, upper)
 % 形のパラメータを固定すると、モデルは scale（または psill）と nugget の1次式になるので最小二乗で合わせる
+% （spherical で range がすべての距離より短いと形の列が定数になり、係数が決まらない。その場合も解は使えるので警告は出さない）
 unitShape = alignest.models.krigingVariogram(variogramName, [1; shape; 0], lags(:));
+warningState = warning('off', 'MATLAB:rankDeficientMatrix');
+cleanup = onCleanup(@() warning(warningState));
 coefficients = [unitShape, ones(numel(lags), 1)] \ semivariance(:);
 start = min(max([coefficients(1); shape; coefficients(2)], lower), upper);
 end

@@ -108,10 +108,12 @@ classdef TestSpatialModels < matlab.unittest.TestCase
             testCase.verifyEqual(alignest.loadSettings(file), settings);
             settings.methods = alignest.recommendedMethods('all');
             methods = alignest.buildMethodList(settings.methods);
-            testCase.verifyEqual(numel(methods), 303);
+            % 303 手法に、ν を指定する Matérn（ν = 2、等方・ARD × 3説明変数 × 8扱い = 48）と spherical（12）を足した数
+            testCase.verifyEqual(numel(methods), 363);
             testCase.verifyEqual(numel(unique(string({methods.id}))), numel(methods));
             testCase.verifyTrue(all(ismember(["RBF_gaussian_XY", "TPS_XY_backfit", ...
-                "OK_linear_XY_backfit", "UK_linear_XY_backfit"], string({methods.id}))));
+                "OK_linear_XY_backfit", "UK_linear_XY_backfit", "GPR_matern_nu2_XY_none", "OK_spherical_XYRT_backfit"], ...
+                string({methods.id}))));
             alignest.saveSettings(settings, file);
             testCase.verifyEqual(alignest.loadSettings(file), settings);
         end

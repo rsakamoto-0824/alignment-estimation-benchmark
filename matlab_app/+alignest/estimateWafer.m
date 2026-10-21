@@ -101,10 +101,19 @@ switch method.family
                     [factorTrain, factorTest] = factorCodes(factors);
                     nBasis = struct("axis", options.gamBasisAxis, "radius", options.gamBasisRadius, ...
                         "angle", options.gamBasisAngle);
-                    model = alignest.models.gamSetup(subsetPoints(points, train), subsetPoints(points, test), ...
-                        method.featureSet, factorTrain, factorTest, nBasis);
-                    result = alignest.models.gamFitPredict(model, y);
+                    gpTerms = gamGpTerms(method.variant);
+                    shapes = struct();
+                    for term = gpTerms
+                        shapes.(term) = "gp";
+                    end
+                    setup = @(scales) alignest.models.gamSetup(subsetPoints(points, train), subsetPoints(points, test), ...
+                        method.featureSet, factorTrain, factorTest, nBasis, shapes=shapes, lengthScales=scales, ...
+                        gpKnots=options.gamGpKnots, gpGridKnots=options.gamGpGridKnots);
+                    result = alignest.models.gamShapeFit(setup, gpTerms, options.gamGpLengthScales, y);
                     out.aux(k) = mean(result.log10Lambda);
+                    for term = gpTerms
+                        out.extra.("gpLength_" + term + "_" + axisNames(k)) = result.lengthScales.(term);
+                    end
                 otherwise
                     error('alignest:family', '未知の手法です: %s', method.id);
             end
@@ -171,6 +180,15 @@ factors.rowTest = nan(numel(test), 1);
 if isfield(settings, "factors") && settings.factors.shotRowParity
     factors.rowTrain = marks.shotRowParity(train);
     factors.rowTest = marks.shotRowParity(test);
+end
+end
+
+function terms = gamGpTerms(variant)
+% GAM の variant（"pspline" または "gp:xy+r" のような形）から、ガウス過程回帰にする項の名前を取り出す
+terms = strings(1, 0);
+variant = string(variant);
+if startsWith(variant, "gp:")
+    terms = split(extractAfter(variant, "gp:"), "+").';
 end
 end
 

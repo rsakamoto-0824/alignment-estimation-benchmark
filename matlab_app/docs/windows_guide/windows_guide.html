@@ -254,7 +254,7 @@
         <li><div>
           <strong>（初めてのときだけ）動作確認のテストを行う</strong>
           <p>
-            次を入力すると、自動テストが走ります（数分）。最後に「成功 67 件、失敗 0 件、未完了 0 件」と出れば、
+            次を入力すると、自動テストが走ります（数分）。最後に「成功 72 件、失敗 0 件、未完了 0 件」と出れば、
             この PC の MATLAB で正しく計算できています。
           </p>
         </div></li>
@@ -273,7 +273,8 @@ cd C:\work\matlab_app</code></pre>
           <p>
             模擬データの評価に使った Python 版と同じ計算結果になること（8件）、データの読み込みと前処理（20件）、
             評価・集計・書き出し・設定の保存（15件）、質的変数の設計（2件）、RBF・空間モデルの Backfitting（8件）、
-            画面の一連の操作（9件）、正規性検定・ANOVA が SciPy と同じ結果になること（5件）です。
+            画面の一連の操作（10件）、正規性検定・ANOVA が SciPy と同じ結果になること（5件）、
+            追加したモデルの選択肢（Matérn の ν・spherical・GAM の形状関数、4件）です。
           </p>
         </div>
       </div>
@@ -485,6 +486,10 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
           初期設定は「推奨の組み合わせ」（各系統の代表 9 手法）です。画面の下に計算回数と時間の目安が出るので、長すぎる場合は手法や Shot 数を減らします。
           「設定を保存…」で設定をファイルに残し、次回「設定を読み込む…」で同じ条件に戻せます。
         </p></div></li>
+        <li><div><strong>（必要なとき）モデルの細かい選択肢を決める</strong><p>
+          GPR のカーネルで「matern（ν を指定）」「ardmatern（ν を指定）」を選んだときは、「Matérn の ν」に値を空白区切りで入れます（例：<code>0.75 1 2</code>）。
+          Kriging のバリオグラムには spherical（球形）も選べます。GAM は「形状関数」で、X・Y、半径、方位角の項ごとにスプラインかガウス過程回帰を選べます。
+        </p></div></li>
         <li><div><strong>（必要なとき）処理時間を記録する</strong><p>
           1 枚あたりの推定時間で手法を選ぶときは、左下の「条件ごとの処理時間を記録する」をオンにします。
           手法 × 学習パターンごとの時間が、結果一覧の指標「処理時間 [秒/枚]」と Excel の「処理時間」シートに出ます。
@@ -614,7 +619,7 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
       <div class="checklist-grid">
         <article>
           <h3>導入の確認</h3>
-          <label><input type="checkbox"> （MATLAB で使う）テストが「成功 67 件、失敗 0 件」になった</label>
+          <label><input type="checkbox"> （MATLAB で使う）テストが「成功 72 件、失敗 0 件」になった</label>
           <label><input type="checkbox"> （exe）exe が起動し、サンプルデータを読み込めた</label>
           <label><input type="checkbox"> サンプルデータで評価が最後まで終わり、結果一覧に表が出た</label>
           <label><input type="checkbox"> 結果を Excel に書き出し、開いて中身を確かめられた</label>
@@ -680,7 +685,7 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
           <summary>計算に時間がかかりすぎる</summary>
           <div><p>
             「2. 評価の設定」の下の目安を見ながら、比べる手法（「推奨の組み合わせ」が目安）や学習 Shot 数を減らしてください。
-            「すべて選ぶ」（273 手法）は数時間かかることがあります。I 最適の「交換法の初期配置の数」を減らすと、学習パターンを作る時間が短くなります。
+            「すべて選ぶ」（363 手法）は数時間かかることがあります。I 最適の「交換法の初期配置の数」を減らすと、学習パターンを作る時間が短くなります。
           </p></div>
         </details>
         <details>
