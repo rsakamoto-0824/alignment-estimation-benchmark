@@ -34,6 +34,8 @@ logLines = strings(0, 1);
 done = 0;
 cancelled = false;
 recordTiming = isfield(settings.evaluation, "recordTiming") && settings.evaluation.recordTiming;
+overlay = alignest.overlayChoice(settings);
+projectors = cell(numel(units), 1);  % Overlay 補正の射影は Wafer ごとに1回だけ作る（学習パターン・手法によらない）
 warmedUp = false(numel(methods), 1);
 for u = 1:numel(units)
     unit = units(u);
@@ -78,6 +80,12 @@ for u = 1:numel(units)
                     end
                     out = alignest.estimateWafer(unit, plan.shotIndex, methods(m), settings);
                     row = fillMetrics(row, unit, out, settings);
+                    if overlay.enabled
+                        if isempty(projectors{u})
+                            projectors{u} = alignest.overlayProjector(unit, overlay, settings.data.waferRadiusMm);
+                        end
+                        row = copyFields(row, alignest.overlayCorrection(unit, out, projectors{u}).metrics);
+                    end
                     if ~out.converged
                         logLines(end + 1) = unit.label + "｜" + plan.label + "｜" + methods(m).label + ...
                             "：最適化または Backfitting が反復上限内に収束しませんでした。最終反復の推定値を出力しています。"; %#ok<AGROW>
@@ -116,6 +124,8 @@ results.cancelled = cancelled;
 results.elapsedSeconds = toc(timer);
 results.log = logLines;
 results.timingRecorded = recordTiming;
+results.overlayEvaluated = overlay.enabled;
+results.overlayDescription = overlay.description;
 results.createdAt = string(datetime('now', 'Format', 'yyyy/MM/dd HH:mm:ss'));
 end
 
@@ -189,6 +199,12 @@ row.seconds = out.seconds;
 row.hyperparameters = extraText(out.extra);
 end
 
+function row = copyFields(row, values)
+for name = string(fieldnames(values)).'
+    row.(name) = values.(name);
+end
+end
+
 function text = extraText(extra)
 % GPR の超パラメータを「名前=値」の並びにする（ls：長さスケール、sf：σf、tau：質的変数の項の τ）
 names = string(fieldnames(extra));
@@ -204,6 +220,9 @@ row = struct("Operation", "", "EqpId", "", "LotID", "", "Wafer", "", "DateTime",
     "planType", "", "repeat", 0, "nShots", 0, "methodIndex", 0, "methodId", "", "methodLabel", "", ...
     "family", "", "featureSet", "", "variant", "", "factorMode", "", "criterionI", NaN, "criterionD", NaN);
 for name = metricList
+    row.(name) = NaN;
+end
+for name = alignest.overlayMetricNames()
     row.(name) = NaN;
 end
 row.nTest_X = 0;

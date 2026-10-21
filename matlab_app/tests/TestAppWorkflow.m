@@ -438,6 +438,59 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyError(@() app.runEvaluationNow(false), 'alignest:settings');
         end
 
+        function overlayCorrectionFromControlsMapAndExport(testCase)
+            app = testCase.App;
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.xlsx'));
+            app.applyMapping();
+            settings = app.Settings;
+            settings.methods = alignest.recommendedMethods("none");
+            settings.methods.tps.enabled = true;
+            settings.sampling.nShots = 15;
+            app.setSettings(settings);
+            % 補正モデルを画面で選ぶ
+            app.Controls.overlayWafer.Value = 2;
+            app.Controls.overlayShotCommon.Value = 'asml';
+            app.Controls.overlayPerShot.Value = 'translation';
+            app.Controls.overlayPerShot.ValueChangedFcn([], []);
+            testCase.verifyEqual(app.Settings.overlay, struct("waferOrder", 2, "shotCommon", "asml", "perShot", "translation"));
+            results = app.runEvaluationNow(false);
+            testCase.verifyTrue(results.overlayEvaluated);
+            testCase.verifyTrue(contains(results.overlayDescription, "ASML"));
+            testCase.verifyTrue(any(string(app.Controls.metric.ItemsData) == "overlayIncrease_X"));
+            testCase.verifyEqual(string(app.Controls.mapContent.Enable), "on");
+            % Wafer ごとのマップ：実測値で補正・推定値で補正・推定による変化
+            app.showMap(1, results.plans(1).label, 1, "vector", "overlay");
+            testCase.verifyEqual(string(app.Controls.mapAxes(3).Title.String), "推定による変化（推定値で補正 − 実測値で補正）");
+            testCase.verifyTrue(contains(app.Controls.mapInfo.Text, "補正モデル"));
+            row = results.table(1, :);
+            testCase.verifyTrue(contains(app.Controls.mapInfo.Text, sprintf("推定値で補正 X %.3f", row.overlayEstimated_X)));
+            app.showMap(1, results.plans(1).label, 1, "X", "estimate");
+            testCase.verifyEqual(string(app.Controls.mapAxes(1).Title.String), "計測値（評価した Shot）");
+            % 推定値の Excel に、全 Mark の補正残差のシート
+            folder = tempname;
+            mkdir(folder);
+            cleanup = onCleanup(@() rmdir(folder, 's'));
+            file = fullfile(folder, 'estimates.xlsx');
+            app.Controls.analysisWafer.Value = 1;
+            app.Controls.analysisGroup.Value = '15 Shot';
+            app.exportEstimatesTo(file, "selected");
+            overlay = readtable(file, 'Sheet', 'Overlay残差', 'VariableNamingRule', 'preserve');
+            marks = app.Data.units(1).marks;
+            testCase.verifyEqual(height(overlay), nnz(marks.validX | marks.validY));
+            testCase.verifyEqual(sort(unique(string(overlay.("Shotの区分")))), ["学習"; "評価"]);
+            testCase.verifyEqual(overlay.("推定による変化X[nm]"), overlay.("推定値で補正した残差X[nm]") - ...
+                overlay.("実測値で補正した残差X[nm]"), 'AbsTol', 1e-9);
+            % すべて「なし」にすると評価せず、マップの切り替えも使えない
+            app.Controls.overlayWafer.Value = 0;
+            app.Controls.overlayShotCommon.Value = 'none';
+            app.Controls.overlayPerShot.Value = 'none';
+            app.Controls.overlayPerShot.ValueChangedFcn([], []);
+            results = app.runEvaluationNow(false);
+            testCase.verifyFalse(results.overlayEvaluated);
+            testCase.verifyEqual(string(app.Controls.mapContent.Enable), "off");
+            testCase.verifyFalse(any(string(app.Controls.metric.ItemsData) == "overlayIncrease_X"));
+        end
+
         function reloadingDataClearsResults(testCase)
             app = testCase.App;
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));

@@ -1,4 +1,4 @@
-function [estimates, messages, cancelled] = collectEstimates(data, results, selection, options)
+function [estimates, messages, cancelled, overlayPoints] = collectEstimates(data, results, selection, options)
 %COLLECTESTIMATES 選んだ Wafer × 学習パターン × 手法 の推定値を、評価点ごとの表にまとめる。
 %   [estimates, messages, cancelled] = alignest.collectEstimates(data, results, selection)
 %   selection.methodIndex：手法（results.methods の何番目か）、selection.groups：学習パターンの列（results.groups の値）、
@@ -9,6 +9,8 @@ function [estimates, messages, cancelled] = collectEstimates(data, results, sele
 %   options.maxRows     ：表の行数の上限。超えそうなら計算する前に止める（Excel の行数の上限のため）
 %   推定できなかった組み合わせは飛ばし、理由を messages に入れる。
 %   質的変数に選んだファイルのその他の列（results.settings.factors.columns）は「質的変数:<列名>」の列として加える。
+%   overlayPoints：Overlay 補正の評価をするとき（alignest.overlayChoice）、全 Mark（学習・評価 Shot）の
+%   実測値で補正した残差・推定値で補正した残差・推定による変化（alignest.overlayCorrection）。しないときは空の表。
 arguments
     data struct
     results struct
@@ -32,6 +34,9 @@ end
 nTotal = numel(planIndex) * numel(methodIndex);
 columns = alignest.factorChoice(results.settings).columns;
 parts = cell(nTotal, 1);
+overlayParts = cell(nTotal, 1);
+overlay = alignest.overlayChoice(results.settings);
+projectors = containers.Map('KeyType', 'double', 'ValueType', 'any');
 messages = strings(0, 1);
 cancelled = false;
 done = 0;
@@ -44,6 +49,14 @@ for p = planIndex
         try
             out = cachedEstimate(options.cache, unit, plan, p, m, method, results.settings);
             parts{done} = pointTable(unit, plan, method, out, columns);
+            if overlay.enabled
+                if ~isKey(projectors, plan.unitIndex)
+                    projectors(plan.unitIndex) = alignest.overlayProjector(unit, overlay, ...
+                        results.settings.data.waferRadiusMm);
+                end
+                correction = alignest.overlayCorrection(unit, out, projectors(plan.unitIndex));
+                overlayParts{done} = overlayTable(unit, plan, method, out, correction);
+            end
         catch err
             messages(end + 1) = unit.label + "｜" + plan.label + "｜" + method.label + "：" + err.message; %#ok<AGROW>
         end
@@ -57,6 +70,12 @@ for p = planIndex
     end
 end
 parts = parts(~cellfun(@isempty, parts));
+overlayParts = overlayParts(~cellfun(@isempty, overlayParts));
+if isempty(overlayParts)
+    overlayPoints = table();
+else
+    overlayPoints = vertcat(overlayParts{:});
+end
 if isempty(parts)
     estimates = pointTable(emptyUnit(), struct("label", "", "group", ""), struct("label", "", "id", ""), [], columns);
 else
@@ -121,6 +140,24 @@ for column = columns
     end
     points.("質的変数:" + column) = values;
 end
+end
+
+function points = overlayTable(unit, plan, method, out, correction)
+% 1つの Wafer × 学習パターン × 手法 の、有効な全 Mark の補正残差（学習 Shot の Mark も含む）
+marks = unit.marks;
+index = find(marks.validX | marks.validY);
+n = numel(index);
+role = repmat("学習", n, 1);
+role(~ismember(marks.shotIndex(index), plan.shotIndex)) = "評価";
+fields = correction.fields;
+text = @(value) repmat(string(value), n, 1);
+points = table(text(unit.operation), text(unit.eqpId), text(unit.lotId), text(unit.label), text(unit.dateTime), ...
+    text(plan.label), text(plan.group), text(method.label), text(method.id), marks.shotNo(index), marks.markNo(index), ...
+    marks.x(index), marks.y(index), role, fields.residualActual(index, 1), fields.residualActual(index, 2), ...
+    fields.residualEstimated(index, 1), fields.residualEstimated(index, 2), fields.change(index, 1), ...
+    fields.change(index, 2), 'VariableNames', ["Operation", "EqpId", "LotID", "Wafer", "DateTime", "plan", "group", ...
+    "methodLabel", "methodId", "shotNo", "markNo", "x", "y", "role", "residualActualX", "residualActualY", ...
+    "residualEstimatedX", "residualEstimatedY", "changeX", "changeY"]);
 end
 
 function values = pick(marks, name, index)
