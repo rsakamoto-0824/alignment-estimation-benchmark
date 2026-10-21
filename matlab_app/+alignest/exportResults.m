@@ -39,7 +39,7 @@ items = ["作成日時"; "読み込んだファイル"; "工程（Operation）";
     "Scan 方向（Direction）"; "質的変数"; ...
     "Wafer（評価の単位）の数"; "学習 Shot の選び方"; "学習パターン"; ...
     "比べた手法の数"; "計算時間 [秒]"; "途中で止めたか"; "処理時間の記録"; "評価の考え方"; "差の割合"; ...
-    "ワースト値・95%値"; "I 基準・D 基準"; "Overlay 補正の評価"];
+    "ワースト値・95%値"; "I 基準・D 基準"; "Overlay 補正の評価"; "学習データの異常値"];
 values = [results.createdAt; sourceFile; listText(summaryField(summary, "operations")); ...
     listText(summaryField(summary, "eqpIds")); listText(summaryField(summary, "lotIds")); directionText(summary); ...
     factorText(choice); string(numel(results.unitLabels)); ...
@@ -51,7 +51,7 @@ values = [results.createdAt; sourceFile; listText(summaryField(summary, "operati
     "集計_<指標> シートの値は Wafer ごとの値（ランダムの繰り返しは平均）の平均。中央値・ワースト値・95%値は「集計_統計量」。"; ...
     "ワースト値は最も悪い Wafer の値（RMSE・MAE は最大、R² は最小）。95%値は 95% の Wafer がそれより良い値（RMSE・MAE は 95 パーセント点、R² は 5 パーセント点。Excel の PERCENTILE.INC と同じ補間）。"; ...
     "学習 Shot の組の評価指標（XY 多項式の基準モデル、候補の全 Mark で正規直交化）。I 基準 = tr(M⁻¹)、D 基準 = det(M)^(−1/p)。小さいほど良い。全候補を使うと I 基準 = 項数、D 基準 = 1。"; ...
-    overlayText(results, overlayEvaluated)];
+    overlayText(results, overlayEvaluated); outlierText(results.settings)];
 values = [values; summary.messages(:); results.log(:)];
 items = [items; repmat("データの確認", numel(summary.messages), 1); repmat("計算の注意", numel(results.log), 1)];
 writetable(table(items, values, 'VariableNames', ["項目", "内容"]), filePath, 'Sheet', '説明');
@@ -88,11 +88,11 @@ writetable(vertcat(blocks{:}), filePath, 'Sheet', '集計_統計量');
 perWafer = results.table;
 keep = ["Operation", "EqpId", "LotID", "Wafer", "DateTime", "plan", "group", "nShots", "criterionI", "criterionD", ...
     "methodLabel", "methodId", metricNames, ...
-    "nTest_X", "nTest_Y", "edf_X", "edf_Y", "aux_X", "aux_Y", "converged", "seconds", "hyperparameters", "note"];
+    "nTest_X", "nTest_Y", "nOutliers", "edf_X", "edf_Y", "aux_X", "aux_Y", "converged", "seconds", "hyperparameters", "note"];
 perWafer = perWafer(:, keep);
 headers = ["Operation", "EqpId", "LotID", "Wafer", "DateTime", "学習パターン", "列", "学習Shot数", "I基準tr(M⁻¹)", ...
     "D基準det(M)^(-1/p)", "手法", "手法の識別子", metricLabels, ...
-    "評価点数X", "評価点数Y", "有効自由度X", "有効自由度Y", "補助値X", "補助値Y", "最適化の収束", "計算時間[秒]", ...
+    "評価点数X", "評価点数Y", "学習から除いた異常値の数", "有効自由度X", "有効自由度Y", "補助値X", "補助値Y", "最適化の収束", "計算時間[秒]", ...
     "超パラメータ", "メモ"];
 perWafer.Properties.VariableNames = cellstr(headers);
 writetable(perWafer, filePath, 'Sheet', 'Waferごと');
@@ -214,5 +214,31 @@ switch string(sampling.method)
             numel(sampling.priorityShots));
     otherwise
         label = "手動で指定";
+        return
+end
+if isfield(sampling, "countBy") && sampling.countBy == "rate"
+    label = label + "。学習 Shot 数は計測率（Wafer の候補 Shot 数に対する割合）で決めた";
+end
+if any(string(sampling.method) == ["ioptimal", "random"])
+    required = strings(0, 1);
+    if isfield(sampling, "requiredShots") && ~isempty(sampling.requiredShots)
+        required(end + 1) = "shotNo " + strjoin(string(sampling.requiredShots), " ");
+    end
+    if isfield(sampling, "requireOuterShots") && sampling.requireOuterShots
+        required(end + 1) = "最外周の Shot";
+    end
+    if ~isempty(required)
+        label = label + "。必ず計測する Shot：" + strjoin(required, "・") + "（残りを選んだ）";
+    end
+end
+end
+
+function text = outlierText(settings)
+% 学習データの異常値を除いたかどうかと、その決め方
+text = "除かない";
+if isfield(settings.evaluation, "excludeOutliers") && settings.evaluation.excludeOutliers
+    text = sprintf(['除いた（Wafer・学習パターンごとに学習点の平均と σ を X・Y 別に求め、|値 − 平均| > %g σ の軸が' ...
+        'ある Mark を X・Y の両方の学習データから除いた。「Waferごと」の「学習から除いた異常値の数」）'], ...
+        settings.evaluation.outlierSigma);
 end
 end

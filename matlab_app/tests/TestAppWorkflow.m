@@ -492,6 +492,81 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyFalse(any(string(app.Controls.metric.ItemsData) == "overlayIncrease_X"));
         end
 
+        function measurementRateRequiredShotsAndMap(testCase)
+            app = testCase.App;
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.xlsx'));
+            app.applyMapping();
+            % 計測率で学習 Shot 数を決め、指定した shotNo と最外周の Shot を必ず計測する
+            app.Controls.countBy.Value = 'rate';
+            app.Controls.rateStart.Value = 10;
+            app.Controls.rateEnd.Value = 40;
+            app.Controls.rateStep.Value = 30;
+            app.Controls.requiredShots.Value = '50, 37';
+            app.Controls.requireOuter.Value = true;
+            app.Controls.requireOuter.ValueChangedFcn([], []);
+            sampling = app.Settings.sampling;
+            testCase.verifyEqual(sampling.countBy, "rate");
+            testCase.verifyEqual([sampling.rateStart, sampling.rateEnd, sampling.rateStep], [10, 40, 30]);
+            testCase.verifyEqual(sampling.requiredShots, [37, 50]);
+            testCase.verifyTrue(sampling.requireOuterShots);
+            testCase.verifyTrue(contains(app.Controls.nShotsList.Text, "計測率：10, 40 %"));
+            testCase.verifyTrue(contains(app.Controls.requiredInfo.Text, "30 Shot を必ず計測（指定 2・最外周 28"));
+            testCase.verifyEqual(string(app.Controls.measurePlan.Items), ["I最適 計測率 10%", "I最適 計測率 40%"]);
+            % 計測マップ（評価の前に、学習に使う Shot を Wafer 上で確かめる）
+            plan = app.drawMeasurementMap(2, "I最適 計測率 40%");
+            testCase.verifyEqual(plan.nShots, 40);
+            testCase.verifyTrue(all(ismember([37, 50], plan.shotNos)));
+            testCase.verifyEqual(numel(plan.requiredShotIndex), 30);
+            names = string(get(findobj(app.Controls.measureAxes, 'Type', 'patch'), 'DisplayName'));
+            testCase.verifyTrue(any(names == "必ず計測する Shot（指定・最外周など）（30）"));
+            testCase.verifyTrue(any(names == "選んで計測する Shot（10）"));
+            testCase.verifyTrue(startsWith(string(app.Controls.measureInfo.Value{1}), ...
+                "SIM02｜I最適 計測率 40%｜計測 40 / 候補 99 Shot"));
+            % 設定を変えると、古い計測マップは消える
+            app.Controls.requireOuter.Value = false;
+            app.Controls.requireOuter.ValueChangedFcn([], []);
+            testCase.verifyEqual(string(app.Controls.measureAxes.Visible), "off");
+            % すべての学習パターンの計測マップを Excel に書き出す
+            folder = tempname;
+            mkdir(folder);
+            cleanup = onCleanup(@() rmdir(folder, 's'));
+            file = fullfile(folder, 'measurement_map.xlsx');
+            sheet = app.exportMeasurementMap(file);
+            testCase.verifyEqual(sum(sheet.("I最適 計測率 10%")), 10);
+            testCase.verifyEqual(sum(sheet.("I最適 計測率 40%")), 40);
+            testCase.verifyEqual(sum(sheet.("指定で必ず計測")), 2);
+            testCase.verifyEqual(sum(sheet.("最外周")), 28);
+            plans = readtable(file, 'Sheet', '学習パターン', 'VariableNamingRule', 'preserve', 'TextType', 'string');
+            testCase.verifyEqual(plans.("学習パターン"), ["I最適 計測率 10%"; "I最適 計測率 40%"]);
+            testCase.verifyEqual(plans.("学習Shot数"), [10; 40]);
+            % 評価の結果も計測率ごとにまとまり、グラフの横軸は計測率
+            settings = app.Settings;
+            settings.methods = alignest.recommendedMethods("none");
+            settings.methods.polynomial.enabled = true;
+            app.setSettings(settings);
+            results = app.runEvaluationNow(false);
+            testCase.verifyEqual(results.groups, ["計測率 10%", "計測率 40%"]);
+            testCase.verifyEqual(unique(results.table.nShots(results.table.group == "計測率 10%")), 10);
+            app.Controls.resultTabs.SelectedTab = app.Controls.chartTab;
+            app.Controls.chartXAxis.Value = 'plan';
+            app.Controls.chartXAxis.ValueChangedFcn([], []);
+            testCase.verifyEqual(string(app.Controls.chartAxes.XLabel.String), "計測率 [%]");
+            testCase.verifyEqual(app.Controls.chartAxes.XTick, [10, 40]);
+            testCase.verifyTrue(all(isnan(results.table.nOutliers)), "異常値を除かない設定では NaN");
+            % 学習データの異常値を除いて推定する（n は任意の正の値）
+            app.Controls.excludeOutliers.Value = true;
+            app.Controls.outlierSigma.Value = 2.5;
+            app.Controls.outlierSigma.ValueChangedFcn([], []);
+            testCase.verifyTrue(app.Settings.evaluation.excludeOutliers);
+            testCase.verifyEqual(app.Settings.evaluation.outlierSigma, 2.5);
+            results = app.runEvaluationNow(false);
+            testCase.verifyTrue(all(isfinite(results.table.nOutliers)));
+            testCase.verifyGreaterThan(sum(results.table.nOutliers), 0);
+            app.showMap(1, "I最適 計測率 40%", 1, 'vector', 'estimate');
+            testCase.verifyTrue(contains(app.Controls.mapInfo.Text, "学習から除いた異常値"));
+            testCase.verifyNotEmpty(findobj(app.Controls.mapAxes(1), 'Type', 'line', 'DisplayName', '学習から除いた異常値'));
+        end
+
         function groupMapsErrorBarsScatterAndPriorityFile(testCase)
             app = testCase.App;
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.xlsx'));
@@ -501,9 +576,48 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyNotEmpty(option);
             app.Controls.previewWafer.Value = option;
             app.Controls.previewWafer.ValueChangedFcn([], []);
-            testCase.verifyEqual(numel(findall(app.Controls.previewAxes(1), 'Type', 'line', 'DisplayName', ...
+            testCase.verifyEqual(numel(findall(app.Controls.previewAxes(1), 'Type', 'patch', 'DisplayName', ...
                 'Wafer 間のばらつき（1σ 楕円）')), 1);
+            testCase.verifyEqual(string(app.Controls.previewAxes(1).Colorbar.Title.String), "|r|");
+            testCase.verifyTrue(contains(app.Controls.previewInfo.Text, "色は X・Y の相関係数の絶対値 |r|"));
             testCase.verifyTrue(contains(app.Controls.previewInfo.Text, "EqpId = EXP01"));
+            % 選んだ Wafer の全 Shot を重ね合わせたベクトル場と共分散楕円
+            testCase.verifyEqual(cell2mat(app.Controls.shotOverlayWafers.Value), 1:5, "読み込むと全 Wafer を選ぶ");
+            overlay = app.drawShotOverlay([1, 3]);
+            testCase.verifyEqual(overlay.nWafers, 2);
+            overlayAxes = app.Controls.shotOverlayAxes;
+            testCase.verifyTrue(startsWith(string(overlayAxes(1).Title.String), "Wafer 2 枚"));
+            ellipses = findall(overlayAxes(1), 'Type', 'patch', 'DisplayName', 'Shot・Wafer 間のばらつき（1σ 楕円）');
+            testCase.verifyNotEmpty(ellipses);
+            % 楕円の色は X・Y の相関係数の絶対値（楕円ごとに同じ値の頂点が並ぶ）
+            covariance = overlay.average.covariance;
+            expected = abs(covariance(:, 3)) ./ sqrt(covariance(:, 1) .* covariance(:, 2));
+            colors = reshape(ellipses.FaceVertexCData, [], size(ellipses.Faces, 1));
+            testCase.verifyEqual(colors(1, :).', expected, 'AbsTol', 1e-12);
+            testCase.verifyEqual(overlayAxes(1).CLim, [0, 1]);
+            testCase.verifyEqual(numel(findobj(overlayAxes(1), 'Type', 'quiver')), 2, "個々の Shot と平均");
+            testCase.verifyEqual(numel(app.Controls.shotOverlayInfo.Value), 1 + 4);
+            testCase.verifyEqual(app.Controls.shotOverlayAxesGrid.ColumnWidth, {'1x', 0, 0});
+            app.Controls.shotOverlayWaferOrder.Value = 1;
+            app.Controls.shotOverlayIndividual.Value = false;
+            app.Controls.shotOverlayIndividual.ValueChangedFcn([], []);
+            testCase.verifyTrue(contains(string(overlayAxes(1).Title.String), "Wafer 成分 1次を除く"));
+            testCase.verifyEqual(numel(findobj(overlayAxes(1), 'Type', 'quiver')), 1);
+            % Scan 方向で分けた図も並べる（同じ矢印の倍率で、すべての Shot・Scan 方向 1・2）
+            overlay = app.drawShotOverlay(1:5, true);
+            testCase.verifyEqual(numel(overlay), 3);
+            testCase.verifyEqual([overlay(2:3).direction], [1, 2]);
+            testCase.verifyEqual(overlay(2).nShots + overlay(3).nShots, overlay(1).nShots, "Shot はどちらかの Scan 方向");
+            testCase.verifyEqual(app.Controls.shotOverlayAxesGrid.ColumnWidth, {'1x', '1x', '1x'});
+            % 並べた図の題名は2行（Scan 方向と、除いた Wafer 成分）
+            testCase.verifyEqual(string(overlayAxes(2).Title.String(1)), "Scan 方向 1（" + overlay(2).nShots + " Shot）");
+            testCase.verifyEqual(string(overlayAxes(3).Title.String(2)), "Wafer 成分 1次を除く");
+            testCase.verifyEqual(overlayAxes(2).XLim, overlayAxes(1).XLim);
+            testCase.verifyEqual(numel(app.Controls.shotOverlayInfo.Value), 3 * (1 + 4));
+            app.Controls.shotOverlayByScan.Value = false;
+            app.Controls.shotOverlayByScan.ValueChangedFcn([], []);
+            testCase.verifyEqual(app.Controls.shotOverlayAxesGrid.ColumnWidth, {'1x', 0, 0});
+            testCase.verifyEqual(string(overlayAxes(2).Visible), "off");
             % 計測する Shot の優先順のファイル
             folder = tempname;
             mkdir(folder);
@@ -539,7 +653,7 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyEqual(string(app.Controls.mapAxes(3).Title.String), "残差（計測値 − 推定値）の平均");
             app.showMap(group, "優先順 20 Shot", 1, "vector", "overlay");
             testCase.verifyEqual(string(app.Controls.mapAxes(2).Title.String), "推定値で補正した残差の平均");
-            testCase.verifyNotEmpty(findall(app.Controls.mapAxes(1), 'Type', 'line', 'DisplayName', 'Wafer 間のばらつき（1σ 楕円）'));
+            testCase.verifyNotEmpty(findall(app.Controls.mapAxes(1), 'Type', 'patch', 'DisplayName', 'Wafer 間のばらつき（1σ 楕円）'));
             % 推定値と実測値の散布図（Mark 番号で色分け）
             summary = app.drawScatter(1, "20 Shot", 0, "mark");
             testCase.verifyEqual(numel(summary), 2);

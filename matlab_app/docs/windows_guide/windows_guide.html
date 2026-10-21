@@ -254,7 +254,7 @@
         <li><div>
           <strong>（初めてのときだけ）動作確認のテストを行う</strong>
           <p>
-            次を入力すると、自動テストが走ります（数分）。最後に「成功 89 件、失敗 0 件、未完了 0 件」と出れば、
+            次を入力すると、自動テストが走ります（数分）。最後に「成功 100 件、失敗 0 件、未完了 0 件」と出れば、
             この PC の MATLAB で正しく計算できています。
           </p>
         </div></li>
@@ -273,7 +273,7 @@ cd C:\work\matlab_app</code></pre>
           <p>
             模擬データの評価に使った Python 版と同じ計算結果になること（8件）、データの読み込みと前処理（21件）、
             評価・集計・書き出し・設定の保存（15件）、質的変数の設計（2件）、RBF・空間モデルの Backfitting と質的変数の選択（9件）、
-            画面の一連の操作（13件）、Overlay 補正の評価（6件）、平均の図・散布図・優先順のファイル（6件）、正規性検定・ANOVA が SciPy と同じ結果になること（5件）、
+            画面の一連の操作（14件）、Overlay 補正の評価（6件）、平均の図・Shot 重ね合わせ・散布図・優先順のファイル（8件）、計測率・必ず計測する Shot・異常値の除外（8件）、正規性検定・ANOVA が SciPy と同じ結果になること（5件）、
             追加したモデルの選択肢（Matérn の ν・spherical・GAM の形状関数、4件）です。
           </p>
         </div>
@@ -457,6 +457,9 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
           「Wafer マップ（計測値）」には、計測値の矢印の隣に X・Y 成分ごとの色の図（ヒートマップ）が出ます。灰色の枠は Shot です。
           点が重なって見にくいときは「色の点の大きさ」を変えます。
           「表示する Wafer・平均」で「平均：全 Wafer」「平均：EqpId = …」などを選ぶと、Wafer 間で平均した図と、Wafer 間のばらつきの共分散楕円が出ます。
+          楕円の色は X・Y の相関係数の絶対値 |r| です（灰色 = 相関なし、橙、紫 = 強い相関。図の右の目盛り）。
+          「Shot 重ね合わせ」では、選んだ Wafer のすべての Shot を Shot 内の座標で重ね、Mark の位置ごとの平均と共分散楕円を描きます（Wafer 成分を除いて重ねることもできます）。
+          「Scan 方向で分けた図も並べる」に印を付けると、右に Scan 方向 1・2 の Shot だけを重ねた図が、同じ矢印の倍率で並びます。
           「Shot レイアウト」には、左に Shot の並び（数字は shotNo、Scan 方向があれば S1・S2）、右に Shot 内の Mark の位置と番号（M の後が markNo）が出ます。
         </p></div></li>
       </ol>
@@ -472,6 +475,10 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
         <img src="images/09_layout.jpg" alt="Shot レイアウトのタブ。左に shotNo と Scan 方向で色分けした Shot の並び、右に Shot 内の 4 つの Mark の位置と番号" loading="lazy">
         <figcaption>図 3　Shot レイアウト（Shot の並びと Mark の位置）</figcaption>
       </figure>
+      <figure class="screen-figure">
+        <img src="images/16_shot_overlay.jpg" alt="Shot 重ね合わせのタブ。すべての Shot、Scan 方向 1、Scan 方向 2 の3つの図が並び、それぞれ個々の Shot の薄い矢印、Mark ごとの平均の濃い矢印と、相関の強さで色を変えた共分散楕円" loading="lazy">
+        <figcaption>図 16　Shot 重ね合わせ（Wafer 成分 1次を除く、Scan 方向で分けた図を並べた例、1σ 楕円）</figcaption>
+      </figure>
 
       <h3 class="sub-heading">8-2. 比べ方を決める（2. 評価の設定）</h3>
       <ol class="numbered-steps">
@@ -485,7 +492,14 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
         </p></div></li>
         <li><div><strong>学習 Shot 数を決める</strong><p>
           「開始」「終了」「刻み（スイープ幅）」で決めます（例：10・40・5 で 10, 15, …, 40）。欄の下に比べる Shot 数の並びが出ます。
+          右の欄を「計測率 [%] で決める」にすると、計測率（計測値のある Shot に対する学習 Shot の割合）の開始・終了・刻みで比べます
+          （例：10・40・10 で 10, 20, 30, 40 %）。Wafer ごとに Shot 数 × 計測率 を四捨五入した数の Shot を使います。
           組み合わせに誤りがあると、欄の下に理由が出ます。
+        </p></div></li>
+        <li><div><strong>（必要なとき）必ず計測する Shot を決める</strong><p>
+          I 最適・ランダムでは、「必ず計測する shotNo」に shotNo を空白またはカンマ区切りで書くと、その Shot を必ず学習に入れ、
+          残りを I 最適（またはランダム）で選びます。「最外周の Shot をすべて必ず計測する」をオンにすると、上下左右のどこかに隣の Shot が無い
+          Shot をまとめて必ず計測します。欄の下に、必ず計測する Shot の数が出ます。
         </p></div></li>
         <li><div><strong>質的変数を選ぶ</strong><p>
           「比べる手法」の「質的変数」で、推定に使う質的変数（Scan 方向・Mark 番号・Shot 行の奇数・偶数）と、
@@ -504,6 +518,11 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
           左下の「Overlay 補正の評価」で、補正モデルの Wafer 成分（Shot 中心の多項式）・Shot 共通成分（1次、または ASML・Canon・Nikon の高次式）・
           Shot ごとの成分（並進・1次）を選びます。推定値で補正したときに Overlay 残差がどれだけ増えるかを評価します（すべて「なし」なら評価しません）。
         </p></div></li>
+        <li><div><strong>（必要なとき）学習データの異常値を除く</strong><p>
+          左下の「学習データの異常値（平均から nσ 超）を除いて推定する」をオンにし、「n =」に正の値（例：3）を入れます。
+          Wafer・学習パターンごとに学習点の平均と σ を X・Y 別に求め、平均から n × σ を超えて離れた Mark を、X・Y の両方の学習データから除きます。
+          除いた数は Excel の「Waferごと」の「学習から除いた異常値の数」、Wafer ごとのマップでは × 印で確かめられます。
+        </p></div></li>
         <li><div><strong>（必要なとき）処理時間を記録する</strong><p>
           1 枚あたりの推定時間で手法を選ぶときは、左下の「条件ごとの処理時間を記録する」をオンにします。
           手法 × 学習パターンごとの時間が、結果一覧の指標「処理時間 [秒/枚]」と Excel の「処理時間」シートに出ます。
@@ -516,12 +535,21 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
 
       <h3 class="sub-heading">8-3. 実行する（3. 実行）</h3>
       <ol class="numbered-steps">
+        <li><div><strong>（評価の前に）計測マップで学習に使う Shot を確かめる</strong><p>
+          右の「計測マップ」で Wafer と学習パターンを選び、「計測マップを作る」を押します。必ず計測する Shot は橙の太枠、選んで計測する Shot は青、
+          計測しない Shot は白で、shotNo つきで描かれます。「図を画像で保存…」で画像に、「計測マップを Excel に書き出す…」で
+          選んだ Wafer のすべての学習パターンの計測する Shot（1 = 計測する、0 = しない）を Excel に書き出せます。
+        </p></div></li>
         <li><div><strong>「評価を始める」を押す</strong><p>進み具合と残り時間の目安が出ます。途中で止めたいときは「止める」を押すと、それまでの結果が残ります。</p></div></li>
         <li><div><strong>終わったら結果一覧に切り替わる</strong><p>「記録」に、推定できなかった組み合わせや学習パターンの注意が出ます。</p></div></li>
       </ol>
       <figure class="screen-figure">
         <img src="images/03_progress.jpg" alt="実行タブで評価中の進み具合のダイアログが出ているところ" loading="lazy">
         <figcaption>図 5　実行中（「止める」で途中までの結果を残して止められる）</figcaption>
+      </figure>
+      <figure class="screen-figure">
+        <img src="images/17_measurement_map.jpg" alt="実行タブの右の計測マップ。Wafer 上の Shot が、必ず計測する Shot（橙の太枠）、選んで計測する Shot（青）、計測しない Shot（白）に塗り分けられ、shotNo が書かれている" loading="lazy">
+        <figcaption>図 17　計測マップ（計測率 30%、shotNo 1・50・99 と最外周を必ず計測する拡張 I 最適計画）</figcaption>
       </figure>
 
       <h3 class="sub-heading">8-4. 結果を見る（4. 結果一覧）</h3>
@@ -575,7 +603,7 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
       <p>
         Wafer・学習パターン・手法を選ぶと、評価した Shot の計測値・推定値・残差（計測値 − 推定値）を並べて表示します。
         灰色の四角は学習に使った Mark、細い灰色の枠は Shot です。「表示」で矢印と色（X・Y）を切り替えられます。
-        「Wafer・平均」で LotID・EqpId・Operation ごとや全 Wafer の平均を選ぶと、Wafer 間で平均した図と共分散楕円が出ます。
+        「Wafer・平均」で LotID・EqpId・Operation ごとや全 Wafer の平均を選ぶと、Wafer 間で平均した図と共分散楕円（色は X・Y の相関係数の絶対値 |r|）が出ます。
         「図の内容」を「Overlay 補正」にすると、実測値で補正した残差・推定値で補正した残差・推定による変化（両者の差）を並べ、下の行に |平均|+3σ を出します。
         色のときは「色の点の大きさ」で点の大きさを変えられます。下の行に、その組み合わせの指標が出ます。
       </p>
@@ -588,7 +616,7 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
         <figcaption>図 12　Overlay 補正の評価（実測値で補正・推定値で補正・推定による変化）</figcaption>
       </figure>
       <figure class="screen-figure">
-        <img src="images/15_group_map.jpg" alt="全 Wafer の平均の計測値・推定値・残差のベクトルに、Wafer 間のばらつきの共分散楕円が重なった図" loading="lazy">
+        <img src="images/15_group_map.jpg" alt="全 Wafer の平均の計測値・推定値・残差のベクトルに、Wafer 間のばらつきの共分散楕円（色は X・Y の相関係数の絶対値）が重なった図" loading="lazy">
         <figcaption>図 15　全 Wafer の平均と共分散楕円（1σ）</figcaption>
       </figure>
 
@@ -653,7 +681,7 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
       <div class="checklist-grid">
         <article>
           <h3>導入の確認</h3>
-          <label><input type="checkbox"> （MATLAB で使う）テストが「成功 89 件、失敗 0 件」になった</label>
+          <label><input type="checkbox"> （MATLAB で使う）テストが「成功 100 件、失敗 0 件」になった</label>
           <label><input type="checkbox"> （exe）exe が起動し、サンプルデータを読み込めた</label>
           <label><input type="checkbox"> サンプルデータで評価が最後まで終わり、結果一覧に表が出た</label>
           <label><input type="checkbox"> 結果を Excel に書き出し、開いて中身を確かめられた</label>

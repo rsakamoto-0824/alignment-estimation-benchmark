@@ -6,13 +6,15 @@ function waferMap(ax, points, values, options)
 %   options.scaleMmPerNm : 矢印の長さ [mm/nm]
 %   options.colorLimit   : 色の範囲 ±[nm]
 %   options.trainPoints  : 学習に使った Mark の座標（四角で描く）
+%   options.outlierPoints: 学習データから除いた異常値の Mark の座標（× で描く）
 %   options.titleText    : 図の題名
 %   options.showLegend   : 凡例を出すか（既定 true）
 %   options.markerSize   : 色で描くときの点の大きさ（scatter の面積 [ポイント²]、既定 30）
 %   options.shotCenters  : Shot 中心の座標 [x, y]（mm、Shot 数 × 2）。空なら Shot の枠を描かない
 %   options.shotSizeMm   : Shot の大きさ [幅, 高さ]（mm）
 %   options.covariance   : 点ごとの Wafer 間の共分散 [X の分散, Y の分散, X・Y の共分散]（nm²、点数 × 3）
-%   options.ellipseSigma : 共分散楕円の大きさ（σ の何倍か。0 なら描かない）。矢印の先を中心に、矢印と同じ倍率で描く
+%   options.ellipseSigma : 共分散楕円の大きさ（σ の何倍か。0 なら描かない）。矢印の先を中心に、矢印と同じ倍率で描く。
+%                          楕円の色は X・Y の相関係数の絶対値（alignest.plot.covarianceEllipses）
 %   色だけで意味を伝えないよう、学習 Mark は形（四角）と凡例の文字でも示す。
 arguments
     ax
@@ -22,6 +24,7 @@ arguments
     options.scaleMmPerNm (1, 1) double = 1
     options.colorLimit (1, 1) double = 5
     options.trainPoints double = zeros(0, 2)
+    options.outlierPoints double = zeros(0, 2)
     options.titleText (1, 1) string = ""
     options.waferRadiusMm (1, 1) double = 150
     options.arrowColor (1, 3) double = [0.0, 0.33, 0.62]
@@ -35,8 +38,10 @@ end
 WAFER_EDGE_COLOR = [0.45, 0.45, 0.45];
 TRAIN_FACE_COLOR = [0.80, 0.80, 0.80];
 TRAIN_EDGE_COLOR = [0.25, 0.25, 0.25];
+OUTLIER_COLOR = [0.80, 0.0, 0.0];
 MARGIN_MM = 8;
 cla(ax, 'reset');
+colorbar(ax, 'off');
 hold(ax, 'on');
 angle = linspace(0, 2 * pi, 361);
 plot(ax, options.waferRadiusMm * cos(angle), options.waferRadiusMm * sin(angle), '--', ...
@@ -48,6 +53,10 @@ if ~isempty(options.trainPoints)
         'MarkerFaceColor', TRAIN_FACE_COLOR, 'MarkerEdgeColor', TRAIN_EDGE_COLOR, 'LineStyle', 'none', ...
         'DisplayName', '学習に使った Mark');
 end
+if ~isempty(options.outlierPoints)
+    legendItems(end + 1) = plot(ax, options.outlierPoints(:, 1), options.outlierPoints(:, 2), 'x', 'MarkerSize', 9, ...
+        'LineWidth', 1.8, 'Color', OUTLIER_COLOR, 'LineStyle', 'none', 'DisplayName', '学習から除いた異常値');
+end
 if options.mode == "vector"
     usable = all(isfinite(values), 2);
     legendItems(end + 1) = quiver(ax, points(usable, 1), points(usable, 2), ...
@@ -55,8 +64,8 @@ if options.mode == "vector"
         'Color', options.arrowColor, 'LineWidth', 1, 'MaxHeadSize', 0.4, 'DisplayName', '値（矢印）');
     if options.ellipseSigma > 0 && size(options.covariance, 1) == size(points, 1)
         tips = points(usable, :) + values(usable, :) * options.scaleMmPerNm;
-        handle = covarianceEllipses(ax, tips, options.covariance(usable, :), ...
-            options.ellipseSigma * options.scaleMmPerNm, options.arrowColor);
+        handle = alignest.plot.covarianceEllipses(ax, tips, options.covariance(usable, :), ...
+            options.ellipseSigma * options.scaleMmPerNm);
         if ~isempty(handle)
             handle.DisplayName = sprintf('Wafer 間のばらつき（%gσ 楕円）', options.ellipseSigma);
             legendItems(end + 1) = handle;
@@ -84,30 +93,6 @@ title(ax, options.titleText, 'Interpreter', 'none');
 box(ax, 'on');
 if options.showLegend && ~isempty(legendItems)
     legend(ax, legendItems, 'Location', 'southoutside', 'Orientation', 'horizontal', 'Box', 'off');
-end
-end
-
-function handle = covarianceEllipses(ax, centers, covariance, radiusScale, color)
-% 2×2 の共分散行列 [a c; c b] の楕円（固有ベクトルの向き、半径 = √固有値 × radiusScale）を1本の線で描く
-SEGMENTS = 36;
-ELLIPSE_ALPHA = 0.6;
-angle = linspace(0, 2 * pi, SEGMENTS + 1);
-circle = [cos(angle); sin(angle)];
-lineX = zeros(0, 1);
-lineY = zeros(0, 1);
-for k = 1:size(centers, 1)
-    c = covariance(k, :);
-    if any(~isfinite(c))
-        continue
-    end
-    [vectors, values] = eig([c(1), c(3); c(3), c(2)], 'vector');
-    shape = vectors * diag(sqrt(max(values, 0)) * radiusScale) * circle;
-    lineX = [lineX; centers(k, 1) + shape(1, :).'; NaN]; %#ok<AGROW>
-    lineY = [lineY; centers(k, 2) + shape(2, :).'; NaN]; %#ok<AGROW>
-end
-handle = gobjects(0);
-if ~isempty(lineX)
-    handle = plot(ax, lineX, lineY, '-', 'Color', [color, ELLIPSE_ALPHA], 'LineWidth', 0.8);
 end
 end
 

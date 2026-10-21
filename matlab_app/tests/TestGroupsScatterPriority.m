@@ -65,6 +65,64 @@ classdef TestGroupsScatterPriority < matlab.unittest.TestCase
             testCase.verifyTrue(isnan(alignest.scatterSummary(1, 1).r));
         end
 
+        function shotOverlayAveragesAllShotsPerMarkPosition(testCase)
+            units = testCase.Data.units;
+            overlay = alignest.shotOverlay(units, [1, 3], 0, 150);
+            testCase.verifyEqual(overlay.nWafers, 2);
+            testCase.verifyEqual(overlay.nShots, numel(units(1).shots.shotNo) + numel(units(3).shots.shotNo));
+            testCase.verifyEqual(size(overlay.average.points, 1), 4, "Mark の位置は4か所");
+            % 平均は、同じ Shot 内の位置の Mark の値を2枚の全 Shot でまとめた平均
+            marks = [units(1).marks, units(3).marks];
+            local = round([vertcat(marks.markXmm), vertcat(marks.markYmm)], 3);
+            values = vertcat(marks.measX);
+            values(~vertcat(marks.validX)) = NaN;
+            for k = 1:4
+                at = all(local == round(overlay.average.points(k, :), 3), 2);
+                testCase.verifyEqual(overlay.average.mean(k, 1), mean(values(at), 'omitnan'), 'AbsTol', 1e-10);
+            end
+            testCase.verifyEqual(sort(overlay.markLabels).', 1:4);
+            % Wafer 成分（1次）だけの場は、除くと Shot 内の成分だけが残り、ばらつきも小さくなる
+            unit = units(2);
+            unit.marks.measX = 3 + 20 * unit.marks.Xmm / 150 - 8 * unit.marks.Ymm / 150 + 0.5 * unit.marks.markXmm;
+            unit.marks.measY = -2 + 5 * unit.marks.Ymm / 150 + 0.3 * unit.marks.markYmm;
+            raw = alignest.shotOverlay(unit, 1, 0, 150);
+            removed = alignest.shotOverlay(unit, 1, 1, 150);
+            expected = [0.5 * removed.average.points(:, 1), 0.3 * removed.average.points(:, 2)];
+            testCase.verifyEqual(removed.average.mean, expected, 'AbsTol', 0.05);
+            testCase.verifyLessThan(max(removed.average.covariance(:, 1:2), [], 'all'), 0.01);
+            testCase.verifyGreaterThan(min(raw.average.covariance(:, 1)), 1);
+            testCase.verifyError(@() alignest.shotOverlay(units, [], 0, 150), 'alignest:shotOverlay');
+            % Scan 方向で分けると、その Scan 方向の Mark だけを重ねる
+            scan1 = alignest.shotOverlay(units, [1, 3], 0, 150, 1);
+            direction = vertcat(marks.direction);
+            for k = 1:size(scan1.average.points, 1)
+                at = all(local == round(scan1.average.points(k, :), 3), 2) & direction == 1;
+                testCase.verifyEqual(scan1.average.mean(k, 1), mean(values(at), 'omitnan'), 'AbsTol', 1e-10);
+            end
+            testCase.verifyEqual(scan1.direction, 1);
+            testCase.verifyError(@() alignest.shotOverlay(units, [1, 3], 0, 150, 3), 'alignest:shotOverlay');
+        end
+
+        function covarianceEllipseColorIsAbsoluteCorrelation(testCase)
+            figureHandle = figure('Visible', 'off');
+            cleanup = onCleanup(@() close(figureHandle));
+            ax = axes(figureHandle);
+            % 相関 −0.5・0・+0.9、分散が 0 の点（相関は 0 とする）、NaN の点（描かない）
+            covariance = [4, 1, -1; 2, 3, 0; 1, 1, 0.9; 0, 2, 0; NaN, 1, 0];
+            centers = [0, 0; 10, 0; 20, 0; 30, 0; 40, 0];
+            handle = alignest.plot.covarianceEllipses(ax, centers, covariance, 2);
+            testCase.verifyEqual(size(handle.Faces, 1), 4);
+            colors = reshape(handle.FaceVertexCData, [], 4);
+            testCase.verifyEqual(colors(1, :), [0.5, 0, 0.9, 0], 'AbsTol', 1e-12);
+            testCase.verifyEqual(max(abs(colors - colors(1, :)), [], 'all'), 0, "1つの楕円は同じ色");
+            testCase.verifyEqual(ax.CLim, [0, 1]);
+            testCase.verifyNotEmpty(ax.Colorbar);
+            % 半径は √固有値 × 倍率（相関 0・分散 2 と 3 の楕円は x に √2×2、y に √3×2）
+            second = handle.Vertices(handle.Faces(2, :), :);
+            testCase.verifyEqual(max(second) - min(second), 2 * 2 * sqrt([2, 3]), 'RelTol', 0.01);
+            testCase.verifyEmpty(alignest.plot.covarianceEllipses(ax, [0, 0], [NaN, NaN, NaN], 1));
+        end
+
         function priorityFileIsReadByColumnNames(testCase)
             folder = tempname;
             mkdir(folder);

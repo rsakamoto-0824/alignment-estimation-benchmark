@@ -1,4 +1,4 @@
-function [selected, criterion, violation] = constrainedIOptimal(blocks, nSelect, labels, slack, stream, nStarts, maxIterations)
+function [selected, criterion, violation] = constrainedIOptimal(blocks, nSelect, labels, slack, stream, nStarts, maxIterations, fixed)
 %CONSTRAINEDIOPTIMAL 制約付き I 最適な Shot の組を交換法（Fedorov 型）で探す。
 %   blocks{s}  : 候補 Shot s の Mark での基底（全候補 Mark で正規直交化した XY 多項式の行）
 %   labels     : 候補 Shot × 制約の種類 の区分番号（同心円・象限・Scan方向。制約なしなら 0 列）
@@ -6,8 +6,14 @@ function [selected, criterion, violation] = constrainedIOptimal(blocks, nSelect,
 %   制約：各区分の Shot 数を、全候補に占める割合 × 選ぶ数 ± slack に収める。
 %   制約を満たす初期配置から始め、違反を増やさない交換だけを受け入れる。初期配置を nStarts 回変えて最良を採る。
 %   選んだ組・基準値（tr(M⁻¹)）・制約の違反量（0 なら満たす）を返す。
+%   fixed（候補 Shot の論理ベクトル、省略可）の Shot は必ず選び、交換で外さない（拡張 I 最適計画：
+%   必ず計測する Shot を決めたうえで、残りを I 基準が最も小さくなるように足す）。fixed の数は nSelect より少ないこと。
 REGULARIZATION = 1e-10;
 nCandidates = numel(blocks);
+if nargin < 8 || isempty(fixed)
+    fixed = false(nCandidates, 1);
+end
+fixed = fixed(:);
 nParams = size(blocks{1}, 2);
 information = zeros(nParams, nParams, nCandidates);
 for s = 1:nCandidates
@@ -23,13 +29,13 @@ end
 bounds = alignest.shotGroupBounds(labels, nSelect, slack);
 identity = eye(nParams);
 context = struct("information", information, "stacked", stacked, "rowsOfShot", {rowsOfShot}, ...
-    "labels", labels, "bounds", bounds, "regularization", REGULARIZATION);
+    "labels", labels, "bounds", bounds, "regularization", REGULARIZATION, "fixed", fixed);
 
 bestSelected = [];
 bestValue = Inf;
 bestViolation = Inf;
 for start = 1:nStarts
-    [current, currentViolation] = alignest.randomFeasibleShots(nCandidates, nSelect, labels, slack, stream);
+    [current, currentViolation] = alignest.randomFeasibleShots(nCandidates, nSelect, labels, slack, stream, fixed);
     information_ = sum(information(:, :, current), 3);
     value = iCriterion(information_ + REGULARIZATION * identity);
     for iteration = 1:maxIterations
@@ -60,7 +66,7 @@ bestOut = [];
 bestIn = [];
 bestSwapValue = currentValue;
 bestSwapViolation = currentViolation;
-selectedShots = find(current);
+selectedShots = find(current & ~context.fixed);   % 必ず計測する Shot は外さない
 others = find(~current);
 for outShot = selectedShots.'
     reduced = totalInformation - context.information(:, :, outShot) + context.regularization * eye(size(totalInformation));
