@@ -8,11 +8,16 @@ settings.data.validRadiusMm = 150;      % この半径以上の点は除く
 settings.data.coordinateUnits = alignest.coordinateUnits();
 settings.data.excludeZeroMeasurements = false; % measX・measY がともに0の入力行を除く
 settings.data.excludeUnmeasuredRecords = false; % StsX・StsY のどちらかが−1の入力行を除く
+settings.data.directionRule = "none";   % Direction が無い行に Scan 方向を付ける規則（alignest.directionRules）
+settings.data.invertDirection = false;  % 規則で付ける 1 と 2 を入れ替える
 settings.factors.shotRowParity = false; % Shot 配列の行（上から1行目）の奇数・偶数を追加する
 
 % 学習に使う Shot の選び方
 settings.sampling.method = "ioptimal";  % ioptimal（制約付き I 最適）／random（制約つきランダム）／manual（手動）
-settings.sampling.nShots = [10, 15, 20, 25, 30, 35, 40];
+settings.sampling.nShotsStart = 10;     % 学習 Shot 数は 開始・終了・刻み で決める（I 最適・ランダム）
+settings.sampling.nShotsEnd = 40;
+settings.sampling.nShotsStep = 5;
+settings.sampling.nShots = alignest.shotCountList(10, 40, 5);  % 開始・終了・刻みから作った並び（計算はこれを使う）
 settings.sampling.randomRepeats = 10;
 settings.sampling.seed = 20261017;
 settings.sampling.manualPlans = strings(0, 1);
@@ -30,4 +35,5 @@ settings.methods = alignest.recommendedMethods();
 % 評価
 settings.evaluation.outerRadiusRatio = 0.8;   % 外周とみなす半径（Wafer 半径に対する比）
 settings.evaluation.removeLinear = false;     % 学習点の XY 1次（6項）を除いてから推定し、推定値に戻す
+settings.evaluation.recordTiming = false;     % 条件（手法 × 学習パターン）ごとに 1 枚あたりの処理時間を記録して集計する
 end

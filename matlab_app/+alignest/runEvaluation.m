@@ -5,6 +5,8 @@ function results = runEvaluation(data, settings, progressFcn)
 %   学習パターン（どの Shot を学習に使うか）は、候補 Shot と計測できた Mark が同じ Wafer どうしで共通にする
 %   （同じ Shot で比べるため。乱数も同じ値から始める）。
 %   1つの手法が失敗しても止めずに、その行の指標を NaN、note に理由を入れて続ける。
+%   settings.evaluation.recordTiming が true なら、各手法を最初に使う前に1回だけ予備の推定をして（結果は捨てる）、
+%   ファイルの読み込みなど初回だけの時間を処理時間に入れない。処理時間（seconds）は1枚の X・Y の推定にかかった秒数。
 if nargin < 3 || isempty(progressFcn)
     progressFcn = @(varargin) true;
 end
@@ -23,6 +25,8 @@ planCache = containers.Map('KeyType', 'char', 'ValueType', 'any');
 logLines = strings(0, 1);
 done = 0;
 cancelled = false;
+recordTiming = isfield(settings.evaluation, "recordTiming") && settings.evaluation.recordTiming;
+warmedUp = false(numel(methods), 1);
 for u = 1:numel(units)
     unit = units(u);
     for p = 1:numel(specs)
@@ -37,6 +41,8 @@ for u = 1:numel(units)
         for m = 1:numel(methods)
             done = done + 1;
             row = rowTemplate(metricList);
+            row.Operation = unit.operation;
+            row.EqpId = unit.eqpId;
             row.Wafer = unit.label;
             row.DateTime = unit.dateTime;
             row.unitIndex = u;
@@ -53,8 +59,14 @@ for u = 1:numel(units)
             row.featureSet = methods(m).featureSet;
             row.variant = methods(m).variant;
             row.factorMode = methods(m).factorMode;
+            row.criterionI = plan.criterionI;
+            row.criterionD = plan.criterionD;
             if plan.ok
                 try
+                    if recordTiming && ~warmedUp(m)
+                        warmUp(unit, plan.shotIndex, methods(m), settings);
+                        warmedUp(m) = true;
+                    end
                     out = alignest.estimateWafer(unit, plan.shotIndex, methods(m), settings);
                     row = fillMetrics(row, unit, out, settings);
                     if ~out.converged
@@ -94,14 +106,26 @@ results.dataSummary = data.summary;
 results.cancelled = cancelled;
 results.elapsedSeconds = toc(timer);
 results.log = logLines;
+results.timingRecorded = recordTiming;
 results.createdAt = string(datetime('now', 'Format', 'yyyy/MM/dd HH:mm:ss'));
 end
 
+function warmUp(unit, shotIndex, method, settings)
+% 処理時間を記録するとき、初回だけかかる時間（ファイルの読み込みなど）を除くための予備の推定
+try
+    alignest.estimateWafer(unit, shotIndex, method, settings);
+catch
+    % 失敗は本番の推定で記録する
+end
+end
+
 function plan = cachedPlan(unit, spec, settings, planCache)
-% 候補 Shot と使える Mark が同じ Wafer では、同じ学習パターンを使う（手動はそのまま作る）
+% 候補 Shot と使える Mark が同じ Wafer では、同じ学習パターンを使う（手動はそのまま作る）。
+% seconds は学習パターンを作るのにかかった時間（使い回したときは 0、reused = true）。
+timer = tic;
 if spec.type == "manual"
     plan = alignest.planTrainingShots(unit, spec, settings.sampling, settings.data.waferRadiusMm);
-    plan = addPlanFields(plan);
+    plan = addPlanFields(plan, toc(timer), false);
     return
 end
 marks = unit.marks;
@@ -114,15 +138,19 @@ if isKey(planCache, key)
     shotKey = round([unit.shots.Xmm, unit.shots.Ymm], 3);
     [~, plan.shotIndex] = ismember(cached.coordinates, shotKey, 'rows');
     plan.shotNos = unit.shots.shotNo(plan.shotIndex);
+    plan.seconds = 0;
+    plan.reused = true;
     return
 end
 plan = alignest.planTrainingShots(unit, spec, settings.sampling, settings.data.waferRadiusMm);
-plan = addPlanFields(plan);
+plan = addPlanFields(plan, toc(timer), false);
 planCache(key) = struct("plan", plan, ...
     "coordinates", round([unit.shots.Xmm(plan.shotIndex), unit.shots.Ymm(plan.shotIndex)], 3));
 end
 
-function plan = addPlanFields(plan)
+function plan = addPlanFields(plan, seconds, reused)
+plan.seconds = seconds;
+plan.reused = reused;
 plan.unitIndex = 0;
 plan.unitLabel = "";
 end
@@ -163,9 +191,9 @@ text = strjoin(parts, " ");
 end
 
 function row = rowTemplate(metricList)
-row = struct("Wafer", "", "DateTime", "", "unitIndex", 0, "planIndex", 0, "plan", "", "group", "", ...
+row = struct("Operation", "", "EqpId", "", "Wafer", "", "DateTime", "", "unitIndex", 0, "planIndex", 0, "plan", "", "group", "", ...
     "planType", "", "repeat", 0, "nShots", 0, "methodIndex", 0, "methodId", "", "methodLabel", "", ...
-    "family", "", "featureSet", "", "variant", "", "factorMode", "");
+    "family", "", "featureSet", "", "variant", "", "factorMode", "", "criterionI", NaN, "criterionD", NaN);
 for name = metricList
     row.(name) = NaN;
 end
@@ -183,6 +211,6 @@ end
 
 function plan = planTemplate()
 plan = struct("label", "", "group", "", "type", "", "repeat", 0, "shotIndex", zeros(0, 1), ...
-    "shotNos", zeros(0, 1), "nShots", 0, "criterion", NaN, "violation", 0, "ok", false, "message", "", ...
-    "unitIndex", 0, "unitLabel", "");
+    "shotNos", zeros(0, 1), "nShots", 0, "criterion", NaN, "violation", 0, "criterionI", NaN, "criterionD", NaN, ...
+    "ok", false, "message", "", "seconds", 0, "reused", false, "unitIndex", 0, "unitLabel", "");
 end

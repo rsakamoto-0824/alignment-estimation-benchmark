@@ -1,6 +1,7 @@
 function settings = loadSettings(filePath)
 %LOADSETTINGS JSON ファイルの設定を読み、初期設定に重ねる（ファイルに無い項目は初期値のまま）。
 %   型は初期設定に合わせる（文字列の並び・数値の行ベクトルなど）。知らない項目は無視する。
+%   学習 Shot 数の開始・終了・刻みが無い以前の設定ファイルは、Shot 数の並びから決める（alignest.syncShotCounts）。
 if ~isfile(filePath)
     error('alignest:loadSettings', '設定ファイルが見つかりません: %s', filePath);
 end
@@ -13,6 +14,7 @@ catch err
     error('alignest:loadSettings', '設定ファイルを JSON として読めません: %s（%s）', filePath, err.message);
 end
 settings = merge(alignest.defaultSettings(), decoded);
+settings.sampling = alignest.syncShotCounts(settings.sampling);
 end
 
 function merged = merge(defaults, decoded)

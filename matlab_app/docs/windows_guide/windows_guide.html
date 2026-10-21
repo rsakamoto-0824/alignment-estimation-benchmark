@@ -254,7 +254,7 @@
         <li><div>
           <strong>（初めてのときだけ）動作確認のテストを行う</strong>
           <p>
-            次を入力すると、自動テストが走ります（数分）。最後に「成功 29 件、失敗 0 件、未完了 0 件」と出れば、
+            次を入力すると、自動テストが走ります（数分）。最後に「成功 67 件、失敗 0 件、未完了 0 件」と出れば、
             この PC の MATLAB で正しく計算できています。
           </p>
         </div></li>
@@ -271,8 +271,9 @@ cd C:\work\matlab_app</code></pre>
         <div>
           <h3>テストで確かめていること</h3>
           <p>
-            模擬データの評価に使った Python 版と同じ計算結果になること（8件）、データの読み込みと前処理（9件）、
-            評価・集計・書き出し・設定の保存（9件）、画面の一連の操作（3件）です。
+            模擬データの評価に使った Python 版と同じ計算結果になること（8件）、データの読み込みと前処理（20件）、
+            評価・集計・書き出し・設定の保存（15件）、質的変数の設計（2件）、RBF・空間モデルの Backfitting（8件）、
+            画面の一連の操作（9件）、正規性検定・ANOVA が SciPy と同じ結果になること（5件）です。
           </p>
         </div>
       </div>
@@ -437,15 +438,37 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
         <li><div><strong>列の対応を確かめる</strong><p>
           左の表の「ファイルの列」に、標準の項目にあたるファイルの列が入っていれば正しく対応づいています。
           列名が違うときは、その欄を押して選び直します。必須の項目（Xmm・Ymm・markXmm・markYmm・measX・measY）は必ず選びます。
+          工程名（Operation）と装置 ID（EqpId）は任意です。あれば、工程・装置が違う計測を別々に扱い、結果の Excel にも出ます。
+        </p></div></li>
+        <li><div><strong>座標の単位を確かめる</strong><p>
+          右の「座標の単位」の表に、列ごとの入力の単位・mm への倍率・ファイルの最大値・mm に直した値が出ます。
+          「確認」に「⚠」が出た列は、「入力の単位」を選び直すか、「値の大きさから単位を推定」を押します（列名が Xmm でも中身が µm なら µm）。
+        </p></div></li>
+        <li><div><strong>Scan 方向が無いデータでは、付け方を選ぶ</strong><p>
+          Direction の列が無いときは、「Scan 方向（Direction）が無い行に付ける値」で規則を選ぶと Scan 方向 1・2 を付けられます
+          （shotNo の奇偶・市松模様・Shot 行ごと・Shot 列ごと。「付ける 1 と 2 を入れ替える」で反対にできます）。
         </p></div></li>
         <li><div><strong>「この対応で読み込む」を押す</strong><p>
-          右の「読み込み結果」に、Wafer の枚数、Shot 数・Mark 数、除いた点（未測定・半径 150 mm 以上）、まとめた重複行が出ます。
-          下の図で計測値の矢印を確かめます。
+          右下の「読み込み結果」に、Wafer の枚数、工程・装置、Shot 数・Mark 数、Shot の大きさ、Scan 方向の出どころ、
+          除いた点（未測定・半径 150 mm 以上）、まとめた重複行が出ます。
+        </p></div></li>
+        <li><div><strong>「Wafer マップ（計測値）」と「Shot レイアウト」で確かめる</strong><p>
+          「Wafer マップ（計測値）」には、計測値の矢印の隣に X・Y 成分ごとの色の図（ヒートマップ）が出ます。灰色の枠は Shot です。
+          点が重なって見にくいときは「色の点の大きさ」を変えます。
+          「Shot レイアウト」には、左に Shot の並び（数字は shotNo、Scan 方向があれば S1・S2）、右に Shot 内の Mark の位置と番号（M の後が markNo）が出ます。
         </p></div></li>
       </ol>
       <figure class="screen-figure">
-        <img src="images/01_data.jpg" alt="データの読み込みタブ。左に列の対応の表、右に読み込み結果と計測値の矢印の図" loading="lazy">
+        <img src="images/01_data.jpg" alt="データの読み込みタブ。左に列の対応の表、右に座標の単位の表と読み込み結果" loading="lazy">
         <figcaption>図 1　データの読み込み（サンプルデータを読み込んだところ）</figcaption>
+      </figure>
+      <figure class="screen-figure">
+        <img src="images/08_preview.jpg" alt="Wafer マップのタブ。計測値の矢印、X 成分と Y 成分の色の図が3つ並び、Shot の枠が灰色で描かれている" loading="lazy">
+        <figcaption>図 2　Wafer マップ（計測値のベクトルと X・Y のヒートマップ）</figcaption>
+      </figure>
+      <figure class="screen-figure">
+        <img src="images/09_layout.jpg" alt="Shot レイアウトのタブ。左に shotNo と Scan 方向で色分けした Shot の並び、右に Shot 内の 4 つの Mark の位置と番号" loading="lazy">
+        <figcaption>図 3　Shot レイアウト（Shot の並びと Mark の位置）</figcaption>
       </figure>
 
       <h3 class="sub-heading">8-2. 比べ方を決める（2. 評価の設定）</h3>
@@ -454,15 +477,22 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
           「制約付き I 最適」は前回の評価と同じ選び方です。「制約つきランダム」は同じ条件でランダムに選んで何回か繰り返します。
           「手動で指定」は、shotNo を空白区切りで1行に1パターン書きます（例：<code>1 5 9 13 17</code>）。
         </p></div></li>
-        <li><div><strong>学習 Shot 数を入れる</strong><p>空白区切りで入れます（例：<code>10 15 20 25 30 35 40</code>）。入力に誤りがあると、欄の下に理由が出ます。</p></div></li>
+        <li><div><strong>学習 Shot 数を決める</strong><p>
+          「開始」「終了」「刻み（スイープ幅）」で決めます（例：10・40・5 で 10, 15, …, 40）。欄の下に比べる Shot 数の並びが出ます。
+          組み合わせに誤りがあると、欄の下に理由が出ます。
+        </p></div></li>
         <li><div><strong>比べる手法を選ぶ</strong><p>
           初期設定は「推奨の組み合わせ」（各系統の代表 9 手法）です。画面の下に計算回数と時間の目安が出るので、長すぎる場合は手法や Shot 数を減らします。
           「設定を保存…」で設定をファイルに残し、次回「設定を読み込む…」で同じ条件に戻せます。
         </p></div></li>
+        <li><div><strong>（必要なとき）処理時間を記録する</strong><p>
+          1 枚あたりの推定時間で手法を選ぶときは、左下の「条件ごとの処理時間を記録する」をオンにします。
+          手法 × 学習パターンごとの時間が、結果一覧の指標「処理時間 [秒/枚]」と Excel の「処理時間」シートに出ます。
+        </p></div></li>
       </ol>
       <figure class="screen-figure">
         <img src="images/02_settings.jpg" alt="評価の設定タブ。左に学習 Shot の選び方と制約、右に比べる手法の選択" loading="lazy">
-        <figcaption>図 2　評価の設定</figcaption>
+        <figcaption>図 4　評価の設定</figcaption>
       </figure>
 
       <h3 class="sub-heading">8-3. 実行する（3. 実行）</h3>
@@ -472,12 +502,13 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
       </ol>
       <figure class="screen-figure">
         <img src="images/03_progress.jpg" alt="実行タブで評価中の進み具合のダイアログが出ているところ" loading="lazy">
-        <figcaption>図 3　実行中（「止める」で途中までの結果を残して止められる）</figcaption>
+        <figcaption>図 5　実行中（「止める」で途中までの結果を残して止められる）</figcaption>
       </figure>
 
       <h3 class="sub-heading">8-4. 結果を見る（4. 結果一覧）</h3>
       <p>
-        上の「指標」（RMSE・MAE・R²・調整済み R²、X・Y・合計）と「集計」（平均・中央値）を切り替えると、下の表・グラフ・比較が変わります。
+        上の「指標」（RMSE・MAE・R²・調整済み R²、X・Y・合計）と「集計」（平均・中央値・ワースト値・95%値）を切り替えると、下の表・グラフ・比較が変わります。
+        ワースト値は最も悪い Wafer の値、95%値は 95% の Wafer がそれより良い値です（誤差は大きい側、R² は小さい側）。
         「結果を Excel に書き出す…」で、集計・Wafer ごとの値・学習に使った Shot・設定を1つのファイルに保存します。
       </p>
       <div class="table-wrap">
@@ -485,32 +516,42 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
           <thead><tr><th>中のタブ</th><th>見るもの</th></tr></thead>
           <tbody>
             <tr><td>表（手法 × 学習パターン）</td><td>手法ごと・学習 Shot 数ごとの値。各列で最も良い手法に「★」と色が付きます。</td></tr>
-            <tr><td>グラフ</td><td>学習 Shot 数による変化。右の一覧で描く手法を選べます。「グラフを画像で保存…」で PNG にできます。</td></tr>
+            <tr><td>グラフ</td><td>学習 Shot 数による変化。右の一覧で描く手法を選べます。「横軸」を「I 基準と D 基準」にすると、学習 Shot の組の I 基準・D 基準（I 最適計画の評価指標。小さいほど良い計画）に対する推定誤差の図を2つ並べます。「グラフを画像で保存…」で PNG にできます。</td></tr>
             <tr><td>基準の手法との比較</td><td>上で選んだ基準の手法と、同じ Wafer・同じ学習パターンどうしで比べた差、95% 区間、基準より良かった Wafer の割合。</td></tr>
+            <tr><td>推定値と誤差の分布</td><td>手法・学習パターン・Wafer を選んで「分析する」を押すと、残差（計測値 − 推定値）のヒストグラム、正規性検定（Shapiro–Wilk・Anderson–Darling・Jarque–Bera）、質的変数（Scan 方向・Mark 番号・Shot 行の奇偶・工程・装置）の ANOVA が出ます。「推定値を Excel に書き出す…」で、評価点ごとの計測値・推定値・残差と検定の結果を保存します。</td></tr>
           </tbody>
         </table>
       </div>
       <figure class="screen-figure">
         <img src="images/04_table.jpg" alt="結果一覧の表。手法ごとに 10〜40 Shot の RMSE が並び、各列の最良に星が付いている" loading="lazy">
-        <figcaption>図 4　結果一覧（表）</figcaption>
+        <figcaption>図 6　結果一覧（表）</figcaption>
       </figure>
       <figure class="screen-figure">
         <img src="images/05_chart.jpg" alt="結果一覧のグラフ。横軸が学習 Shot 数、縦軸が RMSE の折れ線" loading="lazy">
-        <figcaption>図 5　結果一覧（グラフ）</figcaption>
+        <figcaption>図 7　結果一覧（グラフ）</figcaption>
+      </figure>
+      <figure class="screen-figure">
+        <img src="images/10_criteria.jpg" alt="横軸を I 基準と D 基準にしたグラフ。2つの図で、基準が小さいほど RMSE が小さくなる折れ線" loading="lazy">
+        <figcaption>図 8　I 基準・D 基準に対する推定誤差</figcaption>
       </figure>
       <figure class="screen-figure">
         <img src="images/06_compare.jpg" alt="基準の手法との比較の表。差の割合、95% 区間、基準より良かった割合、Wafer 数" loading="lazy">
-        <figcaption>図 6　基準の手法との比較</figcaption>
+        <figcaption>図 9　基準の手法との比較</figcaption>
+      </figure>
+      <figure class="screen-figure">
+        <img src="images/11_analysis.jpg" alt="推定値と誤差の分布のタブ。X と Y の残差のヒストグラム、正規性検定の表、質的変数の ANOVA の表" loading="lazy">
+        <figcaption>図 10　推定値と誤差の分布（ヒストグラム・正規性検定・ANOVA）</figcaption>
       </figure>
 
       <h3 class="sub-heading">8-5. Wafer ごとに見る（5. Wafer ごとのマップ）</h3>
       <p>
         Wafer・学習パターン・手法を選ぶと、評価した Shot の計測値・推定値・残差（計測値 − 推定値）を並べて表示します。
-        灰色の四角は学習に使った Mark です。「表示」で矢印と色（X・Y）を切り替えられます。下の行に、その組み合わせの指標が出ます。
+        灰色の四角は学習に使った Mark、細い灰色の枠は Shot です。「表示」で矢印と色（X・Y）を切り替えられます。
+        色のときは「色の点の大きさ」で点の大きさを変えられます。下の行に、その組み合わせの指標が出ます。
       </p>
       <figure class="screen-figure">
         <img src="images/07_map.jpg" alt="Wafer ごとのマップ。計測値・推定値・残差の矢印の図が3つ並ぶ" loading="lazy">
-        <figcaption>図 7　Wafer ごとのマップ</figcaption>
+        <figcaption>図 11　Wafer ごとのマップ</figcaption>
       </figure>
 
       <div class="callout info">
@@ -538,10 +579,12 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
         <table>
           <thead><tr><th>項目名</th><th>意味</th><th>必須</th><th>無いとき</th></tr></thead>
           <tbody>
+            <tr><td><code>Operation</code></td><td>工程名</td><td>任意</td><td>工程が違えば別の計測として扱う</td></tr>
+            <tr><td><code>EqpId</code></td><td>装置 ID</td><td>任意</td><td>装置が違えば別の計測として扱う</td></tr>
             <tr><td><code>Wafer</code></td><td>ウェハ ID</td><td>任意</td><td>全行を1枚とみなす</td></tr>
             <tr><td><code>DateTime</code></td><td>測定日時</td><td>任意</td><td>同じ Wafer でも日時が違えば別の計測として扱う</td></tr>
             <tr><td><code>shotNo</code></td><td>ショット番号</td><td>任意</td><td>座標から番号を付ける（上の行から左→右）</td></tr>
-            <tr><td><code>Direction</code></td><td>Scan 方向（1 または 2）</td><td>任意</td><td>Scan 方向を質的変数・制約に使わない</td></tr>
+            <tr><td><code>Direction</code></td><td>Scan 方向（1 または 2）</td><td>任意</td><td>選んだ規則で付ける（「付けない」なら Scan 方向を質的変数・制約に使わない）</td></tr>
             <tr><td><code>Xmm</code>, <code>Ymm</code></td><td>ショット中心の座標 [mm]</td><td>必須</td><td>—</td></tr>
             <tr><td><code>Radius</code></td><td>ショット中心の半径 [mm]</td><td>任意</td><td>あれば Xmm・Ymm からの計算値と合うか確かめる</td></tr>
             <tr><td><code>markNo</code></td><td>ショット内のマーク番号</td><td>任意</td><td>マーク座標の組ごとに番号を付ける</td></tr>
@@ -553,6 +596,7 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
       </div>
       <h3>読み込むときに自動で行うこと</h3>
       <ul class="check-list">
+        <li>座標は、「座標の単位」で選んだ単位から mm に変換します（測定値 measX・measY は nm のまま）。</li>
         <li>解析座標は x = Xmm + markXmm、y = Ymm + markYmm。半径 150 mm 以上の点は除きます（画面の「有効半径」で変更可）。</li>
         <li>X には StsX = 0 の measX、Y には StsY = 0 の measY だけを使います。未測定を 0 として扱いません。</li>
         <li>Wafer・DateTime・Xmm・Ymm・markXmm・markYmm が同じ行は重複とみなし、測定値を X・Y それぞれ平均します。</li>
@@ -570,7 +614,7 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
       <div class="checklist-grid">
         <article>
           <h3>導入の確認</h3>
-          <label><input type="checkbox"> （MATLAB で使う）テストが「成功 29 件、失敗 0 件」になった</label>
+          <label><input type="checkbox"> （MATLAB で使う）テストが「成功 67 件、失敗 0 件」になった</label>
           <label><input type="checkbox"> （exe）exe が起動し、サンプルデータを読み込めた</label>
           <label><input type="checkbox"> サンプルデータで評価が最後まで終わり、結果一覧に表が出た</label>
           <label><input type="checkbox"> 結果を Excel に書き出し、開いて中身を確かめられた</label>
