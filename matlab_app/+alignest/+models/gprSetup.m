@@ -6,7 +6,9 @@ function gp = gprSetup(trainFeatures, testFeatures, groups, kernelName, categori
 %     matern32           : σf² (1 + √3 r) exp(−√3 r)
 %     matern52           : σf² (1 + √5 r + 5r²/3) exp(−√5 r)
 %     rationalquadratic  : σf² (1 + r²/(2α))^(−α)
-%     ard***             : 上の5種類の ARD 版
+%     matern_nu<ν>       : σf² 2^(1−ν)/Γ(ν) (√(2ν) r)^ν K_ν(√(2ν) r)（ν を任意に指定する Matérn。K_ν は第2種変形ベッセル関数。
+%                          例：matern_nu1.2。ν = 0.5・1.5・2.5 で exponential・matern32・matern52 と同じ式）
+%     ard***             : 上の6種類の ARD 版（例：ardmatern_nu1.2）
 %   categorical は質的変数のカーネル項 τ²·[水準が同じ] の構造体配列（name, trainSame, crossSame）。
 %   加法カーネルでは質的変数の効果を平均0・分散 τ² の確率変数（変量効果）として扱う。
 %   パラメータの並び：[log ℓ（1 または説明変数の数）, log σf, (log α), log τ（項ごと）, log σn]
@@ -17,17 +19,10 @@ if nargin < 6
     maxIterations = 300;
 end
 kernelName = string(kernelName);
-if ~any(kernelName == alignest.models.gprKernelNames())
-    error('alignest:kernel', 'GPR のカーネル名が正しくありません: %s', kernelName);
-end
+[baseName, gp.ard, gp.nu] = parseKernelName(kernelName);
 gp.kernelName = kernelName;
-gp.ard = startsWith(kernelName, "ard");
-baseName = kernelName;
-if gp.ard
-    baseName = extractAfter(kernelName, 3);
-end
-familyByName = containers.Map(["exponential", "squaredexponential", "matern32", "matern52", "rationalquadratic"], ...
-    ["exp", "se", "m32", "m52", "rq"]);
+familyByName = containers.Map(["exponential", "squaredexponential", "matern32", "matern52", "rationalquadratic", ...
+    "matern"], ["exp", "se", "m32", "m52", "rq", "mnu"]);
 gp.family = familyByName(char(baseName));
 gp.trainSq = alignest.basis.pairwiseSquaredDiff(trainFeatures, trainFeatures, groups);
 gp.crossSq = alignest.basis.pairwiseSquaredDiff(testFeatures, trainFeatures, groups);
@@ -51,4 +46,24 @@ gp.categoricalOffset = gp.nLength + 1 + gp.hasAlpha + 1;  % log τ が始まる�
 gp.nParams = gp.nLength + 1 + gp.hasAlpha + gp.nCategorical + 1;
 gp.nTrain = size(trainFeatures, 1);
 gp.maxIterations = maxIterations;
+end
+
+function [baseName, ard, nu] = parseKernelName(kernelName)
+% fitrgp と同じ10種類、または「(ard)matern_nu<ν>」（ν を任意に指定する Matérn）
+nu = NaN;
+ard = startsWith(kernelName, "ard");
+baseName = kernelName;
+if ard
+    baseName = extractAfter(kernelName, 3);
+end
+if any(kernelName == alignest.models.gprKernelNames())
+    return
+end
+if startsWith(baseName, "matern_nu")
+    nu = str2double(extractAfter(baseName, "matern_nu"));
+    alignest.models.maternNuCheck(nu);
+    baseName = "matern";
+    return
+end
+error('alignest:kernel', 'GPR のカーネル名が正しくありません: %s', kernelName);
 end

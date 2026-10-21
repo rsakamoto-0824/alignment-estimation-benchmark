@@ -1,7 +1,7 @@
 function config = completeMethodSettings(config)
 %COMPLETEMETHODSETTINGS 以前の設定構造体にも追加項目の初期値を補う。
 defaults = alignest.recommendedMethods();
-for group = ["rbf", "tps", "kriging", "options"]
+for group = ["gpr", "rbf", "tps", "kriging", "gam", "options"]
     if ~isfield(config, group)
         config.(group) = defaults.(group);
         continue
