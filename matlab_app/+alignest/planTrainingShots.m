@@ -7,13 +7,23 @@ function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm)
 %   乱数は sampling.seed・Shot 数・繰り返し番号から決めるので、候補が同じ Wafer では同じ Shot が選ばれる。
 %   ファイルの優先順（file）：優先度 1 の Shot は必ず学習に使い、残りを優先度 0（計測しない）を除いてファイルの行の順に
 %   足して学習 Shot 数にする（sampling.priorityShots・priorityLevels）。Wafer に無い Shot・計測できない Shot は飛ばす。
+%   計測率（spec.rate [%]）で決めるときは、学習 Shot 数 = round(計測率 / 100 × 候補 Shot 数)（1 以上）。
+%   I 最適・ランダムでは、必ず計測する Shot（alignest.requiredShotIndex：指定した shotNo と最外周）を先に入れ、
+%   残りを選ぶ（拡張 I 最適計画）。必ず計測する Shot が学習 Shot 数以上なら、それだけを使う。
+%   plan.requiredShotIndex は必ず計測した Shot（ファイルの優先順では優先度 1）。
 %   選び方によらず、選んだ組の I 基準 tr(M⁻¹) と D 基準 det(M)^(−1/p) を求める（alignest.designCriteria。
 %   基準モデルの項数より学習点が少ないなど、求められないときは NaN）。
 shots = unit.shots;
 candidates = find(shots.nValidX + shots.nValidY > 0);
 plan = struct("label", spec.label, "group", spec.group, "type", spec.type, "repeat", spec.repeat, ...
     "shotIndex", zeros(0, 1), "shotNos", zeros(0, 1), "nShots", 0, "criterion", NaN, ...
-    "violation", 0, "criterionI", NaN, "criterionD", NaN, "ok", false, "message", "");
+    "violation", 0, "criterionI", NaN, "criterionD", NaN, "ok", false, "message", "", ...
+    "requiredShotIndex", zeros(0, 1), "rate", NaN);
+nShots = spec.nShots;
+if isfield(spec, "rate") && isfinite(spec.rate)
+    plan.rate = spec.rate;
+    nShots = max(1, round(spec.rate / 100 * numel(candidates)));
+end
 switch spec.type
     case "manual"
         [found, position] = ismember(spec.shotNos(:), shots.shotNo);
@@ -29,30 +39,49 @@ switch spec.type
         end
         plan.shotIndex = chosen(:);
     case "file"
-        [plan.shotIndex, plan.message] = priorityShots(shots, candidates, sampling, spec.nShots);
+        [plan.shotIndex, plan.message, plan.requiredShotIndex] = priorityShots(shots, candidates, sampling, nShots);
         if isempty(plan.shotIndex)
             return
         end
     case {"ioptimal", "random"}
-        if spec.nShots >= numel(candidates)
+        if nShots >= numel(candidates)
             plan.message = sprintf("学習 Shot 数 %d が候補の Shot 数 %d 以上なので、評価する Shot が残りません。", ...
-                spec.nShots, numel(candidates));
+                nShots, numel(candidates));
             return
         end
-        labels = partitionLabels(shots, candidates, sampling, waferRadiusMm, unit.hasDirection);
-        stream = RandStream('mt19937ar', 'Seed', seedFor(sampling.seed, spec));
-        if spec.type == "ioptimal"
-            blocks = shotBlocks(unit, candidates, sampling.designOrder, waferRadiusMm);
-            [selected, plan.criterion, plan.violation] = alignest.constrainedIOptimal(blocks, spec.nShots, labels, ...
-                sampling.constraints.slack, stream, sampling.exchangeStarts, sampling.exchangeMaxIterations);
-        else
-            [chosen, plan.violation] = alignest.randomFeasibleShots(numel(candidates), spec.nShots, labels, ...
-                sampling.constraints.slack, stream);
-            selected = find(chosen);
+        [plan.requiredShotIndex, required] = alignest.requiredShotIndex(shots, candidates, sampling);
+        if ~isempty(required.missingNos)
+            plan.message = "必ず計測する Shot のうち、この Wafer に無い、または計測値の無い shotNo：" + ...
+                strjoin(string(required.missingNos.'), " ") + "。";
         end
-        plan.shotIndex = candidates(selected(:));
-        if plan.violation > 0
-            plan.message = sprintf("制約を満たす組が見つからず、違反量 %d の組を使いました。", plan.violation);
+        fixed = ismember(candidates, plan.requiredShotIndex);
+        if nnz(fixed) >= nShots
+            plan.shotIndex = plan.requiredShotIndex;
+            if nnz(fixed) > nShots
+                plan.message = strtrim(plan.message + sprintf(" 必ず計測する Shot が %d 個あり、学習 Shot 数 %d より" + ...
+                    "多いので、必ず計測する Shot だけを使いました。", nnz(fixed), nShots));
+            end
+        else
+            labels = partitionLabels(shots, candidates, sampling, waferRadiusMm, unit.hasDirection);
+            stream = RandStream('mt19937ar', 'Seed', seedFor(sampling.seed, nShots, spec.repeat));
+            if spec.type == "ioptimal"
+                blocks = shotBlocks(unit, candidates, sampling.designOrder, waferRadiusMm);
+                [selected, plan.criterion, plan.violation] = alignest.constrainedIOptimal(blocks, nShots, labels, ...
+                    sampling.constraints.slack, stream, sampling.exchangeStarts, sampling.exchangeMaxIterations, fixed);
+            else
+                [chosen, plan.violation] = alignest.randomFeasibleShots(numel(candidates), nShots, labels, ...
+                    sampling.constraints.slack, stream, fixed);
+                selected = find(chosen);
+            end
+            plan.shotIndex = candidates(selected(:));
+            if plan.violation > 0 && any(fixed)
+                plan.message = strtrim(plan.message + sprintf(" 必ず計測する Shot を入れると制約（同心円・4象限・" + ...
+                    "Scan 方向の Shot 数）を満たせないため、違反量 %d の組を使いました（残りは違反が少なくなるように選んだ）。", ...
+                    plan.violation));
+            elseif plan.violation > 0
+                plan.message = strtrim(plan.message + sprintf(" 制約を満たす組が見つからず、違反量 %d の組を使いました。", ...
+                    plan.violation));
+            end
         end
     otherwise
         error('alignest:samplingMethod', '学習 Shot の選び方が正しくありません: %s', spec.type);
@@ -82,8 +111,8 @@ end
 [iValue, dValue] = alignest.designCriteria(blocks(selected));
 end
 
-function [shotIndex, message] = priorityShots(shots, candidates, sampling, nShots)
-% 優先度 1 を全部、残りを行の順に（優先度 0 は使わない）
+function [shotIndex, message, required] = priorityShots(shots, candidates, sampling, nShots)
+% 優先度 1 を全部、残りを行の順に（優先度 0 は使わない）。required は優先度 1 の Shot
 message = "";
 shotNos = sampling.priorityShots(:);
 levels = sampling.priorityLevels(:);
@@ -121,10 +150,11 @@ if isempty(shotIndex)
     message = strtrim(message + " 学習に使える Shot がありません。");
 end
 shotIndex = shotIndex(:);
+required = required(:);
 end
 
-function seed = seedFor(baseSeed, spec)
-seed = mod(round(baseSeed) + 1000 * spec.nShots + 7919 * spec.repeat, 2^32);
+function seed = seedFor(baseSeed, nShots, repeat)
+seed = mod(round(baseSeed) + 1000 * nShots + 7919 * repeat, 2^32);
 end
 
 function labels = partitionLabels(shots, candidates, sampling, waferRadiusMm, hasDirection)

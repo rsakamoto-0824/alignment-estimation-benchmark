@@ -40,7 +40,7 @@ warmedUp = false(numel(methods), 1);
 for u = 1:numel(units)
     unit = units(u);
     for p = 1:numel(specs)
-        plan = cachedPlan(unit, specs(p), settings, planCache);
+        plan = alignest.cachedTrainingPlan(unit, specs(p), settings, planCache);
         plan.unitIndex = u;
         plan.unitLabel = unit.label;
         plans(end + 1, 1) = plan; %#ok<AGROW>
@@ -138,42 +138,6 @@ catch
 end
 end
 
-function plan = cachedPlan(unit, spec, settings, planCache)
-% 候補 Shot と使える Mark が同じ Wafer では、同じ学習パターンを使う（手動はそのまま作る）。
-% seconds は学習パターンを作るのにかかった時間（使い回したときは 0、reused = true）。
-timer = tic;
-if spec.type == "manual"
-    plan = alignest.planTrainingShots(unit, spec, settings.sampling, settings.data.waferRadiusMm);
-    plan = addPlanFields(plan, toc(timer), false);
-    return
-end
-marks = unit.marks;
-usable = marks.validX | marks.validY;
-signature = sprintf('%.3f,', [marks.x(usable); marks.y(usable); marks.direction(usable)]);
-key = [char(spec.label), '|', signature];
-if isKey(planCache, key)
-    cached = planCache(key);
-    plan = cached.plan;
-    shotKey = round([unit.shots.Xmm, unit.shots.Ymm], 3);
-    [~, plan.shotIndex] = ismember(cached.coordinates, shotKey, 'rows');
-    plan.shotNos = unit.shots.shotNo(plan.shotIndex);
-    plan.seconds = 0;
-    plan.reused = true;
-    return
-end
-plan = alignest.planTrainingShots(unit, spec, settings.sampling, settings.data.waferRadiusMm);
-plan = addPlanFields(plan, toc(timer), false);
-planCache(key) = struct("plan", plan, ...
-    "coordinates", round([unit.shots.Xmm(plan.shotIndex), unit.shots.Ymm(plan.shotIndex)], 3));
-end
-
-function plan = addPlanFields(plan, seconds, reused)
-plan.seconds = seconds;
-plan.reused = reused;
-plan.unitIndex = 0;
-plan.unitLabel = "";
-end
-
 function row = fillMetrics(row, unit, out, settings)
 marks = unit.marks;
 ratio = settings.evaluation.outerRadiusRatio;
@@ -190,6 +154,9 @@ for name = string(fieldnames(metrics)).'
 end
 row.nTest_X = metrics.nTest_X;
 row.nTest_Y = metrics.nTest_Y;
+if isfield(settings.evaluation, "excludeOutliers") && settings.evaluation.excludeOutliers
+    row.nOutliers = numel(out.outlierIndex);
+end
 row.edf_X = out.edf(1);
 row.edf_Y = out.edf(2);
 row.aux_X = out.aux(1);
@@ -227,6 +194,7 @@ for name = alignest.overlayMetricNames()
 end
 row.nTest_X = 0;
 row.nTest_Y = 0;
+row.nOutliers = NaN;   % 学習データから除いた異常値の Mark 数（除かない設定では NaN）
 row.edf_X = NaN;
 row.edf_Y = NaN;
 row.aux_X = NaN;
@@ -240,5 +208,6 @@ end
 function plan = planTemplate()
 plan = struct("label", "", "group", "", "type", "", "repeat", 0, "shotIndex", zeros(0, 1), ...
     "shotNos", zeros(0, 1), "nShots", 0, "criterion", NaN, "violation", 0, "criterionI", NaN, "criterionD", NaN, ...
-    "ok", false, "message", "", "seconds", 0, "reused", false, "unitIndex", 0, "unitLabel", "");
+    "ok", false, "message", "", "requiredShotIndex", zeros(0, 1), "rate", NaN, "seconds", 0, "reused", false, ...
+    "unitIndex", 0, "unitLabel", "");
 end

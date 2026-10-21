@@ -11,7 +11,8 @@ const build=path.join(root,'.cache/powerpoint-guide');
 const reference=process.env.GUIDE_TEMPLATE;
 if(!reference) throw new Error('GUIDE_TEMPLATE must point to 技術レポートPowerPoint/reference.pptx');
 const name='アライメント計測ツール_ユーザー手順書.pptx';
-try {await fs.access(path.join(guide,'~$'+name));throw new Error('PowerPointで手順書を閉じてください');}catch(e){if(e.code!=='ENOENT')throw e;}
+// 下書きは .cache に作るだけなので、手順書をPowerPointで開いていても続ける（置き換えは finalize_guide.mjs が止める）。
+try {await fs.access(path.join(guide,'~$'+name));console.warn('手順書がPowerPointで開かれています。下書きだけ作ります。');}catch(e){if(e.code!=='ENOENT')throw e;}
 await fs.mkdir(build,{recursive:true});
 const p=await PresentationFile.importPptx(await FileBlob.load(reference));
 const records=JSON.parse('['+(await p.inspect({kind:'textbox,shape,image,chart,table',maxChars:2000000})).ndjson.trim().split('\n').join(',')+']');
@@ -37,7 +38,7 @@ function badge(s,n,x,y){
 function step(s,n,title,body,x,y,w){text(s,String(n).padStart(2,'0'),x,y,38,30,25,teal,true);text(s,title,x+45,y,w-45,35,21,navy,true);text(s,body,x+45,y+41,w-45,110,18);}
 function updateChrome(s,title,section,page){
  for(const sh of s.shapes.items){const y=sh.position.top,t=String(sh.text);if(y<45)sh.text=section;else if(y<140){sh.text=title;sh.text.style={typeface:FONT,fontSize:37.33,bold:true,color:navy,insets:0};}else if(y>675){sh.text=t==='Sobol感度解析 入門'?'アライメント計測ツール　操作手順':String(page);}}
- s.speakerNotes.text='対象：2026-10-21のローカル版。掲載画面は同梱の模擬データを使用。\n根拠：matlab_app/README.md、AlignmentEstimationApp.m、+alignest各計算処理。';
+ s.speakerNotes.text='対象：2026-10-22のローカル版。掲載画面は同梱の模擬データを使用。\n根拠：matlab_app/README.md、AlignmentEstimationApp.m、+alignest各計算処理。';
 }
 async function picture(s,file,box,crop){
  let pipeline=sharp(path.join(guide,'images',file));if(crop)pipeline=pipeline.extract({left:crop[0],top:crop[1],width:crop[2],height:crop[3]});
@@ -59,7 +60,7 @@ for(const entry of originalText.values())if(entry.slide===0){const sh=entry.shap
  if(t.startsWith('学習用'))sh.text='ユーザー向け操作手順書';
  else if(t==='Sobol感度解析 入門'){sh.text='アライメント計測ツール';sh.position={left:76.8,top:185,width:640,height:130};sh.text.style={typeface:FONT,fontSize:48,color:'#FFFFFF',bold:true,insets:0};}
  else if(t.startsWith('概念')){sh.text='データの取り込みから\n手法比較・結果出力まで';sh.position={left:76.8,top:345,width:600,height:110};}
- else if(t.startsWith('2026')){sh.text='2026年10月21日 ローカル版\n画面は同梱の模擬データを使用';sh.position={left:76.8,top:590,width:640,height:65};}
+ else if(t.startsWith('2026')){sh.text='2026年10月22日 ローカル版\n画面は同梱の模擬データを使用';sh.position={left:76.8,top:590,width:640,height:65};}
 }
 await picture(cover,'15_map.png',[730,180,480,340]);
 cover.speakerNotes.text='MATLAB版ユーザー手順書。画面はローカルの実アプリを同梱の模擬データで撮影。Windowsではウィンドウ枠やフォントが異なる場合があります。';
@@ -94,7 +95,7 @@ for(let i=0;i<slides.length;i++){
 }
 // 濃紺のまとめページを再利用する。
 for(const sh of ending.shapes.items){if(sh.position.top<135)sh.text='操作を終える前の確認';else if(sh.position.top>675)sh.text=String(sh.text)==='Sobol感度解析 入門'?'アライメント計測ツール　操作手順':String(slides.length+2);}
-const checks=[['入力条件','列・単位・行の除外条件を確認し、変更後は再取り込み。'],['評価条件','学習Shot数、手法、質的変数、補正モデルを確認。'],['結果の確認','実行記録、誤差の表、Waferごとの残差を確認。'],['保存','設定JSON、評価結果Excel、必要な推定値・図を保存。']];
+const checks=[['入力条件','列・単位・行の除外条件を確認し、変更後は再取り込み。'],['評価条件','学習Shotの選び方・数、手法、質的変数、補正モデルを確認。'],['結果の確認','実行記録、誤差の表・散布図、Waferごと・平均の残差を確認。'],['保存','設定JSON、評価結果Excel、必要な推定値・図を保存。']];
 checks.forEach((c,i)=>{text(ending,String(i+1),65,175+i*109,42,45,32,[coral,teal,'#8D6A9F','#E9C46A'][i],true);text(ending,c[0],120,175+i*109,200,40,27,'#FFFFFF',true);text(ending,c[1],340,177+i*109,850,70,23,'#D9DBEA');});
 ending.speakerNotes.text='画面例と操作名の根拠：matlab_app/AlignmentEstimationApp.m、README.md。設定JSONと結果Excelは別ファイルとして保存します。';
 ordered.push(ending);

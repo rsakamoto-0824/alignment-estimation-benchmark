@@ -5,15 +5,22 @@ function out = estimateWafer(unit, trainShots, method, settings)
 %   学習点は学習 Shot の有効な Mark、評価点は学習しなかった Shot の有効な Mark（軸ごとに有効な点が違ってもよい）。
 %   settings.evaluation.removeLinear が true なら、学習点で XY 1次（[1, x, y]、軸ごと）を除いてから推定し、
 %   推定値に戻す（有効自由度は軸ごとに3を足す）。
+%   settings.evaluation.excludeOutliers が true なら、学習点のうち平均から outlierSigma × σ を超えて離れた Mark を
+%   X・Y の両方の学習データから除く（平均・σ はこの Wafer・この学習 Shot の組で求める。alignest.trainingOutliers）。
+%   除いた Mark は評価にも使わない（学習 Shot の Mark なので）。out.outlierIndex はその Mark 番号。
 %   out.testIndex.X / Y は評価点の Mark 番号（unit.marks の何番目か）、out.estimate.X / Y はその推定値。
 timer = tic;
 marks = unit.marks;
 radius = settings.data.waferRadiusMm;
 inTrain = ismember(marks.shotIndex, trainShots);
+outlier = false(size(inTrain));
+if isfield(settings.evaluation, "excludeOutliers") && settings.evaluation.excludeOutliers
+    outlier = alignest.trainingOutliers(marks, inTrain, settings.evaluation.outlierSigma);
+end
 axisNames = ["X", "Y"];
 for axisName = axisNames
     valid = marks.("valid" + axisName);
-    trainIndex.(axisName) = find(inTrain & valid);
+    trainIndex.(axisName) = find(inTrain & valid & ~outlier);
     testIndex.(axisName) = find(~inTrain & valid);
     measured.(axisName) = marks.("meas" + axisName)(trainIndex.(axisName));
     if numel(trainIndex.(axisName)) < 3
@@ -136,6 +143,7 @@ end
 out.estimate = estimate;
 out.testIndex = testIndex;
 out.trainIndex = trainIndex;
+out.outlierIndex = find(outlier);
 out.seconds = toc(timer);
 end
 

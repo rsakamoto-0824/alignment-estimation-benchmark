@@ -22,12 +22,18 @@ settings.sampling.nShotsStart = 10;     % 学習 Shot 数は 開始・終了・�
 settings.sampling.nShotsEnd = 40;
 settings.sampling.nShotsStep = 5;
 settings.sampling.nShots = alignest.shotCountList(10, 40, 5);  % 開始・終了・刻みから作った並び（計算はこれを使う）
+settings.sampling.countBy = "shots";    % 学習 Shot 数の決め方：shots（Shot 数）／rate（計測率 [%]。Wafer の候補 Shot 数に対する割合）
+settings.sampling.rateStart = 10;       % 計測率 [%] の開始・終了・刻み（countBy = "rate" のとき。alignest.measurementRateList）
+settings.sampling.rateEnd = 40;
+settings.sampling.rateStep = 10;
 settings.sampling.randomRepeats = 10;
 settings.sampling.seed = 20261017;
 settings.sampling.manualPlans = strings(0, 1);
 settings.sampling.priorityShots = zeros(1, 0);   % 優先順のファイルの Shot 番号（行の順。alignest.readShotPriority）
 settings.sampling.priorityLevels = zeros(1, 0);  % 同じく優先度（0 = 計測しない、1 = 必ず計測する、それ以外・NaN = 行の順）
 settings.sampling.priorityFile = "";             % 読み込んだファイルの名前（表示・記録用）
+settings.sampling.requiredShots = zeros(1, 0);   % 必ず計測する shotNo（I 最適・ランダム。拡張 I 最適計画）
+settings.sampling.requireOuterShots = false;     % 最外周の Shot（alignest.outerShots）をすべて必ず計測する
 settings.sampling.designOrder = 5;      % I 最適の基準モデル（XY 多項式の次数、5次で21項）
 settings.sampling.exchangeStarts = 10;  % 交換法の初期配置の数（Python 版は30）
 settings.sampling.exchangeMaxIterations = 300;
@@ -43,6 +49,8 @@ settings.methods = alignest.recommendedMethods();
 settings.evaluation.outerRadiusRatio = 0.8;   % 外周とみなす半径（Wafer 半径に対する比）
 settings.evaluation.removeLinear = false;     % 学習点の XY 1次（6項）を除いてから推定し、推定値に戻す
 settings.evaluation.recordTiming = false;     % 条件（手法 × 学習パターン）ごとに 1 枚あたりの処理時間を記録して集計する
+settings.evaluation.excludeOutliers = false;  % 学習データの異常値（平均から outlierSigma × σ を超えて離れた Mark）を除いて推定する
+settings.evaluation.outlierSigma = 3;         % 異常値とみなす σ の倍数 n（正の値。σ は Wafer・学習パターンごと）
 
 % Overlay 補正の評価（推定誤差で Overlay 残差がどれだけ増えるか。alignest.overlayChoice）。すべて「なし」なら評価しない
 settings.overlay.waferOrder = 1;         % Wafer 成分：Shot 中心の座標の多項式の次数（0 = なし、1 = 並進・倍率・回転・直交度）
