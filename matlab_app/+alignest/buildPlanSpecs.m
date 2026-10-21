@@ -1,6 +1,7 @@
 function specs = buildPlanSpecs(sampling)
 %BUILDPLANSPECS 学習に使う Shot の選び方の一覧（学習パターン）を作る。
 %   sampling.method = "ioptimal"（制約付き I 最適）："I最適 20 Shot" のように Shot 数ごとに1つ
+%                     "file"（ファイルの優先順）："優先順 20 Shot" のように Shot 数ごとに1つ（中身は planTrainingShots）
 %                     "random"（制約つきランダム）：Shot 数ごとに randomRepeats 回
 %                     "manual"（手動で指定）：manualPlans の1行が1パターン（shotNo を空白またはカンマで区切る）
 %   group は結果を集計するときの列（ランダムの繰り返しは同じ group にまとめる）。
@@ -18,6 +19,14 @@ switch string(sampling.method)
                     "label", sprintf("ランダム %d Shot #%d", nShots, repeat), "group", sprintf("%d Shot", nShots), ...
                     "shotNos", []); %#ok<AGROW>
             end
+        end
+    case "file"
+        if ~isfield(sampling, "priorityShots") || isempty(sampling.priorityShots)
+            error('alignest:shotPriority', '計測する Shot の優先順のファイルを読み込んでください。');
+        end
+        for nShots = sort(sampling.nShots(:)).'
+            specs(end + 1) = struct("type", "file", "nShots", nShots, "repeat", 1, ...
+                "label", sprintf("優先順 %d Shot", nShots), "group", sprintf("%d Shot", nShots), "shotNos", []); %#ok<AGROW>
         end
     case "manual"
         lines = string(sampling.manualPlans(:));

@@ -132,6 +132,7 @@ points = table(text(unit.operation), text(unit.eqpId), text(unit.lotId), text(un
     'VariableNames', ["Operation", "EqpId", "LotID", "Wafer", "DateTime", "plan", "group", "methodLabel", "methodId", ...
     "shotNo", "markNo", "direction", "shotRowParity", "x", "y", "r", "measX", "estimateX", "residualX", ...
     "measY", "estimateY", "residualY"]);
+points.markIndex = index(:);  % unit.marks の何番目か（散布図の色分けで、その他の列の値を引くため。Excel には出さない）
 for column = columns
     values = strings(n, 1);
     position = find(string(unit.attributeNames) == column, 1);

@@ -254,7 +254,7 @@
         <li><div>
           <strong>（初めてのときだけ）動作確認のテストを行う</strong>
           <p>
-            次を入力すると、自動テストが走ります（数分）。最後に「成功 82 件、失敗 0 件、未完了 0 件」と出れば、
+            次を入力すると、自動テストが走ります（数分）。最後に「成功 89 件、失敗 0 件、未完了 0 件」と出れば、
             この PC の MATLAB で正しく計算できています。
           </p>
         </div></li>
@@ -273,7 +273,7 @@ cd C:\work\matlab_app</code></pre>
           <p>
             模擬データの評価に使った Python 版と同じ計算結果になること（8件）、データの読み込みと前処理（21件）、
             評価・集計・書き出し・設定の保存（15件）、質的変数の設計（2件）、RBF・空間モデルの Backfitting と質的変数の選択（9件）、
-            画面の一連の操作（12件）、Overlay 補正の評価（6件）、正規性検定・ANOVA が SciPy と同じ結果になること（5件）、
+            画面の一連の操作（13件）、Overlay 補正の評価（6件）、平均の図・散布図・優先順のファイル（6件）、正規性検定・ANOVA が SciPy と同じ結果になること（5件）、
             追加したモデルの選択肢（Matérn の ν・spherical・GAM の形状関数、4件）です。
           </p>
         </div>
@@ -456,6 +456,7 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
         <li><div><strong>「Wafer マップ（計測値）」と「Shot レイアウト」で確かめる</strong><p>
           「Wafer マップ（計測値）」には、計測値の矢印の隣に X・Y 成分ごとの色の図（ヒートマップ）が出ます。灰色の枠は Shot です。
           点が重なって見にくいときは「色の点の大きさ」を変えます。
+          「表示する Wafer・平均」で「平均：全 Wafer」「平均：EqpId = …」などを選ぶと、Wafer 間で平均した図と、Wafer 間のばらつきの共分散楕円が出ます。
           「Shot レイアウト」には、左に Shot の並び（数字は shotNo、Scan 方向があれば S1・S2）、右に Shot 内の Mark の位置と番号（M の後が markNo）が出ます。
         </p></div></li>
       </ol>
@@ -477,6 +478,10 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
         <li><div><strong>学習に使う Shot の選び方を決める</strong><p>
           「制約付き I 最適」は前回の評価と同じ選び方です。「制約つきランダム」は同じ条件でランダムに選んで何回か繰り返します。
           「手動で指定」は、shotNo を空白区切りで1行に1パターン書きます（例：<code>1 5 9 13 17</code>）。
+        </p></div></li>
+        <li><div><strong>（計測順が決まっているとき）優先順のファイルを読み込む</strong><p>
+          選び方を「ファイルの優先順で指定」にして「優先順のファイルを読み込む…」を押し、Shot 番号と優先度の表（Excel・CSV）を選びます。
+          優先度 1 の Shot は必ず学習に使い、0 の Shot は使わず（評価だけ）、残りはファイルの行の順に学習 Shot 数まで足します。
         </p></div></li>
         <li><div><strong>学習 Shot 数を決める</strong><p>
           「開始」「終了」「刻み（スイープ幅）」で決めます（例：10・40・5 で 10, 15, …, 40）。欄の下に比べる Shot 数の並びが出ます。
@@ -530,9 +535,10 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
           <thead><tr><th>中のタブ</th><th>見るもの</th></tr></thead>
           <tbody>
             <tr><td>表（手法 × 学習パターン）</td><td>手法ごと・学習 Shot 数ごとの値。各列で最も良い手法に「★」と色が付きます。</td></tr>
-            <tr><td>グラフ</td><td>学習 Shot 数による変化。右の一覧で描く手法を選べます。「横軸」を「I 基準と D 基準」にすると、学習 Shot の組の I 基準・D 基準（I 最適計画の評価指標。小さいほど良い計画）に対する推定誤差の図を2つ並べます。「グラフを画像で保存…」で PNG にできます。</td></tr>
+            <tr><td>グラフ</td><td>学習 Shot 数による変化。右の一覧で描く手法を選べます。「エラーバー」で Wafer 間の ±1σ か平均の 95% 区間を付けられます。「横軸」を「I 基準と D 基準」にすると、学習 Shot の組の I 基準・D 基準（I 最適計画の評価指標。小さいほど良い計画）に対する推定誤差の図を2つ並べます。「グラフを画像で保存…」で PNG にできます。</td></tr>
             <tr><td>基準の手法との比較</td><td>上で選んだ基準の手法と、同じ Wafer・同じ学習パターンどうしで比べた差、95% 区間、基準より良かった Wafer の割合。</td></tr>
             <tr><td>推定値と誤差の分布</td><td>手法・学習パターン・Wafer を選んで「分析する」を押すと、残差（計測値 − 推定値）のヒストグラム、正規性検定（Shapiro–Wilk・Anderson–Darling・Jarque–Bera）、質的変数（Scan 方向・Mark 番号・Shot 行の奇偶・工程・装置・ロットと、選んだその他の列）の ANOVA が出ます。「推定値を Excel に書き出す…」で、評価点ごとの計測値・推定値・残差と検定の結果を保存します。</td></tr>
+            <tr><td>推定値と実測値の散布図</td><td>手法・学習パターン・Wafer を選んで「描く」を押すと、実測値と推定値の散布図（X・Y）が出ます。相関係数・回帰直線を表示し、点の色を LotID・EqpId・Operation・Scan 方向・Mark 番号・その他の列で分けられます。</td></tr>
           </tbody>
         </table>
       </div>
@@ -543,6 +549,10 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
       <figure class="screen-figure">
         <img src="images/05_chart.jpg" alt="結果一覧のグラフ。横軸が学習 Shot 数、縦軸が RMSE の折れ線" loading="lazy">
         <figcaption>図 7　結果一覧（グラフ）</figcaption>
+      </figure>
+      <figure class="screen-figure">
+        <img src="images/13_errorbars.jpg" alt="学習 Shot 数ごとの RMSE の折れ線に、Wafer 間の ±1σ のエラーバーが付いたグラフ" loading="lazy">
+        <figcaption>図 13　グラフのエラーバー（±1σ）</figcaption>
       </figure>
       <figure class="screen-figure">
         <img src="images/10_criteria.jpg" alt="横軸を I 基準と D 基準にしたグラフ。2つの図で、基準が小さいほど RMSE が小さくなる折れ線" loading="lazy">
@@ -556,11 +566,16 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
         <img src="images/11_analysis.jpg" alt="推定値と誤差の分布のタブ。X と Y の残差のヒストグラム、正規性検定の表、質的変数の ANOVA の表" loading="lazy">
         <figcaption>図 10　推定値と誤差の分布（ヒストグラム・正規性検定・ANOVA）</figcaption>
       </figure>
+      <figure class="screen-figure">
+        <img src="images/14_scatter.jpg" alt="実測値と推定値の散布図が X と Y で2つ並び、Mark 番号で色分けされ、y = x の破線と回帰直線がある" loading="lazy">
+        <figcaption>図 14　推定値と実測値の散布図（Mark 番号で色分け）</figcaption>
+      </figure>
 
       <h3 class="sub-heading">8-5. Wafer ごとに見る（5. Wafer ごとのマップ）</h3>
       <p>
         Wafer・学習パターン・手法を選ぶと、評価した Shot の計測値・推定値・残差（計測値 − 推定値）を並べて表示します。
         灰色の四角は学習に使った Mark、細い灰色の枠は Shot です。「表示」で矢印と色（X・Y）を切り替えられます。
+        「Wafer・平均」で LotID・EqpId・Operation ごとや全 Wafer の平均を選ぶと、Wafer 間で平均した図と共分散楕円が出ます。
         「図の内容」を「Overlay 補正」にすると、実測値で補正した残差・推定値で補正した残差・推定による変化（両者の差）を並べ、下の行に |平均|+3σ を出します。
         色のときは「色の点の大きさ」で点の大きさを変えられます。下の行に、その組み合わせの指標が出ます。
       </p>
@@ -571,6 +586,10 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
       <figure class="screen-figure">
         <img src="images/12_overlay.jpg" alt="Wafer ごとのマップで図の内容を Overlay 補正にしたところ。実測値で補正した残差、推定値で補正した残差、推定による変化のベクトルが3つ並ぶ" loading="lazy">
         <figcaption>図 12　Overlay 補正の評価（実測値で補正・推定値で補正・推定による変化）</figcaption>
+      </figure>
+      <figure class="screen-figure">
+        <img src="images/15_group_map.jpg" alt="全 Wafer の平均の計測値・推定値・残差のベクトルに、Wafer 間のばらつきの共分散楕円が重なった図" loading="lazy">
+        <figcaption>図 15　全 Wafer の平均と共分散楕円（1σ）</figcaption>
       </figure>
 
       <div class="callout info">
@@ -634,7 +653,7 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
       <div class="checklist-grid">
         <article>
           <h3>導入の確認</h3>
-          <label><input type="checkbox"> （MATLAB で使う）テストが「成功 82 件、失敗 0 件」になった</label>
+          <label><input type="checkbox"> （MATLAB で使う）テストが「成功 89 件、失敗 0 件」になった</label>
           <label><input type="checkbox"> （exe）exe が起動し、サンプルデータを読み込めた</label>
           <label><input type="checkbox"> サンプルデータで評価が最後まで終わり、結果一覧に表が出た</label>
           <label><input type="checkbox"> 結果を Excel に書き出し、開いて中身を確かめられた</label>

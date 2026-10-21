@@ -17,7 +17,7 @@ settings.factors.shotRowParity = false; % Shot 配列の行（上から1行目�
 settings.factors.columns = strings(1, 0);  % ファイルのその他の列（標準の項目に対応づけなかった列）の名前
 
 % 学習に使う Shot の選び方
-settings.sampling.method = "ioptimal";  % ioptimal（制約付き I 最適）／random（制約つきランダム）／manual（手動）
+settings.sampling.method = "ioptimal";  % ioptimal（制約付き I 最適）／random（制約つきランダム）／manual（手動）／file（ファイルの優先順）
 settings.sampling.nShotsStart = 10;     % 学習 Shot 数は 開始・終了・刻み で決める（I 最適・ランダム）
 settings.sampling.nShotsEnd = 40;
 settings.sampling.nShotsStep = 5;
@@ -25,6 +25,9 @@ settings.sampling.nShots = alignest.shotCountList(10, 40, 5);  % 開始・終了
 settings.sampling.randomRepeats = 10;
 settings.sampling.seed = 20261017;
 settings.sampling.manualPlans = strings(0, 1);
+settings.sampling.priorityShots = zeros(1, 0);   % 優先順のファイルの Shot 番号（行の順。alignest.readShotPriority）
+settings.sampling.priorityLevels = zeros(1, 0);  % 同じく優先度（0 = 計測しない、1 = 必ず計測する、それ以外・NaN = 行の順）
+settings.sampling.priorityFile = "";             % 読み込んだファイルの名前（表示・記録用）
 settings.sampling.designOrder = 5;      % I 最適の基準モデル（XY 多項式の次数、5次で21項）
 settings.sampling.exchangeStarts = 10;  % 交換法の初期配置の数（Python 版は30）
 settings.sampling.exchangeMaxIterations = 300;

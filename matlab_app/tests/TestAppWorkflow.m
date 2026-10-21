@@ -156,7 +156,8 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyEqual(string(app.Controls.mapping.Data(:, 4)).', string(app.Controls.mapping.Data(:, 1)).');
             app.applyMapping();
             testCase.verifyEqual(numel(app.Data.units), 5);
-            testCase.verifyEqual(numel(app.Controls.previewWafer.Items), 5);
+            testCase.verifyEqual(string(app.Controls.previewWafer.Items(1:5)), string({app.Data.units.label}));
+            testCase.verifyEqual(numel(app.Controls.previewWafer.Items), 5 + 3, "全 Wafer と EqpId ごとの平均も選べる");
             settings = app.Settings;
             settings.sampling.nShots = [10, 20];   % 並びだけを変えた設定も、開始・終了・刻みに直して表示する
             app.setSettings(settings);
@@ -489,6 +490,67 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyFalse(results.overlayEvaluated);
             testCase.verifyEqual(string(app.Controls.mapContent.Enable), "off");
             testCase.verifyFalse(any(string(app.Controls.metric.ItemsData) == "overlayIncrease_X"));
+        end
+
+        function groupMapsErrorBarsScatterAndPriorityFile(testCase)
+            app = testCase.App;
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.xlsx'));
+            app.applyMapping();
+            % 読み込んだデータの平均の図（EqpId ごと）と共分散楕円
+            option = find(string(app.Controls.previewWafer.Items) == "平均：EqpId = EXP01（3 枚）");
+            testCase.verifyNotEmpty(option);
+            app.Controls.previewWafer.Value = option;
+            app.Controls.previewWafer.ValueChangedFcn([], []);
+            testCase.verifyEqual(numel(findall(app.Controls.previewAxes(1), 'Type', 'line', 'DisplayName', ...
+                'Wafer 間のばらつき（1σ 楕円）')), 1);
+            testCase.verifyTrue(contains(app.Controls.previewInfo.Text, "EqpId = EXP01"));
+            % 計測する Shot の優先順のファイル
+            folder = tempname;
+            mkdir(folder);
+            cleanup = onCleanup(@() rmdir(folder, 's'));
+            file = fullfile(folder, 'priority.xlsx');
+            writetable(table([50; 1; 99; (2:2:40).'], [1; 0; 1; nan(20, 1)], 'VariableNames', ["shotNo", "優先度"]), file);
+            app.loadShotPriority(file);
+            testCase.verifyEqual(string(app.Controls.samplingMethod.Value), "file");
+            testCase.verifyTrue(contains(app.Controls.priorityInfo.Text, "必ず計測 2、計測しない 1"));
+            settings = app.Settings;
+            settings.methods = alignest.recommendedMethods("none");
+            settings.methods.polynomial.enabled = true;
+            settings.methods.tps.enabled = true;
+            settings.sampling.nShots = [10, 20];
+            app.setSettings(settings);
+            results = app.runEvaluationNow(false);
+            testCase.verifyEqual(unique(string({results.plans.label})), ["優先順 10 Shot", "優先順 20 Shot"]);
+            plan = results.plans(1);
+            testCase.verifyTrue(all(ismember([50, 99, 2, 4], plan.shotNos)) && ~any(plan.shotNos == 1));
+            % グラフのエラーバー
+            app.Controls.resultTabs.SelectedTab = app.Controls.chartTab;
+            app.Controls.chartErrorBars.Value = 'sd';
+            app.Controls.chartErrorBars.ValueChangedFcn([], []);
+            testCase.verifyEqual(numel(findobj(app.Controls.chartAxes, 'Type', 'errorbar')), numel(app.Controls.chartMethods.Value));
+            app.Controls.chartXAxis.Value = 'criteria';
+            app.Controls.chartXAxis.ValueChangedFcn([], []);
+            testCase.verifyNotEmpty(findobj(app.Controls.chartAxes2, 'Type', 'errorbar'));
+            % 評価結果の平均の図（全 Wafer、Overlay 補正も）
+            group = find(string(app.Controls.mapWafer.Items) == "平均：全 Wafer（5 枚）");
+            app.Controls.mapWafer.Value = group;
+            app.showMap(group, "優先順 20 Shot", 1, "vector", "estimate");
+            testCase.verifyTrue(startsWith(app.Controls.mapInfo.Text, "平均：全 Wafer"));
+            testCase.verifyEqual(string(app.Controls.mapAxes(3).Title.String), "残差（計測値 − 推定値）の平均");
+            app.showMap(group, "優先順 20 Shot", 1, "vector", "overlay");
+            testCase.verifyEqual(string(app.Controls.mapAxes(2).Title.String), "推定値で補正した残差の平均");
+            testCase.verifyNotEmpty(findall(app.Controls.mapAxes(1), 'Type', 'line', 'DisplayName', 'Wafer 間のばらつき（1σ 楕円）'));
+            % 推定値と実測値の散布図（Mark 番号で色分け）
+            summary = app.drawScatter(1, "20 Shot", 0, "mark");
+            testCase.verifyEqual(numel(summary), 2);
+            testCase.verifyGreaterThan(summary(1).r, 0.5);
+            testCase.verifyEqual(numel(findobj(app.Controls.scatterAxes(1), 'Type', 'scatter')), 4);
+            testCase.verifyTrue(contains(app.Controls.scatterInfo.Text, "Mark 番号"));
+            summary = app.drawScatter(2, "10 Shot", 1, "eqp");
+            testCase.verifyEqual(numel(findobj(app.Controls.scatterAxes(2), 'Type', 'scatter')), 1);
+            testCase.verifyEqual(summary(1).n, nnz(results.table.unitIndex == 1 & results.table.methodIndex == 2) * 0 + ...
+                results.table.nTest_X(results.table.unitIndex == 1 & results.table.methodIndex == 2 & ...
+                results.table.group == "10 Shot"));
         end
 
         function reloadingDataClearsResults(testCase)
