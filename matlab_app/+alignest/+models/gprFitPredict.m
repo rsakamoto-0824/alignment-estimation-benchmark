@@ -1,7 +1,7 @@
 function result = gprFitPredict(trainFeatures, testFeatures, groups, y, kernelName, factorMode, factors, options)
 %GPRFITPREDICT 質的変数の扱い方 factorMode で GPR を当てはめ、評価点を推定する。
 %   factors は質的変数の水準（列ベクトル。使えない変数は空）：
-%     scanTrain/Test（Scan方向）、markTrain/Test（Mark番号）、任意の rowTrain/Test（Shot行の奇偶）
+%     <名前>Train/Test の組（scan：Scan方向、mark：Mark番号、row：Shot行の奇偶、col_<列名>：その他の列）
 %   options（省略可）
 %     maxIterations         : 最適化の反復の上限（既定 300）
 %     backfitMaxIterations  : Backfitting の反復の上限（既定 20）

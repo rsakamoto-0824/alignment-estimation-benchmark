@@ -123,7 +123,7 @@ classdef TestEvaluation < matlab.unittest.TestCase
             settings = alignest.defaultSettings();
             settings.sampling.nShots = 12;
             settings.methods = alignest.recommendedMethods("none");
-            settings.methods.featureSets = ["XY", "XYRT"];
+            settings.methods.featureSets = ["XY", "XYR"];
             settings.methods.gpr.enabled = true;
             settings.methods.gpr.kernels = ["ardrationalquadratic", "exponential"];
             settings.methods.gpr.factorModes = alignest.models.gprFactorModes();

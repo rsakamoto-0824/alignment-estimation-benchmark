@@ -30,9 +30,14 @@ values = [string(datetime('now', 'Format', 'yyyy/MM/dd HH:mm:ss')); string(heigh
 writetable(table(items, values, 'VariableNames', ["項目", "内容"]), filePath, 'Sheet', '説明');
 
 points = estimates;
-points.Properties.VariableNames = cellstr(["Operation", "EqpId", "Wafer", "DateTime", "学習パターン", "列", "手法", ...
-    "手法の識別子", "shotNo", "markNo", "Direction", "Shot行(1=奇数,2=偶数)", "x[mm]", "y[mm]", "半径[mm]", ...
-    "計測値X[nm]", "推定値X[nm]", "残差X[nm]", "計測値Y[nm]", "推定値Y[nm]", "残差Y[nm]"]);
+internal = ["plan", "group", "methodLabel", "methodId", "direction", "shotRowParity", "x", "y", "r", ...
+    "measX", "estimateX", "residualX", "measY", "estimateY", "residualY"];
+headers = ["学習パターン", "列", "手法", "手法の識別子", "Direction", "Shot行(1=奇数,2=偶数)", "x[mm]", "y[mm]", ...
+    "半径[mm]", "計測値X[nm]", "推定値X[nm]", "残差X[nm]", "計測値Y[nm]", "推定値Y[nm]", "残差Y[nm]"];
+names = string(points.Properties.VariableNames);
+[found, position] = ismember(names, internal);
+names(found) = headers(position(found));  % 質的変数に選んだその他の列（質的変数:<列名>）はそのまま
+points.Properties.VariableNames = cellstr(names);
 writetable(points, filePath, 'Sheet', '推定値');
 
 if height(analysis.normality) > 0

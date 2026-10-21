@@ -5,6 +5,7 @@ classdef TestPythonReference < matlab.unittest.TestCase
     %   - 超パラメータ・平滑化パラメータを固定した計算（決まった計算）：丸め誤差の範囲で一致
     %   - 最適化を含む計算：最適化の方法が違う（Python は SciPy の L-BFGS-B）ので、
     %     到達した目的関数の値が Python と同じかより良いこと、推定値の差が小さいことを確かめる
+    %   説明変数 XYRT（方位角 T）はツールから削除したので、基準値のうち XYRT の組は照合しない。
 
     properties
         Reference
@@ -31,7 +32,7 @@ classdef TestPythonReference < matlab.unittest.TestCase
             for level = levelNames(testCase)
                 [train, test] = split(testCase, level);
                 y = testCase.Reference.wafers(1).measured(train, 1);
-                for item = testCase.Reference.levels.(level).fixed_gpr.'
+                for item = withoutT(testCase.Reference.levels.(level).fixed_gpr).'
                     [gp, basisTrain, basisTest] = gprCase(testCase, item.kernel, item.feature_set, item.mode, train, test);
                     label = sprintf("%s %s %s %s", level, item.kernel, item.feature_set, item.mode);
                     start = alignest.models.gprInitialParams(gp, y);
@@ -53,7 +54,7 @@ classdef TestPythonReference < matlab.unittest.TestCase
             labels = strings(0, 1);
             for level = levelNames(testCase)
                 [train, test] = split(testCase, level);
-                for item = testCase.Reference.levels.(level).fitted_gpr.'
+                for item = withoutT(testCase.Reference.levels.(level).fitted_gpr).'
                     wafer = testCase.Reference.wafers(item.wafer + 1);
                     y = wafer.measured(train, item.axis + 1);
                     truth = wafer.truth(test, item.axis + 1);
@@ -87,7 +88,7 @@ classdef TestPythonReference < matlab.unittest.TestCase
             grid = linspace(-8, 3, 45);
             for level = levelNames(testCase)
                 [train, test] = split(testCase, level);
-                for item = testCase.Reference.levels.(level).tps.'
+                for item = withoutT(testCase.Reference.levels.(level).tps).'
                     features = alignest.basis.distanceFeatures(testCase.Marks.x, testCase.Marks.y, item.feature_set, 150);
                     y = testCase.Reference.wafers(item.wafer + 1).measured(train, item.axis + 1);
                     model = alignest.models.tpsSetup(features(train, :), features(test, :), grid);
@@ -139,10 +140,10 @@ classdef TestPythonReference < matlab.unittest.TestCase
                 [scanTrain, scanTest] = alignest.basis.effectCoding(factors.scanTrain, factors.scanTest);
                 [markTrain, markTest] = alignest.basis.effectCoding(factors.markTrain, factors.markTest);
                 points = struct("x", testCase.Marks.x / 150, "y", testCase.Marks.y / 150, ...
-                    "r", hypot(testCase.Marks.x, testCase.Marks.y) / 150, "theta", atan2(testCase.Marks.y, testCase.Marks.x));
+                    "r", hypot(testCase.Marks.x, testCase.Marks.y) / 150);
                 pick = @(index) structfun(@(v) v(index), points, 'UniformOutput', false);
-                nBasis = struct("axis", 8, "radius", 8, "angle", 8);
-                for item = testCase.Reference.levels.(level).gam.'
+                nBasis = struct("axis", 8, "radius", 8);
+                for item = withoutT(testCase.Reference.levels.(level).gam).'
                     model = alignest.models.gamSetup(pick(train), pick(test), string(item.feature_set), ...
                         [scanTrain, markTrain], [scanTest, markTest], nBasis);
                     y = testCase.Reference.wafers(item.wafer + 1).measured(train, item.axis + 1);
@@ -257,4 +258,9 @@ classdef TestPythonReference < matlab.unittest.TestCase
             unit = data.units(1);
         end
     end
+end
+
+function items = withoutT(items)
+% 削除した説明変数の組 XYRT（方位角 T）の基準値を除く
+items = items(string({items.feature_set}) ~= "XYRT");
 end

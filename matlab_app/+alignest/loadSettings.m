@@ -15,6 +15,7 @@ catch err
 end
 settings = merge(alignest.defaultSettings(), decoded);
 settings.sampling = alignest.syncShotCounts(settings.sampling);
+settings.methods = alignest.completeMethodSettings(settings.methods);
 end
 
 function merged = merge(defaults, decoded)

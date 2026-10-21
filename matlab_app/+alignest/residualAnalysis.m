@@ -5,7 +5,8 @@ function analysis = residualAnalysis(estimates)
 %   analysis.normality：点数・平均・標準偏差・歪度・尖度（過剰）・Shapiro–Wilk・Anderson–Darling・Jarque–Bera と判定
 %     （判定は Shapiro–Wilk の p 値。5000 点を超えて計算できないときは Anderson–Darling の p 値）
 %   analysis.anova    ：質的変数ごとの一元配置の F 検定と、ほかの質的変数で調整した F 検定（alignest.stats.anovaMainEffects）
-%     質的変数は Scan 方向・Mark 番号・Shot 行の奇偶・工程（Operation）・装置（EqpId）。値の無い変数は出さない。
+%     質的変数は Scan 方向・Mark 番号・Shot 行の奇偶・工程（Operation）・装置（EqpId）・ロット（LotID）と、
+%     質的変数に選んだファイルのその他の列（表の「質的変数:<列名>」）。値の無い変数は出さない。
 SIGNIFICANCE = 0.05;
 methodIds = string(estimates.methodId);
 groups = string(estimates.group);
@@ -50,8 +51,12 @@ direction(ismissing(direction) | isnan(points.direction)) = "";
 parity = repmat("", height(points), 1);
 parity(points.shotRowParity == 1) = "奇数行";
 parity(points.shotRowParity == 2) = "偶数行";
-candidates = struct("name", {"Scan 方向", "Mark 番号", "Shot 行の奇偶", "工程（Operation）", "装置（EqpId）"}, ...
-    "levels", {direction, string(points.markNo), parity, string(points.Operation), string(points.EqpId)});
+candidates = struct("name", {"Scan 方向", "Mark 番号", "Shot 行の奇偶", "工程（Operation）", "装置（EqpId）", ...
+    "ロット（LotID）"}, "levels", {direction, string(points.markNo), parity, string(points.Operation), ...
+    string(points.EqpId), string(points.LotID)});
+for name = string(points.Properties.VariableNames(startsWith(points.Properties.VariableNames, "質的変数:")))
+    candidates(end + 1) = struct("name", extractAfter(name, "質的変数:"), "levels", string(points.(name))); %#ok<AGROW>
+end
 keep = arrayfun(@(factor) any(factor.levels ~= "" & ~ismissing(factor.levels)), candidates);
 factors = candidates(keep);
 end

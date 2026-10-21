@@ -17,6 +17,14 @@ if isempty(methods)
 end
 specs = alignest.buildPlanSpecs(settings.sampling);
 units = data.units;
+choice = alignest.factorChoice(settings);
+if isfield(data, "attributeNames")
+    missingColumns = choice.columns(~ismember(choice.columns, data.attributeNames));
+    if ~isempty(missingColumns)
+        error('alignest:factorColumn', ['質的変数に選んだ列が、読み込んだデータにありません: %s。' ...
+            '「2. 評価の設定」の質的変数を選び直すか、その列を含むファイルを読み込んでください。'], strjoin(missingColumns, "、"));
+    end
+end
 nTotal = numel(units) * numel(specs) * numel(methods);
 metricList = alignest.metricNames();
 rows = repmat(rowTemplate(metricList), nTotal, 1);
@@ -43,6 +51,7 @@ for u = 1:numel(units)
             row = rowTemplate(metricList);
             row.Operation = unit.operation;
             row.EqpId = unit.eqpId;
+            row.LotID = unit.lotId;
             row.Wafer = unit.label;
             row.DateTime = unit.dateTime;
             row.unitIndex = u;
@@ -191,7 +200,7 @@ text = strjoin(parts, " ");
 end
 
 function row = rowTemplate(metricList)
-row = struct("Operation", "", "EqpId", "", "Wafer", "", "DateTime", "", "unitIndex", 0, "planIndex", 0, "plan", "", "group", "", ...
+row = struct("Operation", "", "EqpId", "", "LotID", "", "Wafer", "", "DateTime", "", "unitIndex", 0, "planIndex", 0, "plan", "", "group", "", ...
     "planType", "", "repeat", 0, "nShots", 0, "methodIndex", 0, "methodId", "", "methodLabel", "", ...
     "family", "", "featureSet", "", "variant", "", "factorMode", "", "criterionI", NaN, "criterionD", NaN);
 for name = metricList

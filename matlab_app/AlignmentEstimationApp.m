@@ -140,10 +140,12 @@ classdef AlignmentEstimationApp < handle
             lines = [sprintf("Wafer（評価の単位）：%d 枚", summary.nUnits); ...
                 "工程（Operation）：" + listOrNone(summary.operations); ...
                 "装置（EqpId）：" + listOrNone(summary.eqpIds); ...
+                "ロット（LotID）：" + listOrNone(summary.lotIds); ...
                 sprintf("Shot 数：%d〜%d／Wafer、Mark 数：%d〜%d／Wafer", summary.nShotsRange, summary.nMarksRange); ...
                 "Shot の大きさ（中心の間隔から推定）：" + shotSizeText(summary.shotSizeRangeMm); ...
                 sprintf("Mark 番号の水準：%s", strjoin(string(summary.markLevels), "、")); ...
                 "Scan 方向（Direction）：" + directionText(summary); ...
+                "質的変数に選べるその他の列：" + listOrNone(summary.attributeNames); ...
                 summary.messages(:)];
             app.Controls.summary.Value = cellstr(lines);
             labels = string({app.Data.units.label});
@@ -157,6 +159,8 @@ classdef AlignmentEstimationApp < handle
             app.Controls.mappingStatus.FontColor = [0, 0, 0];
             drawPreview(app);
             drawLayout(app);
+            refreshFactorColumns(app);
+            validateSettings(app);
             refreshRunSummary(app);
         end
 
@@ -384,7 +388,7 @@ classdef AlignmentEstimationApp < handle
             fileGrid = uigridlayout(filePanel, [5, 4], 'ColumnWidth', {'fit', '1x', 260, 300}, ...
                 'RowHeight', {'fit', 'fit', 'fit', 'fit', 'fit'}, 'Padding', 10);
             help = uilabel(fileGrid, 'WordWrap', 'on', 'Text', ['Excel（.xlsx）または CSV。1行目に項目名、2行目からデータ。' ...
-                '項目名がアライメント計測テーブルの標準（Operation, EqpId, Wafer, DateTime, shotNo, Direction, Xmm, Ymm, ' ...
+                '項目名がアライメント計測テーブルの標準（Operation, EqpId, LotID, Wafer, DateTime, shotNo, Direction, Xmm, Ymm, ' ...
                 'Radius, markNo, markXmm, markYmm, measX, measY, StsX, StsY）なら自動で対応づけます。']);
             help.Layout.Row = 1;
             help.Layout.Column = [1, 4];
@@ -624,6 +628,8 @@ classdef AlignmentEstimationApp < handle
             clearResults(app);
             app.Controls.summary.Value = {''};
             clearDataMaps(app);
+            refreshFactorColumns(app);
+            validateSettings(app);
             if ~isempty(app.RawTable)
                 app.Controls.mappingStatus.Text = ['列の対応・座標の単位・有効半径・行の除外条件・Scan 方向の付与を確認し、' ...
                     '「この対応で読み込む」を押してください。'];
@@ -786,80 +792,96 @@ classdef AlignmentEstimationApp < handle
             place(c.recordTiming, 26, [1, 2]);
 
             methodPanel = uipanel(grid, 'Title', '比べる手法');
-            m = uigridlayout(methodPanel, [20, 4], 'RowHeight', repmat({'fit'}, 1, 20), 'ColumnWidth', {'1x', '1x', '1x', '1x'}, ...
+            m = uigridlayout(methodPanel, [21, 4], 'RowHeight', repmat({'fit'}, 1, 21), 'ColumnWidth', {'1x', '1x', '1x', '1x'}, ...
                 'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
             presetGrid = uigridlayout(m, [1, 3], 'Padding', 0, 'ColumnWidth', {'fit', 'fit', 'fit'});
             place(presetGrid, 1, [1, 4]);
             uibutton(presetGrid, 'Text', '推奨の組み合わせ', 'ButtonPushedFcn', @(~, ~) app.onPreset("recommended"));
             uibutton(presetGrid, 'Text', 'すべて選ぶ', 'ButtonPushedFcn', @(~, ~) app.onPreset("all"));
             uibutton(presetGrid, 'Text', 'すべて外す', 'ButtonPushedFcn', @(~, ~) app.onPreset("none"));
-            label(m, '説明変数（GPR・TPS・RBF・Kriging・GAM に共通。T は方位角）', 2, [1, 4]);
+            label(m, '説明変数（GPR・TPS・RBF・Kriging・GAM に共通）', 2, [1, 4]);
             c.featureXY = uicheckbox(m, 'Text', 'X, Y', 'ValueChangedFcn', onChange);
             place(c.featureXY, 3, 1);
             c.featureXYR = uicheckbox(m, 'Text', 'X, Y, 半径', 'ValueChangedFcn', onChange);
             place(c.featureXYR, 3, 2);
-            c.featureXYRT = uicheckbox(m, 'Text', 'X, Y, 半径, T', 'ValueChangedFcn', onChange);
-            place(c.featureXYRT, 3, 3);
-            c.shotRowParity = uicheckbox(m, 'Text', 'Shot 行の奇数・偶数を質的変数に追加', ...
+            factorGrid = uigridlayout(m, [3, 4], 'Padding', 0, 'RowSpacing', 4, 'RowHeight', {'fit', 'fit', 72}, ...
+                'ColumnWidth', {'fit', 'fit', 'fit', '1x'});
+            place(factorGrid, 4, [1, 4]);
+            label(factorGrid, ['質的変数（GPR・GAM と、TPS・RBF・Kriging の Backfitting で使う。' ...
+                'ANOVA では選ばなくても Scan・Mark・Shot 行を調べる）'], 1, [1, 4]);
+            c.factorScan = uicheckbox(factorGrid, 'Text', 'Scan 方向', 'ValueChangedFcn', onChange, ...
+                'Tooltip', 'Direction の列、または「Scan 方向が無い行に付ける値」で付けた値。値が無い Wafer では使いません。');
+            place(c.factorScan, 2, 1);
+            c.factorMark = uicheckbox(factorGrid, 'Text', 'Mark 番号', 'ValueChangedFcn', onChange);
+            place(c.factorMark, 2, 2);
+            c.shotRowParity = uicheckbox(factorGrid, 'Text', 'Shot 行の奇数・偶数', ...
                 'Tooltip', '各 Wafer・測定日時で、入力の Shot 中心 Y 座標を上から1行目として数えます。半径除外前に判定。入力にない行は数えません。', ...
                 'ValueChangedFcn', onChange);
-            place(c.shotRowParity, 4, [1, 4]);
+            place(c.shotRowParity, 2, 3);
+            c.factorColumnsLabel = label(factorGrid, ['ファイルのその他の列（標準の項目に対応づけなかった列。' ...
+                'Ctrl・Shift で複数選ぶ）'], 2, 4);
+            c.factorColumns = uilistbox(factorGrid, 'Items', {}, 'Multiselect', 'on', 'ValueChangedFcn', onChange, ...
+                'Tooltip', ['選んだ列の値（文字・数字）を水準とする質的変数。値が空の Mark がある Wafer では、その列を使いません。' ...
+                '一覧はデータを読み込むと出ます。']);
+            place(c.factorColumns, 3, [1, 4]);
+            c.factorColumnsError = errorLabel(app, m, 5, [1, 4]);
             c.gpr = uicheckbox(m, 'Text', 'GPR（ガウス過程回帰）', 'ValueChangedFcn', onChange);
-            place(c.gpr, 5, [1, 4]);
-            label(m, 'カーネル（Ctrl・Shift で複数選ぶ）', 6, [1, 2]);
-            label(m, '質的変数の扱い（Scan・Mark・任意の行奇偶）', 6, [3, 4]);
+            place(c.gpr, 6, [1, 4]);
+            label(m, 'カーネル（Ctrl・Shift で複数選ぶ）', 7, [1, 2]);
+            label(m, '質的変数の扱い（上で選んだ質的変数）', 7, [3, 4]);
             [kernelNames, kernelLabels] = alignest.models.gprKernelChoices();
             c.kernels = uilistbox(m, 'Items', cellstr(kernelLabels), 'ItemsData', cellstr(kernelNames), 'Multiselect', 'on', ...
                 'ValueChangedFcn', onChange);
-            place(c.kernels, 7, [1, 2]);
+            place(c.kernels, 8, [1, 2]);
             [modeNames, modeLabels] = alignest.models.gprFactorModes();
             modeGrid = uigridlayout(m, [numel(modeNames), 1], 'Padding', 0, 'RowSpacing', 2, ...
                 'RowHeight', repmat({'fit'}, 1, numel(modeNames)));
-            place(modeGrid, 7, [3, 4]);
+            place(modeGrid, 8, [3, 4]);
             c.factorModes = gobjects(1, numel(modeNames));
             for k = 1:numel(modeNames)
                 c.factorModes(k) = uicheckbox(modeGrid, 'Text', modeLabels(k), 'UserData', modeNames(k), ...
                     'ValueChangedFcn', onChange);
             end
-            m.RowHeight{7} = 300;
-            label(m, 'Matérn の ν（matern・ardmatern を選んだとき。空白区切り）', 8, [1, 2]);
+            m.RowHeight{8} = 300;
+            label(m, 'Matérn の ν（matern・ardmatern を選んだとき。空白区切り）', 9, [1, 2]);
             c.maternNu = uieditfield(m, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['Matérn カーネルの次数 ν' ...
                 '（0 より大きく 50 以下）。大きいほど滑らか。0.5・1.5・2.5 は exponential・matern32・matern52 と同じ。' ...
                 '複数入れると ν ごとに比べます（例：0.75 1 2 3.5）。']);
-            place(c.maternNu, 8, [3, 4]);
-            c.maternNuError = errorLabel(app, m, 9, [1, 4]);
+            place(c.maternNu, 9, [3, 4]);
+            c.maternNuError = errorLabel(app, m, 10, [1, 4]);
             c.tps = uicheckbox(m, 'Text', 'TPS（薄板スプライン）', 'ValueChangedFcn', onChange);
-            place(c.tps, 10, [1, 2]);
+            place(c.tps, 11, [1, 2]);
             c.tpsFactors = spatialFactorDropdown(m, onChange);
-            place(c.tpsFactors, 10, [3, 4]);
+            place(c.tpsFactors, 11, [3, 4]);
             c.rbf = uicheckbox(m, 'Text', 'RBF（ガウス型・平滑化つき）', 'ValueChangedFcn', onChange);
-            place(c.rbf, 11, [1, 4]);
+            place(c.rbf, 12, [1, 2]);
+            c.rbfFactors = spatialFactorDropdown(m, onChange);
+            place(c.rbfFactors, 12, [3, 4]);
             c.ordinaryKriging = uicheckbox(m, 'Text', 'Kriging（通常）', 'ValueChangedFcn', onChange);
-            place(c.ordinaryKriging, 12, [1, 2]);
+            place(c.ordinaryKriging, 13, [1, 2]);
             c.ordinaryFactors = spatialFactorDropdown(m, onChange);
-            place(c.ordinaryFactors, 12, [3, 4]);
+            place(c.ordinaryFactors, 13, [3, 4]);
             c.universalKriging = uicheckbox(m, 'Text', 'Universal Kriging', 'ValueChangedFcn', onChange);
-            place(c.universalKriging, 13, [1, 2]);
+            place(c.universalKriging, 14, [1, 2]);
             c.universalFactors = spatialFactorDropdown(m, onChange);
-            place(c.universalFactors, 13, [3, 4]);
-            label(m, 'バリオグラム（通常・Universal 共通）', 14, [1, 4]);
+            place(c.universalFactors, 14, [3, 4]);
+            label(m, 'バリオグラム（通常・Universal 共通）', 15, [1, 4]);
             variograms = ["linear", "gaussian", "power", "exponential", "spherical"];
             variogramGrid = uigridlayout(m, [1, numel(variograms)], 'Padding', 0, ...
                 'ColumnWidth', repmat({'1x'}, 1, numel(variograms)));
-            place(variogramGrid, 15, [1, 4]);
+            place(variogramGrid, 16, [1, 4]);
             c.variograms = gobjects(1, numel(variograms));
             for k = 1:numel(variograms)
                 c.variograms(k) = uicheckbox(variogramGrid, 'Text', variograms(k), 'UserData', variograms(k), ...
                     'ValueChangedFcn', onChange);
             end
-            c.variograms(end).Tooltip = ['球形モデル（range より遠い点の相関は 0）。説明変数が3次元まで（X,Y・X,Y,半径）なら' ...
-                '正定値が保証されます。X,Y,半径,T（5列）では保証されません。'];
-            c.gam = uicheckbox(m, 'Text', 'GAM（一般化加法モデル。Scan 方向・Mark 番号を含む）', 'ValueChangedFcn', onChange);
-            place(c.gam, 16, [1, 4]);
-            shapeGrid = uigridlayout(m, [1, 7], 'Padding', 0, 'ColumnWidth', {'fit', 'fit', '1x', 'fit', '1x', 'fit', '1x'});
-            place(shapeGrid, 17, [1, 4]);
+            c.variograms(end).Tooltip = '球形モデル（range より遠い点の相関は 0）。説明変数（X,Y・X,Y,半径）は3次元までなので正定値が保証されます。';
+            c.gam = uicheckbox(m, 'Text', 'GAM（一般化加法モデル。選んだ質的変数を含む）', 'ValueChangedFcn', onChange);
+            place(c.gam, 17, [1, 4]);
+            shapeGrid = uigridlayout(m, [1, 5], 'Padding', 0, 'ColumnWidth', {'fit', 'fit', '1x', 'fit', '1x'});
+            place(shapeGrid, 18, [1, 4]);
             label(shapeGrid, '形状関数：', 1, 1);
-            [termNames, termLabels] = alignest.models.gamTerms("XYRT");
+            [termNames, termLabels] = alignest.models.gamTerms("XYR");
             c.gamShapes = gobjects(1, numel(termNames));
             for k = 1:numel(termNames)
                 label(shapeGrid, termLabels(k), 1, 2 * k);
@@ -867,18 +889,18 @@ classdef AlignmentEstimationApp < handle
                     'ItemsData', {'spline', 'gp'}, 'UserData', termNames(k), 'ValueChangedFcn', onChange, ...
                     'Tooltip', ['スプライン：P-spline（B スプライン＋2階差分の罰則）。ガウス過程回帰：Matérn 5/2 の' ...
                     'ガウス過程（節点で近似、線形部分は罰則なし）。長さスケールは候補から REML で選び、罰則の強さは' ...
-                    'どちらも REML で選びます。半径は X,Y,半径 以上、方位角は X,Y,半径,T のときだけ使います。']);
+                    'どちらも REML で選びます。半径の項は説明変数が X,Y,半径 のときだけ使います。']);
                 place(c.gamShapes(k), 1, 2 * k + 1);
             end
             c.polynomial = uicheckbox(m, 'Text', 'XY 多項式　次数：', 'ValueChangedFcn', onChange);
-            place(c.polynomial, 18, 1);
+            place(c.polynomial, 19, 1);
             c.polynomialOrder = uispinner(m, 'Limits', [1, 8], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
-            place(c.polynomialOrder, 18, 2);
+            place(c.polynomialOrder, 19, 2);
             c.rt = uicheckbox(m, 'Text', 'RT モデル　次数 K：', 'ValueChangedFcn', onChange);
-            place(c.rt, 19, 1);
+            place(c.rt, 20, 1);
             c.rtOrders = uieditfield(m, 'text', 'ValueChangedFcn', onChange);
-            place(c.rtOrders, 19, 2);
-            c.rtError = errorLabel(app, m, 20, [1, 4]);
+            place(c.rtOrders, 20, 2);
+            c.rtError = errorLabel(app, m, 21, [1, 4]);
 
             footer = uigridlayout(grid, [1, 4], 'ColumnWidth', {'fit', 'fit', 'fit', '1x'}, 'Padding', 0);
             place(footer, 2, [1, 2]);
@@ -899,7 +921,11 @@ classdef AlignmentEstimationApp < handle
             c.invertDirection.Value = s.data.invertDirection;
             c.invertDirection.Enable = onOff(s.data.directionRule ~= "none");
             fillUnitTable(app);
-            c.shotRowParity.Value = s.factors.shotRowParity;
+            choice = alignest.factorChoice(s);
+            c.factorScan.Value = choice.scan;
+            c.factorMark.Value = choice.mark;
+            c.shotRowParity.Value = choice.row;
+            refreshFactorColumns(app, choice.columns);
             c.samplingMethod.Value = char(s.sampling.method);
             c.nShotsStart.Value = s.sampling.nShotsStart;
             c.nShotsEnd.Value = s.sampling.nShotsEnd;
@@ -919,7 +945,6 @@ classdef AlignmentEstimationApp < handle
             methods = s.methods;
             c.featureXY.Value = any(methods.featureSets == "XY");
             c.featureXYR.Value = any(methods.featureSets == "XYR");
-            c.featureXYRT.Value = any(methods.featureSets == "XYRT");
             c.gpr.Value = methods.gpr.enabled;
             c.kernels.Value = cellstr(methods.gpr.kernels);
             c.maternNu.Value = char(strjoin(string(methods.gpr.maternNu), " "));
@@ -931,6 +956,7 @@ classdef AlignmentEstimationApp < handle
             end
             c.tps.Value = methods.tps.enabled;
             c.rbf.Value = methods.rbf.enabled;
+            c.rbfFactors.Value = modeSelection(methods.rbf.factorModes);
             c.tpsFactors.Value = modeSelection(methods.tps.factorModes);
             c.ordinaryFactors.Value = modeSelection(methods.kriging.ordinaryFactorModes);
             c.universalFactors.Value = modeSelection(methods.kriging.universalFactorModes);
@@ -958,7 +984,10 @@ classdef AlignmentEstimationApp < handle
             s.data.excludeUnmeasuredRecords = c.excludeUnmeasuredRecords.Value;
             s.data.directionRule = string(c.directionRule.Value);
             s.data.invertDirection = c.invertDirection.Value;
+            s.factors.scan = c.factorScan.Value;
+            s.factors.mark = c.factorMark.Value;
             s.factors.shotRowParity = c.shotRowParity.Value;
+            s.factors.columns = reshape(string(c.factorColumns.Value), 1, []);
             s.sampling.method = string(c.samplingMethod.Value);
             try
                 s.sampling.nShots = alignest.shotCountList(c.nShotsStart.Value, c.nShotsEnd.Value, c.nShotsStep.Value);
@@ -984,8 +1013,8 @@ classdef AlignmentEstimationApp < handle
             s.evaluation.outerRadiusRatio = c.outerRatio.Value;
             s.evaluation.removeLinear = c.removeLinear.Value;
             s.evaluation.recordTiming = c.recordTiming.Value;
-            featureNames = ["XY", "XYR", "XYRT"];
-            s.methods.featureSets = featureNames([c.featureXY.Value, c.featureXYR.Value, c.featureXYRT.Value]);
+            featureNames = ["XY", "XYR"];
+            s.methods.featureSets = featureNames([c.featureXY.Value, c.featureXYR.Value]);
             s.methods.gpr.enabled = c.gpr.Value;
             s.methods.gpr.kernels = string(c.kernels.Value);
             [values, ok] = parseNumbers(c.maternNu.Value);
@@ -998,6 +1027,7 @@ classdef AlignmentEstimationApp < handle
             s.methods.gpr.factorModes = checkedValues(c.factorModes);
             s.methods.tps.enabled = c.tps.Value;
             s.methods.rbf.enabled = c.rbf.Value;
+            s.methods.rbf.factorModes = selectedModes(c.rbfFactors.Value);
             s.methods.tps.factorModes = selectedModes(c.tpsFactors.Value);
             s.methods.kriging.ordinaryFactorModes = selectedModes(c.ordinaryFactors.Value);
             s.methods.kriging.universalFactorModes = selectedModes(c.universalFactors.Value);
@@ -1050,6 +1080,14 @@ classdef AlignmentEstimationApp < handle
             end
             c.zoneError.Text = text;
             messages = [messages; text(text ~= "")];
+            text = "";
+            missing = missingFactorColumns(app, string(c.factorColumns.Value));
+            if ~isempty(missing)
+                text = "⚠ 質的変数に選んだ列が、読み込んだデータにありません：" + strjoin(missing, "、") + ...
+                    "。選び直すか、その列を含むファイルを読み込んでください。";
+            end
+            c.factorColumnsError.Text = text;
+            messages = [messages; text(text ~= "")];
             [values, ok] = parseNumbers(c.maternNu.Value);
             text = "";
             if usesMaternNu(c) && (~ok || isempty(values) || any(values <= 0 | values > app.MAX_MATERN_NU))
@@ -1081,10 +1119,38 @@ classdef AlignmentEstimationApp < handle
             set(c.gamShapes, 'Enable', onOff(c.gam.Value));
             set(c.variograms, 'Enable', onOff(c.ordinaryKriging.Value || c.universalKriging.Value));
             c.tpsFactors.Enable = onOff(c.tps.Value);
+            c.rbfFactors.Enable = onOff(c.rbf.Value);
             c.ordinaryFactors.Enable = onOff(c.ordinaryKriging.Value);
             c.universalFactors.Enable = onOff(c.universalKriging.Value);
             c.polynomialOrder.Enable = onOff(c.polynomial.Value);
             c.rtOrders.Enable = onOff(c.rt.Value);
+        end
+
+        function refreshFactorColumns(app, selected)
+            % 質的変数に選べるその他の列の一覧：読み込んだデータの列と、設定で選んであるがデータに無い列
+            c = app.Controls;
+            if nargin < 2
+                selected = string(c.factorColumns.Value);
+            end
+            available = strings(1, 0);
+            if ~isempty(app.Data) && isfield(app.Data, "attributeNames")
+                available = reshape(app.Data.attributeNames, 1, []);
+            end
+            selected = reshape(string(selected), 1, []);
+            absent = selected(~ismember(selected, available));
+            names = [available, absent];
+            labels = [available, absent + "（データに無い）"];
+            c.factorColumns.Items = cellstr(labels);
+            c.factorColumns.ItemsData = cellstr(names);
+            c.factorColumns.Value = cellstr(selected(ismember(selected, names)));
+        end
+
+        function missing = missingFactorColumns(app, selected)
+            % データを読み込んでいるときだけ、データに無い列を返す
+            missing = strings(1, 0);
+            if ~isempty(app.Data) && isfield(app.Data, "attributeNames")
+                missing = selected(~ismember(selected, app.Data.attributeNames));
+            end
         end
 
         function onSettingsChanged(app)
@@ -1165,7 +1231,7 @@ classdef AlignmentEstimationApp < handle
             seconds = 0;
             for k = 1:numel(methods)
                 repeats = 1;
-                if any(methods(k).family == ["TPS", "OK", "UK"]) && methods(k).factorMode == "backfit"
+                if any(methods(k).family == ["TPS", "RBF", "OK", "UK"]) && methods(k).factorMode == "backfit"
                     repeats = app.Settings.methods.options.backfitMaxIterations;
                 elseif methods(k).family == "GAM" && startsWith(methods(k).variant, "gp:")
                     % ガウス過程の項ごとに長さスケールの候補を試す
@@ -1873,7 +1939,7 @@ end
 function control = spatialFactorDropdown(parent, callback)
 control = uidropdown(parent, 'Items', {'質的変数なし', 'Backfitting', 'なし・Backfitting を比較'}, ...
     'ItemsData', {'none', 'backfit', 'both'}, 'ValueChangedFcn', callback, ...
-    'Tooltip', 'Scan 方向・Mark 番号（選択時は Shot 行奇偶も）を固定効果として空間成分と交互に推定します。');
+    'Tooltip', '上で選んだ質的変数を固定効果として、空間成分と交互に推定します（Backfitting）。');
 end
 
 function selection = modeSelection(modes)
