@@ -204,6 +204,9 @@ classdef TestEvaluation < matlab.unittest.TestCase
             testCase.verifyEqual(exported.("20 Shot"), summary.values(:, 2), 'AbsTol', 1e-9);
             settingsFile = [tempname, '.json'];
             cleanup2 = onCleanup(@() deleteIfExists(settingsFile));
+            settings.sampling = alignest.syncShotCounts(settings.sampling);  % 開始・終了・刻みを並びに合わせる
+            testCase.verifyEqual([settings.sampling.nShotsStart, settings.sampling.nShotsEnd, settings.sampling.nShotsStep], ...
+                [10, 20, 10]);
             settings.sampling.manualPlans = ["1 2 3"; "4 5 6"];
             settings.methods.featureSets = ["XY", "XYR"];
             settings.data.coordinateUnits.Xmm = "um";
@@ -217,6 +220,124 @@ classdef TestEvaluation < matlab.unittest.TestCase
             loaded = alignest.loadSettings(settingsFile);
             testCase.verifyEqual(loaded.data.coordinateUnits, alignest.coordinateUnits());
             testCase.verifyFalse(loaded.factors.shotRowParity);
+            % 開始・終了・刻みの無い以前の設定は、Shot 数の並びから決める（等間隔でなければ間が加わる）
+            legacy.sampling = rmfield(legacy.sampling, ["nShotsStart", "nShotsEnd", "nShotsStep"]);
+            legacy.sampling.nShots = [10, 20, 50];
+            legacy.data = rmfield(legacy.data, ["directionRule", "invertDirection"]);
+            legacy.evaluation = rmfield(legacy.evaluation, "recordTiming");
+            alignest.saveSettings(legacy, settingsFile);
+            loaded = alignest.loadSettings(settingsFile);
+            testCase.verifyEqual(loaded.sampling.nShots, 10:10:50);
+            testCase.verifyEqual([loaded.sampling.nShotsStart, loaded.sampling.nShotsEnd, loaded.sampling.nShotsStep], ...
+                [10, 50, 10]);
+            testCase.verifyEqual(loaded.data.directionRule, "none");
+            testCase.verifyFalse(loaded.evaluation.recordTiming);
+        end
+
+        function shotCountSweepBuildsTheList(testCase)
+            testCase.verifyEqual(alignest.shotCountList(10, 40, 5), 10:5:40);
+            testCase.verifyEqual(alignest.shotCountList(10, 42, 5), 10:5:40, "終了が刻みに乗らなければ手前まで");
+            testCase.verifyEqual(alignest.shotCountList(12, 12, 3), 12);
+            testCase.verifyError(@() alignest.shotCountList(20, 10, 5), 'alignest:nShots');
+            testCase.verifyError(@() alignest.shotCountList(10, 20, 0), 'alignest:nShots');
+            testCase.verifyError(@() alignest.shotCountList(10.5, 20, 1), 'alignest:nShots');
+            testCase.verifyError(@() alignest.shotCountList(1, 1000, 1), 'alignest:nShots');
+            settings = alignest.defaultSettings();
+            testCase.verifyEqual(settings.sampling.nShots, [10, 15, 20, 25, 30, 35, 40]);
+            sampling = settings.sampling;
+            sampling.nShots = 30;
+            sampling = alignest.syncShotCounts(sampling);
+            testCase.verifyEqual([sampling.nShotsStart, sampling.nShotsEnd, sampling.nShotsStep], [30, 30, 1]);
+        end
+
+        function designCriteriaFollowTheDefinitions(testCase)
+            % 正規直交な基底をすべて使うと I 基準 = 項数、D 基準 = 1
+            [basis, ~] = qr(linspace(-1, 1, 40).' .^ (0:5), 0);
+            blocks = mat2cell(basis, repmat(4, 10, 1), 6);
+            [iValue, dValue] = alignest.designCriteria(blocks);
+            testCase.verifyEqual([iValue, dValue], [6, 1], 'AbsTol', 1e-9);
+            [iValue, dValue] = alignest.designCriteria(blocks(1:5));
+            information = vertcat(blocks{1:5}).' * vertcat(blocks{1:5});
+            testCase.verifyEqual(iValue, trace(inv(information)), 'RelTol', 1e-9);
+            testCase.verifyEqual(dValue, det(information) ^ (-1 / 6), 'RelTol', 1e-9);
+            [iValue, dValue] = alignest.designCriteria(blocks(1));  % 4 点で 6 項は求められない
+            testCase.verifyTrue(isnan(iValue) && isnan(dValue));
+            % I 最適の計画では、交換法で求めた tr(M⁻¹) と同じ。ランダム・手動の計画でも求める
+            sampling = alignest.defaultSettings().sampling;
+            unit = testCase.Data.units(1);
+            spec = struct("type", "ioptimal", "nShots", 15, "repeat", 1, "label", "", "group", "", "shotNos", []);
+            plan = alignest.planTrainingShots(unit, spec, sampling, 150);
+            testCase.verifyEqual(plan.criterionI, plan.criterion, 'RelTol', 1e-6);
+            spec.type = "random";
+            random = alignest.planTrainingShots(unit, spec, sampling, 150);
+            testCase.verifyGreaterThan(random.criterionI, plan.criterionI, "I 最適の方が I 基準が小さい");
+            testCase.verifyTrue(isfinite(random.criterionD) && random.criterionD > 1);
+            spec = struct("type", "manual", "nShots", 3, "repeat", 1, "label", "手動1", "group", "手動1", "shotNos", 1:3);
+            manual = alignest.planTrainingShots(unit, spec, sampling, 150);
+            testCase.verifyTrue(manual.ok);
+            testCase.verifyTrue(isnan(manual.criterionI), "12 点では 21 項の基準モデルを決められない");
+        end
+
+        function worstAndP95AreTakenOnTheBadSide(testCase)
+            settings = alignest.defaultSettings();
+            settings.sampling.method = "random";
+            settings.sampling.nShots = 15;
+            settings.sampling.randomRepeats = 2;
+            settings.methods = onlyPolynomial();
+            settings.evaluation.recordTiming = true;
+            results = alignest.runEvaluation(testCase.Data, settings);
+            testCase.verifyTrue(results.timingRecorded);
+            for metric = ["RMSE_XY", "R2_XY", "seconds"]
+                perUnit = alignest.perUnitValues(results, metric);
+                values = perUnit{1, 1};
+                lowerIsBetter = metric ~= "R2_XY";
+                worst = alignest.summarizeResults(results, metric, "worst");
+                p95 = alignest.summarizeResults(results, metric, "p95");
+                if lowerIsBetter
+                    testCase.verifyEqual(worst.values(1, 1), max(values), metric);
+                    testCase.verifyEqual(p95.values(1, 1), alignest.stats.percentile(values, 95), metric);
+                else
+                    testCase.verifyEqual(worst.values(1, 1), min(values), metric);
+                    testCase.verifyEqual(p95.values(1, 1), alignest.stats.percentile(values, 5), metric);
+                end
+                testCase.verifyLessThanOrEqual(abs(p95.values(1, 1) - median(values)), abs(worst.values(1, 1) - median(values)));
+            end
+            testCase.verifyError(@() alignest.summarizeResults(results, "RMSE_XY", "max"), 'alignest:statistic');
+            file = [tempname, '.xlsx'];
+            cleanup = onCleanup(@() deleteIfExists(file));
+            alignest.exportResults(results, file, "sample.xlsx");
+            timing = readtable(file, 'Sheet', '処理時間', 'VariableNamingRule', 'preserve');
+            testCase.verifyEqual(height(timing), numel(results.methods));
+            testCase.verifyEqual(timing.("回数"), repmat(numel(testCase.Data.units) * 2, height(timing), 1));
+            plans = readtable(file, 'Sheet', '学習Shot', 'VariableNamingRule', 'preserve');
+            testCase.verifyTrue(all(isfinite(plans.("D基準det(M)^(-1/p)"))));
+        end
+
+        function estimatesMatchTheMetricsAndReuseTheCache(testCase)
+            settings = alignest.defaultSettings();
+            settings.sampling.nShots = [10, 20];
+            settings.methods = onlyPolynomial();
+            data = testCase.Data;
+            data.units = data.units(1:2);
+            results = alignest.runEvaluation(data, settings);
+            cache = containers.Map('KeyType', 'char', 'ValueType', 'any');
+            selection = struct("methodIndex", 1:numel(results.methods), "groups", results.groups, "unitIndex", 1:2);
+            estimates = alignest.collectEstimates(data, results, selection, cache=cache);
+            testCase.verifyEqual(cache.Count, uint64(height(results.table)));
+            for k = 1:height(results.table)
+                row = results.table(k, :);
+                points = estimates(estimates.Wafer == row.Wafer & estimates.group == row.group & ...
+                    estimates.methodId == row.methodId, :);
+                residuals = [points.residualX(isfinite(points.residualX)); points.residualY(isfinite(points.residualY))];
+                testCase.verifyEqual(sqrt(mean(residuals .^ 2)), row.RMSE_XY, 'AbsTol', 1e-10);
+                testCase.verifyEqual(nnz(isfinite(points.residualX)), row.nTest_X);
+            end
+            again = alignest.collectEstimates(data, results, selection, cache=cache);
+            testCase.verifyEqual(again, estimates);
+            testCase.verifyError(@() alignest.collectEstimates(data, results, selection, maxRows=100), 'alignest:tooManyRows');
+            analysis = alignest.residualAnalysis(estimates);
+            testCase.verifyEqual(height(analysis.normality), numel(results.methods) * numel(results.groups) * 2);
+            testCase.verifyTrue(all(ismember(["Scan 方向", "Mark 番号", "Shot 行の奇偶"], analysis.anova.factor)));
         end
     end
 end

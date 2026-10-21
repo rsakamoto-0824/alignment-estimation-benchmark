@@ -8,6 +8,9 @@ function waferMap(ax, points, values, options)
 %   options.trainPoints  : 学習に使った Mark の座標（四角で描く）
 %   options.titleText    : 図の題名
 %   options.showLegend   : 凡例を出すか（既定 true）
+%   options.markerSize   : 色で描くときの点の大きさ（scatter の面積 [ポイント²]、既定 30）
+%   options.shotCenters  : Shot 中心の座標 [x, y]（mm、Shot 数 × 2）。空なら Shot の枠を描かない
+%   options.shotSizeMm   : Shot の大きさ [幅, 高さ]（mm）
 %   色だけで意味を伝えないよう、学習 Mark は形（四角）と凡例の文字でも示す。
 arguments
     ax
@@ -21,6 +24,9 @@ arguments
     options.waferRadiusMm (1, 1) double = 150
     options.arrowColor (1, 3) double = [0.0, 0.33, 0.62]
     options.showLegend (1, 1) logical = true
+    options.markerSize (1, 1) double {mustBePositive} = 30
+    options.shotCenters double = zeros(0, 2)
+    options.shotSizeMm (1, 2) double = [NaN, NaN]
 end
 WAFER_EDGE_COLOR = [0.45, 0.45, 0.45];
 TRAIN_FACE_COLOR = [0.80, 0.80, 0.80];
@@ -31,6 +37,7 @@ hold(ax, 'on');
 angle = linspace(0, 2 * pi, 361);
 plot(ax, options.waferRadiusMm * cos(angle), options.waferRadiusMm * sin(angle), '--', ...
     'Color', WAFER_EDGE_COLOR, 'HandleVisibility', 'off');
+alignest.plot.shotFrames(ax, options.shotCenters, options.shotSizeMm);
 legendItems = gobjects(0);
 if ~isempty(options.trainPoints)
     legendItems(end + 1) = plot(ax, options.trainPoints(:, 1), options.trainPoints(:, 2), 's', 'MarkerSize', 6, ...
@@ -46,7 +53,8 @@ if options.mode == "vector"
 else
     column = 1 + (options.mode == "Y");
     usable = isfinite(values(:, column));
-    scatter(ax, points(usable, 1), points(usable, 2), 30, values(usable, column), 'filled', 'HandleVisibility', 'off');
+    scatter(ax, points(usable, 1), points(usable, 2), options.markerSize, values(usable, column), 'filled', ...
+        'HandleVisibility', 'off');
     colormap(ax, alignest.plot.divergingColormap());
     caxis(ax, [-1, 1] * max(options.colorLimit, eps));
     bar = colorbar(ax);

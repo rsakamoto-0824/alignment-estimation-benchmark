@@ -5,11 +5,13 @@ function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm)
 %   制約（sampling.constraints）：同心円の区画（Shot 中心の半径 / Wafer 半径 を radialZoneEdges で区切る）、
 %   4象限（Shot 中心の偏角、軸上は反時計回りに次の象限）、Scan方向。各区画の Shot 数を割合 × 選ぶ数 ± slack に収める。
 %   乱数は sampling.seed・Shot 数・繰り返し番号から決めるので、候補が同じ Wafer では同じ Shot が選ばれる。
+%   選び方によらず、選んだ組の I 基準 tr(M⁻¹) と D 基準 det(M)^(−1/p) を求める（alignest.designCriteria。
+%   基準モデルの項数より学習点が少ないなど、求められないときは NaN）。
 shots = unit.shots;
 candidates = find(shots.nValidX + shots.nValidY > 0);
 plan = struct("label", spec.label, "group", spec.group, "type", spec.type, "repeat", spec.repeat, ...
     "shotIndex", zeros(0, 1), "shotNos", zeros(0, 1), "nShots", 0, "criterion", NaN, ...
-    "violation", 0, "ok", false, "message", "");
+    "violation", 0, "criterionI", NaN, "criterionD", NaN, "ok", false, "message", "");
 switch spec.type
     case "manual"
         [found, position] = ismember(spec.shotNos(:), shots.shotNo);
@@ -57,6 +59,20 @@ plan.shotIndex = sort(plan.shotIndex);
 plan.shotNos = shots.shotNo(plan.shotIndex);
 plan.nShots = numel(plan.shotIndex);
 plan.ok = true;
+[plan.criterionI, plan.criterionD] = planCriteria(unit, candidates, plan.shotIndex, sampling.designOrder, waferRadiusMm);
+end
+
+function [iValue, dValue] = planCriteria(unit, candidates, shotIndex, designOrder, waferRadiusMm)
+% 選んだ組の I 基準・D 基準。候補の Mark が基準モデルの項数より少ないときは NaN
+iValue = NaN;
+dValue = NaN;
+try
+    blocks = shotBlocks(unit, candidates, designOrder, waferRadiusMm);
+catch
+    return
+end
+[~, selected] = ismember(shotIndex, candidates);
+[iValue, dValue] = alignest.designCriteria(blocks(selected));
 end
 
 function seed = seedFor(baseSeed, spec)

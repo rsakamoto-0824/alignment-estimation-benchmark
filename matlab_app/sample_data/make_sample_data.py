@@ -4,6 +4,7 @@
 実データで起こることを少しだけ入れる：
 - 未測定（StsX = -1 または StsY = -1）の点を Wafer ごとに数点
 - 同じ点を2回計測した重複行（Wafer・DateTime・座標が同じ行）を Wafer ごとに数行
+- 工程名（Operation）は全 Wafer で同じ、装置ID（EqpId）は前半と後半の Wafer で2台に分ける（架空の名前）
 値は乱数で作ったもので、実データ・社内データは使っていない。
 
 使い方（リポジトリの直下で）
@@ -32,6 +33,8 @@ N_UNMEASURED_PER_WAFER = 4
 N_DUPLICATES_PER_WAFER = 3
 DUPLICATE_NOISE_NM = 0.3
 SEED = 20261017
+OPERATION = "OP-M1-ALIGN"
+EQUIPMENT_IDS = ["EXP01", "EXP01", "EXP01", "EXP02", "EXP02"]  # Wafer ごとの装置ID
 
 
 def main() -> None:
@@ -44,6 +47,8 @@ def main() -> None:
     for k in range(N_WAFERS):
         sample = generator.generate(FIRST_WAFER_ID + k)
         frame = pd.DataFrame({
+            "Operation": OPERATION,
+            "EqpId": EQUIPMENT_IDS[k],
             "Wafer": f"SIM{k + 1:02d}",
             "DateTime": f"2026/10/17 {9 + k:02d}:00:00",
             "shotNo": marks["shotNo"].to_numpy(),

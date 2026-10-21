@@ -5,8 +5,10 @@ function data = prepareData(raw, mapping, options)
 %   - X の解析には StsX = 0 の measX、Y の解析には StsY = 0 の measY だけを使う（未測定を0として扱わない）。
 %   - Wafer・DateTime・Xmm・Ymm・markXmm・markYmm が同じ行は重複とみなし、計測値を X・Y それぞれ平均する。
 %   - Radius の列があれば、Xmm・Ymm から計算した値と 0.001 mm より違う行の数を知らせる。
-%   - 同じ Wafer でも DateTime が違えば別の計測（評価の単位）として扱う。
-%   data.units は評価の単位（Wafer × DateTime）の構造体配列、data.summary は確認用の件数と注意。
+%   - 同じ Wafer でも Operation（工程）・EqpId（装置）・DateTime が違えば別の計測（評価の単位）として扱う。
+%   - Direction（Scan 方向）が無い行には、options.directionRule の規則で 1・2 を付ける（"none" なら付けない）。
+%     規則は alignest.directionRules を参照。invertDirection が true なら付ける 1 と 2 を入れ替える。
+%   data.units は評価の単位（Operation × EqpId × Wafer × DateTime）の構造体配列、data.summary は確認用の件数と注意。
 arguments
     raw table
     mapping struct
@@ -14,12 +16,19 @@ arguments
     options.coordinateUnits (1, 1) struct = struct()
     options.excludeZeroMeasurements (1, 1) logical = false
     options.excludeUnmeasuredRecords (1, 1) logical = false
+    options.directionRule (1, 1) string = "none"
+    options.invertDirection (1, 1) logical = false
 end
 RADIUS_TOLERANCE_MM = 1e-3;
 COORDINATE_DIGITS = 4;  % 重複・Shot の判定で座標を丸める桁（0.1 µm）
 SHOT_COORDINATE_DIGITS = 3; % Shot 中心と配列の行を判定する桁（1 µm）
 nRows = height(raw);
 [inputUnits, scale] = alignest.coordinateUnits(options.coordinateUnits);
+[ruleNames, ruleLabels] = alignest.directionRules();
+if ~any(options.directionRule == ruleNames)
+    error('alignest:directionRule', 'Scan 方向を付ける規則は %s のいずれかです: %s', strjoin(ruleNames, "・"), ...
+        options.directionRule);
+end
 
 required = alignest.standardColumns();
 required = string({required([required.required]).name});
@@ -35,6 +44,8 @@ markXmm = toNumeric(column("markXmm")) * scale.markXmm;
 markYmm = toNumeric(column("markYmm")) * scale.markYmm;
 measX = toNumeric(column("measX"));
 measY = toNumeric(column("measY"));
+operation = defaultText(column("Operation"), nRows, "");
+eqpId = defaultText(column("EqpId"), nRows, "");
 wafer = defaultText(column("Wafer"), nRows, "Wafer");
 dateTime = defaultText(column("DateTime"), nRows, "");
 shotNo = defaultNumeric(column("shotNo"), nRows);
@@ -50,7 +61,7 @@ for k = 1:numel(coordinateNames)
     end
 end
 messages = messages(messages ~= "");
-hasDirection = isMapped(mapping, "Direction");
+hasDirectionColumn = isMapped(mapping, "Direction");
 hasShotNo = isMapped(mapping, "shotNo");
 hasMarkNo = isMapped(mapping, "markNo");
 
@@ -85,6 +96,21 @@ if summary.nOutsideRadius > 0
         options.validRadiusMm, summary.nOutsideRadius, options.validRadiusMm);
 end
 eligible = ~noCoordinate & ~outside;
+
+% 評価の単位：Operation × EqpId × Wafer × DateTime
+unitKey = operation + char(31) + eqpId + char(31) + wafer + char(31) + dateTime;
+% Shot の行（上から）と列（左から）。半径・測定値・ステータスで端の行が消えても、残った行の番号を付け直さない。
+shotRow = nan(nRows, 1);
+shotColumn = nan(nRows, 1);
+for key = unique(unitKey(~noCoordinate)).'
+    rows = find(unitKey == key & ~noCoordinate);
+    rowCoordinates = round(Ymm(rows), SHOT_COORDINATE_DIGITS);
+    [~, shotRow(rows)] = ismember(rowCoordinates, sort(unique(rowCoordinates), 'descend'));
+    columnCoordinates = round(Xmm(rows), SHOT_COORDINATE_DIGITS);
+    [~, shotColumn(rows)] = ismember(columnCoordinates, unique(columnCoordinates));
+end
+[direction, directionAssigned] = assignDirection(direction, ~noCoordinate, options, shotNo, hasShotNo, shotRow, shotColumn);
+hasDirection = hasDirectionColumn || options.directionRule ~= "none";
 summary.nZeroMeasurementsExcluded = nnz(zeroMeasurements & eligible);
 summary.nUnmeasuredRecordsExcluded = nnz(unmeasuredRecords & eligible);
 summary.nRecordsExcluded = nnz(excludedRecords & eligible);
@@ -98,7 +124,7 @@ if options.excludeUnmeasuredRecords && (~isMapped(mapping, "StsX") || ~isMapped(
 end
 keep = eligible & ~excludedRecords;
 if hasDirection
-    badDirection = ~isnan(direction) & ~ismember(direction, [1, 2]) & ~excludedRecords;
+    badDirection = ~isnan(direction) & ~ismember(direction, [1, 2]) & ~excludedRecords & ~noCoordinate;
     if any(badDirection)
         error('alignest:direction', ['Direction（Scan方向）は 1 か 2 にしてください。', ...
             'ほかの値が %d 行あります（例：%g）。列の対応が正しいか確かめてください。'], ...
@@ -106,6 +132,19 @@ if hasDirection
     end
     if any(isnan(direction) & keep)
         messages(end + 1) = "Direction が空の行があります。その行を含む Wafer では Scan 方向を質的変数に使いません。";
+    end
+end
+summary.nDirectionAssigned = nnz(directionAssigned & keep);
+summary.directionRule = options.directionRule;
+summary.directionSource = directionSource(hasDirectionColumn, summary.nDirectionAssigned, ...
+    nnz(~directionAssigned & keep & ~isnan(direction)));
+if options.directionRule ~= "none"
+    if summary.nDirectionAssigned > 0
+        messages(end + 1) = sprintf("Scan 方向（Direction）が無い %d 行に、規則「%s」で 1・2 を付けました%s。", ...
+            summary.nDirectionAssigned, ruleLabels(ruleNames == options.directionRule), ...
+            ternary(options.invertDirection, "（1 と 2 を入れ替え）", ""));
+    else
+        messages(end + 1) = "Direction の列にすべて値があるので、Scan 方向を付ける規則は使いませんでした。";
     end
 end
 if hasMarkNo && any(isnan(markNo) & keep)
@@ -126,16 +165,6 @@ if ~hasMarkNo
     messages(end + 1) = "markNo の列が無いので、マーク座標（markXmm, markYmm）の組ごとに番号を付けました。";
 end
 
-% 評価の単位：Wafer × DateTime
-unitKey = wafer + char(31) + dateTime;
-% 半径・測定値・ステータスで上端の行が消えても、残った行の奇偶を付け直さない。
-shotRow = nan(nRows, 1);
-for key = unique(unitKey(~noCoordinate)).'
-    rows = find(unitKey == key & ~noCoordinate);
-    rowCoordinates = round(Ymm(rows), SHOT_COORDINATE_DIGITS);
-    levels = sort(unique(rowCoordinates), 'descend');
-    [~, shotRow(rows)] = ismember(rowCoordinates, levels);
-end
 unitKey(~keep) = missing;
 [unitKeys, ~, unitOfRow] = unique(unitKey(keep), 'stable');
 rowsKept = find(keep);
@@ -147,6 +176,7 @@ waferOfUnit = strings(nUnits, 1);
 for u = 1:nUnits
     waferOfUnit(u) = wafer(rowsKept(find(unitOfRow == u, 1)));
 end
+nShotSizeGuessed = 0;
 units = repmat(emptyUnit(), nUnits, 1);
 summary.nDuplicateRows = 0;
 for u = 1:nUnits
@@ -166,6 +196,7 @@ for u = 1:nUnits
     marks.direction = direction(pick);
     marks.shotRow = shotRow(pick);
     marks.shotRowParity = 1 + mod(marks.shotRow - 1, 2); % 1 = 奇数行、2 = 偶数行
+    marks.shotColumn = shotColumn(pick);
     marks.x = x(pick);
     marks.y = y(pick);
     marks.r = r(pick);
@@ -188,6 +219,7 @@ for u = 1:nUnits
     shots.radius = hypot(shots.Xmm, shots.Ymm);
     shots.row = marks.shotRow(firstOfShot);
     shots.rowParity = marks.shotRowParity(firstOfShot);
+    shots.column = marks.shotColumn(firstOfShot);
     if hasShotNo
         shots.shotNo = shotNo(pick(firstOfShot));
     else
@@ -204,22 +236,38 @@ for u = 1:nUnits
     shots.nValidY = accumarray(shotOfMark, marks.validY, [nShots, 1]);
     marks.shotIndex = shotOfMark;
     marks.shotNo = shots.shotNo(shotOfMark);
+    units(u).operation = operation(rows(1));
+    units(u).eqpId = eqpId(rows(1));
     units(u).wafer = waferOfUnit(u);
     units(u).dateTime = dateTime(rows(1));
     units(u).label = waferOfUnit(u);
     units(u).marks = marks;
     units(u).shots = shots;
     units(u).hasDirection = hasDirection && all(~isnan(marks.direction));
+    [units(u).shotSizeMm, estimated] = alignest.shotSize(shots.Xmm, shots.Ymm, marks.markXmm, marks.markYmm);
+    nShotSizeGuessed = nShotSizeGuessed + ~all(estimated);
     if hasShotNo && numel(unique(shots.shotNo)) < nShots
         messages(end + 1) = sprintf("%s：同じ shotNo が別の座標の Shot に付いています。手動の指定では最初の Shot を使います。", ...
             units(u).label); %#ok<AGROW>
     end
 end
-% 同じ Wafer に複数の日時があるときは、表示名に日時を付ける
+% 同じ Wafer に複数の計測があるときは、表示名に違う項目（工程・装置・日時）を付ける
 for u = 1:nUnits
-    if nnz(waferOfUnit == waferOfUnit(u)) > 1
-        units(u).label = waferOfUnit(u) + " (" + units(u).dateTime + ")";
+    same = find(waferOfUnit == waferOfUnit(u));
+    if numel(same) > 1
+        parts = strings(1, 0);
+        for field = ["operation", "eqpId", "dateTime"]
+            values = arrayfun(@(k) string(units(k).(field)), same);
+            if numel(unique(values)) > 1
+                parts(end + 1) = ternary(units(u).(field) == "", "—", units(u).(field)); %#ok<AGROW>
+            end
+        end
+        units(u).label = waferOfUnit(u) + " (" + strjoin(parts, " / ") + ")";
     end
+end
+if nShotSizeGuessed > 0
+    messages(end + 1) = sprintf(['%d 枚では隣り合う Shot が無い向きがあり、Shot の大きさを Mark の広がりから仮に決めました' ...
+        '（Shot の枠の表示だけに使います）。'], nShotSizeGuessed);
 end
 if summary.nDuplicateRows > 0
     messages(end + 1) = sprintf("Wafer・DateTime・座標が同じ重複行 %d 行を、計測値の平均にまとめました。", summary.nDuplicateRows);
@@ -231,6 +279,10 @@ summary.nShotsRange = [min(nShotsPerUnit), max(nShotsPerUnit)];
 summary.nMarksRange = [min(nMarksPerUnit), max(nMarksPerUnit)];
 summary.markLevels = unique(markNo(keep)).';
 summary.hasDirection = hasDirection;
+summary.operations = unique(operation(keep & operation ~= "")).';
+summary.eqpIds = unique(eqpId(keep & eqpId ~= "")).';
+shotSizes = vertcat(units.shotSizeMm);
+summary.shotSizeRangeMm = [min(shotSizes, [], 1); max(shotSizes, [], 1)];
 messages(end + 1) = "Shot 行は、Wafer・測定日時ごとに入力の Ymm を上から数えます（0.001 mm 刻み、半径・入力行の除外前）。1=奇数行、2=偶数行。入力にない行は数えません。";
 summary.messages = messages;
 data.units = units;
@@ -239,6 +291,60 @@ data.validRadiusMm = options.validRadiusMm;
 data.coordinateUnits = inputUnits;
 data.excludeZeroMeasurements = options.excludeZeroMeasurements;
 data.excludeUnmeasuredRecords = options.excludeUnmeasuredRecords;
+data.directionRule = options.directionRule;
+data.invertDirection = options.invertDirection;
+end
+
+function [direction, assigned] = assignDirection(direction, usable, options, shotNo, hasShotNo, shotRow, shotColumn)
+% Direction が空の行に、規則で Scan 方向（1・2）を付ける
+assigned = false(size(direction));
+if options.directionRule == "none"
+    return
+end
+blank = isnan(direction) & usable;
+if ~any(blank)
+    return
+end
+switch options.directionRule
+    case "shotNoParity"
+        if ~hasShotNo || any(isnan(shotNo(blank)))
+            error('alignest:directionRule', ['shotNo の奇偶で Scan 方向を付けるには、shotNo の列を対応づけ、' ...
+                'すべての行に値を入れてください。または別の規則を選んでください。']);
+        end
+        values = 1 + mod(round(shotNo) - 1, 2);
+    case "rowParity"
+        values = 1 + mod(shotRow - 1, 2);
+    case "columnParity"
+        values = 1 + mod(shotColumn - 1, 2);
+    case "checkerboard"
+        values = 1 + mod(shotRow + shotColumn, 2);
+end
+if options.invertDirection
+    values = 3 - values;
+end
+direction(blank) = values(blank);
+assigned = blank;
+end
+
+function source = directionSource(hasColumn, nAssigned, nFromFile)
+% Scan 方向がどこから来たか（画面と Excel の説明に出す）
+if nAssigned > 0 && hasColumn && nFromFile > 0
+    source = "ファイルの列と規則による付与";
+elseif nAssigned > 0
+    source = "規則による付与";
+elseif hasColumn
+    source = "ファイルの列";
+else
+    source = "なし";
+end
+end
+
+function value = ternary(condition, whenTrue, whenFalse)
+if condition
+    value = whenTrue;
+else
+    value = whenFalse;
+end
 end
 
 function values = columnValues(raw, mapping, name)
@@ -302,5 +408,6 @@ averages(~anyValid) = NaN;
 end
 
 function unit = emptyUnit()
-unit = struct("wafer", "", "dateTime", "", "label", "", "marks", struct(), "shots", struct(), "hasDirection", false);
+unit = struct("operation", "", "eqpId", "", "wafer", "", "dateTime", "", "label", "", "marks", struct(), "shots", struct(), ...
+    "hasDirection", false, "shotSizeMm", [NaN, NaN]);
 end
