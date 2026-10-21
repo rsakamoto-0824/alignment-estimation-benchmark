@@ -209,6 +209,9 @@ switch string(sampling.method)
         label = "制約付き I 最適";
     case "random"
         label = sprintf("制約つきランダム（%d 回）", sampling.randomRepeats);
+    case "file"
+        label = sprintf("ファイルの優先順（%s、%d 行。優先度 1 = 必ず計測、0 = 計測しない）", sampling.priorityFile, ...
+            numel(sampling.priorityShots));
     otherwise
         label = "手動で指定";
 end

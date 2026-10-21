@@ -11,6 +11,8 @@ function waferMap(ax, points, values, options)
 %   options.markerSize   : 色で描くときの点の大きさ（scatter の面積 [ポイント²]、既定 30）
 %   options.shotCenters  : Shot 中心の座標 [x, y]（mm、Shot 数 × 2）。空なら Shot の枠を描かない
 %   options.shotSizeMm   : Shot の大きさ [幅, 高さ]（mm）
+%   options.covariance   : 点ごとの Wafer 間の共分散 [X の分散, Y の分散, X・Y の共分散]（nm²、点数 × 3）
+%   options.ellipseSigma : 共分散楕円の大きさ（σ の何倍か。0 なら描かない）。矢印の先を中心に、矢印と同じ倍率で描く
 %   色だけで意味を伝えないよう、学習 Mark は形（四角）と凡例の文字でも示す。
 arguments
     ax
@@ -27,6 +29,8 @@ arguments
     options.markerSize (1, 1) double {mustBePositive} = 30
     options.shotCenters double = zeros(0, 2)
     options.shotSizeMm (1, 2) double = [NaN, NaN]
+    options.covariance double = zeros(0, 3)
+    options.ellipseSigma (1, 1) double {mustBeNonnegative} = 0
 end
 WAFER_EDGE_COLOR = [0.45, 0.45, 0.45];
 TRAIN_FACE_COLOR = [0.80, 0.80, 0.80];
@@ -49,6 +53,15 @@ if options.mode == "vector"
     legendItems(end + 1) = quiver(ax, points(usable, 1), points(usable, 2), ...
         values(usable, 1) * options.scaleMmPerNm, values(usable, 2) * options.scaleMmPerNm, 0, ...
         'Color', options.arrowColor, 'LineWidth', 1, 'MaxHeadSize', 0.4, 'DisplayName', '値（矢印）');
+    if options.ellipseSigma > 0 && size(options.covariance, 1) == size(points, 1)
+        tips = points(usable, :) + values(usable, :) * options.scaleMmPerNm;
+        handle = covarianceEllipses(ax, tips, options.covariance(usable, :), ...
+            options.ellipseSigma * options.scaleMmPerNm, options.arrowColor);
+        if ~isempty(handle)
+            handle.DisplayName = sprintf('Wafer 間のばらつき（%gσ 楕円）', options.ellipseSigma);
+            legendItems(end + 1) = handle;
+        end
+    end
     drawScaleBar(ax, options.scaleMmPerNm, options.waferRadiusMm);
 else
     column = 1 + (options.mode == "Y");
@@ -71,6 +84,30 @@ title(ax, options.titleText, 'Interpreter', 'none');
 box(ax, 'on');
 if options.showLegend && ~isempty(legendItems)
     legend(ax, legendItems, 'Location', 'southoutside', 'Orientation', 'horizontal', 'Box', 'off');
+end
+end
+
+function handle = covarianceEllipses(ax, centers, covariance, radiusScale, color)
+% 2×2 の共分散行列 [a c; c b] の楕円（固有ベクトルの向き、半径 = √固有値 × radiusScale）を1本の線で描く
+SEGMENTS = 36;
+ELLIPSE_ALPHA = 0.6;
+angle = linspace(0, 2 * pi, SEGMENTS + 1);
+circle = [cos(angle); sin(angle)];
+lineX = zeros(0, 1);
+lineY = zeros(0, 1);
+for k = 1:size(centers, 1)
+    c = covariance(k, :);
+    if any(~isfinite(c))
+        continue
+    end
+    [vectors, values] = eig([c(1), c(3); c(3), c(2)], 'vector');
+    shape = vectors * diag(sqrt(max(values, 0)) * radiusScale) * circle;
+    lineX = [lineX; centers(k, 1) + shape(1, :).'; NaN]; %#ok<AGROW>
+    lineY = [lineY; centers(k, 2) + shape(2, :).'; NaN]; %#ok<AGROW>
+end
+handle = gobjects(0);
+if ~isempty(lineX)
+    handle = plot(ax, lineX, lineY, '-', 'Color', [color, ELLIPSE_ALPHA], 'LineWidth', 0.8);
 end
 end
 

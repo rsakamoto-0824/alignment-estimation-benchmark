@@ -32,6 +32,9 @@ values = [string(datetime('now', 'Format', 'yyyy/MM/dd HH:mm:ss')); string(heigh
 writetable(table(items, values, 'VariableNames', ["項目", "内容"]), filePath, 'Sheet', '説明');
 
 points = estimates;
+if any(string(points.Properties.VariableNames) == "markIndex")
+    points = removevars(points, "markIndex");
+end
 internal = ["plan", "group", "methodLabel", "methodId", "direction", "shotRowParity", "x", "y", "r", ...
     "measX", "estimateX", "residualX", "measY", "estimateY", "residualY"];
 headers = ["学習パターン", "列", "手法", "手法の識別子", "Direction", "Shot行(1=奇数,2=偶数)", "x[mm]", "y[mm]", ...

@@ -5,6 +5,8 @@ function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm)
 %   制約（sampling.constraints）：同心円の区画（Shot 中心の半径 / Wafer 半径 を radialZoneEdges で区切る）、
 %   4象限（Shot 中心の偏角、軸上は反時計回りに次の象限）、Scan方向。各区画の Shot 数を割合 × 選ぶ数 ± slack に収める。
 %   乱数は sampling.seed・Shot 数・繰り返し番号から決めるので、候補が同じ Wafer では同じ Shot が選ばれる。
+%   ファイルの優先順（file）：優先度 1 の Shot は必ず学習に使い、残りを優先度 0（計測しない）を除いてファイルの行の順に
+%   足して学習 Shot 数にする（sampling.priorityShots・priorityLevels）。Wafer に無い Shot・計測できない Shot は飛ばす。
 %   選び方によらず、選んだ組の I 基準 tr(M⁻¹) と D 基準 det(M)^(−1/p) を求める（alignest.designCriteria。
 %   基準モデルの項数より学習点が少ないなど、求められないときは NaN）。
 shots = unit.shots;
@@ -26,6 +28,11 @@ switch spec.type
             return
         end
         plan.shotIndex = chosen(:);
+    case "file"
+        [plan.shotIndex, plan.message] = priorityShots(shots, candidates, sampling, spec.nShots);
+        if isempty(plan.shotIndex)
+            return
+        end
     case {"ioptimal", "random"}
         if spec.nShots >= numel(candidates)
             plan.message = sprintf("学習 Shot 数 %d が候補の Shot 数 %d 以上なので、評価する Shot が残りません。", ...
@@ -73,6 +80,47 @@ catch
 end
 [~, selected] = ismember(shotIndex, candidates);
 [iValue, dValue] = alignest.designCriteria(blocks(selected));
+end
+
+function [shotIndex, message] = priorityShots(shots, candidates, sampling, nShots)
+% 優先度 1 を全部、残りを行の順に（優先度 0 は使わない）
+message = "";
+shotNos = sampling.priorityShots(:);
+levels = sampling.priorityLevels(:);
+if numel(levels) ~= numel(shotNos)
+    levels = nan(size(shotNos));
+end
+[found, position] = ismember(shotNos, shots.shotNo);
+usable = found & ismember(position, candidates);
+missing = unique(shotNos(~usable));
+if ~isempty(missing)
+    message = "この Wafer に無い、または計測できない優先順の Shot：" + strjoin(string(missing.'), " ") + "。";
+end
+excluded = unique(position(usable & levels == 0));
+required = unique(position(usable & levels == 1), 'stable');
+required = setdiff(required, excluded, 'stable');
+ordered = position(usable & levels ~= 0 & levels ~= 1);
+[~, firstPosition] = unique(ordered, 'stable');
+ordered = ordered(sort(firstPosition));
+ordered = ordered(~ismember(ordered, [required; excluded]));
+if numel(required) >= nShots
+    shotIndex = required;
+    if numel(required) > nShots
+        message = strtrim(message + sprintf(" 必ず計測する Shot が %d 個あり、学習 Shot 数 %d より多いので、すべて使いました。", ...
+            numel(required), nShots));
+    end
+else
+    added = ordered(1:min(nShots - numel(required), numel(ordered)));
+    shotIndex = [required; added];
+    if numel(shotIndex) < nShots
+        message = strtrim(message + sprintf(" 優先順のファイルで使える Shot が %d 個しかなく、学習 Shot 数 %d に足りません。", ...
+            numel(shotIndex), nShots));
+    end
+end
+if isempty(shotIndex)
+    message = strtrim(message + " 学習に使える Shot がありません。");
+end
+shotIndex = shotIndex(:);
 end
 
 function seed = seedFor(baseSeed, spec)
