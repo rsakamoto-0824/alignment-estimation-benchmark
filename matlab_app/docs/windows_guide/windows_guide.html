@@ -254,7 +254,7 @@
         <li><div>
           <strong>（初めてのときだけ）動作確認のテストを行う</strong>
           <p>
-            次を入力すると、自動テストが走ります（数分）。最後に「成功 75 件、失敗 0 件、未完了 0 件」と出れば、
+            次を入力すると、自動テストが走ります（数分）。最後に「成功 82 件、失敗 0 件、未完了 0 件」と出れば、
             この PC の MATLAB で正しく計算できています。
           </p>
         </div></li>
@@ -273,7 +273,7 @@ cd C:\work\matlab_app</code></pre>
           <p>
             模擬データの評価に使った Python 版と同じ計算結果になること（8件）、データの読み込みと前処理（21件）、
             評価・集計・書き出し・設定の保存（15件）、質的変数の設計（2件）、RBF・空間モデルの Backfitting と質的変数の選択（9件）、
-            画面の一連の操作（11件）、正規性検定・ANOVA が SciPy と同じ結果になること（5件）、
+            画面の一連の操作（12件）、Overlay 補正の評価（6件）、正規性検定・ANOVA が SciPy と同じ結果になること（5件）、
             追加したモデルの選択肢（Matérn の ν・spherical・GAM の形状関数、4件）です。
           </p>
         </div>
@@ -495,6 +495,10 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
           Kriging のバリオグラムには spherical（球形）も選べます。GAM は「形状関数」で、X・Y、半径の項ごとにスプラインかガウス過程回帰を選べます。
           RBF も TPS・Kriging と同じく、質的変数の Backfitting を選べます。
         </p></div></li>
+        <li><div><strong>（必要なとき）Overlay 補正の評価のモデルを選ぶ</strong><p>
+          左下の「Overlay 補正の評価」で、補正モデルの Wafer 成分（Shot 中心の多項式）・Shot 共通成分（1次、または ASML・Canon・Nikon の高次式）・
+          Shot ごとの成分（並進・1次）を選びます。推定値で補正したときに Overlay 残差がどれだけ増えるかを評価します（すべて「なし」なら評価しません）。
+        </p></div></li>
         <li><div><strong>（必要なとき）処理時間を記録する</strong><p>
           1 枚あたりの推定時間で手法を選ぶときは、左下の「条件ごとの処理時間を記録する」をオンにします。
           手法 × 学習パターンごとの時間が、結果一覧の指標「処理時間 [秒/枚]」と Excel の「処理時間」シートに出ます。
@@ -557,11 +561,16 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
       <p>
         Wafer・学習パターン・手法を選ぶと、評価した Shot の計測値・推定値・残差（計測値 − 推定値）を並べて表示します。
         灰色の四角は学習に使った Mark、細い灰色の枠は Shot です。「表示」で矢印と色（X・Y）を切り替えられます。
+        「図の内容」を「Overlay 補正」にすると、実測値で補正した残差・推定値で補正した残差・推定による変化（両者の差）を並べ、下の行に |平均|+3σ を出します。
         色のときは「色の点の大きさ」で点の大きさを変えられます。下の行に、その組み合わせの指標が出ます。
       </p>
       <figure class="screen-figure">
         <img src="images/07_map.jpg" alt="Wafer ごとのマップ。計測値・推定値・残差の矢印の図が3つ並ぶ" loading="lazy">
         <figcaption>図 11　Wafer ごとのマップ</figcaption>
+      </figure>
+      <figure class="screen-figure">
+        <img src="images/12_overlay.jpg" alt="Wafer ごとのマップで図の内容を Overlay 補正にしたところ。実測値で補正した残差、推定値で補正した残差、推定による変化のベクトルが3つ並ぶ" loading="lazy">
+        <figcaption>図 12　Overlay 補正の評価（実測値で補正・推定値で補正・推定による変化）</figcaption>
       </figure>
 
       <div class="callout info">
@@ -625,7 +634,7 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
       <div class="checklist-grid">
         <article>
           <h3>導入の確認</h3>
-          <label><input type="checkbox"> （MATLAB で使う）テストが「成功 75 件、失敗 0 件」になった</label>
+          <label><input type="checkbox"> （MATLAB で使う）テストが「成功 82 件、失敗 0 件」になった</label>
           <label><input type="checkbox"> （exe）exe が起動し、サンプルデータを読み込めた</label>
           <label><input type="checkbox"> サンプルデータで評価が最後まで終わり、結果一覧に表が出た</label>
           <label><input type="checkbox"> 結果を Excel に書き出し、開いて中身を確かめられた</label>

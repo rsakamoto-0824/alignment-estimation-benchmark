@@ -169,7 +169,7 @@ classdef AlignmentEstimationApp < handle
             %   以前の設定に無い項目は初期値にする。学習 Shot 数は並び（nShots）と開始・終了・刻みをそろえる。
             settings.methods = alignest.completeMethodSettings(settings.methods);
             defaults = alignest.defaultSettings();
-            for group = ["data", "factors", "sampling", "evaluation"]
+            for group = ["data", "factors", "sampling", "evaluation", "overlay"]
                 if ~isfield(settings, group)
                     settings.(group) = defaults.(group);
                 end
@@ -341,7 +341,7 @@ classdef AlignmentEstimationApp < handle
                 cache = app.MapCache;
                 scopeText = "選んだ手法・学習パターン・Wafer";
             end
-            [estimates, messages] = collectWithProgress(app, selection, cache, app.EXCEL_MAX_DATA_ROWS, ...
+            [estimates, messages, overlayPoints] = collectWithProgress(app, selection, cache, app.EXCEL_MAX_DATA_ROWS, ...
                 "推定値を計算しています");
             analysis = alignest.residualAnalysis(estimates);
             notes = ["読み込んだファイル", app.FilePath; "書き出した範囲", scopeText; ...
@@ -351,12 +351,18 @@ classdef AlignmentEstimationApp < handle
             if ~isempty(messages)
                 notes = [notes; [repmat("推定できなかった組み合わせ", numel(messages), 1), messages(:)]];
             end
-            alignest.exportEstimates(estimates, analysis, filePath, notes);
+            if isfield(results, "overlayEvaluated") && results.overlayEvaluated
+                notes = [notes; "Overlay 補正のモデル", results.overlayDescription];
+            end
+            alignest.exportEstimates(estimates, analysis, filePath, notes, overlayPoints=overlayPoints);
         end
 
-        function showMap(app, unitIndex, planLabel, methodIndex, displayMode)
-            %SHOWMAP 選んだ Wafer・学習パターン・手法の計測値・推定値・残差を描く。
+        function showMap(app, unitIndex, planLabel, methodIndex, displayMode, content)
+            %SHOWMAP 選んだ Wafer・学習パターン・手法の計測値・推定値・残差（content = "overlay" なら補正残差）を描く。
             c = app.Controls;
+            if nargin >= 6
+                c.mapContent.Value = char(content);
+            end
             if nargin >= 2
                 c.mapWafer.Value = unitIndex;
                 c.mapPlan.Value = char(planLabel);
@@ -726,7 +732,7 @@ classdef AlignmentEstimationApp < handle
             onChange = @(~, ~) app.onSettingsChanged();
 
             samplingPanel = uipanel(grid, 'Title', '学習に使う Shot（この Shot の計測値で、残りの Shot を推定する）');
-            s = uigridlayout(samplingPanel, [26, 2], 'RowHeight', repmat({'fit'}, 1, 26), 'ColumnWidth', {'1x', '1x'}, ...
+            s = uigridlayout(samplingPanel, [31, 2], 'RowHeight', repmat({'fit'}, 1, 31), 'ColumnWidth', {'1x', '1x'}, ...
                 'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
             label(s, '選び方', 1, [1, 2]);
             c.samplingMethod = uidropdown(s, 'Items', {'制約付き I 最適（前回の評価と同じ）', '制約つきランダム', '手動で指定'}, ...
@@ -790,6 +796,24 @@ classdef AlignmentEstimationApp < handle
                 'Tooltip', ['手法 × 学習パターンごとに、1 枚（X・Y）の推定にかかった秒数を集計し、「4. 結果一覧」の指標と' ...
                 'Excel の「処理時間」シートに出します。各手法の初回は予備の推定を1回して、読み込みの時間を除きます。']);
             place(c.recordTiming, 26, [1, 2]);
+            heading(s, 'Overlay 補正の評価（推定誤差で Overlay 残差がどれだけ増えるか）', 27);
+            label(s, 'Wafer 成分（Shot 中心の座標の多項式）', 28, 1);
+            label(s, 'Shot 共通成分（全 Shot で同じ Shot 内の補正）', 28, 2);
+            c.overlayWafer = uidropdown(s, 'Items', {'なし', '1次（並進・倍率・回転・直交度）', '2次', '3次', '4次', '5次'}, ...
+                'ItemsData', {0, 1, 2, 3, 4, 5}, 'ValueChangedFcn', onChange);
+            place(c.overlayWafer, 29, 1);
+            c.overlayShotCommon = uidropdown(s, 'Items', {'なし', '1次（k1〜k6）', 'ASML の高次式', 'Canon の高次式', ...
+                'Nikon の高次式'}, 'ItemsData', {'none', 'linear', 'asml', 'canon', 'nikon'}, 'ValueChangedFcn', onChange, ...
+                'Tooltip', ['Shot 内の座標（markXmm・markYmm）の補正式。高次式は Overlay 計測ルールのメーカー別の式' ...
+                '（項・係数番号は変えない）。Mark の位置が項より少ないと決まらない項がありますが、補正量には影響しません。']);
+            place(c.overlayShotCommon, 29, 2);
+            label(s, 'Shot ごとの成分', 30, 1);
+            c.overlayPerShot = uidropdown(s, 'Items', {'なし', '並進（k1・k2）', '1次（k1〜k6）'}, ...
+                'ItemsData', {'none', 'translation', 'linear'}, 'ValueChangedFcn', onChange);
+            place(c.overlayPerShot, 31, 1);
+            overlayHelp = label(s, ['すべて「なし」なら評価しません。結果一覧の指標「OVL …」と、Wafer ごとのマップの' ...
+                '「Overlay 補正」で見られます。'], [30, 31], 2);
+            overlayHelp.FontColor = [0.35, 0.35, 0.35];
 
             methodPanel = uipanel(grid, 'Title', '比べる手法');
             m = uigridlayout(methodPanel, [21, 4], 'RowHeight', repmat({'fit'}, 1, 21), 'ColumnWidth', {'1x', '1x', '1x', '1x'}, ...
@@ -942,6 +966,10 @@ classdef AlignmentEstimationApp < handle
             c.outerRatio.Value = s.evaluation.outerRadiusRatio;
             c.removeLinear.Value = s.evaluation.removeLinear;
             c.recordTiming.Value = s.evaluation.recordTiming;
+            overlay = alignest.overlayChoice(s);
+            c.overlayWafer.Value = overlay.waferOrder;
+            c.overlayShotCommon.Value = char(overlay.shotCommon);
+            c.overlayPerShot.Value = char(overlay.perShot);
             methods = s.methods;
             c.featureXY.Value = any(methods.featureSets == "XY");
             c.featureXYR.Value = any(methods.featureSets == "XYR");
@@ -1013,6 +1041,9 @@ classdef AlignmentEstimationApp < handle
             s.evaluation.outerRadiusRatio = c.outerRatio.Value;
             s.evaluation.removeLinear = c.removeLinear.Value;
             s.evaluation.recordTiming = c.recordTiming.Value;
+            s.overlay.waferOrder = c.overlayWafer.Value;
+            s.overlay.shotCommon = string(c.overlayShotCommon.Value);
+            s.overlay.perShot = string(c.overlayPerShot.Value);
             featureNames = ["XY", "XYR"];
             s.methods.featureSets = featureNames([c.featureXY.Value, c.featureXYR.Value]);
             s.methods.gpr.enabled = c.gpr.Value;
@@ -1367,7 +1398,8 @@ classdef AlignmentEstimationApp < handle
             results = app.Results;
             labels = string({results.methods.label});
             ids = string({results.methods.id});
-            [metricList, metricLabels] = alignest.metricNames(isfield(results, "timingRecorded") && results.timingRecorded);
+            [metricList, metricLabels] = alignest.metricNames(isfield(results, "timingRecorded") && results.timingRecorded, ...
+                isfield(results, "overlayEvaluated") && results.overlayEvaluated);
             current = string(c.metric.Value);
             c.metric.Items = cellstr(metricLabels);
             c.metric.ItemsData = cellstr(metricList);
@@ -1394,6 +1426,10 @@ classdef AlignmentEstimationApp < handle
             c.mapMethod.ItemsData = 1:numel(labels);
             set([c.mapWafer, c.mapPlan, c.mapMethod, c.mapMode, c.mapScale, c.mapMarkerSize, c.mapShotFrames, c.saveMap], ...
                 'Enable', 'on');
+            c.mapContent.Enable = onOff(isfield(results, "overlayEvaluated") && results.overlayEvaluated);
+            if c.mapContent.Enable == "off"
+                c.mapContent.Value = 'estimate';
+            end
             % 推定値と誤差の分布の選択肢（初めは最も RMSE の小さい手法・最も多い学習 Shot 数）
             c.analysisMethod.Items = cellstr(labels);
             c.analysisMethod.ItemsData = 1:numel(labels);
@@ -1498,7 +1534,7 @@ classdef AlignmentEstimationApp < handle
                 ax.XTickLabel = cellstr(summary.groups);
                 xlabel(ax, '学習パターン');
             end
-            [names, labels] = alignest.metricNames(true);
+            [names, labels] = alignest.metricNames(true, true);
             ylabel(ax, labels(names == metric));
             title(ax, "Wafer の" + statisticLabel(string(c.statistic.Value)));
             grid(ax, 'on');
@@ -1515,7 +1551,7 @@ classdef AlignmentEstimationApp < handle
             statistic = string(c.statistic.Value);
             summary = alignest.summarizeResults(app.Results, metric, statistic);
             selected = cell2mat(c.chartMethods.Value);
-            [names, labels] = alignest.metricNames(true);
+            [names, labels] = alignest.metricNames(true, true);
             criteria = ["criterionI", "criterionD"];
             criteriaLabels = ["I 基準 tr(M^{-1})", "D 基準 det(M)^{-1/p}"];
             criteriaNames = ["I 基準", "D 基準"];
@@ -1602,7 +1638,7 @@ classdef AlignmentEstimationApp < handle
                 "unitIndex", unitIndex);
         end
 
-        function [estimates, messages] = collectWithProgress(app, selection, cache, maxRows, titleText)
+        function [estimates, messages, overlayPoints] = collectWithProgress(app, selection, cache, maxRows, titleText)
             % 推定値を集める（画面が出ているときは進み具合を出し、「止める」で中止できる）
             dialog = [];
             if app.Figure.Visible == "on"
@@ -1610,7 +1646,7 @@ classdef AlignmentEstimationApp < handle
                     'Cancelable', 'on', 'CancelText', '止める', 'ShowPercentage', 'on');
             end
             cleanup = onCleanup(@() closeDialog(dialog));
-            [estimates, messages, cancelled] = alignest.collectEstimates(app.Data, app.Results, selection, cache=cache, ...
+            [estimates, messages, cancelled, overlayPoints] = alignest.collectEstimates(app.Data, app.Results, selection, cache=cache, ...
                 maxRows=maxRows, progressFcn=@(done, total) reportCollectProgress(dialog, done, total));
             if cancelled
                 error('alignest:cancelled', '途中で止めました。');
@@ -1676,14 +1712,15 @@ classdef AlignmentEstimationApp < handle
         % ================= 5. Waferごとのマップ =================
         function buildMapTab(app)
             grid = uigridlayout(app.Tabs.map, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 12, 'RowSpacing', 10);
-            controls = uigridlayout(grid, [2, 8], 'ColumnWidth', {170, 200, '1x', 170, 170, 120, 'fit', 'fit'}, ...
+            controls = uigridlayout(grid, [2, 9], 'ColumnWidth', {130, 150, '2x', '1x', 120, 120, 90, 'fit', 'fit'}, ...
                 'Padding', 0, 'RowHeight', {'fit', 'fit'});
             label(controls, 'Wafer', 1, 1);
             label(controls, '学習パターン', 1, 2);
             label(controls, '手法', 1, 3);
-            label(controls, '表示', 1, 4);
-            label(controls, '矢印の倍率 [mm/nm]（0 = 自動）', 1, 5);
-            label(controls, '色の点の大きさ', 1, 6);
+            label(controls, '図の内容', 1, 4);
+            label(controls, '表示', 1, 5);
+            label(controls, '矢印の倍率（0 = 自動）', 1, 6);
+            label(controls, '色の点の大きさ', 1, 7);
             onChange = @(~, ~) app.drawMap();
             c.mapWafer = uidropdown(controls, 'Items', {'—'}, 'ValueChangedFcn', onChange);
             place(c.mapWafer, 2, 1);
@@ -1691,19 +1728,25 @@ classdef AlignmentEstimationApp < handle
             place(c.mapPlan, 2, 2);
             c.mapMethod = uidropdown(controls, 'Items', {'—'}, 'ValueChangedFcn', onChange);
             place(c.mapMethod, 2, 3);
+            c.mapContent = uidropdown(controls, 'Items', {'推定（計測値・推定値・残差）', ...
+                'Overlay 補正（実測値で補正・推定値で補正・変化）'}, 'ItemsData', {'estimate', 'overlay'}, ...
+                'Tooltip', ['Overlay 補正：実測値で補正した残差、推定値で補正した残差（学習 Shot は計測値、それ以外は推定値で' ...
+                '補正を求めて実際の値に当てた残差）、推定による変化（両者の差）。補正モデルは「2. 評価の設定」で選びます。'], ...
+                'ValueChangedFcn', onChange);
+            place(c.mapContent, 2, 4);
             c.mapMode = uidropdown(controls, 'Items', {'ベクトル（矢印）', 'X（色）', 'Y（色）'}, ...
                 'ItemsData', {'vector', 'X', 'Y'}, 'ValueChangedFcn', onChange);
-            place(c.mapMode, 2, 4);
+            place(c.mapMode, 2, 5);
             c.mapScale = uieditfield(controls, 'numeric', 'Value', 0, 'Limits', [0, Inf], 'ValueChangedFcn', onChange);
-            place(c.mapScale, 2, 5);
+            place(c.mapScale, 2, 6);
             c.mapMarkerSize = markerSizeSpinner(app, controls, onChange);
-            place(c.mapMarkerSize, 2, 6);
+            place(c.mapMarkerSize, 2, 7);
             c.mapShotFrames = uicheckbox(controls, 'Text', 'Shot の枠', 'Value', true, 'ValueChangedFcn', onChange);
-            place(c.mapShotFrames, 2, 7);
+            place(c.mapShotFrames, 2, 8);
             c.saveMap = uibutton(controls, 'Text', '図を画像で保存…', 'ButtonPushedFcn', @(~, ~) app.onSaveMap());
-            place(c.saveMap, 2, 8);
-            set([c.mapWafer, c.mapPlan, c.mapMethod, c.mapMode, c.mapScale, c.mapMarkerSize, c.mapShotFrames, c.saveMap], ...
-                'Enable', 'off');
+            place(c.saveMap, 2, 9);
+            set([c.mapWafer, c.mapPlan, c.mapMethod, c.mapContent, c.mapMode, c.mapScale, c.mapMarkerSize, c.mapShotFrames, ...
+                c.saveMap], 'Enable', 'off');
             c.mapPanel = uipanel(grid, 'BorderType', 'none');
             axesGrid = uigridlayout(c.mapPanel, [1, 3], 'Padding', 0, 'ColumnSpacing', 8);
             c.mapAxes = [uiaxes(axesGrid), uiaxes(axesGrid), uiaxes(axesGrid)];
@@ -1751,6 +1794,10 @@ classdef AlignmentEstimationApp < handle
                 app.Figure.Pointer = 'arrow';
                 app.MapCache(key) = out;
             end
+            if string(c.mapContent.Value) == "overlay"
+                drawOverlayMap(app, unit, plan, method, out);
+                return
+            end
             measured = nan(numel(marks.x), 2);
             estimate = nan(numel(marks.x), 2);
             measured(out.testIndex.X, 1) = marks.measX(out.testIndex.X);
@@ -1795,6 +1842,48 @@ classdef AlignmentEstimationApp < handle
                 numel(out.testIndex.Y), metricsText);
         end
 
+        function drawOverlayMap(app, unit, plan, method, out)
+            % 実測値で補正した残差・推定値で補正した残差・推定による変化 を並べる（全 Mark。灰色の四角は学習 Shot の Mark）
+            c = app.Controls;
+            settings = app.Results.settings;
+            choice = alignest.overlayChoice(settings);
+            projector = alignest.overlayProjector(unit, choice, settings.data.waferRadiusMm);
+            correction = alignest.overlayCorrection(unit, out, projector);
+            fields = correction.fields;
+            marks = unit.marks;
+            usable = marks.validX | marks.validY;
+            points = [marks.x(usable), marks.y(usable)];
+            trainMarks = ismember(marks.shotIndex, plan.shotIndex) & usable;
+            panels = {fields.residualActual(usable, :), "実測値で補正した残差"; ...
+                fields.residualEstimated(usable, :), "推定値で補正した残差"; ...
+                fields.change(usable, :), "推定による変化（推定値で補正 − 実測値で補正）"};
+            % 矢印の倍率が自動（0）なら、残差の2つは同じ倍率、推定による変化は小さいので別の倍率にする（左下の目盛りで読む）
+            scale = repmat(c.mapScale.Value, 1, 3);
+            if c.mapScale.Value <= 0
+                scale(1:2) = alignest.plot.vectorScale(fields.residualEstimated(usable, :));
+                scale(3) = alignest.plot.vectorScale(fields.change(usable, :));
+            end
+            limit = max(abs(fields.residualEstimated(isfinite(fields.residualEstimated))), [], 'all');
+            if isempty(limit) || limit <= 0
+                limit = 1;
+            end
+            colors = [0.0, 0.33, 0.62; 0.0, 0.33, 0.62; app.RESIDUAL_COLOR];
+            [centers, sizeMm] = shotFrameData(unit, c.mapShotFrames.Value);
+            for k = 1:3
+                alignest.plot.waferMap(c.mapAxes(k), points, panels{k, 1}, mode=string(c.mapMode.Value), ...
+                    scaleMmPerNm=scale(k), colorLimit=limit, trainPoints=[marks.x(trainMarks), marks.y(trainMarks)], ...
+                    titleText=panels{k, 2}, waferRadiusMm=settings.data.waferRadiusMm, arrowColor=colors(k, :), ...
+                    markerSize=c.mapMarkerSize.Value, shotCenters=centers, shotSizeMm=sizeMm);
+                c.mapAxes(k).FontSize = app.AXES_FONT_SIZE;
+            end
+            metrics = correction.metrics;
+            c.mapInfo.Text = sprintf(['%s｜%s｜%s｜補正モデル：%s｜|平均|+3σ [nm]：実測値で補正 X %.3f・Y %.3f、' ...
+                '推定値で補正 X %.3f・Y %.3f、推定による変化 X %.3f・Y %.3f（増加 X %+.3f・Y %+.3f）'], unit.label, ...
+                plan.label, method.label, choice.description, metrics.overlayActual_X, metrics.overlayActual_Y, ...
+                metrics.overlayEstimated_X, metrics.overlayEstimated_Y, metrics.overlayChange_X, metrics.overlayChange_Y, ...
+                metrics.overlayIncrease_X, metrics.overlayIncrease_Y);
+        end
+
         function onSaveMap(app)
             [fileName, folder] = uiputfile({'*.png', 'PNG 画像 (*.png)'}, '図を保存', 'wafer_map.png');
             figure(app.Figure);
@@ -1826,8 +1915,8 @@ classdef AlignmentEstimationApp < handle
                 legend(ax, 'off');
             end
             c.chartAxes2.Visible = 'off';
-            set([c.export, c.saveChart, c.mapWafer, c.mapPlan, c.mapMethod, c.mapMode, c.mapScale, c.mapMarkerSize, ...
-                c.mapShotFrames, c.saveMap, c.analysisMethod, c.analysisGroup, c.analysisWafer, c.analyze, ...
+            set([c.export, c.saveChart, c.mapWafer, c.mapPlan, c.mapMethod, c.mapContent, c.mapMode, c.mapScale, ...
+                c.mapMarkerSize, c.mapShotFrames, c.saveMap, c.analysisMethod, c.analysisGroup, c.analysisWafer, c.analyze, ...
                 c.estimateScope, c.exportEstimates], 'Enable', 'off');
             c.runStatus.Text = "";
             c.mapInfo.Text = "「3. 実行」で評価すると、ここに Wafer ごとの図が出ます。";

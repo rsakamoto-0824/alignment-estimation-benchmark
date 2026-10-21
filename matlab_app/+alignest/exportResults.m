@@ -23,16 +23,23 @@ if isfile(filePath)
     end
 end
 [metricNames, metricLabels] = alignest.metricNames();
+[overlayNames, overlayLabels] = alignest.overlayMetricNames();
+if isfield(results, "overlayEvaluated") && results.overlayEvaluated
+    SUMMARY_METRICS = [SUMMARY_METRICS, "overlayEstimated_X", "overlayEstimated_Y", "overlayIncrease_X", "overlayIncrease_Y"];
+    metricNames = [metricNames, overlayNames];
+    metricLabels = [metricLabels, overlayLabels];
+end
 
 % 説明
 summary = results.dataSummary;
 timingRecorded = isfield(results, "timingRecorded") && results.timingRecorded;
+overlayEvaluated = isfield(results, "overlayEvaluated") && results.overlayEvaluated;
 choice = alignest.factorChoice(results.settings);
 items = ["作成日時"; "読み込んだファイル"; "工程（Operation）"; "装置（EqpId）"; "ロット（LotID）"; ...
     "Scan 方向（Direction）"; "質的変数"; ...
     "Wafer（評価の単位）の数"; "学習 Shot の選び方"; "学習パターン"; ...
     "比べた手法の数"; "計算時間 [秒]"; "途中で止めたか"; "処理時間の記録"; "評価の考え方"; "差の割合"; ...
-    "ワースト値・95%値"; "I 基準・D 基準"];
+    "ワースト値・95%値"; "I 基準・D 基準"; "Overlay 補正の評価"];
 values = [results.createdAt; sourceFile; listText(summaryField(summary, "operations")); ...
     listText(summaryField(summary, "eqpIds")); listText(summaryField(summary, "lotIds")); directionText(summary); ...
     factorText(choice); string(numel(results.unitLabels)); ...
@@ -43,7 +50,8 @@ values = [results.createdAt; sourceFile; listText(summaryField(summary, "operati
     "学習 Shot の計測値で推定し、学習しなかった Shot の計測値（有効な点）と比べる。計測ノイズを含むので値は少し悪く出る。"; ...
     "集計_<指標> シートの値は Wafer ごとの値（ランダムの繰り返しは平均）の平均。中央値・ワースト値・95%値は「集計_統計量」。"; ...
     "ワースト値は最も悪い Wafer の値（RMSE・MAE は最大、R² は最小）。95%値は 95% の Wafer がそれより良い値（RMSE・MAE は 95 パーセント点、R² は 5 パーセント点。Excel の PERCENTILE.INC と同じ補間）。"; ...
-    "学習 Shot の組の評価指標（XY 多項式の基準モデル、候補の全 Mark で正規直交化）。I 基準 = tr(M⁻¹)、D 基準 = det(M)^(−1/p)。小さいほど良い。全候補を使うと I 基準 = 項数、D 基準 = 1。"];
+    "学習 Shot の組の評価指標（XY 多項式の基準モデル、候補の全 Mark で正規直交化）。I 基準 = tr(M⁻¹)、D 基準 = det(M)^(−1/p)。小さいほど良い。全候補を使うと I 基準 = 項数、D 基準 = 1。"; ...
+    overlayText(results, overlayEvaluated)];
 values = [values; summary.messages(:); results.log(:)];
 items = [items; repmat("データの確認", numel(summary.messages), 1); repmat("計算の注意", numel(results.log), 1)];
 writetable(table(items, values, 'VariableNames', ["項目", "内容"]), filePath, 'Sheet', '説明');
@@ -136,6 +144,16 @@ end
 timing = table(methodColumn, idColumn, groupColumn, statistics(:, 1), statistics(:, 2), statistics(:, 3), ...
     statistics(:, 4), statistics(:, 5), statistics(:, 6), 'VariableNames', ["手法", "手法の識別子", "列", ...
     "平均[秒/枚]", "中央値[秒/枚]", "95%値[秒/枚]", "最大[秒/枚]", "合計[秒]", "回数"]);
+end
+
+function text = overlayText(results, evaluated)
+if ~evaluated
+    text = "しない（補正モデルの成分がすべて「なし」）";
+    return
+end
+text = "補正モデル：" + results.overlayDescription + "（X・Y 別に最小二乗）。実測値で補正した残差、推定値で補正した残差" + ...
+    "（学習 Shot は計測値、それ以外は推定値で補正を求め、実際の値に当てた残差）、推定による変化（両者の差）を、" + ...
+    "全 Mark の |平均|+3σ [nm] で「Waferごと」に出す。増加 = 推定値で補正 − 実測値で補正。";
 end
 
 function value = summaryField(summary, name)

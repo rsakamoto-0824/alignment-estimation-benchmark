@@ -40,4 +40,9 @@ settings.methods = alignest.recommendedMethods();
 settings.evaluation.outerRadiusRatio = 0.8;   % 外周とみなす半径（Wafer 半径に対する比）
 settings.evaluation.removeLinear = false;     % 学習点の XY 1次（6項）を除いてから推定し、推定値に戻す
 settings.evaluation.recordTiming = false;     % 条件（手法 × 学習パターン）ごとに 1 枚あたりの処理時間を記録して集計する
+
+% Overlay 補正の評価（推定誤差で Overlay 残差がどれだけ増えるか。alignest.overlayChoice）。すべて「なし」なら評価しない
+settings.overlay.waferOrder = 1;         % Wafer 成分：Shot 中心の座標の多項式の次数（0 = なし、1 = 並進・倍率・回転・直交度）
+settings.overlay.shotCommon = "linear";  % Shot 共通成分：none・linear（k1〜k6）・asml・canon・nikon
+settings.overlay.perShot = "none";       % Shot ごとの成分：none・translation（k1・k2）・linear（k1〜k6）
 end
