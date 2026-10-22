@@ -157,7 +157,8 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             app.applyMapping();
             testCase.verifyEqual(numel(app.Data.units), 5);
             testCase.verifyEqual(string(app.Controls.previewWafer.Items(1:5)), string({app.Data.units.label}));
-            testCase.verifyEqual(numel(app.Controls.previewWafer.Items), 5 + 3, "全 Wafer と EqpId ごとの平均も選べる");
+            testCase.verifyEqual(numel(app.Controls.previewWafer.Items), 5 + 1, ...
+                "はじめは全 Wafer の平均（ほかの単位は「平均・楕円の単位」で選ぶ）");
             settings = app.Settings;
             settings.sampling.nShots = [10, 20];   % 並びだけを変えた設定も、開始・終了・刻みに直して表示する
             app.setSettings(settings);
@@ -240,8 +241,28 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             writetable(raw, file);
             app.loadFile(file);
             app.applyMapping();
+            % はじめは一筆書きで Scan 方向を付ける。「付けない」なら Scan 方向なし
+            testCase.verifyTrue(app.Data.units(1).hasDirection);
+            testCase.verifyTrue(any(contains(string(app.Controls.summary.Value), "一筆書き")));
+            app.Controls.directionRule.Value = 'none';
+            app.Controls.directionRule.ValueChangedFcn([], []);
+            app.applyMapping();
             testCase.verifyFalse(app.Data.units(1).hasDirection);
             testCase.verifyTrue(any(contains(string(app.Controls.summary.Value), "なし")));
+            % Shot レイアウトで Shot をクリックすると、その shotNo の Scan 方向が入れ替わる（全 Wafer）
+            app.Controls.directionRule.Value = 'serpentine';
+            app.Controls.directionRule.ValueChangedFcn([], []);
+            app.applyMapping();
+            shots = app.Data.units(1).shots;
+            target = find(shots.shotNo == 50);
+            before = shots.direction(target);
+            app.onLayoutShotClicked([shots.Xmm(target), shots.Ymm(target), 0]);
+            testCase.verifyEqual(app.Data.units(2).shots.direction(app.Data.units(2).shots.shotNo == 50), 3 - before);
+            testCase.verifyEqual(app.Settings.data.directionOverrideShots, 50);
+            testCase.verifyEqual(string(app.Controls.resetScanDirections.Enable), "on");
+            app.setScanDirection([], []);
+            testCase.verifyEmpty(app.Settings.data.directionOverrideShots);
+            testCase.verifyEqual(app.Data.units(1).shots.direction(target), before);
             % サンプルの Scan 方向は Shot 列の奇偶と同じ
             app.Controls.directionRule.Value = 'columnParity';
             app.Controls.directionRule.ValueChangedFcn([], []);
@@ -358,7 +379,8 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             set(app.Controls.variograms, 'Value', false);
             app.Controls.variograms(end).Value = true;
             app.Controls.gam.Value = true;
-            app.Controls.gamShapes(1).Value = 'gp';
+            app.Controls.gamShapeChecks(1, 1).Value = false;   % X・Y：スプラインを外し、ガウス過程回帰だけ
+            app.Controls.gamShapeChecks(1, 2).Value = true;
             app.Controls.gam.ValueChangedFcn([], []);
             settings = app.Settings.methods;
             testCase.verifyEqual(settings.gpr.maternNu, [0.5, 1.2]);
@@ -381,9 +403,20 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             app.Controls.maternNu.ValueChangedFcn([], []);
             alignest.saveSettings(app.Settings, file);
             app.setSettings(alignest.defaultSettings());
-            testCase.verifyEqual(app.Controls.gamShapes(1).Value, 'spline');
+            testCase.verifyEqual([app.Controls.gamShapeChecks(1, :).Value], [true, false]);
             app.setSettings(alignest.loadSettings(file));
-            testCase.verifyEqual(app.Controls.gamShapes(1).Value, 'gp');
+            testCase.verifyEqual([app.Controls.gamShapeChecks(1, :).Value], [false, true]);
+            % 両方を選ぶと、組み合わせの数だけ GAM を評価する。どの項も選ばなければ欄の下に理由を出す
+            app.Controls.gamShapeChecks(1, 1).Value = true;
+            app.Controls.gamShapeChecks(2, 2).Value = true;
+            app.Controls.gam.ValueChangedFcn([], []);
+            testCase.verifyEqual(app.Settings.methods.gam.shapes.xy, ["spline", "gp"]);
+            gamIds = string({alignest.buildMethodList(app.Settings.methods).id});
+            testCase.verifyEqual(gamIds(startsWith(gamIds, "GAM")), ["GAM_XYR", "GAM_XYR_gp-r", "GAM_XYR_gp-xy", ...
+                "GAM_XYR_gp-xy-r"]);
+            set(app.Controls.gamShapeChecks(1, :), 'Value', false);
+            app.Controls.gam.ValueChangedFcn([], []);
+            testCase.verifyTrue(startsWith(app.Controls.gamShapeError.Text, "⚠"));
             testCase.verifyEqual(app.Controls.maternNu.Value, '0.5 1.2');
             testCase.verifyTrue(app.Controls.variograms(end).Value);
         end
@@ -450,13 +483,21 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             app.setSettings(settings);
             % 補正モデルを画面で選ぶ
             app.Controls.overlayWafer.Value = 2;
-            app.Controls.overlayShotCommon.Value = 'asml';
+            testCase.verifyEqual(string(app.Controls.overlayShotCommon.ItemsData), ["none", "linear"], ...
+                "Shot 共通成分は「なし」「1次」だけ");
+            app.Controls.overlayShotCommon.Value = 'linear';
             app.Controls.overlayPerShot.Value = 'translation';
             app.Controls.overlayPerShot.ValueChangedFcn([], []);
-            testCase.verifyEqual(app.Settings.overlay, struct("waferOrder", 2, "shotCommon", "asml", "perShot", "translation"));
+            testCase.verifyEqual(app.Settings.overlay, struct("waferOrder", 2, "shotCommon", "linear", "perShot", "translation"));
+            % 以前の設定のメーカー別の高次式は、画面では 1次にする
+            legacy = app.Settings;
+            legacy.overlay.shotCommon = "asml";
+            app.setSettings(legacy);
+            testCase.verifyEqual(app.Controls.overlayShotCommon.Value, 'linear');
+            app.Controls.overlayPerShot.ValueChangedFcn([], []);
             results = app.runEvaluationNow(false);
             testCase.verifyTrue(results.overlayEvaluated);
-            testCase.verifyTrue(contains(results.overlayDescription, "ASML"));
+            testCase.verifyTrue(contains(results.overlayDescription, "1次"));
             testCase.verifyTrue(any(string(app.Controls.metric.ItemsData) == "overlayIncrease_X"));
             testCase.verifyEqual(string(app.Controls.mapContent.Enable), "on");
             % Wafer ごとのマップ：実測値で補正・推定値で補正・推定による変化
@@ -521,7 +562,7 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyTrue(any(names == "必ず計測する Shot（指定・最外周など）（30）"));
             testCase.verifyTrue(any(names == "選んで計測する Shot（10）"));
             testCase.verifyTrue(startsWith(string(app.Controls.measureInfo.Value{1}), ...
-                "SIM02｜I最適 計測率 40%｜計測 40 / 候補 99 Shot"));
+                "SIM02 (EXP01)｜I最適 計測率 40%｜計測 40 / 候補 99 Shot"));
             % 設定を変えると、古い計測マップは消える
             app.Controls.requireOuter.Value = false;
             app.Controls.requireOuter.ValueChangedFcn([], []);
@@ -571,38 +612,57 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             app = testCase.App;
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.xlsx'));
             app.applyMapping();
-            % 読み込んだデータの平均の図（EqpId ごと）と共分散楕円
+            % 読み込んだデータの平均の図と共分散楕円。平均の単位（ALL・LotID・EqpId・Operation・その他の列）を選ぶ
+            testCase.verifyEqual(string(app.Controls.previewGroupBy.ItemsData), ["all", "lotId", "eqpId", "operation"]);
+            testCase.verifyEqual(string(app.Controls.previewWafer.Items(6:end)), "平均：全 Wafer（5 枚）");
+            app.Controls.previewGroupBy.Value = 'lotId';
+            app.Controls.previewGroupBy.ValueChangedFcn([], []);
+            testCase.verifyEqual(string(app.Controls.previewWafer.Items(6:end)), "平均：LotID = LOTSIM01（5 枚）", ...
+                "選んだ単位は値が1種類でも平均を出す");
+            testCase.verifyEqual(app.Controls.previewWafer.Value, 6, "単位を選ぶと、その最初の平均を表示する");
+            app.Controls.previewGroupBy.Value = 'eqpId';
+            app.Controls.previewGroupBy.ValueChangedFcn([], []);
             option = find(string(app.Controls.previewWafer.Items) == "平均：EqpId = EXP01（3 枚）");
             testCase.verifyNotEmpty(option);
             app.Controls.previewWafer.Value = option;
             app.Controls.previewWafer.ValueChangedFcn([], []);
             testCase.verifyEqual(numel(findall(app.Controls.previewAxes(1), 'Type', 'patch', 'DisplayName', ...
                 'Wafer 間のばらつき（1σ 楕円）')), 1);
-            testCase.verifyEqual(string(app.Controls.previewAxes(1).Colorbar.Title.String), "|r|");
+            testCase.verifyEqual(string(app.Controls.previewAxes(1).Colorbar.Title.String), "|v| [nm]", "右の目盛りは矢印の長さ");
+            testCase.verifyNotEmpty(findall(app.Controls.previewAxes(1), 'Tag', 'correlationScale'), "|r| の目盛りは図の中");
+            % X・Y の色の図の点の形（■）
+            app.Controls.previewMarkerShape.Value = 's';
+            app.Controls.previewMarkerShape.ValueChangedFcn([], []);
+            testCase.verifyEqual(string(findall(app.Controls.previewAxes(2), 'Type', 'scatter').Marker), "square");
             testCase.verifyTrue(contains(app.Controls.previewInfo.Text, "色は X・Y の相関係数の絶対値 |r|"));
             testCase.verifyTrue(contains(app.Controls.previewInfo.Text, "EqpId = EXP01"));
             % 選んだ Wafer の全 Shot を重ね合わせたベクトル場と共分散楕円
             testCase.verifyEqual(cell2mat(app.Controls.shotOverlayWafers.Value), 1:5, "読み込むと全 Wafer を選ぶ");
-            overlay = app.drawShotOverlay([1, 3]);
+            testCase.verifyTrue(app.Controls.shotOverlayByScan.Value, "Scan 方向があれば、はじめは分けた図も並べる");
+            testCase.verifyEqual(app.Controls.shotOverlayAxesGrid.ColumnWidth, {'1x', '1x', '1x'});
+            overlay = app.drawShotOverlay([1, 3], false);
             testCase.verifyEqual(overlay.nWafers, 2);
             overlayAxes = app.Controls.shotOverlayAxes;
             testCase.verifyTrue(startsWith(string(overlayAxes(1).Title.String), "Wafer 2 枚"));
             ellipses = findall(overlayAxes(1), 'Type', 'patch', 'DisplayName', 'Shot・Wafer 間のばらつき（1σ 楕円）');
             testCase.verifyNotEmpty(ellipses);
-            % 楕円の色は X・Y の相関係数の絶対値（楕円ごとに同じ値の頂点が並ぶ）
+            % 楕円の色は X・Y の相関係数の絶対値（楕円ごとの |r| を UserData に持つ）。Mark 番号の横にも |r| を書く
             covariance = overlay.average.covariance;
             expected = abs(covariance(:, 3)) ./ sqrt(covariance(:, 1) .* covariance(:, 2));
-            colors = reshape(ellipses.FaceVertexCData, [], size(ellipses.Faces, 1));
-            testCase.verifyEqual(colors(1, :).', expected, 'AbsTol', 1e-12);
-            testCase.verifyEqual(overlayAxes(1).CLim, [0, 1]);
-            testCase.verifyEqual(numel(findobj(overlayAxes(1), 'Type', 'quiver')), 2, "個々の Shot と平均");
+            testCase.verifyEqual(ellipses.UserData, expected, 'AbsTol', 1e-12);
+            labels = string(get(findall(overlayAxes(1), 'Type', 'text'), 'String'));
+            testCase.verifyEqual(nnz(contains(labels, "|r| ")), 4, "Mark 番号の横に |r|");
+            % 個々の Shot の矢印は長さで色分け（右の目盛り）、平均は黒い矢印
+            testCase.verifyNotEmpty(findobj(overlayAxes(1), 'Type', 'patch', '-regexp', 'DisplayName', '^個々の Shot'));
+            testCase.verifyEqual(string(overlayAxes(1).Colorbar.Title.String), "|v| [nm]");
+            testCase.verifyEqual(numel(findobj(overlayAxes(1), 'Type', 'quiver')), 1, "平均の矢印");
             testCase.verifyEqual(numel(app.Controls.shotOverlayInfo.Value), 1 + 4);
             testCase.verifyEqual(app.Controls.shotOverlayAxesGrid.ColumnWidth, {'1x', 0, 0});
             app.Controls.shotOverlayWaferOrder.Value = 1;
             app.Controls.shotOverlayIndividual.Value = false;
             app.Controls.shotOverlayIndividual.ValueChangedFcn([], []);
             testCase.verifyTrue(contains(string(overlayAxes(1).Title.String), "Wafer 成分 1次を除く"));
-            testCase.verifyEqual(numel(findobj(overlayAxes(1), 'Type', 'quiver')), 1);
+            testCase.verifyEmpty(findobj(overlayAxes(1), 'Type', 'patch', '-regexp', 'DisplayName', '^個々の Shot'));
             % Scan 方向で分けた図も並べる（同じ矢印の倍率で、すべての Shot・Scan 方向 1・2）
             overlay = app.drawShotOverlay(1:5, true);
             testCase.verifyEqual(numel(overlay), 3);

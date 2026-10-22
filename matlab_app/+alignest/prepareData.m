@@ -10,6 +10,10 @@ function data = prepareData(raw, mapping, options)
 %     （列の名前は data.attributeNames・unit.attributeNames。質的変数に選べる。重複行は最初の行の値）。
 %   - Direction（Scan 方向）が無い行には、options.directionRule の規則で 1・2 を付ける（"none" なら付けない）。
 %     規則は alignest.directionRules を参照。invertDirection が true なら付ける 1 と 2 を入れ替える。
+%   - options.directionOverrideShots・directionOverrideValues（同じ長さ）の shotNo の Shot は、Scan 方向をその値にする
+%     （画面で変えた Scan 方向。すべての Wafer の同じ shotNo に当てる。規則やファイルの値より優先）。
+%   - unit.label は Wafer ID。Operation・EqpId・LotID のどれかがデータの中で2種類以上あれば、その値を付けて区別する
+%     （例：SIM01 (EXP01)）。それでも同じ名前の計測があれば測定日時も付ける。
 %   data.units は評価の単位（Operation × EqpId × LotID × Wafer × DateTime）の構造体配列、data.summary は確認用の件数と注意。
 arguments
     raw table
@@ -20,6 +24,13 @@ arguments
     options.excludeUnmeasuredRecords (1, 1) logical = false
     options.directionRule (1, 1) string = "none"
     options.invertDirection (1, 1) logical = false
+    options.directionOverrideShots double = zeros(1, 0)
+    options.directionOverrideValues double = zeros(1, 0)
+end
+overrideShots = options.directionOverrideShots(:);
+overrideValues = options.directionOverrideValues(:);
+if numel(overrideShots) ~= numel(overrideValues) || any(~ismember(overrideValues, [1, 2]))
+    error('alignest:directionOverride', '画面で変えた Scan 方向は、shotNo と 1・2 の値を同じ数だけ指定してください。');
 end
 RADIUS_TOLERANCE_MM = 1e-3;
 COORDINATE_DIGITS = 4;  % 重複・Shot の判定で座標を丸める桁（0.1 µm）
@@ -113,8 +124,9 @@ for key = unique(unitKey(~noCoordinate)).'
     columnCoordinates = round(Xmm(rows), SHOT_COORDINATE_DIGITS);
     [~, shotColumn(rows)] = ismember(columnCoordinates, unique(columnCoordinates));
 end
-[direction, directionAssigned] = assignDirection(direction, ~noCoordinate, options, shotNo, hasShotNo, shotRow, shotColumn);
-hasDirection = hasDirectionColumn || options.directionRule ~= "none";
+[direction, directionAssigned] = assignDirection(direction, ~noCoordinate, options, shotNo, hasShotNo, shotRow, ...
+    shotColumn, unitKey);
+hasDirection = hasDirectionColumn || options.directionRule ~= "none" || ~isempty(overrideShots);
 summary.nZeroMeasurementsExcluded = nnz(zeroMeasurements & eligible);
 summary.nUnmeasuredRecordsExcluded = nnz(unmeasuredRecords & eligible);
 summary.nRecordsExcluded = nnz(excludedRecords & eligible);
@@ -229,6 +241,11 @@ for u = 1:nUnits
     else
         shots.shotNo = (1:nShots).';
     end
+    % 画面で変えた Scan 方向（shotNo ごと）
+    [overridden, position] = ismember(shots.shotNo, overrideShots);
+    for s = find(overridden).'
+        marks.direction(shotOfMark == s) = overrideValues(position(s));
+    end
     shots.direction = nan(nShots, 1);
     for s = 1:nShots
         values = marks.direction(shotOfMark == s & ~isnan(marks.direction));
@@ -257,17 +274,20 @@ for u = 1:nUnits
             units(u).label); %#ok<AGROW>
     end
 end
-% 同じ Wafer に複数の計測があるときは、表示名に違う項目（工程・装置・日時）を付ける
+% 表示名：Operation・EqpId・LotID がデータの中で2種類以上あれば、Wafer ID にその値を付ける
+% （同じ Wafer ID でも工程・装置が違えば別の計測なので、選ぶときに区別できるように）。それでも重なれば日時も付ける
+labelFields = ["lotId", "operation", "eqpId"];
+varying = arrayfun(@(field) numel(unique(arrayfun(@(unit) string(unit.(field)), units))) > 1, labelFields);
 for u = 1:nUnits
+    parts = strings(1, 0);
+    for field = labelFields(varying)
+        parts(end + 1) = emptyAsDash(units(u).(field)); %#ok<AGROW>
+    end
     same = find(waferOfUnit == waferOfUnit(u));
-    if numel(same) > 1
-        parts = strings(1, 0);
-        for field = ["lotId", "operation", "eqpId", "dateTime"]
-            values = arrayfun(@(k) string(units(k).(field)), same);
-            if numel(unique(values)) > 1
-                parts(end + 1) = ternary(units(u).(field) == "", "—", units(u).(field)); %#ok<AGROW>
-            end
-        end
+    if numel(same) > 1 && numel(unique(arrayfun(@(k) string(units(k).dateTime), same))) > 1
+        parts(end + 1) = emptyAsDash(units(u).dateTime); %#ok<AGROW>
+    end
+    if ~isempty(parts)
         units(u).label = waferOfUnit(u) + " (" + strjoin(parts, " / ") + ")";
     end
 end
@@ -285,6 +305,11 @@ summary.nShotsRange = [min(nShotsPerUnit), max(nShotsPerUnit)];
 summary.nMarksRange = [min(nMarksPerUnit), max(nMarksPerUnit)];
 summary.markLevels = unique(markNo(keep)).';
 summary.hasDirection = hasDirection;
+summary.nDirectionOverrides = numel(overrideShots);
+if ~isempty(overrideShots)
+    messages(end + 1) = "画面で Scan 方向を変えた Shot（すべての Wafer の同じ shotNo）：" + ...
+        strjoin(compose("%g→%d", overrideShots, overrideValues), "、") + "。";
+end
 summary.operations = unique(operation(keep & operation ~= "")).';
 summary.eqpIds = unique(eqpId(keep & eqpId ~= "")).';
 summary.lotIds = unique(lotId(keep & lotId ~= "")).';
@@ -301,10 +326,12 @@ data.excludeZeroMeasurements = options.excludeZeroMeasurements;
 data.excludeUnmeasuredRecords = options.excludeUnmeasuredRecords;
 data.attributeNames = attributeNames;
 data.directionRule = options.directionRule;
+data.directionOverrideShots = reshape(overrideShots, 1, []);
+data.directionOverrideValues = reshape(overrideValues, 1, []);
 data.invertDirection = options.invertDirection;
 end
 
-function [direction, assigned] = assignDirection(direction, usable, options, shotNo, hasShotNo, shotRow, shotColumn)
+function [direction, assigned] = assignDirection(direction, usable, options, shotNo, hasShotNo, shotRow, shotColumn, unitKey)
 % Direction が空の行に、規則で Scan 方向（1・2）を付ける
 assigned = false(size(direction));
 if options.directionRule == "none"
@@ -315,6 +342,12 @@ if ~any(blank)
     return
 end
 switch options.directionRule
+    case "serpentine"
+        values = nan(size(direction));
+        for key = unique(unitKey(usable)).'
+            rows = find(unitKey == key & usable);
+            values(rows) = serpentineDirections(shotRow(rows), shotColumn(rows), shotNo(rows), hasShotNo);
+        end
     case "shotNoParity"
         if ~hasShotNo || any(isnan(shotNo(blank)))
             error('alignest:directionRule', ['shotNo の奇偶で Scan 方向を付けるには、shotNo の列を対応づけ、' ...
@@ -333,6 +366,73 @@ if options.invertDirection
 end
 direction(blank) = values(blank);
 assigned = blank;
+end
+
+function values = serpentineDirections(shotRow, shotColumn, shotNo, hasShotNo)
+% 一筆書きの Scan 方向（1つの Wafer・計測の行ごと）。shotNo が最も小さい Shot から始め、その行を始めの Shot に近い端から
+% 遠い端へたどり、次の行（始めの行から遠ざかる向き）は逆向きにたどる（行ごとに折り返す）。道順に 1・2 を交互に付ける。
+% shotNo が無いときは、いちばん上の行の左端から始める。始めの Shot が行の途中・行が途中のときは、残りを後で同じ規則でたどる。
+[cells, ~, cellOfRow] = unique([shotRow(:), shotColumn(:)], 'rows');   % Shot ごと（行・列の番号）。上の行・左の列が先
+start = 1;
+if hasShotNo && any(isfinite(shotNo))
+    cellNo = inf(size(cells, 1), 1);
+    for k = find(isfinite(shotNo(:))).'
+        cellNo(cellOfRow(k)) = min(cellNo(cellOfRow(k)), shotNo(k));
+    end
+    [~, start] = min(cellNo);
+end
+rowList = unique(cells(:, 1));
+startRow = cells(start, 1);
+before = flipud(rowList(rowList < startRow));
+after = rowList(rowList > startRow);
+if numel(after) >= numel(before)
+    rowOrder = [startRow; after; before];
+else
+    rowOrder = [startRow; before; after];
+end
+pathIndex = zeros(size(cells, 1), 1);
+step = 0;
+ascending = true;
+for k = 1:numel(rowOrder)
+    inRow = find(cells(:, 1) == rowOrder(k));
+    columns = cells(inRow, 2);
+    if k == 1
+        % 始めの Shot から、近い端と反対の端へ向かう
+        startColumn = cells(start, 2);
+        ascending = startColumn - min(columns) <= max(columns) - startColumn;
+        if ascending
+            order = [sortedBy(inRow, columns, columns >= startColumn, 'ascend'); ...
+                sortedBy(inRow, columns, columns < startColumn, 'descend')];
+        else
+            order = [sortedBy(inRow, columns, columns <= startColumn, 'descend'); ...
+                sortedBy(inRow, columns, columns > startColumn, 'ascend')];
+        end
+    else
+        ascending = ~ascending;   % 行ごとに折り返す
+        [~, sortKey] = sort(columns);
+        order = inRow(sortKey);
+        if ~ascending
+            order = flipud(order);
+        end
+    end
+    pathIndex(order) = step + (1:numel(order));
+    step = step + numel(order);
+end
+values = 1 + mod(pathIndex(cellOfRow) - 1, 2);
+end
+
+function index = sortedBy(index, keys, select, direction)
+% index のうち select の要素を、keys の順（direction）に並べる
+[~, order] = sort(keys(select), direction);
+index = index(select);
+index = index(order);
+end
+
+function text = emptyAsDash(value)
+text = string(value);
+if text == ""
+    text = "—";
+end
 end
 
 function source = directionSource(hasColumn, nAssigned, nFromFile)

@@ -104,6 +104,16 @@ classdef TestModelOptions < matlab.unittest.TestCase
             config.gpr.maternNu = 2;
             config.gam.shapes.r = "kriging";
             testCase.verifyError(@() alignest.buildMethodList(config), 'alignest:gamShape');
+            % 形状関数を項ごとに複数選ぶと、組み合わせをすべて並べる（スプラインの組が先）
+            config.gam.shapes = struct("xy", ["gp", "spline"], "r", ["spline", "gp"]);
+            ids = string({alignest.buildMethodList(config).id});
+            testCase.verifyEqual(ids(startsWith(ids, "GAM_XYR")), ["GAM_XYR", "GAM_XYR_gp-r", "GAM_XYR_gp-xy", ...
+                "GAM_XYR_gp-xy-r"]);
+            testCase.verifyEqual(ids(startsWith(ids, "GAM_XY_")| ids == "GAM_XY"), ["GAM_XY", "GAM_XY_gp-xy"], ...
+                "X・Y だけの説明変数では半径の項が無い");
+            config.gam.shapes.xy = strings(1, 0);
+            testCase.verifyError(@() alignest.buildMethodList(config), 'alignest:gamShape');
+            config.gam.shapes.xy = "spline";
             % 以前の設定（ν・形状関数が無い）には初期値を補う
             legacy = alignest.recommendedMethods();
             legacy.gpr = rmfield(legacy.gpr, "maternNu");
