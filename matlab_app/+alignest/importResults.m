@@ -1,0 +1,225 @@
+function results = importResults(filePath)
+%IMPORTRESULTS 「結果を Excel に書き出す」（alignest.exportResults）で書き出したファイルを読み、評価の結果に戻す。
+%   results = alignest.importResults(filePath)
+%   「Waferごと」シートから結果の表を、「学習Shot」から学習パターンを、「説明」から作成日時などを、
+%   「設定」から評価の設定を作り直す。表・グラフ・基準の手法との比較（alignest.summarizeResults など）に使える。
+%   推定値そのものは Excel に無いので、Wafer マップ・推定値の分析は、計測ファイルを読み込んで評価し直すと使える。
+%   results.imported に読んだファイルを入れる（画面で読み込んだ結果と見分けるため）。
+arguments
+    filePath (1, 1) string
+end
+TEXT_COLUMNS = ["Operation", "EqpId", "LotID", "Wafer", "DateTime", "plan", "group", "methodLabel", "methodId", ...
+    "hyperparameters", "note"];
+REQUIRED_COLUMNS = ["Wafer", "plan", "group", "methodLabel", "methodId"];
+PLAN_FAILED_PREFIX = "学習パターンを作れませんでした";
+if ~isfile(filePath)
+    error('alignest:importResults', 'ファイルが見つかりません: %s', filePath);
+end
+try
+    sheets = string(sheetnames(filePath));
+catch err
+    error('alignest:importResults', 'Excel ファイルとして読めません: %s（%s）', filePath, err.message);
+end
+if ~any(sheets == "Waferごと")
+    error('alignest:importResults', ['「Waferごと」のシートがありません。このアプリの「結果を Excel に書き出す」で' ...
+        '書き出したファイルを選んでください: %s'], filePath);
+end
+
+% 結果の表（Waferごと）：見出しを結果の表の列名に戻す。無い列（以前の版のファイルなど）は空・NaN にする
+options = detectImportOptions(filePath, 'Sheet', 'Waferごと', 'VariableNamingRule', 'preserve');
+fileHeaders = string(options.VariableNames);
+overlayNames = alignest.overlayMetricNames();
+[allNames, allHeaders] = alignest.resultColumnNames(true);
+overlayEvaluated = any(ismember(allHeaders(ismember(allNames, overlayNames)), fileHeaders));
+[names, headers] = alignest.resultColumnNames(overlayEvaluated);
+missingRequired = REQUIRED_COLUMNS(~ismember(headers(ismember(names, REQUIRED_COLUMNS)), fileHeaders));
+if ~isempty(missingRequired)
+    error('alignest:importResults', ['「Waferごと」のシートに必要な列（%s）がありません。このアプリの' ...
+        '「結果を Excel に書き出す」で書き出したファイルを選んでください。'], ...
+        strjoin(headers(ismember(names, missingRequired)), "、"));
+end
+present = ismember(headers, fileHeaders);
+isText = ismember(names, TEXT_COLUMNS);
+options = asText(options, headers(present & isText));
+if any(present & ~isText)
+    options = setvartype(options, cellstr(headers(present & ~isText)), 'double');
+end
+raw = readtable(filePath, options);
+nRows = height(raw);
+table_ = table();
+for k = 1:numel(names)
+    if present(k) && isText(k)
+        values = raw.(headers(k));
+        values(ismissing(values)) = "";
+    elseif present(k)
+        values = raw.(headers(k));
+    elseif isText(k)
+        values = strings(nRows, 1);
+    else
+        values = nan(nRows, 1);
+    end
+    table_.(names(k)) = values;
+end
+table_.converged = table_.converged == 1;
+
+% 設定（JSON を1行ずつ書いたシート）。無ければ初期設定
+settings = alignest.defaultSettings();
+if any(sheets == "設定")
+    lines = readTextSheet(filePath, "設定");
+    if ~isempty(lines)
+        settings = alignest.loadSettings(strjoin(lines(:, 1), newline), "text");
+    end
+end
+
+% 手法：設定から作った手法の並びに同じ識別子があれば、その中身（推定のしかた）を使う
+[methodIds, firstRow] = unique(table_.methodId, 'stable');
+try
+    known = alignest.buildMethodList(settings.methods);
+catch
+    known = struct("id", {}, "family", {}, "featureSet", {}, "variant", {}, "factorMode", {}, "label", {});
+end
+methods = repmat(struct("id", "", "family", "", "featureSet", "", "variant", "", "factorMode", "", "label", ""), ...
+    1, numel(methodIds));   % alignest.buildMethodList と同じ横の並び
+for m = 1:numel(methodIds)
+    match = find(string({known.id}) == methodIds(m), 1);
+    if ~isempty(match)
+        methods(m) = known(match);
+    else
+        methods(m).id = methodIds(m);
+        methods(m).family = extractBefore(methodIds(m) + "_", "_");
+    end
+    methods(m).label = table_.methodLabel(firstRow(m));
+end
+[~, table_.methodIndex] = ismember(table_.methodId, methodIds);
+for name = ["family", "featureSet", "variant", "factorMode"]
+    methodValues = string({methods.(name)});
+    table_.(name) = reshape(methodValues(table_.methodIndex), [], 1);
+end
+
+% Wafer と学習パターン（Wafer × 学習パターンの組を、評価した順に並べる）
+unitLabels = unique(table_.Wafer, 'stable');
+[~, table_.unitIndex] = ismember(table_.Wafer, unitLabels);
+pairKeys = table_.Wafer + newline + table_.plan;
+[~, firstOfPair, table_.planIndex] = unique(pairKeys, 'stable');
+plans = repmat(alignest.planTemplate(), numel(firstOfPair), 1);
+for p = 1:numel(firstOfPair)
+    row = firstOfPair(p);
+    inPlan = table_.planIndex == p;
+    plans(p).label = table_.plan(row);
+    plans(p).group = table_.group(row);
+    plans(p).unitIndex = table_.unitIndex(row);
+    plans(p).unitLabel = table_.Wafer(row);
+    plans(p).nShots = table_.nShots(row);
+    plans(p).criterionI = table_.criterionI(row);
+    plans(p).criterionD = table_.criterionD(row);
+    plans(p).efficiencyI = table_.efficiencyI(row);
+    plans(p).efficiencyD = table_.efficiencyD(row);
+    plans(p).ok = ~any(startsWith(table_.note(inPlan), PLAN_FAILED_PREFIX));
+end
+if any(sheets == "学習Shot")
+    plans = addPlanDetails(plans, filePath);
+end
+table_.planType = strings(nRows, 1);
+table_.repeat = zeros(nRows, 1);
+
+% 説明：作成日時・計算時間・途中で止めたか・処理時間の記録・Overlay 補正のモデル・計算の注意
+descriptions = strings(0, 2);
+if any(sheets == "説明")
+    descriptions = readTextSheet(filePath, "説明");
+    if size(descriptions, 2) < 2
+        descriptions = strings(0, 2);
+    end
+end
+results = struct();
+results.table = table_;
+results.plans = plans;
+results.methods = methods;
+results.unitLabels = unitLabels;
+results.groups = unique(table_.group, 'stable').';
+results.settings = settings;
+results.dataSummary = struct("messages", describedValues(descriptions, "データの確認"));
+results.cancelled = describedValue(descriptions, "途中で止めたか") == "true";
+results.resume = [];
+results.nTotal = nRows;
+results.elapsedSeconds = str2double(describedValue(descriptions, "計算時間 [秒]"));
+results.log = describedValues(descriptions, "計算の注意");
+results.timingRecorded = startsWith(describedValue(descriptions, "処理時間の記録"), "記録した");
+results.overlayEvaluated = overlayEvaluated;
+results.overlayDescription = "";
+overlayText = describedValue(descriptions, "Overlay 補正の評価");
+if overlayEvaluated && contains(overlayText, "補正モデル：") && contains(overlayText, "（X・Y 別に")
+    results.overlayDescription = extractBetween(overlayText, "補正モデル：", "（X・Y 別に");
+end
+results.createdAt = describedValue(descriptions, "作成日時");
+results.sourceFile = describedValue(descriptions, "読み込んだファイル");
+results.imported = filePath;
+end
+
+function plans = addPlanDetails(plans, filePath)
+% 「学習Shot」シートの Shot 番号・計算時間・メモなどを、Wafer と学習パターンの名前で合わせて入れる
+TEXT_HEADERS = ["Wafer", "学習パターン", "学習ShotのshotNo", "メモ"];
+NUMBER_HEADERS = ["学習Shot数", "制約の違反量", "学習パターンの計算時間[秒]", "同じ配置のWaferから使い回し"];
+options = detectImportOptions(filePath, 'Sheet', '学習Shot', 'VariableNamingRule', 'preserve');
+headers = string(options.VariableNames);
+if ~all(ismember(["Wafer", "学習パターン"], headers))
+    return
+end
+options = asText(options, TEXT_HEADERS(ismember(TEXT_HEADERS, headers)));
+if any(ismember(NUMBER_HEADERS, headers))
+    options = setvartype(options, cellstr(NUMBER_HEADERS(ismember(NUMBER_HEADERS, headers))), 'double');
+end
+sheet = readtable(filePath, options);
+keys = sheet.("Wafer") + newline + sheet.("学習パターン");
+for p = 1:numel(plans)
+    row = find(keys == plans(p).unitLabel + newline + plans(p).label, 1);
+    if isempty(row)
+        continue
+    end
+    if ismember("学習ShotのshotNo", headers) && ~ismissing(sheet.("学習ShotのshotNo")(row))
+        shotNos = str2double(split(strtrim(sheet.("学習ShotのshotNo")(row))));
+        plans(p).shotNos = shotNos(isfinite(shotNos));
+    end
+    if ismember("制約の違反量", headers)
+        plans(p).violation = sheet.("制約の違反量")(row);
+    end
+    if ismember("学習パターンの計算時間[秒]", headers)
+        plans(p).seconds = sheet.("学習パターンの計算時間[秒]")(row);
+    end
+    if ismember("同じ配置のWaferから使い回し", headers)
+        plans(p).reused = sheet.("同じ配置のWaferから使い回し")(row) == 1;
+    end
+    if ismember("メモ", headers) && ~ismissing(sheet.("メモ")(row))
+        plans(p).message = sheet.("メモ")(row);
+    end
+end
+end
+
+function value = describedValue(descriptions, item)
+% 「説明」シートの項目の内容（無ければ ""）
+value = "";
+row = find(descriptions(:, 1) == item, 1);
+if ~isempty(row)
+    value = descriptions(row, 2);
+end
+end
+
+function values = describedValues(descriptions, item)
+values = descriptions(descriptions(:, 1) == item, 2);
+end
+
+function texts = readTextSheet(filePath, sheet)
+% シートの見出しより下を、すべて文字列で読む（空のセルは ""）
+options = detectImportOptions(filePath, 'Sheet', sheet, 'VariableNamingRule', 'preserve');
+options = asText(options, string(options.VariableNames));
+texts = string(readtable(filePath, options).Variables);
+texts(ismissing(texts)) = "";
+end
+
+function options = asText(options, headers)
+% 文字列の列として読む。引用符（JSON の "名前" やメモの中の引用）と行頭の空白は書いたとおりに残す
+if isempty(headers)
+    return
+end
+options = setvartype(options, cellstr(headers), 'string');
+options = setvaropts(options, cellstr(headers), 'QuoteRule', 'keep', 'WhitespaceRule', 'preserve');
+end

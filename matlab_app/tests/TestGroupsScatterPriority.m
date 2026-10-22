@@ -113,20 +113,47 @@ classdef TestGroupsScatterPriority < matlab.unittest.TestCase
             handle = alignest.plot.covarianceEllipses(ax, centers, covariance, 2);
             testCase.verifyEqual(size(handle.Faces, 1), 4);
             testCase.verifyEqual(handle.UserData.', [0.5, 0, 0.9, 0], 'AbsTol', 1e-12);
-            % 色は |r| の色の並び（灰色 → 紫）から RGB で付ける（図の colormap は矢印の長さに使う）
-            scale = alignest.plot.correlationScale();
-            expected = interp1(linspace(0, 1, size(scale, 1)), scale, [0.5; 0; 0.9; 0]);
-            rgb = reshape(handle.FaceVertexCData, [], 4, 3);
-            testCase.verifyEqual(squeeze(rgb(1, :, :)), expected, 'AbsTol', 1e-12);
-            testCase.verifyEqual(squeeze(rgb(1, 2, :)).', scale(1, :), 'AbsTol', 1e-12, "|r| = 0 は灰色");
-            testCase.verifyEqual(max(abs(rgb - rgb(1, :, :)), [], 'all'), 0, "1つの楕円は同じ色");
-            testCase.verifyEmpty(ax.Colorbar, "楕円だけでは右の目盛りを付けない");
-            alignest.plot.correlationScale(ax);
-            testCase.verifyNotEmpty(findall(ax, 'Tag', 'correlationScale'));
+            % 色は |r| を MATLAB の既定の色の対応（parula、範囲 0〜1）で付け、右に「|r|」の目盛りを付ける。1つの楕円は同じ色
+            testCase.verifyEqual(handle.FaceVertexCData, repelem([0.5; 0; 0.9; 0], size(handle.Faces, 2)), 'AbsTol', 1e-12);
+            testCase.verifyEqual(ax.CLim, [0, 1]);
+            testCase.verifyEqual(ax.Colormap, parula(size(ax.Colormap, 1)), 'AbsTol', 1e-12);
+            testCase.verifyEqual(string(ax.Colorbar.Title.String), "|r|");
             % 半径は √固有値 × 倍率（相関 0・分散 2 と 3 の楕円は x に √2×2、y に √3×2）
             second = handle.Vertices(handle.Faces(2, :), :);
             testCase.verifyEqual(max(second) - min(second), 2 * 2 * sqrt([2, 3]), 'RelTol', 0.01);
             testCase.verifyEmpty(alignest.plot.covarianceEllipses(ax, [0, 0], [NaN, NaN, NaN], 1));
+        end
+
+        function arrowsAreSingleColorWithEllipses(testCase)
+            figureHandle = figure('Visible', 'off');
+            cleanup = onCleanup(@() close(figureHandle));
+            ax = axes(figureHandle);
+            points = [0, 0; 50, 0];
+            values = [2, 1; -1, 3];
+            arrowColor = [0.75, 0.25, 0.10];
+            % 楕円と重ねるときの矢印は単色（quiver）。色の目盛りは楕円の |r|
+            alignest.plot.waferMap(ax, points, values, covariance=[1, 1, 0.5; 2, 1, 0], ellipseSigma=1, ...
+                arrowColor=arrowColor);
+            arrows = findall(ax, 'DisplayName', '値（矢印）');
+            testCase.verifyEqual(string(arrows.Type), "quiver");
+            testCase.verifyEqual(arrows.Color, arrowColor);
+            testCase.verifyEqual(string(ax.Colorbar.Title.String), "|r|");
+            testCase.verifyEqual(ax.CLim, [0, 1]);
+            % 楕円が無ければ、矢印は長さ |v| で色分け（patch）
+            alignest.plot.waferMap(ax, points, values);
+            arrows = findall(ax, 'DisplayName', '値（矢印）');
+            testCase.verifyEqual(string(arrows.Type), "patch");
+            testCase.verifyEqual(string(ax.Colorbar.Title.String), "|v| [nm]");
+            % Shot 重ね合わせ：楕円を描くときは個々の Shot の矢印も単色、平均は黒
+            units = testCase.Data.units;
+            overlay = alignest.shotOverlay(units, 1:2, 0, 150);
+            alignest.plot.shotOverlayMap(ax, overlay, ellipseSigma=1);
+            individual = findall(ax, '-regexp', 'DisplayName', '^個々の Shot');
+            testCase.verifyEqual(string(individual.Type), "quiver");
+            testCase.verifyEqual(string(ax.Colorbar.Title.String), "|r|");
+            alignest.plot.shotOverlayMap(ax, overlay, ellipseSigma=0);
+            individual = findall(ax, '-regexp', 'DisplayName', '^個々の Shot');
+            testCase.verifyEqual(string(individual.Type), "patch");
         end
 
         function groupByChoosesTheAveragingUnit(testCase)

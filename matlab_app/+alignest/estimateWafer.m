@@ -73,7 +73,7 @@ switch method.family
             y = measured.(axisNames(k));
             switch method.family
                 case "GPR"
-                    factors = factorLevels(unit, marks, train, test, settings);
+                    factors = factorLevels(unit, marks, train, test, settings, axisNames(k));
                     result = alignest.models.gprFitPredict(features(train, :), features(test, :), ...
                         alignest.basis.featureGroups(method.featureSet), y, method.variant, method.factorMode, factors, ...
                         maxIterations=options.gprMaxIterations, backfitMaxIterations=options.backfitMaxIterations, ...
@@ -85,14 +85,14 @@ switch method.family
                     grid = linspace(options.tpsLog10Lambda(1), options.tpsLog10Lambda(2), options.tpsLog10Lambda(3));
                     model = alignest.models.tpsSetup(features(train, :), features(test, :), grid);
                     fitSpatial = @(values) alignest.models.tpsFitPredict(model, values, returnSmoother=method.factorMode == "backfit");
-                    result = fitWithFactors(fitSpatial, unit, train, test, y, method, settings);
+                    result = fitWithFactors(fitSpatial, unit, train, test, y, method, settings, axisNames(k));
                     out.aux(k) = result.log10Lambda;
                     out.extra.("log10Lambda_" + axisNames(k)) = result.log10Lambda;
                 case "RBF"
                     grid = linspace(options.rbfLog10Lambda(1), options.rbfLog10Lambda(2), options.rbfLog10Lambda(3));
                     model = alignest.models.rbfSetup(features(train, :), features(test, :), options.rbfLengthScales, grid);
                     fitSpatial = @(values) alignest.models.rbfFitPredict(model, values, returnSmoother=method.factorMode == "backfit");
-                    result = fitWithFactors(fitSpatial, unit, train, test, y, method, settings);
+                    result = fitWithFactors(fitSpatial, unit, train, test, y, method, settings, axisNames(k));
                     out.aux(k) = result.log10Lambda;
                     out.extra.("rbfLengthScale_" + axisNames(k)) = result.lengthScale;
                     out.extra.("log10Lambda_" + axisNames(k)) = result.log10Lambda;
@@ -101,11 +101,11 @@ switch method.family
                     model = alignest.models.krigingSetup(features(train, :), features(test, :), ...
                         kinds.(method.family), method.variant, options.krigingLags);
                     fitSpatial = @(values) alignest.models.krigingFitPredict(model, values, returnSmoother=method.factorMode == "backfit");
-                    result = fitWithFactors(fitSpatial, unit, train, test, y, method, settings);
+                    result = fitWithFactors(fitSpatial, unit, train, test, y, method, settings, axisNames(k));
                     out.aux(k) = result.nugget;
                 case "GAM"
                     points = gamPoints(marks, radius);
-                    factors = factorLevels(unit, marks, train, test, settings);
+                    factors = factorLevels(unit, marks, train, test, settings, axisNames(k));
                     [factorTrain, factorTest] = factorCodes(factors, numel(train), numel(test));
                     nBasis = struct("axis", options.gamBasisAxis, "radius", options.gamBasisRadius);
                     gpTerms = gamGpTerms(method.variant);
@@ -147,11 +147,11 @@ out.outlierIndex = find(outlier);
 out.seconds = toc(timer);
 end
 
-function result = fitWithFactors(fitSpatial, unit, train, test, y, method, settings)
+function result = fitWithFactors(fitSpatial, unit, train, test, y, method, settings, axisName)
 if method.factorMode == "none"
     result = fitSpatial(y);
 elseif method.factorMode == "backfit"
-    factors = factorLevels(unit, unit.marks, train, test, settings);
+    factors = factorLevels(unit, unit.marks, train, test, settings, axisName);
     [codes, codesTest] = factorCodes(factors, numel(train), numel(test));
     result = alignest.models.spatialBackfit(fitSpatial, y, codes, codesTest, ...
         maxIterations=settings.methods.options.backfitMaxIterations, ...
@@ -175,10 +175,10 @@ train = train(:, 2:end);
 test = test(:, 2:end);
 end
 
-function factors = factorLevels(unit, marks, train, test, settings)
-% 選んだ質的変数の水準（数値の符号）。Scan 方向が使えない Wafer・値の欠けがある列は NaN にして、推定では使わない。
-% その他の列は Wafer ごとに文字列の水準を番号にする（項目名は col_<列名>）。
-choice = alignest.factorChoice(settings);
+function factors = factorLevels(unit, marks, train, test, settings, axisName)
+% 選んだ質的変数（axisName の成分の選択）の水準（数値の符号）。Scan 方向が使えない Wafer・値の欠けがある列は NaN に
+% して、推定では使わない。その他の列は Wafer ごとに文字列の水準を番号にする（項目名は col_<列名>）。
+choice = alignest.factorChoice(settings, axisName);
 factors = struct();
 if choice.scan
     direction = nan(numel(marks.x), 1);

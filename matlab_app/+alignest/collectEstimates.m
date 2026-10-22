@@ -35,7 +35,7 @@ if upperBound > options.maxRows
         '手法・学習パターン・Wafer を絞ってください。'], upperBound, options.maxRows);
 end
 nTotal = numel(planIndex) * numel(methodIndex);
-columns = alignest.factorChoice(results.settings).columns;
+columns = alignest.factorColumnsUsed(results.settings);
 parts = cell(nTotal, 1);
 overlayParts = cell(nTotal, 1);
 overlay = alignest.overlayChoice(results.settings);

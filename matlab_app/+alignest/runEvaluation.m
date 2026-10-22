@@ -24,9 +24,9 @@ if isempty(methods)
 end
 specs = alignest.buildPlanSpecs(settings.sampling);
 units = data.units;
-choice = alignest.factorChoice(settings);
+columns = alignest.factorColumnsUsed(settings);
 if isfield(data, "attributeNames")
-    missingColumns = choice.columns(~ismember(choice.columns, data.attributeNames));
+    missingColumns = columns(~ismember(columns, data.attributeNames));
     if ~isempty(missingColumns)
         error('alignest:factorColumn', ['質的変数に選んだ列が、読み込んだデータにありません: %s。' ...
             '「2. 評価の設定」の質的変数を選び直すか、その列を含むファイルを読み込んでください。'], strjoin(missingColumns, "、"));
@@ -35,7 +35,7 @@ end
 nTotal = numel(units) * numel(specs) * numel(methods);
 metricList = alignest.metricNames();
 rows = repmat(rowTemplate(metricList), nTotal, 1);
-plans = repmat(planTemplate(), 0, 1);
+plans = repmat(alignest.planTemplate(), 0, 1);
 planCache = containers.Map('KeyType', 'char', 'ValueType', 'any');
 logLines = strings(0, 1);
 done = 0;
@@ -247,10 +247,3 @@ row.hyperparameters = "";
 row.note = "";
 end
 
-function plan = planTemplate()
-plan = struct("label", "", "group", "", "type", "", "repeat", 0, "shotIndex", zeros(0, 1), ...
-    "shotNos", zeros(0, 1), "nShots", 0, "criterion", NaN, "violation", 0, "criterionI", NaN, "criterionD", NaN, ...
-    "ok", false, "message", "", "requiredShotIndex", zeros(0, 1), "rate", NaN, "efficiencyI", NaN, "efficiencyD", NaN, ...
-    "seconds", 0, "reused", false, ...
-    "unitIndex", 0, "unitLabel", "");
-end
