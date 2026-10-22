@@ -93,7 +93,7 @@ classdef TestModelOptions < matlab.unittest.TestCase
             gpr = methods(ids == "GPR_matern_nu0.75_XY_basis");
             testCase.verifyTrue(contains(gpr.label, "ν=0.75"));
             gam = methods(ids == "GAM_XYR_gp-xy");
-            testCase.verifyEqual(gam.variant, "gp:xy");
+            testCase.verifyEqual(gam.variant, "gp:xy:matern52", "カーネルの既定は matern52（id は以前と同じ）");
             testCase.verifyTrue(contains(gam.label, "ガウス過程：X・Y"));
             % 半径の項は XY には無いので、XY の GAM の id には入らない
             config.gam.shapes.r = "gp";
@@ -132,6 +132,59 @@ classdef TestModelOptions < matlab.unittest.TestCase
             legacy.featureSets = "XYRT";
             testCase.verifyEqual(alignest.completeMethodSettings(legacy).featureSets, "XYR");
             testCase.verifyError(@() alignest.basis.distanceFeatures(1, 1, 'XYRT', 150), 'alignest:featureSet');
+        end
+
+        function gamGaussianProcessKernelsCanBeChosen(testCase)
+            % 等方のカーネルの式は GPR と同じ（ν = 0.5・1.5・2.5 の Matérn は exponential・matern32・matern52）
+            a = [0, 0; 0.1, 0.2; -0.3, 0.4];
+            b = [0.2, -0.1; 0.5, 0.5];
+            kernel = @(name) alignest.models.stationaryKernel(name, a, b, 0.3);
+            testCase.verifyEqual(kernel("matern_nu0.5"), kernel("exponential"), 'AbsTol', 1e-12);
+            testCase.verifyEqual(kernel("matern_nu1.5"), kernel("matern32"), 'AbsTol', 1e-12);
+            testCase.verifyEqual(kernel("matern_nu2.5"), kernel("matern52"), 'AbsTol', 1e-12);
+            r2 = alignest.basis.pairwiseSquaredDiff(a, b) / 0.3 ^ 2;
+            testCase.verifyEqual(kernel("squaredexponential"), exp(-r2 / 2), 'AbsTol', 1e-12);
+            testCase.verifyEqual(kernel("rationalquadratic"), 1 ./ (1 + r2 / 2), 'AbsTol', 1e-12, "α = 1");
+            testCase.verifyError(@() kernel("ardmatern52"), 'alignest:kernel');
+            % 選んだカーネルごとに手法を並べる（matern52 は以前と同じ id、matern は ν ごと）
+            config = alignest.recommendedMethods("none");
+            config.gam.enabled = true;
+            config.gam.shapes = struct("xy", ["spline", "gp"], "r", "spline");
+            config.gam.gpKernels = ["matern52", "squaredexponential", "matern"];
+            config.gam.gpMaternNu = [1, 2.5];
+            methods = alignest.buildMethodList(config);
+            testCase.verifyEqual(string({methods.id}), ["GAM_XYR", "GAM_XYR_gp-xy", "GAM_XYR_gp-xy_squaredexponential", ...
+                "GAM_XYR_gp-xy_matern_nu1", "GAM_XYR_gp-xy_matern_nu2.5"], "スプラインだけの組はカーネルで分けない");
+            testCase.verifyEqual(methods(3).variant, "gp:xy:squaredexponential");
+            testCase.verifyTrue(contains(methods(4).label, "ガウス過程：X・Y（matern ν=1）"));
+            config.gam.gpKernels = strings(1, 0);
+            testCase.verifyError(@() alignest.buildMethodList(config), 'alignest:gamKernel');
+            config.gam.gpKernels = "ardmatern52";
+            testCase.verifyError(@() alignest.buildMethodList(config), 'alignest:gamKernel');
+            config.gam.gpKernels = "matern";
+            config.gam.gpMaternNu = [];
+            testCase.verifyError(@() alignest.buildMethodList(config), 'alignest:maternNu');
+            % 以前の設定（カーネルが無い）は matern52
+            legacy = rmfield(alignest.recommendedMethods(), "gam");
+            legacy.gam = struct("enabled", true, "shapes", struct("xy", "gp", "r", "spline"));
+            completed = alignest.completeMethodSettings(legacy);
+            testCase.verifyEqual(completed.gam.gpKernels, "matern52");
+            testCase.verifyEqual(string({alignest.buildMethodList(legacy).id}), ...
+                string({alignest.buildMethodList(completed).id}));
+            % カーネルで推定値が変わり、どれも当てはまる
+            unit = testCase.Data.units(1);
+            settings = alignest.defaultSettings();
+            config.gam.gpKernels = ["matern52", "exponential", "squaredexponential", "rationalquadratic"];
+            config.gam.shapes.xy = "gp";
+            settings.methods = config;
+            estimates = cell(1, 0);
+            for method = alignest.buildMethodList(config)
+                out = alignest.estimateWafer(unit, 1:3:numel(unit.shots.shotNo), method, settings);
+                actual = unit.marks.measX(out.testIndex.X);
+                testCase.verifyLessThan(sqrt(mean((out.estimate.X - actual) .^ 2)), 2 * std(actual), method.id);
+                estimates{end + 1} = out.estimate.X; %#ok<AGROW>
+            end
+            testCase.verifyGreaterThan(norm(estimates{1} - estimates{2}), 1e-6, "matern52 と exponential で違う");
         end
 
         function gamShapesSelectSplineOrGaussianProcess(testCase)

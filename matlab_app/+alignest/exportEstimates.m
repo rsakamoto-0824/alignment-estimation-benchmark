@@ -43,10 +43,7 @@ points = estimates;
 if any(string(points.Properties.VariableNames) == "markIndex")
     points = removevars(points, "markIndex");
 end
-internal = ["plan", "group", "methodLabel", "methodId", "direction", "shotRowParity", "x", "y", "r", "role", ...
-    "measX", "estimateX", "residualX", "measY", "estimateY", "residualY"];
-headers = ["学習パターン", "列", "手法", "手法の識別子", "Direction", "Shot行(1=奇数,2=偶数)", "x[mm]", "y[mm]", ...
-    "半径[mm]", "区分", "計測値X[nm]", "推定値X[nm]", "残差X[nm]", "計測値Y[nm]", "推定値Y[nm]", "残差Y[nm]"];
+[internal, headers] = alignest.estimateColumnNames("points");
 names = string(points.Properties.VariableNames);
 [found, position] = ismember(names, internal);
 names(found) = headers(position(found));  % 質的変数に選んだその他の列（質的変数:<列名>）はそのまま
@@ -61,11 +58,9 @@ if height(analysis.normality) > 0
     writetable(normality, filePath, 'Sheet', '正規性検定');
 end
 if height(options.overlayPoints) > 0
-    overlay = options.overlayPoints;
-    overlay.Properties.VariableNames = cellstr(["Operation", "EqpId", "LotID", "Wafer", "DateTime", "学習パターン", ...
-        "列", "手法", "手法の識別子", "shotNo", "markNo", "x[mm]", "y[mm]", "Shotの区分", ...
-        "実測値で補正した残差X[nm]", "実測値で補正した残差Y[nm]", "推定値で補正した残差X[nm]", ...
-        "推定値で補正した残差Y[nm]", "推定による変化X[nm]", "推定による変化Y[nm]"]);
+    [overlayNames, overlayHeaders] = alignest.estimateColumnNames("overlay");
+    overlay = options.overlayPoints(:, overlayNames);
+    overlay.Properties.VariableNames = cellstr(overlayHeaders);
     writetable(overlay, filePath, 'Sheet', 'Overlay残差');
 end
 if height(analysis.anova) > 0

@@ -108,14 +108,14 @@ switch method.family
                     factors = factorLevels(unit, marks, train, test, settings, axisNames(k));
                     [factorTrain, factorTest] = factorCodes(factors, numel(train), numel(test));
                     nBasis = struct("axis", options.gamBasisAxis, "radius", options.gamBasisRadius);
-                    gpTerms = gamGpTerms(method.variant);
+                    [gpTerms, gpKernel] = gamGpTerms(method.variant);
                     shapes = struct();
                     for term = gpTerms
                         shapes.(term) = "gp";
                     end
                     setup = @(scales) alignest.models.gamSetup(subsetPoints(points, train), subsetPoints(points, test), ...
                         method.featureSet, factorTrain, factorTest, nBasis, shapes=shapes, lengthScales=scales, ...
-                        gpKnots=options.gamGpKnots, gpGridKnots=options.gamGpGridKnots);
+                        gpKnots=options.gamGpKnots, gpGridKnots=options.gamGpGridKnots, gpKernel=gpKernel);
                     result = alignest.models.gamShapeFit(setup, gpTerms, options.gamGpLengthScales, y);
                     out.aux(k) = mean(result.log10Lambda);
                     for term = gpTerms
@@ -210,12 +210,18 @@ factors.(name + "Train") = levels(train);
 factors.(name + "Test") = levels(test);
 end
 
-function terms = gamGpTerms(variant)
-% GAM の variant（"pspline" または "gp:xy+r" のような形）から、ガウス過程回帰にする項の名前を取り出す
+function [terms, kernel] = gamGpTerms(variant)
+% GAM の variant（"pspline" または "gp:xy+r:matern32" のような形）から、ガウス過程回帰にする項の名前とカーネルを取り出す
+% （カーネルの無い "gp:xy+r" は以前の書き方で、matern52）
 terms = strings(1, 0);
+kernel = "matern52";
 variant = string(variant);
 if startsWith(variant, "gp:")
-    terms = split(extractAfter(variant, "gp:"), "+").';
+    parts = split(extractAfter(variant, "gp:"), ":");
+    terms = split(parts(1), "+").';
+    if numel(parts) >= 2
+        kernel = parts(2);
+    end
 end
 end
 

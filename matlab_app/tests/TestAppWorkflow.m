@@ -424,6 +424,21 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             gamIds = string({alignest.buildMethodList(app.Settings.methods).id});
             testCase.verifyEqual(gamIds(startsWith(gamIds, "GAM")), ["GAM_XYR", "GAM_XYR_gp-r", "GAM_XYR_gp-xy", ...
                 "GAM_XYR_gp-xy-r"]);
+            % ガウス過程回帰のカーネルを選ぶ（チェックしたカーネルごと。matern は ν ごと）
+            kernelNames = string({app.Controls.gamKernelChecks.UserData});
+            testCase.verifyEqual(string(app.Controls.gamKernelChecks(kernelNames == "matern52").Enable), "on");
+            testCase.verifyEqual(string(app.Controls.gamMaternNu.Enable), "off", "matern を選ぶまで ν は使わない");
+            app.Controls.gamKernelChecks(kernelNames == "matern").Value = true;
+            app.Controls.gamMaternNu.Value = '1.5';
+            app.Controls.gamMaternNu.ValueChangedFcn([], []);
+            testCase.verifyEqual(app.Settings.methods.gam.gpKernels, ["matern52", "matern"]);
+            testCase.verifyEqual(app.Settings.methods.gam.gpMaternNu, 1.5);
+            gamIds = string({alignest.buildMethodList(app.Settings.methods).id});
+            testCase.verifyEqual(nnz(startsWith(gamIds, "GAM")), 1 + 3 * 2);
+            set(app.Controls.gamKernelChecks, 'Value', false);
+            app.Controls.gam.ValueChangedFcn([], []);
+            testCase.verifyTrue(contains(app.Controls.gamShapeError.Text, "カーネル"));
+            app.Controls.gamKernelChecks(kernelNames == "matern52").Value = true;
             set(app.Controls.gamShapeChecks(1, :), 'Value', false);
             app.Controls.gam.ValueChangedFcn([], []);
             testCase.verifyTrue(startsWith(app.Controls.gamShapeError.Text, "⚠"));
@@ -514,6 +529,13 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             cleanup = onCleanup(@() rmdir(folder, 's'));
             file = fullfile(folder, 'results.xlsx');
             app.exportResultsTo(file);
+            estimatesFile = fullfile(folder, 'estimates.xlsx');
+            app.exportEstimatesTo(estimatesFile, "all");
+            expectedAnalysis = app.analyzeResiduals(1, "15 Shot", 0);
+            expectedScatter = app.drawScatter(1, "15 Shot", 0, "mark");
+            expectedComparison = app.compareDistributions(1, "15 Shot", 0);
+            testCase.verifyError(@() app.importEstimatesFrom(estimatesFile), 'alignest:importEstimates', ...
+                "評価結果を読み込む前は使えない");
             tableSize = size(app.Controls.summaryTable.Data);
             curveNames = string(get(findobj(app.Controls.chartAxes, 'Type', 'line'), 'DisplayName'));
             % 読み込むと、同じ結果の表・グラフ・基準の手法との比較が出る
@@ -537,6 +559,35 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
                 repmat("off", 6, 1));
             testCase.verifyError(@() app.analyzeResiduals(1, "15 Shot", 0), 'alignest:importedResults');
             testCase.verifyError(@() app.exportResultsTo(fullfile(folder, 'again.xlsx')), 'alignest:importedResults');
+            % 推定値の Excel も読み込むと、Wafer マップ・推定値と誤差の分布・散布図・分布の比較も描ける
+            testCase.verifyEqual(string(app.Controls.importEstimates.Enable), "on");
+            imported = app.importEstimatesFrom(estimatesFile);
+            testCase.verifyTrue(imported.hasTraining);
+            testCase.verifyTrue(contains(app.Controls.resultSource.Text, "推定値："));
+            testCase.verifyEqual(string(get([app.Controls.mapWafer, app.Controls.analyze, app.Controls.drawScatterButton, ...
+                app.Controls.compareDistributionsButton], 'Enable')), repmat("on", 4, 1));
+            testCase.verifyEqual(string(get([app.Controls.exportEstimates, app.Controls.mapShotFrames], 'Enable')), ...
+                repmat("off", 2, 1), "推定値の書き出し・Shot の枠は使えない");
+            analysis = app.analyzeResiduals(1, "15 Shot", 0);
+            testCase.verifyEqual(analysis.normality.mean, expectedAnalysis.normality.mean, 'AbsTol', 1e-9, ...
+                "計測データから計算した残差と同じ");
+            summary = app.drawScatter(1, "15 Shot", 0, "mark");
+            testCase.verifyEqual(summary(1).r, expectedScatter(1).r, 'AbsTol', 1e-9);
+            comparison = app.compareDistributions(1, "15 Shot", 0);
+            testCase.verifyEqual(comparison.X.stats.n, expectedComparison.X.stats.n, "全面・学習・予測対象・推定値の点数");
+            testCase.verifyEqual(comparison.X.js.js, expectedComparison.X.js.js, 'AbsTol', 1e-9);
+            app.showMap(1, results.plans(1).label, 1, "vector", "estimate");
+            testCase.verifyTrue(contains(app.Controls.mapInfo.Text, "Excel から読み込んだ推定値"));
+            testCase.verifyNotEmpty(findall(app.Controls.mapAxes(1), 'Type', 'patch', 'DisplayName', '値（矢印）'));
+            group = find(string(app.Controls.mapWafer.Items) == "平均：全 Wafer（5 枚）");
+            app.showMap(group, results.plans(1).label, 1, "vector", "overlay");
+            testCase.verifyEqual(string(app.Controls.mapAxes(2).Title.String), "推定値で補正した残差の平均");
+            testCase.verifyNotEmpty(findall(app.Controls.mapAxes(1), 'Type', 'patch', 'DisplayName', 'Wafer 間のばらつき（1σ 楕円）'));
+            testCase.verifyError(@() app.exportEstimatesTo(fullfile(folder, 'again.xlsx'), "selected"), ...
+                'alignest:importedResults');
+            % 評価結果を読み込み直すと、推定値の Excel は外れる
+            app.importResultsFrom(file);
+            testCase.verifyEqual(string(app.Controls.analyze.Enable), "off");
             % 評価し直すと、読み込んだ結果の表示は消える
             app.runEvaluationNow(false);
             testCase.verifyEqual(string(app.Controls.resultSource.Text), "");
@@ -554,12 +605,39 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             app.setSettings(settings);
             % 補正モデルを画面で選ぶ
             app.Controls.overlayWafer.Value = 2;
-            testCase.verifyEqual(string(app.Controls.overlayShotCommon.ItemsData), ["none", "linear"], ...
-                "Shot 共通成分は「なし」「1次」だけ");
+            testCase.verifyEqual(string(app.Controls.overlayShotCommon.ItemsData), ["none", "linear", "formula"], ...
+                "Shot 共通成分は「なし」「1次」「式を入力」");
             app.Controls.overlayShotCommon.Value = 'linear';
             app.Controls.overlayPerShot.Value = 'translation';
             app.Controls.overlayPerShot.ValueChangedFcn([], []);
-            testCase.verifyEqual(app.Settings.overlay, struct("waferOrder", 2, "shotCommon", "linear", "perShot", "translation"));
+            overlay = app.Settings.overlay;
+            testCase.verifyEqual([overlay.waferOrder, overlay.waferUseFormula], [2, 0]);
+            testCase.verifyEqual([overlay.shotCommon, overlay.perShot], ["linear", "translation"]);
+            testCase.verifyEqual(string(app.Controls.overlayWaferDx.Enable), "off", "式を選ぶまで式の欄は使えない");
+            % 補正の式を入れる（Wafer 成分・Shot 共通成分）。読めない式は赤字で出し、評価を始めない
+            formulaChoice = app.Controls.overlayWafer.ItemsData{string(app.Controls.overlayWafer.Items) == "式を入力"};
+            app.Controls.overlayWafer.Value = formulaChoice;
+            app.Controls.overlayWaferDx.Value = 'k1 + k3*x + k5*y + k7*x^2';
+            app.Controls.overlayShotCommon.Value = 'formula';
+            app.Controls.overlayShotDy.Value = 'k2 + (y)';
+            app.Controls.overlayShotDy.ValueChangedFcn([], []);
+            testCase.verifyEqual(string(app.Controls.overlayWaferDx.Enable), "on");
+            testCase.verifyTrue(app.Settings.overlay.waferUseFormula);
+            testCase.verifyEqual(app.Settings.overlay.waferOrder, 2, "式の間も次数は残す");
+            testCase.verifyTrue(contains(app.Controls.overlayFormulaError.Text, "Shot 共通成分の dy"));
+            testCase.verifyError(@() app.runEvaluationNow(false), 'alignest:settings');
+            app.Controls.overlayShotDy.Value = 'k2 + k4*y + k6*x';
+            app.Controls.overlayShotDy.ValueChangedFcn([], []);
+            testCase.verifyEqual(string(app.Controls.overlayFormulaError.Text), "");
+            formulaResults = app.runEvaluationNow(false);
+            testCase.verifyTrue(contains(formulaResults.overlayDescription, "dx = k1 + k3*x + k5*y + k7*x^2"));
+            % 設定を読み込み直しても式は残る
+            app.setSettings(app.Settings);
+            testCase.verifyEqual(string(app.Controls.overlayWaferDx.Value), "k1 + k3*x + k5*y + k7*x^2");
+            testCase.verifyEqual(app.Controls.overlayWafer.Value, formulaChoice);
+            app.Controls.overlayWafer.Value = 2;
+            app.Controls.overlayShotCommon.Value = 'linear';
+            app.Controls.overlayShotCommon.ValueChangedFcn([], []);
             % 以前の設定のメーカー別の高次式は、画面では 1次にする
             legacy = app.Settings;
             legacy.overlay.shotCommon = "asml";
