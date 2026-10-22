@@ -84,6 +84,33 @@ classdef TestEvaluation < matlab.unittest.TestCase
             testCase.verifyError(@() alignest.buildPlanSpecs(sampling), 'alignest:manualPlan');
         end
 
+        function timeEstimateFollowsMethodsPlansAndLayouts(testCase)
+            units = testCase.Data.units;
+            settings = alignest.defaultSettings();
+            settings.sampling.nShots = [10, 20];
+            [total, detail] = alignest.estimateRunSeconds(units, settings);
+            testCase.verifyEqual(total, detail.fitSeconds + detail.planSeconds + detail.overheadSeconds + ...
+                detail.displaySeconds, 'AbsTol', 1e-12);
+            testCase.verifyEqual(detail.nRuns, numel(units) * 2 * numel(alignest.buildMethodList(settings.methods)));
+            testCase.verifyGreaterThan(detail.planSeconds, 0, "I 最適は学習パターンを作る時間がかかる");
+            % ランダムは学習パターンを作る時間がほぼ 0、当てはめの時間は同じ
+            random = settings;
+            random.sampling.method = "random";
+            random.sampling.randomRepeats = 1;
+            [~, randomDetail] = alignest.estimateRunSeconds(units, random);
+            testCase.verifyEqual(randomDetail.planSeconds, 0);
+            testCase.verifyEqual(randomDetail.fitSeconds, detail.fitSeconds, 'RelTol', 1e-12);
+            % Backfitting や学習 Shot 数を増やすと長くなる
+            heavier = settings;
+            heavier.methods.gpr.factorModes = [heavier.methods.gpr.factorModes, "backfit"];
+            testCase.verifyGreaterThan(alignest.estimateRunSeconds(units, heavier), total);
+            larger = settings;
+            larger.sampling.nShots = [30, 40];
+            [~, largerDetail] = alignest.estimateRunSeconds(units, larger);
+            testCase.verifyGreaterThan(largerDetail.fitSeconds, detail.fitSeconds);
+            testCase.verifyEqual(alignest.estimateRunSeconds(units([]), settings), 0);
+        end
+
         function randomPlansAreReproducibleAndMeetConstraints(testCase)
             sampling = alignest.defaultSettings().sampling;
             unit = testCase.Data.units(1);
@@ -230,7 +257,7 @@ classdef TestEvaluation < matlab.unittest.TestCase
             testCase.verifyEqual(loaded.sampling.nShots, 10:10:50);
             testCase.verifyEqual([loaded.sampling.nShotsStart, loaded.sampling.nShotsEnd, loaded.sampling.nShotsStep], ...
                 [10, 50, 10]);
-            testCase.verifyEqual(loaded.data.directionRule, "none");
+            testCase.verifyEqual(loaded.data.directionRule, "serpentine", "以前の設定に無ければ一筆書き（初期設定）");
             testCase.verifyFalse(loaded.evaluation.recordTiming);
         end
 

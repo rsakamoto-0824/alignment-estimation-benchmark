@@ -17,6 +17,8 @@ app.captureTab('data', fullfile(out, '02_prepared.png'));
 app.Controls.dataTabs.SelectedTab = app.Controls.previewTab;
 app.captureTab('data', fullfile(out, '03_preview.png'));
 positions.p03_preview = markerAt(app, {app.Controls.previewWafer, app.Controls.previewMarkerSize});
+app.Controls.previewGroupBy.Value = 'eqpId';
+app.Controls.previewGroupBy.ValueChangedFcn([], []);
 group = find(string(app.Controls.previewWafer.Items) == "平均：EqpId = EXP01（3 枚）");
 app.Controls.previewWafer.Value = group;
 app.Controls.previewWafer.ValueChangedFcn([], []);

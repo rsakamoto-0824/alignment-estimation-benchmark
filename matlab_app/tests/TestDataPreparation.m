@@ -106,6 +106,81 @@ classdef TestDataPreparation < matlab.unittest.TestCase
                 directionRule="spiral"), 'alignest:directionRule');
         end
 
+        function serpentineStartsAtSmallestShotAndAlternates(testCase)
+            % 3 行 × 4 列、shotNo は上の行から左→右（1〜4・5〜8・9〜12）。一筆書き：1 行目は左→右、2 行目は右→左、
+            % 3 行目は左→右にたどり、道順に 1・2 を交互に付ける（shotNo の奇偶とは 2 行目が違う）
+            raw = rasterTable(3, 4, 1:12);
+            mapping = alignest.guessColumnMapping(raw.Properties.VariableNames);
+            data = alignest.prepareData(raw, mapping, directionRule="serpentine");
+            shots = data.units(1).shots;
+            [~, order] = sort(shots.shotNo);
+            testCase.verifyEqual(shots.direction(order).', [1, 2, 1, 2, 2, 1, 2, 1, 1, 2, 1, 2]);
+            testCase.verifyEqual(data.summary.nDirectionAssigned, height(raw));
+            inverted = alignest.prepareData(raw, mapping, directionRule="serpentine", invertDirection=true);
+            testCase.verifyEqual(inverted.units(1).shots.direction, 3 - shots.direction);
+            % shotNo 1 が右下の Shot なら、下の行を右→左、その上の行を左→右…とたどる
+            raw = rasterTable(3, 4, 13 - (1:12));
+            shots = alignest.prepareData(raw, mapping, directionRule="serpentine").units(1).shots;
+            at = @(row, column) shots.direction(shots.row == row & shots.column == column);
+            testCase.verifyEqual([at(3, 4), at(3, 3), at(3, 2), at(3, 1)], [1, 2, 1, 2], "始めの行は右から左");
+            testCase.verifyEqual([at(2, 1), at(2, 2), at(2, 4)], [1, 2, 2], "次の行は折り返して左から右");
+            testCase.verifyEqual(at(1, 4), 1, "上の行は右から左（道順の 9 番目）");
+            % shotNo の列が無ければ、いちばん上の行の左端から始める
+            raw = removevars(rasterTable(3, 4, 1:12), "shotNo");
+            shots = alignest.prepareData(raw, alignest.guessColumnMapping(raw.Properties.VariableNames), ...
+                directionRule="serpentine").units(1).shots;
+            testCase.verifyEqual(shots.direction(shots.row == 1 & shots.column == 1), 1);
+            testCase.verifyEqual(shots.direction(shots.row == 2 & shots.column == 4), 1);
+            % 初期設定は一筆書き
+            testCase.verifyEqual(alignest.defaultSettings().data.directionRule, "serpentine");
+        end
+
+        function scanDirectionOverridesApplyToEveryWafer(testCase)
+            raw = rasterTable(3, 4, 1:12);
+            second = raw;
+            second.Wafer(:) = "W02";
+            raw = [raw; second];
+            mapping = alignest.guessColumnMapping(raw.Properties.VariableNames);
+            data = alignest.prepareData(raw, mapping, directionRule="serpentine", directionOverrideShots=[5, 6], ...
+                directionOverrideValues=[1, 1]);
+            for unit = data.units.'
+                testCase.verifyEqual(unit.shots.direction(ismember(unit.shots.shotNo, [5, 6])), [1; 1]);
+                testCase.verifyEqual(unit.marks.direction, unit.shots.direction(unit.marks.shotIndex));
+            end
+            testCase.verifyEqual(data.summary.nDirectionOverrides, 2);
+            testCase.verifyTrue(any(contains(data.summary.messages, "画面で Scan 方向を変えた Shot")));
+            testCase.verifyEqual(data.directionOverrideShots, [5, 6]);
+            % 規則が「付けない」でも、変えた Shot にだけ Scan 方向が付く
+            data = alignest.prepareData(raw, mapping, directionOverrideShots=7, directionOverrideValues=2, ...
+                directionRule="none");
+            testCase.verifyEqual(data.units(1).shots.direction(data.units(1).shots.shotNo == 7), 2);
+            testCase.verifyFalse(data.units(1).hasDirection, "ほかの Shot に方向が無いので質的変数には使わない");
+            testCase.verifyError(@() alignest.prepareData(raw, mapping, directionOverrideShots=1, ...
+                directionOverrideValues=3), 'alignest:directionOverride');
+        end
+
+        function labelsShowEquipmentAndOperationWhenTheyVary(testCase)
+            raw = rasterTable(2, 2, 1:4);
+            raw.EqpId = repmat("E1", height(raw), 1);
+            raw.Operation = repmat("OP1", height(raw), 1);
+            other = raw;
+            other.EqpId(:) = "E2";
+            third = raw;
+            third.Wafer(:) = "W02";
+            raw = [raw; other; third];
+            data = alignest.prepareData(raw, alignest.guessColumnMapping(raw.Properties.VariableNames));
+            testCase.verifyEqual(sort(string({data.units.label})), ["W01 (E1)", "W01 (E2)", "W02 (E1)"], ...
+                "同じ Wafer ID でも装置が違えば別の計測。装置が2種類以上なので、どの Wafer にも装置を付ける");
+            % 工程も違えば両方を付ける
+            raw.Operation(raw.EqpId == "E2") = "OP2";
+            data = alignest.prepareData(raw, alignest.guessColumnMapping(raw.Properties.VariableNames));
+            testCase.verifyTrue(any(string({data.units.label}) == "W01 (OP2 / E2)"));
+            % 装置・工程が1種類なら Wafer ID だけ
+            data = alignest.prepareData(rasterTable(2, 2, 1:4), ...
+                alignest.guessColumnMapping(rasterTable(2, 2, 1:4).Properties.VariableNames));
+            testCase.verifyEqual(data.units(1).label, "W01");
+        end
+
         function shotSizeComesFromCenterSpacing(testCase)
             raw = smallTable();
             data = alignest.prepareData(raw, alignest.guessColumnMapping(raw.Properties.VariableNames));
@@ -410,4 +485,15 @@ raw = table(repmat("W01", n, 1), repmat("2026/10/17 09:00:00", n, 1), shotIndex,
     'VariableNames', ["Wafer", "DateTime", "shotNo", "Direction", "Xmm", "Ymm", "Radius", "markNo", "markXmm", ...
     "markYmm", "measX", "measY", "StsX", "StsY"]);
 raw.StsX(7) = -1;
+end
+
+function raw = rasterTable(nRows, nColumns, shotNos)
+% nRows × nColumns の Shot（Mark 1 点）。Shot は上の行から左→右の順に並べ、shotNo をその順に shotNos で付ける
+[column, row] = meshgrid(1:nColumns, 1:nRows);
+order = reshape(permute(cat(3, row, column), [2, 1, 3]), [], 2);   % 上の行から、各行は左→右
+Xmm = (order(:, 2) - (nColumns + 1) / 2) * 26;
+Ymm = ((nRows + 1) / 2 - order(:, 1)) * 33;
+n = numel(Xmm);
+raw = table(repmat("W01", n, 1), shotNos(:), Xmm, Ymm, zeros(n, 1), zeros(n, 1), 0.01 * Xmm, -0.01 * Ymm, ...
+    'VariableNames', ["Wafer", "shotNo", "Xmm", "Ymm", "markXmm", "markYmm", "measX", "measY"]);
 end

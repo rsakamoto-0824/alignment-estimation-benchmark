@@ -6,6 +6,7 @@ function methods = buildMethodList(config)
 %   RBF_gaussian_<説明変数> を追加。TPS・RBF・OK・UK の Backfitting は既存 id に _backfit を付ける。
 %   GPR のカーネル matern・ardmatern は config.gpr.maternNu の ν ごとに matern_nu<ν>・ardmatern_nu<ν> にする。
 %   GAM の形状関数にガウス過程回帰の項があれば、id に _gp-<項>（例：GAM_XYR_gp-xy-r）を付ける。
+%   config.gam.shapes は項（xy・r）ごとに選んだ形状関数（spline・gp。1つ以上）で、その組み合わせをすべて並べる。
 [modeNames, modeLabels] = alignest.models.gprFactorModes();
 config = alignest.completeMethodSettings(config);
 methods = struct("id", {}, "family", {}, "featureSet", {}, "variant", {}, "factorMode", {}, "label", {});
@@ -44,9 +45,11 @@ for featureSet = string(config.featureSets(:)).'
         end
     end
     if config.gam.enabled
-        [idSuffix, variant, labelSuffix] = gamShapeNames(featureSet, config.gam.shapes);
-        methods(end + 1) = item("GAM_" + featureSet + idSuffix, "GAM", featureSet, variant, "factor", ...
-            "GAM｜" + featureLabel + "（質的変数あり）" + labelSuffix); %#ok<AGROW>
+        for shapes = gamShapeCombinations(featureSet, config.gam.shapes)
+            [idSuffix, variant, labelSuffix] = gamShapeNames(featureSet, shapes);
+            methods(end + 1) = item("GAM_" + featureSet + idSuffix, "GAM", featureSet, variant, "factor", ...
+                "GAM｜" + featureLabel + "（質的変数あり）" + labelSuffix); %#ok<AGROW>
+        end
     end
 end
 if config.polynomial.enabled
@@ -78,6 +81,34 @@ for name = string(names(:)).'
     end
 end
 kernels = unique(kernels, 'stable');
+end
+
+function combinations = gamShapeCombinations(featureSet, shapes)
+% 項ごとに選んだ形状関数の組み合わせ（構造体配列。各要素は項ごとに1つの形状関数）。スプラインだけの組を先に並べる
+terms = alignest.models.gamTerms(featureSet);
+choices = cell(1, numel(terms));
+for k = 1:numel(terms)
+    chosen = "spline";
+    if isfield(shapes, terms(k))
+        chosen = unique(string(shapes.(terms(k))), 'stable');
+    end
+    if isempty(chosen)
+        error('alignest:gamShape', 'GAM の形状関数を、項（%s）ごとにスプラインかガウス過程回帰の少なくとも1つ選んでください。', ...
+            terms(k));
+    end
+    choices{k} = [chosen(chosen == "spline"), chosen(chosen ~= "spline")];
+end
+counts = cellfun(@numel, choices);
+combinations = struct();
+combinations(prod(counts)).(terms(1)) = "";
+for index = 1:prod(counts)
+    picks = cell(1, numel(terms));
+    [picks{:}] = ind2sub(flip(counts), index);
+    picks = flip(cell2mat(picks));
+    for k = 1:numel(terms)
+        combinations(index).(terms(k)) = choices{k}(picks(k));
+    end
+end
 end
 
 function [idSuffix, variant, labelSuffix] = gamShapeNames(featureSet, shapes)

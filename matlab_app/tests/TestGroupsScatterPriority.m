@@ -112,15 +112,62 @@ classdef TestGroupsScatterPriority < matlab.unittest.TestCase
             centers = [0, 0; 10, 0; 20, 0; 30, 0; 40, 0];
             handle = alignest.plot.covarianceEllipses(ax, centers, covariance, 2);
             testCase.verifyEqual(size(handle.Faces, 1), 4);
-            colors = reshape(handle.FaceVertexCData, [], 4);
-            testCase.verifyEqual(colors(1, :), [0.5, 0, 0.9, 0], 'AbsTol', 1e-12);
-            testCase.verifyEqual(max(abs(colors - colors(1, :)), [], 'all'), 0, "1つの楕円は同じ色");
-            testCase.verifyEqual(ax.CLim, [0, 1]);
-            testCase.verifyNotEmpty(ax.Colorbar);
+            testCase.verifyEqual(handle.UserData.', [0.5, 0, 0.9, 0], 'AbsTol', 1e-12);
+            % 色は |r| の色の並び（灰色 → 紫）から RGB で付ける（図の colormap は矢印の長さに使う）
+            scale = alignest.plot.correlationScale();
+            expected = interp1(linspace(0, 1, size(scale, 1)), scale, [0.5; 0; 0.9; 0]);
+            rgb = reshape(handle.FaceVertexCData, [], 4, 3);
+            testCase.verifyEqual(squeeze(rgb(1, :, :)), expected, 'AbsTol', 1e-12);
+            testCase.verifyEqual(squeeze(rgb(1, 2, :)).', scale(1, :), 'AbsTol', 1e-12, "|r| = 0 は灰色");
+            testCase.verifyEqual(max(abs(rgb - rgb(1, :, :)), [], 'all'), 0, "1つの楕円は同じ色");
+            testCase.verifyEmpty(ax.Colorbar, "楕円だけでは右の目盛りを付けない");
+            alignest.plot.correlationScale(ax);
+            testCase.verifyNotEmpty(findall(ax, 'Tag', 'correlationScale'));
             % 半径は √固有値 × 倍率（相関 0・分散 2 と 3 の楕円は x に √2×2、y に √3×2）
             second = handle.Vertices(handle.Faces(2, :), :);
             testCase.verifyEqual(max(second) - min(second), 2 * 2 * sqrt([2, 3]), 'RelTol', 0.01);
             testCase.verifyEmpty(alignest.plot.covarianceEllipses(ax, [0, 0], [NaN, NaN, NaN], 1));
+        end
+
+        function groupByChoosesTheAveragingUnit(testCase)
+            units = testCase.Data.units;
+            options = alignest.groupOptions(units, "all");
+            testCase.verifyEqual([options(6:end).label], "平均：全 Wafer（5 枚）");
+            options = alignest.groupOptions(units, "lotId");
+            testCase.verifyEqual([options(6:end).label], "平均：LotID = LOTSIM01（5 枚）", "選んだ単位は値が1種類でも出す");
+            options = alignest.groupOptions(units, "eqpId");
+            testCase.verifyEqual({options(6:end).unitIndex}, {1:3, [4, 5]});
+            % その他の列は Mark ごとの値。値ごとに、その値の Mark がある Wafer を集め、Mark を絞る
+            [units.attributeNames] = deal("Chuck");
+            for u = 1:numel(units)
+                units(u).marks.attributes = repmat("A", numel(units(u).marks.x), 1);
+                units(u).marks.attributes(units(u).marks.markNo == 1) = "B";
+            end
+            units(5).marks.attributes(:) = "A";
+            options = alignest.groupOptions(units, "col:Chuck");
+            testCase.verifyEqual([options(6:end).label], ["平均：Chuck = A（5 枚）", "平均：Chuck = B（4 枚）"]);
+            testCase.verifyEqual(options(7).column, "Chuck");
+            testCase.verifyEqual(options(7).level, "B");
+            testCase.verifyError(@() alignest.groupOptions(units, "col:Missing"), 'alignest:groupBy');
+            testCase.verifyError(@() alignest.groupOptions(units, "wafer"), 'alignest:groupBy');
+        end
+
+        function arrowColorIsVectorLength(testCase)
+            figureHandle = figure('Visible', 'off');
+            cleanup = onCleanup(@() close(figureHandle));
+            ax = axes(figureHandle);
+            points = [0, 0; 10, 0; 20, 0; 30, 0];
+            vectors = [3, 4; 0, 1; NaN, 1; 0, 0];   % 長さ 5・1、NaN と 長さ 0 は描かない
+            handle = alignest.plot.magnitudeArrows(ax, points, vectors, 2);
+            testCase.verifyEqual(size(handle.Vertices, 1), 2 * 4, "矢印ごとに根元・先・矢じり2点");
+            testCase.verifyEqual(size(handle.Faces), [2 * 3, 2], "矢印ごとに線3本");
+            testCase.verifyEqual(handle.FaceVertexCData, repelem([5; 1], 4));
+            testCase.verifyEqual(handle.Vertices(2, :), [0, 0] + [3, 4] * 2, "先は 値 × 倍率");
+            testCase.verifyEqual(ax.CLim, [0, 5]);
+            testCase.verifyEqual(string(ax.Colorbar.Title.String), "|v| [nm]");
+            alignest.plot.magnitudeArrows(ax, points, vectors, 2, magnitudeLimit=10);
+            testCase.verifyEqual(ax.CLim, [0, 10], "並べる図と色の範囲をそろえる");
+            testCase.verifyEmpty(alignest.plot.magnitudeArrows(ax, [0, 0], [NaN, NaN], 1));
         end
 
         function priorityFileIsReadByColumnNames(testCase)

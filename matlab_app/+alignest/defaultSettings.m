@@ -8,8 +8,10 @@ settings.data.validRadiusMm = 150;      % この半径以上の点は除く
 settings.data.coordinateUnits = alignest.coordinateUnits();
 settings.data.excludeZeroMeasurements = false; % measX・measY がともに0の入力行を除く
 settings.data.excludeUnmeasuredRecords = false; % StsX・StsY のどちらかが−1の入力行を除く
-settings.data.directionRule = "none";   % Direction が無い行に Scan 方向を付ける規則（alignest.directionRules）
+settings.data.directionRule = "serpentine";  % Direction が無い行に Scan 方向を付ける規則（alignest.directionRules。一筆書き）
 settings.data.invertDirection = false;  % 規則で付ける 1 と 2 を入れ替える
+settings.data.directionOverrideShots = zeros(1, 0);   % 画面で Scan 方向を変えた shotNo（すべての Wafer に当てる）
+settings.data.directionOverrideValues = zeros(1, 0);  % その Scan 方向（1・2。shotNo と同じ順）
 % 質的変数（GPR・GAM・TPS／RBF／Kriging の Backfitting で使う）
 settings.factors.scan = true;           % Scan 方向（Direction）
 settings.factors.mark = true;           % Mark 番号（markNo）
