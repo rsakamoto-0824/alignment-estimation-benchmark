@@ -61,6 +61,11 @@ settings.evaluation.outlierSigma = 3;         % 異常値とみなす σ の倍�
 
 % Overlay 補正の評価（推定誤差で Overlay 残差がどれだけ増えるか。alignest.overlayChoice）。すべて「なし」なら評価しない
 settings.overlay.waferOrder = 1;         % Wafer 成分：Shot 中心の座標の多項式の次数（0 = なし、1 = 並進・倍率・回転・直交度）
-settings.overlay.shotCommon = "linear";  % Shot 共通成分：none・linear（k1〜k6）・asml・canon・nikon
+settings.overlay.shotCommon = "linear";  % Shot 共通成分：none・linear（k1〜k6）・asml・canon・nikon・formula（下の式）
 settings.overlay.perShot = "none";       % Shot ごとの成分：none・translation（k1・k2）・linear（k1〜k6）
+% 補正の式を入力するとき（alignest.parseCorrectionFormula）。Wafer 成分は waferUseFormula が true なら次数の代わりに使う。
+% 式の x・y は、Wafer 成分では Shot 中心の座標、Shot 共通成分では Shot 内の座標。係数は最小二乗で求める
+settings.overlay.waferUseFormula = false;
+settings.overlay.waferFormula = struct("dx", "k1 + k3*x + k5*y", "dy", "k2 + k4*y + k6*x");
+settings.overlay.shotFormula = struct("dx", "k1 + k3*x + k5*y", "dy", "k2 + k4*y + k6*x");
 end

@@ -7,6 +7,9 @@ function methods = buildMethodList(config)
 %   GPR のカーネル matern・ardmatern は config.gpr.maternNu の ν ごとに matern_nu<ν>・ardmatern_nu<ν> にする。
 %   GAM の形状関数にガウス過程回帰の項があれば、id に _gp-<項>（例：GAM_XYR_gp-xy-r）を付ける。
 %   config.gam.shapes は項（xy・r）ごとに選んだ形状関数（spline・gp。1つ以上）で、その組み合わせをすべて並べる。
+%   ガウス過程の項がある組は、config.gam.gpKernels のカーネルごとに並べる（matern は config.gam.gpMaternNu の ν ごと）。
+%   matern52 は以前と同じ id、ほかのカーネルは id の最後に _<カーネル>（例：GAM_XYR_gp-xy_matern32）を付ける。
+%   variant は "gp:<項>+<項>:<カーネル>"（例：gp:xy+r:matern52）。
 [modeNames, modeLabels] = alignest.models.gprFactorModes();
 config = alignest.completeMethodSettings(config);
 methods = struct("id", {}, "family", {}, "featureSet", {}, "variant", {}, "factorMode", {}, "label", {});
@@ -45,10 +48,27 @@ for featureSet = string(config.featureSets(:)).'
         end
     end
     if config.gam.enabled
+        gpKernels = gamKernels(config.gam);
         for shapes = gamShapeCombinations(featureSet, config.gam.shapes)
             [idSuffix, variant, labelSuffix] = gamShapeNames(featureSet, shapes);
-            methods(end + 1) = item("GAM_" + featureSet + idSuffix, "GAM", featureSet, variant, "factor", ...
-                "GAM｜" + featureLabel + "（質的変数あり）" + labelSuffix); %#ok<AGROW>
+            if variant == "pspline"
+                kernels = "";   % スプラインだけの組はカーネルを使わない
+            else
+                kernels = gpKernels;
+            end
+            for kernel = kernels
+                id = "GAM_" + featureSet + idSuffix;
+                label = "GAM｜" + featureLabel + "（質的変数あり）" + labelSuffix;
+                kernelVariant = variant;
+                if kernel ~= ""
+                    kernelVariant = variant + ":" + kernel;
+                    label = label + "（" + replace(kernel, "_nu", " ν=") + "）";
+                    if kernel ~= "matern52"
+                        id = id + "_" + kernel;
+                    end
+                end
+                methods(end + 1) = item(id, "GAM", featureSet, kernelVariant, "factor", label); %#ok<AGROW>
+            end
         end
     end
 end
@@ -81,6 +101,21 @@ for name = string(names(:)).'
     end
 end
 kernels = unique(kernels, 'stable');
+end
+
+function kernels = gamKernels(gam)
+% GAM のガウス過程の形状関数のカーネル（matern は ν ごとの名前に展開する）
+names = unique(string(gam.gpKernels(:)).', 'stable');
+choices = alignest.models.gamKernelChoices();
+if isempty(names)
+    error('alignest:gamKernel', 'GAM のガウス過程回帰のカーネルを1つ以上選んでください。');
+end
+unknown = names(~ismember(names, choices));
+if ~isempty(unknown)
+    error('alignest:gamKernel', 'GAM のガウス過程回帰のカーネルは %s のいずれかです: %s', strjoin(choices, "・"), ...
+        strjoin(unknown, "・"));
+end
+kernels = expandKernels(names, gam.gpMaternNu);
 end
 
 function combinations = gamShapeCombinations(featureSet, shapes)

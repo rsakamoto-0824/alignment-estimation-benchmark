@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="アライメント計測値の面内推定 検証ツール（MATLAB アプリ）の管理者向け資料。アプリの構成と、保守で想定される作業・確認・困ったときの対処。">
+  <title>検証ツール 管理者ガイド</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="procedure-guide.css">
+  <style>
+    /* テンプレートに無い部品だけを足す */
+    .sub-heading {
+      margin-top: 30px;
+      padding-left: 10px;
+      border-left: 3px solid var(--color-blue-500);
+    }
+
+    /* 長い関数名・ファイル名は表や段落の幅で折り返す（横にはみ出さない） */
+    td code,
+    li code,
+    p code {
+      overflow-wrap: anywhere;
+    }
+
+    td:first-child {
+      white-space: nowrap;
+    }
+  </style>
+  <script src="procedure-guide.js" defer></script>
+</head>
+<body id="top">
+  <a class="skip-link" href="#main-content">本文へ移動</a>
+
+  <button
+    id="toc-toggle"
+    class="toc-toggle"
+    type="button"
+    aria-controls="sidebar"
+    aria-expanded="false"
+  >
+    <span aria-hidden="true">☰</span> 目次
+  </button>
+
+  <aside id="sidebar" class="sidebar" aria-label="目次">
+    <div class="sidebar-header">
+      <p class="eyebrow">Internal Procedure</p>
+      <p class="sidebar-title">面内推定 検証ツール</p>
+      <p class="sidebar-subtitle">管理者ガイド</p>
+    </div>
+    <nav>
+      <ol class="toc-list">
+        <li><a href="#overview">1. 目的と対象</a></li>
+        <li><a href="#prerequisites">2. 作業前の確認</a></li>
+        <li><a href="#workflow">3. 処理の流れ</a></li>
+        <li><a href="#structure">4. アプリの構成</a></li>
+        <li><a href="#files">5. 設定とファイル</a></li>
+        <li><a href="#maintenance">6. 保守の作業</a></li>
+        <li><a href="#verification">7. 完了確認</a></li>
+        <li><a href="#troubleshooting">8. 困ったとき</a></li>
+      </ol>
+    </nav>
+    <div class="sidebar-footer">
+      <span class="status-dot" aria-hidden="true"></span>
+      社内利用
+    </div>
+  </aside>
+  <div id="sidebar-overlay" class="sidebar-overlay" aria-hidden="true"></div>
+
+  <main id="main-content" class="main-content">
+    <header class="hero">
+      <div class="hero-content">
+        <p class="eyebrow">Administrator Guide · Internal Use</p>
+        <h1>面内推定 検証ツール<br><span>管理者ガイド（構成と保守）</span></h1>
+        <p class="hero-lead">
+          アライメント計測値の面内推定 検証ツール（MATLAB アプリ）を管理する人向けに、アプリの作りと、
+          保守で起こりそうな作業の進め方・確かめ方・困ったときの対処をまとめます。
+        </p>
+        <div class="hero-badges" aria-label="文書情報">
+          <span>対象: アプリの管理者・保守担当</span>
+          <span>対象の版: MATLAB R2022b</span>
+          <span>更新日: 2026/10/22</span>
+        </div>
+      </div>
+    </header>
+
+    <section id="overview" class="content-section">
+      <div class="section-heading">
+        <span class="section-number">01</span>
+        <div>
+          <p class="section-kicker">Overview</p>
+          <h2>目的と対象</h2>
+        </div>
+      </div>
+      <p>
+        このツールは、アライメント計測の Excel（または CSV）を読み込み、一部の Shot の計測値から残りの Shot の値を推定して、
+        推定の手法・学習 Shot の選び方を比べる画面つきアプリです。利用者の操作は
+        <a href="../windows_guide/windows_guide.html">Windows 手順書</a>と PowerPoint の手順書で説明しています。
+        この資料は、アプリを直す・配る・不具合を調べる管理者のためのものです。
+      </p>
+
+      <div class="card-grid three-columns">
+        <article class="feature-card">
+          <span class="card-label">Audience</span>
+          <h3>対象者</h3>
+          <p>MATLAB の関数を読んで直せる人。統計・推定手法の細部まで知らなくても、この資料の「変更する場所」の表から直す場所を探せます。</p>
+        </article>
+        <article class="feature-card">
+          <span class="card-label">Scope</span>
+          <h3>対象範囲</h3>
+          <p>リポジトリの <code>matlab_app</code> フォルダ（画面・計算・テスト・exe の作成・手順書）。Python 版（<code>src</code>）は照合の基準値としてだけ使います。</p>
+        </article>
+        <article class="feature-card">
+          <span class="card-label">Goal</span>
+          <h3>この資料でできること</h3>
+          <p>直す場所が分かり、直した後に自動テスト・サンプルデータ・exe で確かめて、利用者に配れる状態にすること。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="prerequisites" class="content-section">
+      <div class="section-heading">
+        <span class="section-number">02</span>
+        <div>
+          <p class="section-kicker">Prerequisites</p>
+          <h2>作業前の確認</h2>
+        </div>
+      </div>
+      <ul class="check-list">
+        <li>MATLAB R2022b（本体だけ。Toolbox は使っていません）。exe を作るときだけ MATLAB Compiler が要ります。</li>
+        <li>直す前の <code>matlab_app</code> フォルダを残しておく（Git を使うなら、作業用のブランチを作る）。</li>
+        <li>自動テストが全件成功することを、直す前に一度確かめる（<a href="#maintenance">6. 保守の作業</a>の「テストを実行する」）。失敗が直す前からあるのか、直したせいかを区別するためです。</li>
+        <li>確かめに使うデータは、同梱の模擬データ（<code>sample_data/sample_alignment.xlsx</code>）にする。</li>
+      </ul>
+
+      <div class="callout warning">
+        <div class="callout-icon" aria-hidden="true">!</div>
+        <div>
+          <h3>実データ・社内情報の扱い</h3>
+          <p>
+            このリポジトリは公開設定です。会社の計測データ、評価結果・推定値の Excel、社内の装置名などを
+            リポジトリに入れないでください。不具合を再現するときは、模擬データか、値を変えたデータを使います。
+          </p>
+        </div>
+      </div>
+
+      <div class="callout tip">
+        <div class="callout-icon" aria-hidden="true">✓</div>
+        <div>
+          <h3>会社で直すときの進め方</h3>
+          <p>
+            1回の変更は1つの関数（または近い数個）に絞ると、テストで確かめやすく、元に戻すのも簡単です。
+            GitHub Copilot に相談するときは、直したい関数と、この資料の該当する表の行だけを渡し、
+            一度に大きく書き換えさせないでください（従量課金の利用料を抑えるためにも、依頼は具体的に1つずつ）。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="workflow" class="content-section">
+      <div class="section-heading">
+        <span class="section-number">03</span>
+        <div>
+          <p class="section-kicker">Workflow</p>
+          <h2>処理の流れ</h2>
+        </div>
+      </div>
+      <p>画面のタブの順に、データは次のように流れます。カッコの中は、その処理をする主な関数（<code>alignest.</code> は省略）です。</p>
+      <div class="workflow">
+        <div class="workflow-step"><span>1</span><strong>読み込み</strong><small>readMeasurementFile・prepareData</small></div>
+        <div class="workflow-arrow" aria-hidden="true">→</div>
+        <div class="workflow-step"><span>2</span><strong>学習 Shot</strong><small>buildPlanSpecs・planTrainingShots</small></div>
+        <div class="workflow-arrow" aria-hidden="true">→</div>
+        <div class="workflow-step"><span>3</span><strong>推定</strong><small>buildMethodList・estimateWafer</small></div>
+        <div class="workflow-arrow" aria-hidden="true">→</div>
+        <div class="workflow-step"><span>4</span><strong>評価・集計</strong><small>runEvaluation・summarizeResults</small></div>
+        <div class="workflow-arrow" aria-hidden="true">→</div>
+        <div class="workflow-step"><span>5</span><strong>書き出し</strong><small>exportResults・exportEstimates</small></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>段階</th><th>すること</th><th>主な関数</th></tr></thead>
+          <tbody>
+            <tr><td>読み込み</td><td>Excel・CSV を読み、列を標準の項目に対応づけ、座標の単位をそろえ、行を除き、Wafer（工程・装置・ロット・測定日時で区別）ごとにまとめる。Scan 方向が無ければ規則で付ける</td><td><code>readMeasurementFile</code>・<code>guessColumnMapping</code>・<code>checkCoordinateUnits</code>・<code>prepareData</code>・<code>directionRules</code></td></tr>
+            <tr><td>学習 Shot</td><td>学習 Shot 数（または計測率）ごとに、制約付き I 最適・ランダム・手動・ファイルの優先順で学習 Shot を選ぶ。同じ配置の Wafer は同じ選び方を使い回す</td><td><code>buildPlanSpecs</code>・<code>cachedTrainingPlan</code>・<code>planTrainingShots</code>・<code>constrainedIOptimal</code>・<code>designCriteria</code></td></tr>
+            <tr><td>推定</td><td>手法ごとに、学習 Shot の計測値から学習しなかった Shot の値を X・Y 別に推定する</td><td><code>buildMethodList</code>・<code>estimateWafer</code>・<code>+models</code> の関数</td></tr>
+            <tr><td>評価・集計</td><td>評価点（学習しなかった Shot の有効な Mark）の RMSE・MAE・R² などと、Overlay 補正の残差の変化を求め、手法 × 学習パターンで集計する</td><td><code>runEvaluation</code>・<code>computeMetrics</code>・<code>overlayCorrection</code>・<code>summarizeResults</code>・<code>pairedComparison</code></td></tr>
+            <tr><td>書き出し・読み込み</td><td>評価結果・推定値を Excel に書き出す。書き出した Excel を読み込んで、計測ファイルなしで表・グラフ・マップを描き直す</td><td><code>exportResults</code>・<code>exportEstimates</code>・<code>importResults</code>・<code>importEstimates</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="structure" class="content-section">
+      <div class="section-heading">
+        <span class="section-number">04</span>
+        <div>
+          <p class="section-kicker">Structure</p>
+          <h2>アプリの構成</h2>
+        </div>
+      </div>
+      <h3 class="sub-heading">フォルダ</h3>
+      <div class="code-block" data-language="フォルダ">
+        <pre><code>matlab_app/
+├─ runAlignmentEstimationApp.m   起動の入口（exe もここから始まる）
+├─ AlignmentEstimationApp.m      画面（タブ 1〜5 と、画面から呼ぶ公開メソッド）
+├─ +alignest/                    計算・入出力の関数（パッケージ。関数名は alignest.○○）
+│  ├─ +models/   推定の手法（GPR・TPS・RBF・Kriging・GAM・多項式・RT モデル）
+│  ├─ +basis/    基底関数・設計行列（B スプライン・多項式・Zernike・効果コード）
+│  ├─ +stats/    統計（正規性検定・ANOVA・パーセント点・JS ダイバージェンス）
+│  ├─ +plot/     図（Wafer マップ・共分散楕円・ヒストグラム・計測マップ）
+│  └─ +optim/    上下限つきの最小化（GPR の超パラメータの推定。Toolbox 不要）
+├─ tests/        自動テスト（runAllTests）と Python 版の基準値（reference/）
+├─ sample_data/  模擬データ（sample_alignment.xlsx・.csv と作成スクリプト）
+├─ build/        exe を作るスクリプト（buildStandaloneApp.m）
+└─ docs/         手順書（windows_guide・powerpoint_guide）と、この資料（admin_guide）</code></pre>
+      </div>
+
+      <h3 class="sub-heading">画面と計算の分け方</h3>
+      <p>
+        画面のファイル <code>AlignmentEstimationApp.m</code> は、部品を並べて、入力を設定（<code>app.Settings</code>）にし、
+        計算の関数を呼んで結果を表示するだけにしています。計算は <code>+alignest</code> の関数にあり、画面なしで呼べるので、
+        自動テストも計算の関数を直接確かめます。計算を直すときは、まず <code>+alignest</code> の関数を探してください。
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>タブ</th><th>画面の関数（AlignmentEstimationApp.m）</th><th>主に呼ぶ計算の関数</th></tr></thead>
+          <tbody>
+            <tr><td>1. データの読み込み</td><td><code>buildDataTab</code>・<code>drawPreview</code>・<code>drawLayout</code>・<code>drawShotOverlay</code></td><td><code>readMeasurementFile</code>・<code>prepareData</code>・<code>groupOptions</code>・<code>averageFields</code>・<code>shotOverlay</code>・<code>plot.waferMap</code></td></tr>
+            <tr><td>2. 評価の設定</td><td><code>buildSettingsTab</code>・<code>settingsToControls</code>・<code>controlsToSettings</code>・<code>validateSettings</code>・<code>updateEnabled</code></td><td><code>defaultSettings</code>・<code>loadSettings</code>・<code>saveSettings</code>・<code>buildMethodList</code>・<code>estimateRunSeconds</code></td></tr>
+            <tr><td>3. 実行</td><td><code>buildRunTab</code>・<code>evaluate</code>・<code>drawMeasurementMap</code></td><td><code>runEvaluation</code>・<code>cachedTrainingPlan</code>・<code>plot.measurementMap</code></td></tr>
+            <tr><td>4. 結果一覧</td><td><code>buildResultsTab</code>・<code>refreshResultControls</code>・<code>drawChart</code>・<code>analyzeResiduals</code>・<code>drawScatter</code>・<code>compareDistributions</code></td><td><code>summarizeResults</code>・<code>pairedComparison</code>・<code>collectEstimates</code>・<code>residualAnalysis</code>・<code>distributionComparison</code>・<code>exportResults</code>・<code>importResults</code>・<code>importEstimates</code></td></tr>
+            <tr><td>5. Wafer ごとのマップ</td><td><code>buildMapTab</code>・<code>drawMap</code>・<code>drawGroupMap</code>・<code>drawImportedMap</code>・<code>drawOverlayMap</code></td><td><code>estimateWafer</code>・<code>averageFields</code>・<code>overlayProjector</code>・<code>overlayCorrection</code>・<code>plot.waferMap</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout info">
+        <div class="callout-icon" aria-hidden="true">i</div>
+        <div>
+          <h3>設定の画面を直すときの4つの関数</h3>
+          <p>
+            「2. 評価の設定」の部品を足すときは、次の4つをそろえて直します：
+            <code>settingsToControls</code>（設定 → 画面）、<code>controlsToSettings</code>（画面 → 設定）、
+            <code>validateSettings</code>（入力の確認と赤字の説明）、<code>updateEnabled</code>（使えない部品を灰色にする）。
+            1つでも抜けると、設定ファイルの保存・読み込みで値が戻らない不具合になります。
+          </p>
+        </div>
+      </div>
+
+      <h3 class="sub-heading">推定の手法</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>手法</th><th>関数（+models）</th><th>手法の識別子（id）の例</th></tr></thead>
+          <tbody>
+            <tr><td>GPR（ガウス過程回帰）</td><td><code>gprSetup</code>・<code>gprFit</code>・<code>gprPredict</code>・<code>gprKernel</code></td><td><code>GPR_matern52_XYR_basis</code>（カーネル・説明変数・質的変数の扱い）</td></tr>
+            <tr><td>TPS・RBF</td><td><code>tpsFitPredict</code>・<code>rbfFitPredict</code>・<code>spatialBackfit</code></td><td><code>TPS_XYR</code>、<code>RBF_gaussian_XYR_backfit</code></td></tr>
+            <tr><td>Kriging</td><td><code>krigingSetup</code>・<code>krigingFitPredict</code>・<code>krigingVariogram</code></td><td><code>OK_exponential_XYR</code>、<code>UK_spherical_XYR</code></td></tr>
+            <tr><td>GAM</td><td><code>gamSetup</code>・<code>gamShapeFit</code>・<code>gamFitPredict</code>・<code>stationaryKernel</code></td><td><code>GAM_XYR</code>、<code>GAM_XYR_gp-xy</code>（ガウス過程 matern52）、<code>GAM_XYR_gp-xy_matern32</code></td></tr>
+            <tr><td>多項式・RT モデル</td><td><code>polynomialFitPredict</code>・<code>rtFitPredict</code></td><td><code>XY5</code>、<code>RT5</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        手法の一覧と id は <code>buildMethodList</code> が設定から作り、<code>estimateWafer</code> が手法の種類（family）で
+        呼ぶ関数を分けます。id は結果の Excel・基準の手法の選択・以前の結果との比較に使うので、既存の id は変えないでください。
+      </p>
+    </section>
+
+    <section id="files" class="content-section">
+      <div class="section-heading">
+        <span class="section-number">05</span>
+        <div>
+          <p class="section-kicker">Settings &amp; Files</p>
+          <h2>設定とファイル</h2>
+        </div>
+      </div>
+      <h3 class="sub-heading">設定（設定ファイル JSON と同じ形）</h3>
+      <p>
+        初期値はすべて <code>defaultSettings</code> にあります。設定ファイル（JSON）を読むときは
+        <code>loadSettings</code> が初期値に重ねるので、項目を足しても以前の設定ファイルはそのまま読めます
+        （無い項目は初期値になる）。手法の項目は <code>completeMethodSettings</code> が補います。
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>項目</th><th>内容</th><th>主に使う関数</th></tr></thead>
+          <tbody>
+            <tr><td><code>data</code></td><td>Wafer 半径・有効半径、座標の単位、行の除外、Scan 方向の規則と画面での変更</td><td><code>prepareData</code></td></tr>
+            <tr><td><code>factors</code></td><td>質的変数（Scan 方向・Mark 番号・Shot 行の奇偶・その他の列）。<code>separateY</code> と <code>y</code> で Y 成分を別に選ぶ</td><td><code>factorChoice</code>・<code>factorColumnsUsed</code></td></tr>
+            <tr><td><code>sampling</code></td><td>学習 Shot の選び方・数（開始・終了・刻み、計測率）・必ず計測する Shot・制約・乱数の種</td><td><code>buildPlanSpecs</code>・<code>planTrainingShots</code></td></tr>
+            <tr><td><code>methods</code></td><td>比べる手法と選択肢（GPR のカーネル・質的変数の扱い、GAM の形状関数とガウス過程のカーネル など）。<code>options</code> に細かい数値</td><td><code>buildMethodList</code>・<code>estimateWafer</code></td></tr>
+            <tr><td><code>evaluation</code></td><td>外周とみなす半径の比、学習データの異常値の除外（nσ）、処理時間の記録</td><td><code>runEvaluation</code>・<code>computeMetrics</code></td></tr>
+            <tr><td><code>overlay</code></td><td>Overlay 補正の評価のモデル（Wafer 成分・Shot 共通成分・Shot ごとの成分、入力した補正の式）</td><td><code>overlayChoice</code>・<code>overlayProjector</code>・<code>parseCorrectionFormula</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="sub-heading">書き出す・読み込むファイル</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ファイル</th><th>書き出す関数</th><th>読み込む関数</th><th>主なシート</th></tr></thead>
+          <tbody>
+            <tr><td>評価結果の Excel</td><td><code>exportResults</code></td><td><code>importResults</code></td><td>説明・集計_&lt;指標&gt;・集計_統計量・Waferごと・学習Shot・処理時間・設定（JSON）</td></tr>
+            <tr><td>推定値の Excel</td><td><code>exportEstimates</code></td><td><code>importEstimates</code></td><td>説明・推定値（学習データの行も）・正規性検定・ANOVA・Overlay残差</td></tr>
+            <tr><td>計測マップの Excel</td><td>画面の <code>exportMeasurementMap</code></td><td>—</td><td>計測マップ（Shot ごとに学習パターンで計測するか）・学習パターン（Shot 数・I 基準・D 基準など）</td></tr>
+            <tr><td>設定ファイル（JSON）</td><td><code>saveSettings</code></td><td><code>loadSettings</code></td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout warning">
+        <div class="callout-icon" aria-hidden="true">!</div>
+        <div>
+          <h3>Excel の列を変えるときは、書き出しと読み込みを一緒に</h3>
+          <p>
+            「Waferごと」の列名と見出しの対応は <code>resultColumnNames</code>、「推定値」「Overlay残差」の対応は
+            <code>estimateColumnNames</code> の1か所にまとめてあり、書き出しと読み込みの両方がここを使います。
+            見出しを変えるとき・列を足すときはここだけを直します。読み込みは、無い列（以前の版で書き出したファイル）を空・NaN として読みます。
+            必須の列（Wafer・学習パターン・列・手法・手法の識別子など）を変えると、以前のファイルを読めなくなります。
+          </p>
+        </div>
+      </div>
+
+      <h3 class="sub-heading">主な定数（意味を持つ値）</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>値</th><th>場所</th><th>意味</th></tr></thead>
+          <tbody>
+            <tr><td><code>SECONDS_PER_RUN = 2</code></td><td><code>estimateRunSeconds</code></td><td>計算時間の目安の 1 条件（Wafer × 学習パターン × 手法）あたりの秒数</td></tr>
+            <tr><td><code>EXCEL_MAX_DATA_ROWS</code></td><td><code>exportEstimates</code>・画面</td><td>Excel の 1 シートに書ける行数（1,048,575 行）。推定値の書き出しはこれを超えると止める</td></tr>
+            <tr><td><code>MAX_MATERN_NU = 50</code></td><td><code>models.maternNuCheck</code>・画面</td><td>Matérn の ν の上限</td></tr>
+            <tr><td><code>MAX_WAFER_ORDER = 5</code></td><td><code>overlayChoice</code></td><td>Overlay 補正の Wafer 成分の多項式の最大次数</td></tr>
+            <tr><td><code>MAX_POWER = 9</code></td><td><code>parseCorrectionFormula</code></td><td>補正の式で使える x・y のべきの上限</td></tr>
+            <tr><td><code>gamGpLengthScales</code></td><td><code>recommendedMethods</code>（<code>methods.options</code>）</td><td>GAM のガウス過程の長さスケールの候補（Wafer 半径で割った単位）</td></tr>
+            <tr><td><code>ARROW_COLORS</code></td><td>画面（定数）</td><td>共分散楕円と重ねるときの矢印の色（計測値・推定値・残差）</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="maintenance" class="content-section">
+      <div class="section-heading">
+        <span class="section-number">06</span>
+        <div>
+          <p class="section-kicker">Maintenance</p>
+          <h2>保守の作業</h2>
+        </div>
+      </div>
+      <h3 class="sub-heading">想定される作業と、直す場所</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>作業</th><th>起こる場面</th><th>直す場所</th><th>確かめるテスト</th></tr></thead>
+          <tbody>
+            <tr><td>入力の列の名前・項目が変わる</td><td>計測ルール・装置の出力が変わった</td><td><code>standardColumns</code>（標準の項目と必須かどうか）、<code>guessColumnMapping</code>（自動の対応づけ。今は列名の完全一致と、大文字・小文字だけの違い）。読み込み後の扱いは <code>prepareData</code></td><td><code>TestDataPreparation</code></td></tr>
+            <tr><td>Wafer の大きさが違う</td><td>300 mm 以外の Wafer</td><td>設定の <code>data.waferRadiusMm</code>（設定ファイル）と <code>data.validRadiusMm</code>（画面の「有効半径」）</td><td><code>TestDataPreparation</code>・<code>TestEvaluation</code></td></tr>
+            <tr><td>推定の手法を足す・直す</td><td>新しい手法を比べたい</td><td><code>+models</code> に関数を足す → <code>buildMethodList</code>（id・表示名）→ <code>estimateWafer</code>（呼び出し）→ <code>recommendedMethods</code>（初期値）→ 画面の設定の4つの関数</td><td><code>TestModelOptions</code>・<code>TestSpatialModels</code></td></tr>
+            <tr><td>評価指標を足す</td><td>新しい比べ方が要る</td><td><code>computeMetrics</code>（計算）、<code>metricNames</code>（名前と表示名）、<code>metricHigherIsBetter</code>（大きいほど良い指標か）。集計シートに出すなら <code>exportResults</code> の <code>SUMMARY_METRICS</code></td><td><code>TestEvaluation</code>・<code>TestBaselineAndDistributions</code></td></tr>
+            <tr><td>設定の項目を足す</td><td>新しい選択肢</td><td><code>defaultSettings</code>（初期値）→ 使う関数 → 画面の設定の4つの関数。以前の設定ファイルは自動で初期値になる</td><td><code>TestEvaluation</code>（保存・読み込み）・<code>TestAppWorkflow</code></td></tr>
+            <tr><td>補正の式（メーカーの高次式）を足す</td><td>新しい装置の補正モデル</td><td>組み込むなら <code>overlayTerms</code> と <code>overlayChoice</code> の選択肢。利用者が「式を入力」で書くこともできる（直す必要なし）</td><td><code>TestOverlay</code></td></tr>
+            <tr><td>Excel の列を変える</td><td>出力の項目を変えたい</td><td><code>resultColumnNames</code>・<code>estimateColumnNames</code>（書き出しと読み込みで共通）</td><td><code>TestResultsImport</code>・<code>TestAppWorkflow</code></td></tr>
+            <tr><td>時間の目安を合わせる</td><td>会社の PC と目安がずれる</td><td><code>estimateRunSeconds</code> の <code>SECONDS_PER_RUN</code></td><td><code>TestEvaluation</code></td></tr>
+            <tr><td>MATLAB の版を上げる</td><td>会社の MATLAB の更新</td><td>直す場所は無いことが多い。テストと画面の確認、exe の作り直し（MATLAB Runtime も同じ版に）</td><td>全テスト</td></tr>
+            <tr><td>手順書を直す</td><td>画面を変えた</td><td><code>docs/windows_guide/windows_guide.html</code>、<code>docs/powerpoint_guide</code>（画面の撮影は <code>_src/capture_screens.m</code>）、<code>README.md</code></td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="sub-heading">直すときの基本の手順</h3>
+      <ol class="numbered-steps">
+        <li><div><strong>元の状態を残す</strong><p><code>matlab_app</code> フォルダを複製するか、Git のブランチを作ります。</p></div></li>
+        <li><div><strong>直す前にテストを実行する</strong><p>下の「テストを実行する」で、全件成功することを確かめます。</p></div></li>
+        <li><div><strong>計算の関数を直す</strong><p>上の表から直す場所を探します。意味を持つ値（しきい値・既定値・件数など）は関数の先頭で定数にし、名前で意味が分かるようにします。</p></div></li>
+        <li><div><strong>テストを足す・直す</strong><p>直した動きを確かめるテストを <code>tests</code> の該当するファイルに足します。期待する値は、手で計算できる小さな例か、別の方法で求めた値にします。</p></div></li>
+        <li><div><strong>テストと画面で確かめる</strong><p>全テストを実行し、模擬データで「読み込み → 設定 → 実行 → 結果 → マップ → Excel」まで画面で一通り操作します。</p></div></li>
+        <li><div><strong>文書を直し、配る</strong><p>README・手順書を直し、利用者が exe を使うなら exe を作り直して配ります。</p></div></li>
+      </ol>
+
+      <h3 class="sub-heading">テストを実行する</h3>
+      <p>MATLAB で <code>matlab_app</code> フォルダを開き（現在のフォルダにする）、次を入力します。数分かかります。</p>
+      <div class="code-block" data-language="MATLAB">
+        <button class="copy-button" type="button">コピー</button>
+        <pre><code>cd tests
+runAllTests</code></pre>
+      </div>
+      <p>
+        最後に「成功 120 件、失敗 0 件、未完了 0 件」と出れば正常です（2026/10/22 時点の件数。テストを足すと増えます）。
+        1つのファイルだけ確かめるときは <code>runtests('TestOverlay')</code> のようにファイル名を指定します。
+        <code>TestPythonReference</code> は、Python 版の計算結果（<code>tests/reference/python_reference.json</code>）と照合するテストです。
+        計算方法をわざと変えたときは、基準値を作り直すか、テストの許容誤差を見直します。
+      </p>
+
+      <h3 class="sub-heading">exe を作り直す</h3>
+      <p>MATLAB Compiler の入った Windows の PC で、<code>matlab_app</code> フォルダを開いて次を入力します。</p>
+      <div class="code-block" data-language="MATLAB">
+        <button class="copy-button" type="button">コピー</button>
+        <pre><code>addpath build
+buildStandaloneApp(makeInstaller=true)</code></pre>
+      </div>
+      <p>
+        出力は <code>build/output/&lt;OS の種類&gt;/</code> にできます。版を上げるときは <code>buildStandaloneApp.m</code> の
+        <code>APP_VERSION</code> を変えます。exe を使う PC には、exe を作った MATLAB と同じ版の MATLAB Runtime が要ります
+        （ネットに出られない PC には <code>runtimeDelivery="installer"</code> で Runtime を入れたインストーラーを作る）。
+        詳しくは <a href="../windows_guide/windows_guide.html">Windows 手順書</a>の「exe を作る」「exe を配る・使う」を見てください。
+      </p>
+
+      <div class="callout tip">
+        <div class="callout-icon" aria-hidden="true">✓</div>
+        <div>
+          <h3>画面を変えたら、テストの部品名も確かめる</h3>
+          <p>
+            画面のテスト（<code>TestAppWorkflow</code>）と PowerPoint の撮影スクリプトは、画面の部品の名前
+            （<code>app.Controls.○○</code>）と公開メソッド（<code>runEvaluationNow</code>・<code>showMap</code>・
+            <code>importResultsFrom</code> など）を使います。名前を変えたときは、これらも一緒に直してください。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="verification" class="content-section">
+      <div class="section-heading">
+        <span class="section-number">07</span>
+        <div>
+          <p class="section-kicker">Verification</p>
+          <h2>完了確認</h2>
+        </div>
+      </div>
+      <div class="checklist-grid">
+        <article>
+          <h3>動作の確認</h3>
+          <label><input type="checkbox"> 全テストが成功した（失敗 0 件、未完了 0 件）</label>
+          <label><input type="checkbox"> 模擬データで読み込み → 設定 → 実行 → 結果 → マップまで操作できた</label>
+          <label><input type="checkbox"> 評価結果・推定値の Excel を書き出し、「結果を読み込む…」「推定値の Excel を読み込む…」で描き直せた</label>
+          <label><input type="checkbox"> 設定を保存して読み込むと、同じ設定に戻った</label>
+        </article>
+        <article>
+          <h3>配る前の確認</h3>
+          <label><input type="checkbox"> exe を作り直し、別の PC（または Runtime だけの環境）で起動できた</label>
+          <label><input type="checkbox"> README・手順書を新しい画面・項目に合わせた</label>
+          <label><input type="checkbox"> 実データ・評価結果の Excel・社内情報がリポジトリに入っていない</label>
+          <label><input type="checkbox"> 変更した内容と版を利用者に連絡した</label>
+        </article>
+      </div>
+    </section>
+
+    <section id="troubleshooting" class="content-section">
+      <div class="section-heading">
+        <span class="section-number">08</span>
+        <div>
+          <p class="section-kicker">Troubleshooting</p>
+          <h2>困ったとき</h2>
+        </div>
+      </div>
+      <div class="faq-list">
+        <details>
+          <summary>起動すると「関数または変数が認識されません」と出る</summary>
+          <div><p>現在のフォルダが <code>matlab_app</code> になっているか確かめます。<code>alignest.○○</code> の関数は、<code>+alignest</code> フォルダの親（<code>matlab_app</code>）がパスにあると使えます。<code>runAlignmentEstimationApp</code> で起動してください。</p></div>
+        </details>
+        <details>
+          <summary>読み込みで「必要な列がありません」と出る</summary>
+          <div><p>画面の「列の対応」で、足りない項目にファイルの列を選びます。毎回同じなら、ファイルの列名を標準の項目名にそろえるか、<code>guessColumnMapping</code> に別名との対応を足します（今は列名の完全一致と、大文字・小文字だけの違いを自動で対応づけます）。必須の項目は <code>standardColumns</code> の <code>required</code> で決まります。</p></div>
+        </details>
+        <details>
+          <summary>評価に時間がかかりすぎる</summary>
+          <div><p>手法・学習 Shot 数・Wafer の数を減らします。進み具合の画面の「一時中断」で止めても、途中までの結果は残り、「続きから再開」で残りを計算できます。時間の目安は 1 条件 2 秒の一律の値なので、実際とずれるときは「処理時間を記録する」で手法ごとの時間を測り、<code>SECONDS_PER_RUN</code> を見直します。</p></div>
+        </details>
+        <details>
+          <summary>Excel に書き出せない</summary>
+          <div><p>同じ名前のファイルを Excel で開いていると置き換えられません。閉じてからもう一度書き出します。推定値の「すべての手法・学習パターン・Wafer」は行数が Excel の上限を超えることがあるので、範囲を絞ってください。</p></div>
+        </details>
+        <details>
+          <summary>書き出した評価結果・推定値の Excel を読み込めない</summary>
+          <div><p>このアプリで書き出したファイルか、シート名や見出し（「Waferごと」「推定値」など）を Excel で変えていないか確かめます。推定値の Excel は、先に「結果を読み込む…」で同じ評価の評価結果を読み込んでから読み込みます。マップに「書き出した範囲の外」と出るときは、推定値を書き出したときの範囲（手法・学習パターン・Wafer）に、その組み合わせが入っていません。</p></div>
+        </details>
+        <details>
+          <summary>補正の式で赤字のエラーが出る</summary>
+          <div><p>項を + でつなぎ、各項は係数と x・y のべきの積で書きます（例：<code>k1 + k3*x + k5*y + k7*x^2 + k9*x*y</code>）。かっこ・<code>2x</code> のような * の省略・<code>x1</code> のような書き方は使えません。式の読み方は <code>parseCorrectionFormula</code> にあります。</p></div>
+        </details>
+        <details>
+          <summary>「最適化または Backfitting が反復上限内に収束しませんでした」と記録される</summary>
+          <div><p>最終反復の推定値で評価を続けています。多く出るときは、学習 Shot 数が少なすぎないか確かめ、必要なら設定の <code>methods.options.gprMaxIterations</code>・<code>backfitMaxIterations</code> を増やします（時間は増えます）。</p></div>
+        </details>
+        <details>
+          <summary>テストが失敗する</summary>
+          <div><p>直す前の状態でも失敗するかを、元のフォルダで確かめます。直す前から失敗するなら環境（MATLAB の版・言語の設定）の違い、直した後だけなら変更が原因です。失敗の表示の「期待した値」と「実際の値」を比べ、意図した変更ならテストの期待値を、意図しない変更なら関数を直します。</p></div>
+        </details>
+        <details>
+          <summary>exe が起動しない</summary>
+          <div><p>exe を使う PC の MATLAB Runtime が、exe を作った MATLAB と同じ版（R2022b）か確かめます。会社の PC で exe の実行が制限されている場合は、情報システムの担当に確認してください。</p></div>
+        </details>
+      </div>
+
+      <div class="callout info">
+        <div class="callout-icon" aria-hidden="true">i</div>
+        <div>
+          <h3>解決しない場合</h3>
+          <p>エラーの表示（「何が起きたか・なぜか・次にどうするか」の文）と、操作したタブ・ボタン、使った設定ファイルを残して、アプリの管理者どうしで共有してください。実データは共有せず、模擬データで再現できるか先に確かめます。</p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="page-footer">
+      <p>面内推定 検証ツール 管理者ガイド（構成と保守）</p>
+      <p>更新日: 2026/10/22 · 版: 1.0</p>
+    </footer>
+  </main>
+
+  <button id="back-to-top" class="back-to-top" type="button" aria-label="ページ上部へ戻る">
+    <span aria-hidden="true">↑</span>
+    トップへ戻る
+  </button>
+</body>
+</html>

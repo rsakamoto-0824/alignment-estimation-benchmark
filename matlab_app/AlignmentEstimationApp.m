@@ -28,6 +28,7 @@ classdef AlignmentEstimationApp < handle
         LIST_PREVIEW_COUNT = 12         % 学習 Shot 数の並びを画面に出す数（多いときは途中を省く）
         EXCEL_MAX_DATA_ROWS = 1048575   % Excel の最大行数から見出しの1行を除いた数
         MAX_MATERN_NU = 50              % Matérn の ν の上限（alignest.models.maternNuCheck と同じ）
+        FORMULA_CHOICE = -1             % Wafer 成分の選択肢「式を入力」の値（次数 0〜5 と区別する）
     end
 
     properties (SetAccess = private)
@@ -46,6 +47,7 @@ classdef AlignmentEstimationApp < handle
         Analysis = []   % 「推定値と誤差の分布」で最後に分析した結果（推定値の表と検定の結果）
         MeasurementCache = []   % 計測マップの学習パターン（設定・データが変わったら作り直す）
         Distribution = []       % 「分布の比較」で最後に比べた結果（alignest.distributionComparison）
+        ImportedEstimates = []  % Excel から読み込んだ推定値（alignest.importEstimates。読み込んだ評価結果と組で使う）
     end
 
     methods
@@ -248,6 +250,34 @@ classdef AlignmentEstimationApp < handle
             app.Results = results;
             refreshResultControls(app);
             app.TabGroup.SelectedTab = app.Tabs.results;
+        end
+
+        function imported = importEstimatesFrom(app, filePath)
+            %IMPORTESTIMATESFROM 「推定値を Excel に書き出す」で書き出したファイルを読み込み、Excel から読み込んだ評価結果と
+            %   組にする。Wafer マップ・推定値と誤差の分布・散布図・分布の比較を、推定値の Excel にある手法・学習パターン・
+            %   Wafer の範囲で描ける（計測ファイルは要らない）。先に importResultsFrom で評価結果を読み込んでおく。
+            if ~isImportedResults(app.Results)
+                error('alignest:importEstimates', ['先に「結果を読み込む…」で評価結果の Excel を読み込んでください' ...
+                    '（推定値の Excel は、同じ評価から書き出した評価結果と組で使います）。']);
+            end
+            imported = alignest.importEstimates(filePath);
+            results = app.Results;
+            known = @(points) ismember(points.methodId, string({results.methods.id})) & ...
+                ismember(points.group, results.groups) & ismember(points.Wafer, results.unitLabels);
+            matched = known(imported.estimates);
+            if ~any(matched)
+                error('alignest:importEstimates', ['推定値の Excel の手法・学習パターン・Wafer が、読み込んだ評価結果に' ...
+                    'ありません。同じ評価から書き出した2つのファイルを選んでください。']);
+            end
+            imported.estimates = imported.estimates(matched, :);
+            imported.nIgnored = nnz(~matched);
+            if height(imported.overlayPoints) > 0
+                imported.overlayPoints = imported.overlayPoints(known(imported.overlayPoints), :);
+            end
+            app.ImportedEstimates = imported;
+            app.Analysis = [];
+            app.Distribution = [];
+            refreshResultControls(app);
         end
 
         function priority = loadShotPriority(app, filePath)
@@ -588,11 +618,19 @@ classdef AlignmentEstimationApp < handle
             end
             selection = struct("methodIndex", c.distributionMethod.Value, "groups", string(c.distributionGroup.Value), ...
                 "unitIndex", unitIndex);
-            estimates = collectWithProgress(app, selection, app.MapCache, Inf, "分布を比べる推定値を計算しています");
-            if height(estimates) == 0
-                error('alignest:noEstimates', '評価点がありません（この組み合わせは推定できませんでした）。');
+            % 読み込んだ推定値では、Wafer 全面・学習の分布を学習データの行から作る（計測ファイルが無いので）
+            imported = isImportedResults(app.Results);
+            [estimates, messages] = collectWithProgress(app, selection, app.MapCache, Inf, "分布を比べる推定値を計算しています", ...
+                imported);
+            if nnz(estimates.role == "評価") == 0
+                error('alignest:noEstimates', '評価点がありません（この組み合わせは推定できませんでした）。%s', ...
+                    strjoin(messages, newline));
             end
-            comparison = alignest.distributionComparison(app.Data, app.Results, selection, estimates);
+            data = app.Data;
+            if imported
+                data = [];
+            end
+            comparison = alignest.distributionComparison(data, app.Results, selection, estimates);
             comparison.title = sprintf("%s｜%s｜Wafer %d 枚", app.Results.methods(selection.methodIndex).label, ...
                 selection.groups, comparison.nWafers);
             app.Distribution = comparison;
@@ -621,6 +659,10 @@ classdef AlignmentEstimationApp < handle
             %   scope = "selected"：「推定値と誤差の分布」で選んだ手法・学習パターン・Wafer
             %           "all"     ：すべての手法・学習パターン・Wafer（推定をやり直すので時間がかかる）
             requireEstimates(app);
+            if isImportedResults(app.Results)
+                error('alignest:importedResults', ['Excel から読み込んだ推定値は書き出せません（読み込んだファイル「%s」を' ...
+                    'そのまま使ってください）。'], app.ImportedEstimates.file);
+            end
             if nargin < 3
                 scope = string(app.Controls.estimateScope.Value);
             end
@@ -1178,7 +1220,7 @@ classdef AlignmentEstimationApp < handle
             onChange = @(~, ~) app.onSettingsChanged();
 
             samplingPanel = uipanel(grid, 'Title', '学習に使う Shot（この Shot の計測値で、残りの Shot を推定する）');
-            s = uigridlayout(samplingPanel, [40, 2], 'RowHeight', repmat({'fit'}, 1, 40), 'ColumnWidth', {'1x', '1x'}, ...
+            s = uigridlayout(samplingPanel, [42, 2], 'RowHeight', repmat({'fit'}, 1, 42), 'ColumnWidth', {'1x', '1x'}, ...
                 'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
             label(s, '選び方', 1, [1, 2]);
             c.samplingMethod = uidropdown(s, 'Items', {'制約付き I 最適（前回の評価と同じ）', '制約つきランダム', '手動で指定', ...
@@ -1283,22 +1325,30 @@ classdef AlignmentEstimationApp < handle
                 'Excel の「処理時間」シートに出します。各手法の初回は予備の推定を1回して、読み込みの時間を除きます。']);
             place(c.recordTiming, 35, [1, 2]);
             heading(s, 'Overlay 補正の評価（推定誤差で Overlay 残差がどれだけ増えるか）', 36);
-            label(s, 'Wafer 成分（Shot 中心の座標の多項式）', 37, 1);
+            label(s, 'Wafer 成分（Shot 中心の座標の多項式、または式）', 37, 1);
             label(s, 'Shot 共通成分（全 Shot で同じ Shot 内の補正）', 37, 2);
-            c.overlayWafer = uidropdown(s, 'Items', {'なし', '1次（並進・倍率・回転・直交度）', '2次', '3次', '4次', '5次'}, ...
-                'ItemsData', {0, 1, 2, 3, 4, 5}, 'ValueChangedFcn', onChange);
+            c.overlayWafer = uidropdown(s, 'Items', {'なし', '1次（並進・倍率・回転・直交度）', '2次', '3次', '4次', '5次', ...
+                '式を入力'}, 'ItemsData', {0, 1, 2, 3, 4, 5, app.FORMULA_CHOICE}, 'ValueChangedFcn', onChange);
             place(c.overlayWafer, 38, 1);
-            c.overlayShotCommon = uidropdown(s, 'Items', {'なし', '1次（k1〜k6）'}, 'ItemsData', {'none', 'linear'}, ...
-                'ValueChangedFcn', onChange, 'Tooltip', ['Shot 内の座標（markXmm・markYmm）の1次の補正' ...
-                '（k1〜k6：並進・倍率・回転・直交度）。全 Shot で同じ補正量にします。']);
+            c.overlayShotCommon = uidropdown(s, 'Items', {'なし', '1次（k1〜k6）', '式を入力'}, ...
+                'ItemsData', {'none', 'linear', 'formula'}, 'ValueChangedFcn', onChange, ...
+                'Tooltip', ['1次：Shot 内の座標（markXmm・markYmm）の1次の補正（k1〜k6：並進・倍率・回転・直交度）。' ...
+                '式を入力：下の dx・dy の式。どちらも全 Shot で同じ補正量にします。']);
             place(c.overlayShotCommon, 38, 2);
-            label(s, 'Shot ごとの成分', 39, 1);
+            formulaHelp = ['項を + でつなぎ、各項は係数と x・y のべきの積（例：k1 + k3*x + k5*y + k7*x^2 + k9*x*y）。' ...
+                '係数の値は最小二乗で求めるので、係数の名前・符号は補正量に影響しません。'];
+            [c.overlayWaferDx, c.overlayWaferDy] = formulaFields(s, 39, 1, onChange, ['x・y は Shot 中心の座標' ...
+                '（Wafer 中心から）。' formulaHelp]);
+            [c.overlayShotDx, c.overlayShotDy] = formulaFields(s, 39, 2, onChange, ['x・y は Shot 内の座標' ...
+                '（markXmm・markYmm、Shot 中心から）。' formulaHelp]);
+            label(s, 'Shot ごとの成分', 40, 1);
             c.overlayPerShot = uidropdown(s, 'Items', {'なし', '並進（k1・k2）', '1次（k1〜k6）'}, ...
                 'ItemsData', {'none', 'translation', 'linear'}, 'ValueChangedFcn', onChange);
-            place(c.overlayPerShot, 40, 1);
+            place(c.overlayPerShot, 41, 1);
             overlayHelp = label(s, ['すべて「なし」なら評価しません。結果一覧の指標「OVL …」と、Wafer ごとのマップの' ...
-                '「Overlay 補正」で見られます。'], [39, 40], 2);
+                '「Overlay 補正」で見られます。'], [40, 41], 2);
             overlayHelp.FontColor = [0.35, 0.35, 0.35];
+            c.overlayFormulaError = errorLabel(app, s, 42, [1, 2]);
 
             methodPanel = uipanel(grid, 'Title', '比べる手法');
             m = uigridlayout(methodPanel, [22, 4], 'RowHeight', repmat({'fit'}, 1, 22), 'ColumnWidth', {'1x', '1x', '1x', '1x'}, ...
@@ -1404,7 +1454,8 @@ classdef AlignmentEstimationApp < handle
             c.variograms(end).Tooltip = '球形モデル（range より遠い点の相関は 0）。説明変数（X,Y・X,Y,半径）は3次元までなので正定値が保証されます。';
             c.gam = uicheckbox(m, 'Text', 'GAM（一般化加法モデル。選んだ質的変数を含む）', 'ValueChangedFcn', onChange);
             place(c.gam, 17, [1, 4]);
-            shapeGrid = uigridlayout(m, [1, 7], 'Padding', 0, 'ColumnWidth', {'fit', 'fit', 'fit', 'fit', 'fit', 'fit', 'fit'});
+            shapeGrid = uigridlayout(m, [2, 7], 'Padding', 0, 'ColumnWidth', {'fit', 'fit', 'fit', 'fit', 'fit', 'fit', 'fit'}, ...
+                'RowHeight', {'fit', 'fit'});
             place(shapeGrid, 18, [1, 4]);
             label(shapeGrid, '形状関数：', 1, 1);
             [termNames, termLabels] = alignest.models.gamTerms("XYR");
@@ -1417,12 +1468,30 @@ classdef AlignmentEstimationApp < handle
                     c.gamShapeChecks(k, j) = uicheckbox(shapeGrid, 'Text', shapeLabels(j), 'ValueChangedFcn', onChange, ...
                         'UserData', struct("term", termNames(k), "shape", shapeNames(j)), ...
                         'Tooltip', ['チェックした形状関数の組み合わせをすべて評価します（例：X・Y でスプラインとガウス過程回帰の' ...
-                        '両方なら2通り）。スプライン：P-spline（B スプライン＋2階差分の罰則）。ガウス過程回帰：Matérn 5/2 の' ...
+                        '両方なら2通り）。スプライン：P-spline（B スプライン＋2階差分の罰則）。ガウス過程回帰：下で選んだカーネルの' ...
                         'ガウス過程（節点で近似、線形部分は罰則なし）。長さスケールは候補から REML で選び、罰則の強さは' ...
                         'どちらも REML で選びます。半径の項は説明変数が X,Y,半径 のときだけ使います。']);
                     place(c.gamShapeChecks(k, j), 1, 3 * k - 1 + j);
                 end
             end
+            % ガウス過程回帰の形状関数のカーネル（チェックしたカーネルごとに比べる）
+            [gamKernelNames, gamKernelLabels] = alignest.models.gamKernelChoices();
+            kernelGrid = uigridlayout(shapeGrid, [1, numel(gamKernelNames) + 3], 'Padding', 0, ...
+                'ColumnWidth', [{'fit'}, repmat({'fit'}, 1, numel(gamKernelNames)), {'fit', 60}]);
+            kernelGrid.Layout.Row = 2;
+            kernelGrid.Layout.Column = [1, 7];
+            label(kernelGrid, 'ガウス過程回帰のカーネル：', 1, 1);
+            c.gamKernelChecks = gobjects(1, numel(gamKernelNames));
+            for k = 1:numel(gamKernelNames)
+                c.gamKernelChecks(k) = uicheckbox(kernelGrid, 'Text', gamKernelLabels(k), 'UserData', gamKernelNames(k), ...
+                    'ValueChangedFcn', onChange, 'Tooltip', ['形状関数をガウス過程回帰にした項で使うカーネル（等方。' ...
+                    '式は GPR と同じ）。チェックしたカーネルごとに評価します。rationalquadratic の α は 1 に固定します。']);
+                place(c.gamKernelChecks(k), 1, k + 1);
+            end
+            label(kernelGrid, 'ν =', 1, numel(gamKernelNames) + 2);
+            c.gamMaternNu = uieditfield(kernelGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['matern（ν を指定）' ...
+                'の ν。空白で区切ると ν ごとに比べます（例：1 2.5）。']);
+            place(c.gamMaternNu, 1, numel(gamKernelNames) + 3);
             c.polynomial = uicheckbox(m, 'Text', 'XY 多項式　次数：', 'ValueChangedFcn', onChange);
             place(c.polynomial, 19, 1);
             c.polynomialOrder = uispinner(m, 'Limits', [1, 8], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
@@ -1488,15 +1557,31 @@ classdef AlignmentEstimationApp < handle
             c.recordTiming.Value = s.evaluation.recordTiming;
             c.excludeOutliers.Value = s.evaluation.excludeOutliers;
             c.outlierSigma.Value = s.evaluation.outlierSigma;
-            overlay = alignest.overlayChoice(s);
-            c.overlayWafer.Value = overlay.waferOrder;
-            % 画面で選べる Shot 共通成分は「なし」「1次」だけ（以前の設定のメーカー別の高次式は 1次にする）
-            shotCommon = string(overlay.shotCommon);
-            if ~any(shotCommon == ["none", "linear"])
+            % 式は画面に出してから確かめる（読めない式でも設定を読み込めるように、ここでは式を読まない）
+            rawOverlay = fieldOr(s, "overlay", struct());
+            defaultOverlay = alignest.defaultSettings().overlay;
+            plain = s;
+            plain.overlay = rawOverlay;
+            plain.overlay.waferUseFormula = false;
+            if string(fieldOr(rawOverlay, "shotCommon", "none")) == "formula"
+                plain.overlay.shotCommon = "none";
+            end
+            overlay = alignest.overlayChoice(plain);
+            useWaferFormula = logical(fieldOr(rawOverlay, "waferUseFormula", false));
+            c.overlayWafer.Value = ternary(useWaferFormula, app.FORMULA_CHOICE, overlay.waferOrder);
+            % 画面で選べる Shot 共通成分は「なし」「1次」「式を入力」（以前の設定のメーカー別の高次式は 1次にする）
+            shotCommon = string(fieldOr(rawOverlay, "shotCommon", overlay.shotCommon));
+            if ~any(shotCommon == ["none", "linear", "formula"])
                 shotCommon = "linear";
             end
             c.overlayShotCommon.Value = char(shotCommon);
             c.overlayPerShot.Value = char(overlay.perShot);
+            waferFormula = fieldOr(rawOverlay, "waferFormula", defaultOverlay.waferFormula);
+            shotFormula = fieldOr(rawOverlay, "shotFormula", defaultOverlay.shotFormula);
+            c.overlayWaferDx.Value = char(waferFormula.dx);
+            c.overlayWaferDy.Value = char(waferFormula.dy);
+            c.overlayShotDx.Value = char(shotFormula.dx);
+            c.overlayShotDy.Value = char(shotFormula.dy);
             methods = s.methods;
             c.featureXY.Value = any(methods.featureSets == "XY");
             c.featureXYR.Value = any(methods.featureSets == "XYR");
@@ -1510,6 +1595,10 @@ classdef AlignmentEstimationApp < handle
                 end
                 check.Value = any(chosen == check.UserData.shape);
             end
+            for check = c.gamKernelChecks
+                check.Value = any(string(methods.gam.gpKernels) == check.UserData);
+            end
+            c.gamMaternNu.Value = char(strjoin(string(methods.gam.gpMaternNu), " "));
             for k = 1:numel(c.factorModes)
                 c.factorModes(k).Value = any(methods.gpr.factorModes == c.factorModes(k).UserData);
             end
@@ -1600,9 +1689,14 @@ classdef AlignmentEstimationApp < handle
             s.evaluation.excludeOutliers = c.excludeOutliers.Value;
             s.evaluation.outlierSigma = c.outlierSigma.Value;
             s.evaluation.recordTiming = c.recordTiming.Value;
-            s.overlay.waferOrder = c.overlayWafer.Value;
+            s.overlay.waferUseFormula = c.overlayWafer.Value == app.FORMULA_CHOICE;
+            if ~s.overlay.waferUseFormula
+                s.overlay.waferOrder = c.overlayWafer.Value;
+            end
             s.overlay.shotCommon = string(c.overlayShotCommon.Value);
             s.overlay.perShot = string(c.overlayPerShot.Value);
+            s.overlay.waferFormula = struct("dx", string(c.overlayWaferDx.Value), "dy", string(c.overlayWaferDy.Value));
+            s.overlay.shotFormula = struct("dx", string(c.overlayShotDx.Value), "dy", string(c.overlayShotDy.Value));
             featureNames = ["XY", "XYR"];
             s.methods.featureSets = featureNames([c.featureXY.Value, c.featureXYR.Value]);
             s.methods.gpr.enabled = c.gpr.Value;
@@ -1618,6 +1712,11 @@ classdef AlignmentEstimationApp < handle
                     chosen(end + 1) = check.UserData.shape; %#ok<AGROW>
                 end
                 s.methods.gam.shapes.(checks(1).UserData.term) = chosen;
+            end
+            s.methods.gam.gpKernels = checkedValues(c.gamKernelChecks);
+            [values, ok] = parseNumbers(c.gamMaternNu.Value);
+            if ok && ~isempty(values) && all(values > 0 & values <= app.MAX_MATERN_NU)
+                s.methods.gam.gpMaternNu = unique(values, 'stable');
             end
             s.methods.gpr.factorModes = checkedValues(c.factorModes);
             s.methods.tps.enabled = c.tps.Value;
@@ -1731,10 +1830,38 @@ classdef AlignmentEstimationApp < handle
                 empty = ~any(reshape([c.gamShapeChecks.Value], size(c.gamShapeChecks)), 2).';
                 if any(empty & used)
                     text = "⚠ GAM の形状関数を、項（X・Y、半径）ごとにスプラインかガウス過程回帰の少なくとも1つ選んでください。";
+                elseif usesGamKernels(c) && ~any([c.gamKernelChecks.Value])
+                    text = "⚠ GAM のガウス過程回帰のカーネルを1つ以上選んでください。";
+                elseif usesGamKernels(c) && usesGamMaternNu(c)
+                    [values, ok] = parseNumbers(c.gamMaternNu.Value);
+                    if ~ok || isempty(values) || any(values <= 0 | values > app.MAX_MATERN_NU)
+                        text = sprintf("⚠ GAM の Matérn の ν は 0 より大きく %g 以下の数を空白で区切って入れてください。", ...
+                            app.MAX_MATERN_NU);
+                    end
                 end
             end
             c.gamShapeError.Text = text;
             messages = [messages; text(text ~= "")];
+            % Overlay 補正の式（選んだ成分だけ確かめる）
+            texts = strings(0, 1);
+            formulas = {c.overlayWafer.Value == app.FORMULA_CHOICE, "Wafer 成分", c.overlayWaferDx, c.overlayWaferDy; ...
+                string(c.overlayShotCommon.Value) == "formula", "Shot 共通成分", c.overlayShotDx, c.overlayShotDy};
+            for k = 1:size(formulas, 1)
+                if ~formulas{k, 1}
+                    continue
+                end
+                fields = [formulas{k, 3}, formulas{k, 4}];
+                axisNames = ["dx", "dy"];
+                for a = 1:2
+                    try
+                        alignest.parseCorrectionFormula(fields(a).Value, formulas{k, 2} + "の " + axisNames(a));
+                    catch err
+                        texts(end + 1, 1) = "⚠ " + string(err.message); %#ok<AGROW>
+                    end
+                end
+            end
+            c.overlayFormulaError.Text = strjoin(texts, newline);
+            messages = [messages; texts];
         end
 
         function updateEnabled(app)
@@ -1754,9 +1881,13 @@ classdef AlignmentEstimationApp < handle
             set([c.designOrder, c.exchangeStarts], 'Enable', onOff(method == "ioptimal"));
             c.manualPlans.Enable = onOff(method == "manual");
             c.outlierSigma.Enable = onOff(c.excludeOutliers.Value);
+            set([c.overlayWaferDx, c.overlayWaferDy], 'Enable', onOff(c.overlayWafer.Value == app.FORMULA_CHOICE));
+            set([c.overlayShotDx, c.overlayShotDy], 'Enable', onOff(string(c.overlayShotCommon.Value) == "formula"));
             set([c.kernels, c.factorModes], 'Enable', onOff(c.gpr.Value));
             c.maternNu.Enable = onOff(usesMaternNu(c));
             set(c.gamShapeChecks, 'Enable', onOff(c.gam.Value));
+            set(c.gamKernelChecks, 'Enable', onOff(usesGamKernels(c)));
+            c.gamMaternNu.Enable = onOff(usesGamKernels(c) && usesGamMaternNu(c));
             set(c.variograms, 'Enable', onOff(c.ordinaryKriging.Value || c.universalKriging.Value));
             c.tpsFactors.Enable = onOff(c.tps.Value);
             c.rbfFactors.Enable = onOff(c.rbf.Value);
@@ -1996,7 +2127,11 @@ classdef AlignmentEstimationApp < handle
             alignest.plot.distributionHistograms(c.distributionAxes(2), part.samples([3, 4]), part.names([3, 4]), part.edges, ...
                 c.distributionAxis.Value + "：予測対象の実測値と推定値");
             set(c.distributionAxes, 'Visible', 'on', 'FontSize', app.AXES_FONT_SIZE);
-            c.distributionInfo.Text = app.Distribution.title + "｜" + string(c.distributionInfo.UserData);
+            note = "";
+            if isfield(app.Distribution, "note") && app.Distribution.note ~= ""
+                note = "⚠ " + app.Distribution.note + "｜";
+            end
+            c.distributionInfo.Text = app.Distribution.title + "｜" + note + string(c.distributionInfo.UserData);
         end
 
         function onDrawMeasurementMap(app)
@@ -2189,7 +2324,7 @@ classdef AlignmentEstimationApp < handle
         % ================= 4. 結果一覧 =================
         function buildResultsTab(app)
             grid = uigridlayout(app.Tabs.results, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 12, 'RowSpacing', 10);
-            controls = uigridlayout(grid, [3, 6], 'ColumnWidth', {260, 160, '1x', 'fit', 'fit', 'fit'}, 'Padding', 0, ...
+            controls = uigridlayout(grid, [3, 7], 'ColumnWidth', {260, 160, '1x', 'fit', 'fit', 'fit', 'fit'}, 'Padding', 0, ...
                 'RowHeight', {'fit', 'fit', 0});
             label(controls, '指標', 1, 1);
             label(controls, '集計（Wafer 間）', 1, 2);
@@ -2215,9 +2350,14 @@ classdef AlignmentEstimationApp < handle
             c.importResults = uibutton(controls, 'Text', '結果を読み込む…', 'ButtonPushedFcn', @(~, ~) app.onImportResults(), ...
                 'Tooltip', '「結果を Excel に書き出す」で書き出したファイルを読み込み、表・グラフ・基準の手法との比較を見ます。');
             place(c.importResults, 2, 6);
+            c.importEstimates = uibutton(controls, 'Text', '推定値の Excel を読み込む…', 'Enable', 'off', ...
+                'ButtonPushedFcn', @(~, ~) app.onImportEstimates(), 'Tooltip', ['「推定値を Excel に書き出す」で書き出した' ...
+                'ファイルを読み込むと、Excel から読み込んだ結果でも Wafer マップ・推定値と誤差の分布・散布図・分布の比較を' ...
+                '描けます（書き出した範囲だけ）。先に「結果を読み込む…」で評価結果を読み込んでください。']);
+            place(c.importEstimates, 2, 7);
             c.resultSource = uilabel(controls, 'WordWrap', 'on', 'Text', '');
             c.resultSource.Layout.Row = 3;
-            c.resultSource.Layout.Column = [1, 6];
+            c.resultSource.Layout.Column = [1, 7];
             c.resultControls = controls;
 
             % 表・グラフ・比較・誤差の分布は、それぞれ画面の幅いっぱいに出す（手法の名前が切れないように）
@@ -2385,29 +2525,42 @@ classdef AlignmentEstimationApp < handle
             [~, order] = sort(mean(summary.values, 2, 'omitnan'));
             c.chartMethods.Value = num2cell(sort(order(1:min(app.MAX_CURVES, numel(order)))).');
             set([c.export, c.saveChart], 'Enable', 'on');
-            if isImportedResults(results)
-                % Excel から読み込んだ結果：表・グラフ・比較だけ（推定値を使う画面は使えないまま）
+            imported = isImportedResults(results);
+            c.importEstimates.Enable = onOff(imported);
+            if imported
+                % Excel から読み込んだ結果：表・グラフ・比較。推定値の Excel も読み込めば、推定値を使う画面も（その範囲で）
                 c.export.Enable = 'off';
-                c.resultSource.Text = sprintf(['Excel から読み込んだ結果：%s（%s に作成）。表・グラフ・基準の手法との' ...
-                    '比較を見られます。Wafer マップ・推定値と誤差の分布・散布図・分布の比較は、計測ファイルを読み込んで' ...
-                    '「3. 実行」で評価し直すと使えます。'], results.imported, results.createdAt);
                 c.resultControls.RowHeight{3} = 'fit';
-                c.mapInfo.Text = "Excel から読み込んだ結果では Wafer ごとの図は描けません（推定値が無いため）。" + ...
-                    "計測ファイルを読み込んで「3. 実行」で評価してください。";
-                refreshResults(app);
-                return
+                sourceText = string(sprintf('Excel から読み込んだ結果：%s（%s に作成）。', results.imported, results.createdAt));
+                if isempty(app.ImportedEstimates)
+                    c.resultSource.Text = sourceText + "表・グラフ・基準の手法との比較を見られます。" + ...
+                        "Wafer マップ・推定値と誤差の分布・散布図・分布の比較は、「推定値の Excel を読み込む…」で" + ...
+                        "推定値の Excel も読み込むと使えます（または計測ファイルを読み込んで「3. 実行」で評価し直す）。";
+                    c.mapInfo.Text = "Excel から読み込んだ結果で Wafer ごとの図を描くには、「4. 結果一覧」の" + ...
+                        "「推定値の Excel を読み込む…」で推定値の Excel も読み込んでください。";
+                    refreshResults(app);
+                    return
+                end
+                estimates = app.ImportedEstimates.estimates;
+                c.resultSource.Text = sourceText + sprintf(['推定値：%s（手法 %d・学習パターンの列 %d・Wafer %d 枚）。' ...
+                    'Wafer マップ・推定値と誤差の分布・散布図・分布の比較は、この推定値の範囲で描けます（Shot の枠・' ...
+                    '推定値の書き出しは使えません）。'], app.ImportedEstimates.file, numel(unique(estimates.methodId)), ...
+                    numel(unique(estimates.group)), numel(unique(estimates.Wafer)));
+            else
+                c.resultSource.Text = '';
+                c.resultControls.RowHeight{3} = 0;
             end
-            c.resultSource.Text = '';
-            c.resultControls.RowHeight{3} = 0;
             % マップの選択肢
-            setGroupItems(c.mapWafer, alignest.groupOptions(app.Data.units));
+            setGroupItems(c.mapWafer, alignest.groupOptions(mapUnits(app)));
             planLabels = unique(string({results.plans.label}), 'stable');
             c.mapPlan.Items = cellstr(planLabels);
             c.mapMethod.Items = cellstr(labels);
             c.mapMethod.ItemsData = 1:numel(labels);
             set([c.mapWafer, c.mapPlan, c.mapMethod, c.mapMode, c.mapScale, c.mapMarkerSize, c.mapMarkerShape, c.mapEllipse, ...
                 c.mapEllipseOnly, c.mapShotFrames, c.saveMap], 'Enable', 'on');
-            c.mapContent.Enable = onOff(isfield(results, "overlayEvaluated") && results.overlayEvaluated);
+            c.mapContent.Enable = onOff(isfield(results, "overlayEvaluated") && results.overlayEvaluated && ...
+                (~imported || height(app.ImportedEstimates.overlayPoints) > 0));
+            c.mapShotFrames.Enable = onOff(~imported);   % 読み込んだ推定値には Shot 中心の座標が無い
             if c.mapContent.Enable == "off"
                 c.mapContent.Value = 'estimate';
             end
@@ -2422,6 +2575,7 @@ classdef AlignmentEstimationApp < handle
             c.analysisWafer.Value = 0;
             set([c.analysisMethod, c.analysisGroup, c.analysisWafer, c.analyze, c.estimateScope, c.exportEstimates], ...
                 'Enable', 'on');
+            set([c.estimateScope, c.exportEstimates], 'Enable', onOff(~imported));
             % 散布図の選択肢（初めは推定値と誤差の分布と同じ手法・学習パターン）
             c.scatterMethod.Items = c.analysisMethod.Items;
             c.scatterMethod.ItemsData = c.analysisMethod.ItemsData;
@@ -2431,7 +2585,11 @@ classdef AlignmentEstimationApp < handle
             c.scatterWafer.Items = c.analysisWafer.Items;
             c.scatterWafer.ItemsData = c.analysisWafer.ItemsData;
             c.scatterWafer.Value = 0;
-            [colorKeys, colorLabels] = scatterColorChoices(app.Data);
+            if imported
+                [colorKeys, colorLabels] = scatterColorChoices(app.ImportedEstimates.estimates);
+            else
+                [colorKeys, colorLabels] = scatterColorChoices(app.Data);
+            end
             c.scatterColor.Items = cellstr(colorLabels);
             c.scatterColor.ItemsData = cellstr(colorKeys);
             c.scatterColor.Value = 'none';
@@ -2644,6 +2802,16 @@ classdef AlignmentEstimationApp < handle
                 "このアプリの「結果を Excel に書き出す」で書き出したファイル（.xlsx）を選んでください。");
         end
 
+        function onImportEstimates(app)
+            [fileName, folder] = uigetfile({'*.xlsx', 'Excel ブック (*.xlsx)'}, '推定値の Excel を読み込む');
+            figure(app.Figure);
+            if isequal(fileName, 0)
+                return
+            end
+            runWithAlert(app, @() app.importEstimatesFrom(fullfile(folder, fileName)), "推定値を読み込めませんでした", ...
+                "このアプリの「推定値を Excel に書き出す…」で、読み込んだ評価結果と同じ評価から書き出したファイルを選んでください。");
+        end
+
         function onSaveChart(app)
             [fileName, folder] = uiputfile({'*.png', 'PNG 画像 (*.png)'}, 'グラフを保存', 'metric_by_plan.png');
             figure(app.Figure);
@@ -2672,6 +2840,13 @@ classdef AlignmentEstimationApp < handle
         function [estimates, messages, overlayPoints] = collectWithProgress(app, selection, cache, maxRows, titleText, ...
                 includeTraining)
             % 推定値を集める（画面が出ているときは進み具合を出し、「止める」で中止できる）
+            if nargin < 6
+                includeTraining = false;
+            end
+            if isImportedResults(app.Results)
+                [estimates, messages, overlayPoints] = importedEstimates(app, selection, includeTraining);
+                return
+            end
             dialog = [];
             if app.Figure.Visible == "on"
                 dialog = uiprogressdlg(app.Figure, 'Title', titleText, 'Message', '推定値を計算しています…', ...
@@ -2755,6 +2930,11 @@ classdef AlignmentEstimationApp < handle
                 otherwise
                     column = extractAfter(colorBy, "col:");
                     categories = repmat("（空）", n, 1);
+                    if any(string(estimates.Properties.VariableNames) == "質的変数:" + column)
+                        categories = string(estimates.("質的変数:" + column));   % 推定値の表にある列（読み込んだ推定値など）
+                        categories(categories == "") = "（空）";
+                        return
+                    end
                     [~, unitOfPoint] = ismember(string(estimates.Wafer), app.Results.unitLabels);
                     for u = unique(unitOfPoint(unitOfPoint > 0)).'
                         unit = app.Data.units(u);
@@ -2848,7 +3028,13 @@ classdef AlignmentEstimationApp < handle
         end
 
         function drawMap(app)
-            if isempty(app.Results) || isImportedResults(app.Results)
+            if isempty(app.Results)
+                return
+            end
+            if isImportedResults(app.Results)
+                if ~isempty(app.ImportedEstimates)
+                    drawImportedMap(app);
+                end
                 return
             end
             c = app.Controls;
@@ -3057,6 +3243,115 @@ classdef AlignmentEstimationApp < handle
                 ternary(skipped > 0, sprintf("（使えなかった Wafer %d 枚）", skipped), ""), mean(rows.RMSE_XY, 'omitnan'));
         end
 
+        function units = mapUnits(app)
+            % マップの「Wafer・平均」の選択肢を作る Wafer の並び（読み込んだ結果では、結果の表の Wafer・LotID・EqpId・Operation）
+            if ~isImportedResults(app.Results)
+                units = app.Data.units;
+                return
+            end
+            results = app.Results;
+            units = struct("label", {}, "lotId", {}, "eqpId", {}, "operation", {});
+            for u = 1:numel(results.unitLabels)
+                row = find(results.table.unitIndex == u, 1);
+                units(u) = struct("label", results.unitLabels(u), "lotId", results.table.LotID(row), ...
+                    "eqpId", results.table.EqpId(row), "operation", results.table.Operation(row));
+            end
+        end
+
+        function drawImportedMap(app)
+            % 読み込んだ推定値の Excel の値で、Wafer ごと・平均の図を描く（計測値・推定値・残差、または Overlay 補正の残差）。
+            % Shot 中心の座標は Excel に無いので Shot の枠は描かない
+            c = app.Controls;
+            results = app.Results;
+            option = c.mapWafer.UserData(c.mapWafer.Value);
+            planLabel = string(c.mapPlan.Value);
+            m = c.mapMethod.Value;
+            method = results.methods(m);
+            overlayContent = string(c.mapContent.Value) == "overlay";
+            if overlayContent
+                source = app.ImportedEstimates.overlayPoints;
+                columns = ["residualActual", "residualEstimated", "change"];
+                titles = ["実測値で補正した残差", "推定値で補正した残差", "推定による変化（推定値で補正 − 実測値で補正）"];
+            else
+                source = app.ImportedEstimates.estimates;
+                source = source(source.role == "評価" | startsWith(source.role, "学習"), :);
+                columns = ["meas", "estimate", "residual"];
+                titles = ["計測値（評価した Shot）", "推定値", "残差（計測値 − 推定値）"];
+            end
+            pointsList = cell(1, 0);
+            panelValues = {cell(1, 0), cell(1, 0), cell(1, 0)};
+            trainPoints = zeros(0, 2);
+            outlierPoints = zeros(0, 2);
+            for u = option.unitIndex
+                rows = source(source.Wafer == results.unitLabels(u) & source.plan == planLabel & ...
+                    source.methodId == method.id, :);
+                if height(rows) == 0
+                    continue
+                end
+                train = startsWith(rows.role, "学習");
+                if isempty(pointsList)
+                    trainPoints = [rows.x(train), rows.y(train)];   % 平均の図でも、学習 Shot の四角は最初の Wafer の位置
+                    outlier = rows.role == "学習（異常値として除外）";
+                    outlierPoints = [rows.x(outlier), rows.y(outlier)];
+                end
+                if ~overlayContent
+                    rows = rows(~train, :);   % 計測値・推定値・残差は評価点だけ
+                end
+                pointsList{end + 1} = [rows.x, rows.y]; %#ok<AGROW>
+                for k = 1:3
+                    panelValues{k}{end + 1} = [rows.(columns(k) + "X"), rows.(columns(k) + "Y")];
+                end
+            end
+            if isempty(pointsList)
+                c.mapInfo.Text = "⚠ この Wafer・学習パターン・手法の推定値は、読み込んだ推定値の Excel にありません" + ...
+                    "（書き出した範囲の外）。";
+                arrayfun(@(ax) cla(ax), c.mapAxes);
+                return
+            end
+            covariance = {zeros(0, 3), zeros(0, 3), zeros(0, 3)};
+            ellipseSigma = 0;
+            if option.isGroup
+                titles = titles + "の平均";
+                for k = 1:3
+                    average = alignest.averageFields(pointsList, panelValues{k});
+                    points = average.points;
+                    panelValues{k} = average.mean;
+                    covariance{k} = average.covariance;
+                end
+                ellipseSigma = c.mapEllipse.Value;
+                outlierPoints = zeros(0, 2);
+            else
+                points = pointsList{1};
+                panelValues = cellfun(@(values) values{1}, panelValues, 'UniformOutput', false);
+            end
+            reference = panelValues{1 + overlayContent};
+            scale = repmat(c.mapScale.Value, 1, 3);
+            if c.mapScale.Value <= 0
+                scale(:) = alignest.plot.vectorScale(reference);
+                if overlayContent
+                    scale(3) = alignest.plot.vectorScale(panelValues{3});
+                end
+            end
+            limit = max(abs(reference(isfinite(reference))), [], 'all');
+            if isempty(limit) || limit <= 0
+                limit = 1;
+            end
+            magnitudes = sharedMagnitudeLimits(panelValues{1}, panelValues{2});
+            for k = 1:3
+                alignest.plot.waferMap(c.mapAxes(k), points, panelValues{k}, mode=string(c.mapMode.Value), ...
+                    scaleMmPerNm=scale(k), colorLimit=limit, trainPoints=trainPoints, outlierPoints=outlierPoints, ...
+                    titleText=titles(k), waferRadiusMm=results.settings.data.waferRadiusMm, magnitudeLimit=magnitudes(k), ...
+                    arrowColor=app.ARROW_COLORS(k, :), markerSize=c.mapMarkerSize.Value, markerShape=c.mapMarkerShape.Value, ...
+                    covariance=covariance{k}, ellipseSigma=ellipseSigma, ...
+                    showArrows=~(c.mapEllipseOnly.Value && ellipseSigma > 0));
+                c.mapAxes(k).FontSize = app.AXES_FONT_SIZE;
+            end
+            rows = results.table(ismember(results.table.unitIndex, option.unitIndex) & results.table.plan == planLabel & ...
+                results.table.methodIndex == m, :);
+            c.mapInfo.Text = sprintf("%s｜%s｜%s｜Excel から読み込んだ推定値（Wafer %d 枚）｜Wafer ごとの RMSE（X・Y）の平均 %.3f nm", ...
+                option.label, planLabel, method.label, numel(pointsList), mean(rows.RMSE_XY, 'omitnan'));
+        end
+
         function drawOverlayMap(app, unit, plan, method, out)
             % 実測値で補正した残差・推定値で補正した残差・推定による変化 を並べる（全 Mark。灰色の四角は学習 Shot の Mark）
             c = app.Controls;
@@ -3119,14 +3414,40 @@ classdef AlignmentEstimationApp < handle
             if isempty(app.Results)
                 error('alignest:noResults', '先に「3. 実行」で評価してください。');
             end
-            if isImportedResults(app.Results)
-                error('alignest:importedResults', ['Excel から読み込んだ結果では推定値を計算できません。計測ファイルを' ...
-                    '読み込んで「3. 実行」で評価し直してください。']);
+            if isImportedResults(app.Results) && isempty(app.ImportedEstimates)
+                error('alignest:importedResults', ['Excel から読み込んだ結果では推定値を計算できません。' ...
+                    '「推定値の Excel を読み込む…」で推定値の Excel も読み込むか、計測ファイルを読み込んで' ...
+                    '「3. 実行」で評価し直してください。']);
+            end
+        end
+
+        function [estimates, messages, overlayPoints] = importedEstimates(app, selection, includeTraining)
+            % 読み込んだ推定値の Excel から、選んだ手法・学習パターンの列・Wafer の行を取り出す（評価点。includeTraining なら
+            % 学習データの行も）。Excel に無い組み合わせは messages に書く
+            results = app.Results;
+            imported = app.ImportedEstimates;
+            ids = string({results.methods(selection.methodIndex).id});
+            wafers = results.unitLabels(selection.unitIndex);
+            pick = @(points) ismember(points.methodId, ids) & ismember(points.group, string(selection.groups)) & ...
+                ismember(points.Wafer, wafers);
+            estimates = imported.estimates(pick(imported.estimates), :);
+            if ~includeTraining
+                estimates = estimates(estimates.role == "評価", :);
+            end
+            overlayPoints = table();
+            if height(imported.overlayPoints) > 0
+                overlayPoints = imported.overlayPoints(pick(imported.overlayPoints), :);
+            end
+            messages = strings(0, 1);
+            if height(estimates) == 0
+                messages = "選んだ手法・学習パターン・Wafer の推定値は、読み込んだ推定値の Excel にありません" + ...
+                    "（書き出した範囲の外）。";
             end
         end
 
         function clearResults(app)
             app.Results = [];
+            app.ImportedEstimates = [];
             app.Analysis = [];
             app.MapCache = containers.Map('KeyType', 'char', 'ValueType', 'any');
             c = app.Controls;
@@ -3161,6 +3482,7 @@ classdef AlignmentEstimationApp < handle
             c.mapInfo.Text = "「3. 実行」で評価すると、ここに Wafer ごとの図が出ます。";
             c.resultSource.Text = '';
             c.resultControls.RowHeight{3} = 0;
+            c.importEstimates.Enable = 'off';
             c.analysisNote.Text = c.analysisNote.UserData;
         end
 
@@ -3266,6 +3588,23 @@ function state = onOff(condition)
 state = matlab.lang.OnOffSwitchState(condition);
 end
 
+function used = usesGamKernels(c)
+% GAM の形状関数にガウス過程回帰を1つでも選んでいるか（半径の項は説明変数に半径があるときだけ）
+used = false;
+if ~c.gam.Value
+    return
+end
+for check = reshape(c.gamShapeChecks, 1, [])
+    if check.Value && check.UserData.shape == "gp" && (check.UserData.term == "xy" || c.featureXYR.Value)
+        used = true;
+    end
+end
+end
+
+function used = usesGamMaternNu(c)
+used = any(string({c.gamKernelChecks([c.gamKernelChecks.Value]).UserData}) == "matern");
+end
+
 function used = usesMaternNu(c)
 % GPR で ν を指定する Matérn（matern・ardmatern）を選んでいるか
 used = c.gpr.Value && any(ismember(string(c.kernels.Value), ["matern", "ardmatern"]));
@@ -3352,6 +3691,19 @@ function control = rateField(parent, callback)
 control = uieditfield(parent, 'numeric', 'Limits', [0, 100], 'ValueDisplayFormat', '%g', 'ValueChangedFcn', callback);
 end
 
+function [dxField, dyField] = formulaFields(parent, row, column, callback, tooltip)
+% 補正の式（dx・dy）を入れる欄
+grid = uigridlayout(parent, [2, 2], 'ColumnWidth', {'fit', '1x'}, 'RowHeight', {'fit', 'fit'}, 'Padding', 0, ...
+    'RowSpacing', 4);
+place(grid, row, column);
+label(grid, 'dx =', 1, 1);
+dxField = uieditfield(grid, 'text', 'ValueChangedFcn', callback, 'Tooltip', tooltip);
+place(dxField, 1, 2);
+label(grid, 'dy =', 2, 1);
+dyField = uieditfield(grid, 'text', 'ValueChangedFcn', callback, 'Tooltip', tooltip);
+place(dyField, 2, 2);
+end
+
 function control = ellipseOnlyCheckbox(parent, callback)
 % 共分散楕円を描くときに、矢印（ベクトル）を描かず楕円だけにする
 control = uicheckbox(parent, 'Text', 'ベクトルを描かない（楕円だけ）', 'Value', false, 'ValueChangedFcn', callback, ...
@@ -3372,14 +3724,20 @@ control = uidropdown(parent, 'Items', {'なし', '1σ', '2σ', '3σ'}, 'ItemsDat
     '（灰色 = 相関なし、紫 = 強い相関。図の右上の目盛り）です。'], 'ValueChangedFcn', callback);
 end
 
-function [keys, labels] = scatterColorChoices(data)
-% 散布図の色分けの選択肢（ファイルのその他の列も加える）
+function [keys, labels] = scatterColorChoices(source)
+% 散布図の色分けの選択肢（ファイルのその他の列も加える）。source は読み込んだデータ、または推定値の表
+% （読み込んだ推定値の Excel。その他の列は「質的変数:<列名>」の列だけ）
 keys = ["none", "wafer", "lot", "eqp", "operation", "scan", "mark", "row"];
 labels = ["なし（1色）", "Wafer", "LotID", "EqpId", "Operation", "Scan 方向", "Mark 番号", "Shot 行の奇偶"];
-if ~isempty(data) && isfield(data, "attributeNames")
-    keys = [keys, "col:" + data.attributeNames];
-    labels = [labels, "列：" + data.attributeNames];
+columns = strings(1, 0);
+if istable(source)
+    names = string(source.Properties.VariableNames);
+    columns = extractAfter(names(startsWith(names, "質的変数:")), "質的変数:");
+elseif ~isempty(source) && isfield(source, "attributeNames")
+    columns = reshape(string(source.attributeNames), 1, []);
 end
+keys = [keys, "col:" + columns];
+labels = [labels, "列：" + columns];
 end
 
 function text = priorityText(sampling)

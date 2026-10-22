@@ -110,6 +110,51 @@ classdef TestOverlay < matlab.unittest.TestCase
             end
         end
 
+        function correctionFormulasCanBeEntered(testCase)
+            % 式を読む：係数の名前・数・符号は無視し、x・y のべきだけを使う（全角・²・xy の続け書きも読める）
+            terms = alignest.parseCorrectionFormula("dx = k1 + k3*x − k5*y + 2*k7*x² + k9*xy + ｋ１１＊ｙ＾２");
+            testCase.verifyEqual(terms(:, 2:3), [0, 0; 1, 0; 0, 1; 2, 0; 1, 1; 0, 2]);
+            testCase.verifyEqual(terms(:, 1).', 1:6);
+            testCase.verifyEqual(size(alignest.parseCorrectionFormula("k1 + x + 3*x"), 1), 2, "同じべきは1つにまとめる");
+            % メーカーの高次式を式で書くと、組み込みの式と同じ項
+            nikon = alignest.overlayTerms("nikon");
+            parsed = alignest.parseCorrectionFormula("k1 + k3*x + k5*y + k7*x^2 + k9*x*y + k11*y^2 + k13*x^3 + " + ...
+                "k17*x*y^2 + k19*y^3 + k29*y^4 + k41*y^5 + k55*y^6");
+            testCase.verifyEqual(parsed(:, 2:3), nikon.dx(:, 2:3));
+            for bad = ["", "k1 + (x + y)", "k1 ++ x", "k1 + x1", "k1 + x^", "a = b = x", "k1 + x^12", "k1 + 2x"]
+                testCase.verifyError(@() alignest.parseCorrectionFormula(bad), 'alignest:overlayFormula', bad);
+            end
+            % 補正の当てはめ：Wafer 成分の式が1次なら次数 1 と、Shot 共通成分の式が Nikon の式なら nikon と同じ補正量
+            unit = testCase.Data.units(2);
+            settings = alignest.defaultSettings();
+            settings.overlay.shotCommon = "nikon";
+            builtIn = alignest.overlayProjector(unit, alignest.overlayChoice(settings), 150);
+            settings.overlay.waferUseFormula = true;
+            settings.overlay.waferFormula = struct("dx", "k1 + k3*x + k5*y", "dy", "k2 + k4*y + k6*x");
+            settings.overlay.shotCommon = "formula";
+            settings.overlay.shotFormula = struct("dx", "k1 + k3*x + k5*y + k7*x^2 + k9*x*y + k11*y^2 + k13*x^3 + " + ...
+                "k17*x*y^2 + k19*y^3 + k29*y^4 + k41*y^5 + k55*y^6", "dy", "k2 + k4*y + k6*x + k8*y^2 + k10*x*y + " + ...
+                "k12*x^2 + k14*y^3 + k16*x*y^2 + k18*x^2*y + k22*y^4 + k24*x*y^3 + k32*y^5 + k34*x*y^4 + k44*y^6 + k46*x*y^5");
+            choice = alignest.overlayChoice(settings);
+            testCase.verifyTrue(choice.waferUseFormula);
+            testCase.verifyTrue(contains(choice.description, "Wafer 成分 入力した式（dx = k1 + k3*x + k5*y"));
+            fromFormula = alignest.overlayProjector(unit, choice, 150);
+            for axisName = ["X", "Y"]
+                projection = @(part) part.basis * part.basis.';
+                testCase.verifyEqual(projection(fromFormula.(axisName)), projection(builtIn.(axisName)), 'AbsTol', 1e-8, ...
+                    axisName);
+            end
+            % 高次の Wafer 成分の式は、次数の多項式より項が少なければ残差が増える（次数 2 の一部の項だけ）
+            settings.overlay.waferFormula.dx = "k1 + k3*x + k5*y + k7*x^2";
+            partial = alignest.overlayProjector(unit, alignest.overlayChoice(settings), 150);
+            testCase.verifyEqual(partial.X.rank, fromFormula.X.rank + 1);
+            % 読めない式は評価を始めない
+            settings.overlay.waferFormula.dy = "k2 + (x)";
+            testCase.verifyError(@() alignest.overlayChoice(settings), 'alignest:overlayFormula');
+            settings.overlay.waferUseFormula = false;
+            testCase.verifyFalse(alignest.overlayChoice(settings).waferUseFormula, "式を使わないときは読まない");
+        end
+
         function choiceIsValidatedAndLegacyMeansDisabled(testCase)
             settings = alignest.defaultSettings();
             choice = alignest.overlayChoice(settings);

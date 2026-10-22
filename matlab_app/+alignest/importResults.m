@@ -26,10 +26,9 @@ if ~any(sheets == "Waferごと")
 end
 
 % 結果の表（Waferごと）：見出しを結果の表の列名に戻す。無い列（以前の版のファイルなど）は空・NaN にする
-options = detectImportOptions(filePath, 'Sheet', 'Waferごと', 'VariableNamingRule', 'preserve');
-fileHeaders = string(options.VariableNames);
-overlayNames = alignest.overlayMetricNames();
 [allNames, allHeaders] = alignest.resultColumnNames(true);
+[raw, fileHeaders] = alignest.readSheetTable(filePath, "Waferごと", allHeaders(ismember(allNames, TEXT_COLUMNS)));
+overlayNames = alignest.overlayMetricNames();
 overlayEvaluated = any(ismember(allHeaders(ismember(allNames, overlayNames)), fileHeaders));
 [names, headers] = alignest.resultColumnNames(overlayEvaluated);
 missingRequired = REQUIRED_COLUMNS(~ismember(headers(ismember(names, REQUIRED_COLUMNS)), fileHeaders));
@@ -40,18 +39,10 @@ if ~isempty(missingRequired)
 end
 present = ismember(headers, fileHeaders);
 isText = ismember(names, TEXT_COLUMNS);
-options = asText(options, headers(present & isText));
-if any(present & ~isText)
-    options = setvartype(options, cellstr(headers(present & ~isText)), 'double');
-end
-raw = readtable(filePath, options);
 nRows = height(raw);
 table_ = table();
 for k = 1:numel(names)
-    if present(k) && isText(k)
-        values = raw.(headers(k));
-        values(ismissing(values)) = "";
-    elseif present(k)
+    if present(k)
         values = raw.(headers(k));
     elseif isText(k)
         values = strings(nRows, 1);
@@ -65,9 +56,9 @@ table_.converged = table_.converged == 1;
 % 設定（JSON を1行ずつ書いたシート）。無ければ初期設定
 settings = alignest.defaultSettings();
 if any(sheets == "設定")
-    lines = readTextSheet(filePath, "設定");
-    if ~isempty(lines)
-        settings = alignest.loadSettings(strjoin(lines(:, 1), newline), "text");
+    lines = alignest.readSheetTable(filePath, "設定", strings(1, 0), "");   % すべて文字列
+    if height(lines) > 0
+        settings = alignest.loadSettings(strjoin(lines{:, 1}, newline), "text");
     end
 end
 
@@ -125,9 +116,9 @@ table_.repeat = zeros(nRows, 1);
 % 説明：作成日時・計算時間・途中で止めたか・処理時間の記録・Overlay 補正のモデル・計算の注意
 descriptions = strings(0, 2);
 if any(sheets == "説明")
-    descriptions = readTextSheet(filePath, "説明");
-    if size(descriptions, 2) < 2
-        descriptions = strings(0, 2);
+    sheet = alignest.readSheetTable(filePath, "説明", strings(1, 0), "");
+    if width(sheet) >= 2
+        descriptions = [sheet{:, 1}, sheet{:, 2}];
     end
 end
 results = struct();
@@ -158,24 +149,17 @@ end
 function plans = addPlanDetails(plans, filePath)
 % 「学習Shot」シートの Shot 番号・計算時間・メモなどを、Wafer と学習パターンの名前で合わせて入れる
 TEXT_HEADERS = ["Wafer", "学習パターン", "学習ShotのshotNo", "メモ"];
-NUMBER_HEADERS = ["学習Shot数", "制約の違反量", "学習パターンの計算時間[秒]", "同じ配置のWaferから使い回し"];
-options = detectImportOptions(filePath, 'Sheet', '学習Shot', 'VariableNamingRule', 'preserve');
-headers = string(options.VariableNames);
+[sheet, headers] = alignest.readSheetTable(filePath, "学習Shot", TEXT_HEADERS);
 if ~all(ismember(["Wafer", "学習パターン"], headers))
     return
 end
-options = asText(options, TEXT_HEADERS(ismember(TEXT_HEADERS, headers)));
-if any(ismember(NUMBER_HEADERS, headers))
-    options = setvartype(options, cellstr(NUMBER_HEADERS(ismember(NUMBER_HEADERS, headers))), 'double');
-end
-sheet = readtable(filePath, options);
 keys = sheet.("Wafer") + newline + sheet.("学習パターン");
 for p = 1:numel(plans)
     row = find(keys == plans(p).unitLabel + newline + plans(p).label, 1);
     if isempty(row)
         continue
     end
-    if ismember("学習ShotのshotNo", headers) && ~ismissing(sheet.("学習ShotのshotNo")(row))
+    if ismember("学習ShotのshotNo", headers)
         shotNos = str2double(split(strtrim(sheet.("学習ShotのshotNo")(row))));
         plans(p).shotNos = shotNos(isfinite(shotNos));
     end
@@ -188,7 +172,7 @@ for p = 1:numel(plans)
     if ismember("同じ配置のWaferから使い回し", headers)
         plans(p).reused = sheet.("同じ配置のWaferから使い回し")(row) == 1;
     end
-    if ismember("メモ", headers) && ~ismissing(sheet.("メモ")(row))
+    if ismember("メモ", headers)
         plans(p).message = sheet.("メモ")(row);
     end
 end
@@ -205,21 +189,4 @@ end
 
 function values = describedValues(descriptions, item)
 values = descriptions(descriptions(:, 1) == item, 2);
-end
-
-function texts = readTextSheet(filePath, sheet)
-% シートの見出しより下を、すべて文字列で読む（空のセルは ""）
-options = detectImportOptions(filePath, 'Sheet', sheet, 'VariableNamingRule', 'preserve');
-options = asText(options, string(options.VariableNames));
-texts = string(readtable(filePath, options).Variables);
-texts(ismissing(texts)) = "";
-end
-
-function options = asText(options, headers)
-% 文字列の列として読む。引用符（JSON の "名前" やメモの中の引用）と行頭の空白は書いたとおりに残す
-if isempty(headers)
-    return
-end
-options = setvartype(options, cellstr(headers), 'string');
-options = setvaropts(options, cellstr(headers), 'QuoteRule', 'keep', 'WhitespaceRule', 'preserve');
 end

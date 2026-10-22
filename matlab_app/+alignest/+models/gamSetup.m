@@ -5,7 +5,8 @@ function model = gamSetup(trainPoints, testPoints, featureSet, factorsTrain, fac
 %   スプライン
 %   - s(x, y)   : 3次 B スプラインのテンソル積（各軸 nBasis.axis 個、[−1, 1]）。罰則は各軸の2階差分の和（P-spline）。
 %   - s(r)      : 3次 B スプライン（nBasis.radius 個、[0, 1]）、2階差分の罰則。
-%   ガウス過程回帰（Matérn 5/2 カーネル、長さスケール options.lengthScales.<項>、Wafer 半径で割った単位）
+%   ガウス過程回帰（カーネル options.gpKernel、既定 matern52。alignest.models.stationaryKernel。
+%   長さスケール options.lengthScales.<項>、Wafer 半径で割った単位）
 %   - 節点 κ でのカーネルによる低ランクの近似：s(z) = 線形部分 + Σ_k b_k k(z, κ_k)、罰則 bᵀK(κ, κ)b（λ と組で
 %     事前分布 b ~ N(0, σ²/λ·K⁻¹) のガウス過程と同じ）。線形部分（x・y、r）は罰則なし（スプラインの2階差分と同じ）。
 %   - 節点：s(x, y) は [−1, 1]² の options.gpGridKnots × 同数の格子のうち Wafer の内側（半径 1 + 格子の間隔 以下）、
@@ -25,6 +26,7 @@ arguments
     options.lengthScales struct = struct()
     options.gpKnots (1, 1) double {mustBeInteger, mustBeGreaterThanOrEqual(options.gpKnots, 3)} = 10
     options.gpGridKnots (1, 1) double {mustBeInteger, mustBeGreaterThanOrEqual(options.gpGridKnots, 3)} = 7
+    options.gpKernel (1, 1) string = "matern52"
 end
 RIDGE = 1e-9;
 DEFAULT_LENGTH_SCALE = 0.3;
@@ -36,14 +38,15 @@ lengthScale = @(name) valueOr(options.lengthScales, name, DEFAULT_LENGTH_SCALE);
 smooths = struct("name", {}, "build", {}, "penalty", {});
 if shape("xy") == "gp"
     smooths(end + 1) = gpSmooth("xy", @(p) [p.x(:), p.y(:)], gridKnots(options.gpGridKnots), @(p) [p.x(:), p.y(:)], 2, ...
-        lengthScale("xy"));
+        lengthScale("xy"), options.gpKernel);
 else
     smooths(end + 1) = struct("name", "xy", "build", @(p) tensorBasis(p, nBasis.axis), ...
         "penalty", tensorPenalty(nBasis.axis));
 end
 if featureSet == "XYR"
     if shape("r") == "gp"
-        smooths(end + 1) = gpSmooth("r", @(p) p.r(:), linspace(0, 1, options.gpKnots).', @(p) p.r(:), 1, lengthScale("r"));
+        smooths(end + 1) = gpSmooth("r", @(p) p.r(:), linspace(0, 1, options.gpKnots).', @(p) p.r(:), 1, lengthScale("r"), ...
+            options.gpKernel);
     else
         smooths(end + 1) = struct("name", "r", ...
             "build", @(p) alignest.basis.bsplineBasis(p.r, 0, 1, nBasis.radius), ...
@@ -110,27 +113,21 @@ if isfield(values, name)
 end
 end
 
-function smooth = gpSmooth(name, coordinates, knots, linear, nLinear, lengthScale)
+function smooth = gpSmooth(name, coordinates, knots, linear, nLinear, lengthScale, kernel)
 % ガウス過程の形状関数。K(κ, κ) = UΛUᵀ として基底を [線形部分, K(z, κ)UΛ^(−1/2)] にすると罰則が単位行列になり、
 % 数値が安定する（固有値の小さい成分は除く）。
 EIGEN_TOLERANCE = 1e-8;
 if ~(isscalar(lengthScale) && isfinite(lengthScale) && lengthScale > 0)
     error('alignest:gamLengthScale', 'GAM のガウス過程の長さスケールは正の数にしてください（%s）。', name);
 end
-gram = maternKernel(knots, knots, lengthScale);
+gram = alignest.models.stationaryKernel(kernel, knots, knots, lengthScale);
 [vectors, values] = eig((gram + gram.') / 2, 'vector');
 keep = values > EIGEN_TOLERANCE * max(values);
 transform = vectors(:, keep) ./ sqrt(values(keep)).';
 nKernel = nnz(keep);
 smooth = struct("name", name, ...
-    "build", @(p) [linear(p), maternKernel(coordinates(p), knots, lengthScale) * transform], ...
+    "build", @(p) [linear(p), alignest.models.stationaryKernel(kernel, coordinates(p), knots, lengthScale) * transform], ...
     "penalty", blkdiag(zeros(nLinear), eye(nKernel)));
-end
-
-function values = maternKernel(a, b, lengthScale)
-% Matérn 5/2（GPR の matern52 と同じ式、σf = 1）
-distance = sqrt(alignest.basis.pairwiseSquaredDiff(a, b)) / lengthScale;
-values = (1 + sqrt(5) * distance + 5 / 3 * distance .^ 2) .* exp(-sqrt(5) * distance);
 end
 
 function knots = gridKnots(nPerAxis)
