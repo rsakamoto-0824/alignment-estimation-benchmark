@@ -84,31 +84,39 @@ classdef TestEvaluation < matlab.unittest.TestCase
             testCase.verifyError(@() alignest.buildPlanSpecs(sampling), 'alignest:manualPlan');
         end
 
-        function timeEstimateFollowsMethodsPlansAndLayouts(testCase)
+        function timeEstimateIsTwoSecondsPerCondition(testCase)
             units = testCase.Data.units;
             settings = alignest.defaultSettings();
             settings.sampling.nShots = [10, 20];
             [total, detail] = alignest.estimateRunSeconds(units, settings);
-            testCase.verifyEqual(total, detail.fitSeconds + detail.planSeconds + detail.overheadSeconds + ...
-                detail.displaySeconds, 'AbsTol', 1e-12);
-            testCase.verifyEqual(detail.nRuns, numel(units) * 2 * numel(alignest.buildMethodList(settings.methods)));
-            testCase.verifyGreaterThan(detail.planSeconds, 0, "I 最適は学習パターンを作る時間がかかる");
-            % ランダムは学習パターンを作る時間がほぼ 0、当てはめの時間は同じ
-            random = settings;
-            random.sampling.method = "random";
-            random.sampling.randomRepeats = 1;
-            [~, randomDetail] = alignest.estimateRunSeconds(units, random);
-            testCase.verifyEqual(randomDetail.planSeconds, 0);
-            testCase.verifyEqual(randomDetail.fitSeconds, detail.fitSeconds, 'RelTol', 1e-12);
-            % Backfitting や学習 Shot 数を増やすと長くなる
-            heavier = settings;
-            heavier.methods.gpr.factorModes = [heavier.methods.gpr.factorModes, "backfit"];
-            testCase.verifyGreaterThan(alignest.estimateRunSeconds(units, heavier), total);
-            larger = settings;
-            larger.sampling.nShots = [30, 40];
-            [~, largerDetail] = alignest.estimateRunSeconds(units, larger);
-            testCase.verifyGreaterThan(largerDetail.fitSeconds, detail.fitSeconds);
+            nRuns = numel(units) * 2 * numel(alignest.buildMethodList(settings.methods));
+            testCase.verifyEqual(detail.nRuns, nRuns);
+            testCase.verifyEqual(total, 2 * nRuns, "1条件（Wafer × 学習パターン × 手法）あたり 2 秒");
             testCase.verifyEqual(alignest.estimateRunSeconds(units([]), settings), 0);
+        end
+
+        function pausedEvaluationResumesToTheSameResults(testCase)
+            settings = alignest.defaultSettings();
+            settings.methods = alignest.recommendedMethods("none");
+            settings.methods.polynomial.enabled = true;
+            settings.methods.tps.enabled = true;
+            settings.sampling.nShots = [10, 20];
+            full = alignest.runEvaluation(testCase.Data, settings);
+            % 7 件目を計算したところで一時中断し、続きから再開する
+            paused = alignest.runEvaluation(testCase.Data, settings, @(done, total, message) done < 7);
+            testCase.verifyTrue(paused.cancelled);
+            testCase.verifyEqual(height(paused.table), 7);
+            testCase.verifyNotEmpty(paused.resume);
+            testCase.verifyEqual(paused.nTotal, height(full.table));
+            resumed = alignest.runEvaluation(testCase.Data, settings, [], paused);
+            testCase.verifyFalse(resumed.cancelled);
+            testCase.verifyEmpty(resumed.resume);
+            testCase.verifyEqual(resumed.table.RMSE_XY, full.table.RMSE_XY, 'AbsTol', 1e-12);
+            testCase.verifyEqual(resumed.table.planIndex, full.table.planIndex);
+            testCase.verifyTrue(isequal({resumed.plans.shotNos}, {full.plans.shotNos}), "学習パターンも同じ");
+            testCase.verifyGreaterThanOrEqual(resumed.elapsedSeconds, paused.elapsedSeconds);
+            testCase.verifyError(@() alignest.runEvaluation(testCase.Data, settings, [], resumed), 'alignest:resume', ...
+                "最後まで済んだ評価は再開できない");
         end
 
         function randomPlansAreReproducibleAndMeetConstraints(testCase)

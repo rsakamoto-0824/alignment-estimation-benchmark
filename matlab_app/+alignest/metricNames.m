@@ -8,8 +8,8 @@ end
 if nargin < 2
     includeOverlay = false;
 end
-kinds = ["R2", "adjR2", "RMSE", "MAE"];
-kindLabels = ["R²", "調整済み R²", "RMSE [nm]", "MAE [nm]"];
+kinds = ["R2", "RMSE", "MAE"];
+kindLabels = ["R²", "RMSE [nm]", "MAE [nm]"];
 axisNames = ["X", "Y", "XY"];
 axisLabels = ["X", "Y", "X・Y 合計"];
 names = strings(1, 0);
@@ -22,6 +22,12 @@ for a = 1:numel(axisNames)
 end
 names = [names, "RMSE_XY_outer", "RMSE_XY_inner"];
 labels = [labels, "RMSE [nm]（外周）", "RMSE [nm]（内側）"];
+% 学習点の平均値・中央値をそのまま推定値にした場合の RMSE と、それに対する改善量・改善率（X・Y 合計。alignest.baselineImprovement）
+names = [names, "RMSE_XY_baseMean", "improveMean_XY", "improveMeanPct_XY", ...
+    "RMSE_XY_baseMedian", "improveMedian_XY", "improveMedianPct_XY"];
+labels = [labels, "RMSE [nm]（平均値を推定値にした場合）", "改善量 [nm]（平均値に対する RMSE の減少）", ...
+    "改善率 [%]（平均値に対する）", "RMSE [nm]（中央値を推定値にした場合）", "改善量 [nm]（中央値に対する RMSE の減少）", ...
+    "改善率 [%]（中央値に対する）"];
 if includeOverlay
     [overlayNames, overlayLabels] = alignest.overlayMetricNames();
     names = [names, overlayNames];

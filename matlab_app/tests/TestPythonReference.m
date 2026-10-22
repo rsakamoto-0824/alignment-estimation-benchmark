@@ -203,6 +203,9 @@ classdef TestPythonReference < matlab.unittest.TestCase
                 metrics = alignest.computeMetrics(truth(:, 1), reference.estimate(:, 1), reference.edf(1), ...
                     truth(:, 2), reference.estimate(:, 2), reference.edf(2), outer, outer);
                 for name = string(fieldnames(reference.values)).'
+                    if startsWith(name, "adjR2")
+                        continue   % 調整済み R² は使わなくなったので比べない
+                    end
                     testCase.verifyEqual(metrics.(name), reference.values.(name), 'AbsTol', 1e-12, level + " " + name);
                 end
             end

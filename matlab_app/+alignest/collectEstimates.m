@@ -7,6 +7,8 @@ function [estimates, messages, cancelled, overlayPoints] = collectEstimates(data
 %   options.cache       ：推定結果を使い回す containers.Map（キーは 'Wafer|学習パターン|手法' の番号。画面のマップと共通）
 %   options.progressFcn ：progressFcn(完了数, 全体数) が false を返すと途中で止める（cancelled = true）
 %   options.maxRows     ：表の行数の上限。超えそうなら計算する前に止める（Excel の行数の上限のため）
+%   options.includeTraining：true なら学習 Shot の有効な Mark の行も入れる（推定値・残差は NaN。Excel では空欄）。
+%     表の role 列は「評価」「学習」「学習（異常値として除外）」。分析・散布図などは評価の行だけを使う（既定 false）。
 %   推定できなかった組み合わせは飛ばし、理由を messages に入れる。
 %   質的変数に選んだファイルのその他の列（results.settings.factors.columns）は「質的変数:<列名>」の列として加える。
 %   overlayPoints：Overlay 補正の評価をするとき（alignest.overlayChoice）、全 Mark（学習・評価 Shot）の
@@ -18,6 +20,7 @@ arguments
     options.cache = []
     options.progressFcn = []
     options.maxRows (1, 1) double = Inf
+    options.includeTraining (1, 1) logical = false
 end
 plans = results.plans;
 planIndex = find(ismember(string({plans.group}), string(selection.groups)) & ...
@@ -48,7 +51,7 @@ for p = planIndex
         method = results.methods(m);
         try
             out = cachedEstimate(options.cache, unit, plan, p, m, method, results.settings);
-            parts{done} = pointTable(unit, plan, method, out, columns);
+            parts{done} = pointTable(unit, plan, method, out, columns, options.includeTraining);
             if overlay.enabled
                 if ~isKey(projectors, plan.unitIndex)
                     projectors(plan.unitIndex) = alignest.overlayProjector(unit, overlay, ...
@@ -77,7 +80,7 @@ else
     overlayPoints = vertcat(overlayParts{:});
 end
 if isempty(parts)
-    estimates = pointTable(emptyUnit(), struct("label", "", "group", ""), struct("label", "", "id", ""), [], columns);
+    estimates = pointTable(emptyUnit(), struct("label", "", "group", ""), struct("label", "", "id", ""), [], columns, false);
 else
     estimates = vertcat(parts{:});
 end
@@ -96,15 +99,25 @@ if useCache
 end
 end
 
-function points = pointTable(unit, plan, method, out, columns)
-% 1つの Wafer × 学習パターン × 手法 の評価点の表
+function points = pointTable(unit, plan, method, out, columns, includeTraining)
+% 1つの Wafer × 学習パターン × 手法 の評価点の表（includeTraining なら学習 Shot の有効な Mark の行も、Mark の順に入れる）
 marks = unit.marks;
+role = strings(0, 1);
 if isempty(out)
     index = zeros(0, 1);
     estimateX = zeros(0, 1);
     estimateY = zeros(0, 1);
 else
     index = union(out.testIndex.X(:), out.testIndex.Y(:));
+    if includeTraining
+        index = find(marks.validX | marks.validY);
+    end
+    role = repmat("評価", numel(index), 1);
+    inTrain = ismember(marks.shotIndex(index), plan.shotIndex);
+    role(inTrain) = "学習";
+    if isfield(out, "outlierIndex")
+        role(inTrain & ismember(index, out.outlierIndex)) = "学習（異常値として除外）";
+    end
     estimateX = nan(numel(marks.x), 1);
     estimateY = nan(numel(marks.x), 1);
     estimateX(out.testIndex.X) = out.estimate.X;
@@ -128,9 +141,9 @@ points = table(text(unit.operation), text(unit.eqpId), text(unit.lotId), text(un
     text(plan.label), text(plan.group), text(method.label), text(method.id), pick(marks, "shotNo", index), ...
     pick(marks, "markNo", index), ...
     direction, pick(marks, "shotRowParity", index), pick(marks, "x", index), pick(marks, "y", index), ...
-    pick(marks, "r", index), measX, estimateX, measX - estimateX, measY, estimateY, measY - estimateY, ...
+    pick(marks, "r", index), role, measX, estimateX, measX - estimateX, measY, estimateY, measY - estimateY, ...
     'VariableNames', ["Operation", "EqpId", "LotID", "Wafer", "DateTime", "plan", "group", "methodLabel", "methodId", ...
-    "shotNo", "markNo", "direction", "shotRowParity", "x", "y", "r", "measX", "estimateX", "residualX", ...
+    "shotNo", "markNo", "direction", "shotRowParity", "x", "y", "r", "role", "measX", "estimateX", "residualX", ...
     "measY", "estimateY", "residualY"]);
 points.markIndex = index(:);  % unit.marks の何番目か（散布図の色分けで、その他の列の値を引くため。Excel には出さない）
 for column = columns

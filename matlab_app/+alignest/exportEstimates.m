@@ -1,5 +1,7 @@
 function exportEstimates(estimates, analysis, filePath, notes, options)
-%EXPORTESTIMATES 推定値（評価点ごとの計測値・推定値・残差）と残差の検定結果を Excel ファイル（.xlsx）に書き出す。
+%EXPORTESTIMATES 推定値（Mark ごとの計測値・推定値・残差）と残差の検定結果を Excel ファイル（.xlsx）に書き出す。
+%   推定値の表に学習データの行（role が「学習」…。alignest.collectEstimates の includeTraining）があれば、その推定値・
+%   残差は空欄で書き出す。
 %   alignest.exportEstimates(estimates, analysis, filePath, notes)
 %   estimates は alignest.collectEstimates、analysis は alignest.residualAnalysis の結果。
 %   notes は「説明」シートに書く [項目, 内容] の文字列（2列）。
@@ -23,9 +25,15 @@ if max(height(estimates), height(options.overlayPoints)) > EXCEL_MAX_DATA_ROWS
 end
 replaceFile(filePath);
 
-items = ["作成日時"; "評価点の数"; "残差"; "正規性検定"; "ANOVA"; "Overlay残差"; notes(:, 1)];
-values = [string(datetime('now', 'Format', 'yyyy/MM/dd HH:mm:ss')); string(height(estimates)); ...
-    "残差 = 計測値 − 推定値 [nm]。評価点は学習しなかった Shot の有効な Mark。その軸が無効な点は空欄。"; ...
+isEvaluation = true(height(estimates), 1);
+if any(string(estimates.Properties.VariableNames) == "role")
+    isEvaluation = estimates.role == "評価";
+end
+items = ["作成日時"; "評価点の数"; "学習データの行の数"; "残差"; "正規性検定"; "ANOVA"; "Overlay残差"; notes(:, 1)];
+values = [string(datetime('now', 'Format', 'yyyy/MM/dd HH:mm:ss')); string(nnz(isEvaluation)); ...
+    string(nnz(~isEvaluation)); ...
+    "残差 = 計測値 − 推定値 [nm]。評価点は学習しなかった Shot の有効な Mark。「区分」が学習の行（学習 Shot の有効な Mark。" + ...
+    "異常値として学習から除いた Mark も含む）は推定値・残差が空欄。その軸が無効な点も空欄。"; ...
     "手法 × 学習パターン × 軸ごとに、選んだ Wafer の評価点をまとめて検定。p 値が 0.05 より小さいと正規分布から外れていると判断（判定は Shapiro–Wilk、5000 点を超えるときは Anderson–Darling）。点数が多いと小さなずれでも p 値が小さくなる。"; ...
     "残差の平均が質的変数の水準で違うかの F 検定。一元配置はその変数だけで分けた検定、調整はほかの質的変数も入れた主効果モデル（交互作用なし、Type II）での検定。"; ...
     overlayNote(height(options.overlayPoints)); notes(:, 2)];
@@ -35,10 +43,10 @@ points = estimates;
 if any(string(points.Properties.VariableNames) == "markIndex")
     points = removevars(points, "markIndex");
 end
-internal = ["plan", "group", "methodLabel", "methodId", "direction", "shotRowParity", "x", "y", "r", ...
+internal = ["plan", "group", "methodLabel", "methodId", "direction", "shotRowParity", "x", "y", "r", "role", ...
     "measX", "estimateX", "residualX", "measY", "estimateY", "residualY"];
 headers = ["学習パターン", "列", "手法", "手法の識別子", "Direction", "Shot行(1=奇数,2=偶数)", "x[mm]", "y[mm]", ...
-    "半径[mm]", "計測値X[nm]", "推定値X[nm]", "残差X[nm]", "計測値Y[nm]", "推定値Y[nm]", "残差Y[nm]"];
+    "半径[mm]", "区分", "計測値X[nm]", "推定値X[nm]", "残差X[nm]", "計測値Y[nm]", "推定値Y[nm]", "残差Y[nm]"];
 names = string(points.Properties.VariableNames);
 [found, position] = ismember(names, internal);
 names(found) = headers(position(found));  % 質的変数に選んだその他の列（質的変数:<列名>）はそのまま

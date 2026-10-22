@@ -347,6 +347,16 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyTrue(all(ismember(["説明", "推定値", "正規性検定", "ANOVA"], sheetnames(file))));
             points = readtable(file, 'Sheet', '推定値', 'VariableNamingRule', 'preserve');
             testCase.verifyEqual(numel(unique(string(points.Wafer))), 5);
+            % 学習データの Mark も書き出し、推定値・残差は空欄
+            testCase.verifyEqual(height(points), sum(arrayfun(@(unit) nnz(unit.marks.validX | unit.marks.validY), ...
+                app.Data.units)));
+            testCase.verifyEqual(sort(unique(string(points.("区分")))), ["学習"; "評価"]);
+            training = string(points.("区分")) == "学習";
+            testCase.verifyTrue(all(isnan(points.("推定値X[nm]")(training)) & isnan(points.("残差Y[nm]")(training))));
+            cells = readcell(file, 'Sheet', '推定値');
+            column = find(string(cells(1, :)) == "推定値X[nm]");
+            testCase.verifyTrue(all(cellfun(@(value) all(ismissing(value)), cells(find(training) + 1, column))), ...
+                "Excel では空欄");
             testCase.verifyEqual(unique(string(points.("列"))), "22 Shot");
             testCase.verifyEqual(points.("残差X[nm]"), points.("計測値X[nm]") - points.("推定値X[nm]"), 'AbsTol', 1e-9);
             testCase.verifyTrue(all(ismember(["EXP01", "EXP02"], string(points.EqpId))));
@@ -725,6 +735,72 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyEqual(summary(1).n, nnz(results.table.unitIndex == 1 & results.table.methodIndex == 2) * 0 + ...
                 results.table.nTest_X(results.table.unitIndex == 1 & results.table.methodIndex == 2 & ...
                 results.table.group == "10 Shot"));
+            % 平均値・中央値をそのまま推定値にした場合に対する改善率も指標に選べる
+            testCase.verifyTrue(all(ismember(["improveMeanPct_XY", "improveMedianPct_XY", "RMSE_XY_baseMean"], ...
+                string(app.Controls.metric.ItemsData))));
+            testCase.verifyTrue(all(isfinite(results.table.improveMedianPct_XY)));
+            % 分布の比較：全面・学習・予測対象の計測値と、予測対象の実測値と推定値
+            comparison = app.compareDistributions(1, "20 Shot", 0);
+            testCase.verifyEqual(comparison.nWafers, 5);
+            testCase.verifyEqual(size(app.Controls.distributionTable.Data), [8, 9], "X・Y × 4つの分布");
+            testCase.verifyEqual(size(app.Controls.jsTable.Data), [8, 4], "X・Y × 4つの組");
+            testCase.verifyEqual(string(app.Controls.distributionAxes(1).Visible), "on");
+            testCase.verifyEqual(numel(findobj(app.Controls.distributionAxes(1), 'Type', 'histogram')), 3);
+            testCase.verifyEqual(numel(findobj(app.Controls.distributionAxes(2), 'Type', 'histogram')), 2);
+            testCase.verifyTrue(startsWith(string(app.Controls.distributionAxes(1).Title.String), "X の計測値"));
+            app.Controls.distributionAxis.Value = 'Y';
+            app.Controls.distributionAxis.ValueChangedFcn([], []);
+            testCase.verifyTrue(startsWith(string(app.Controls.distributionAxes(2).Title.String), "Y："));
+            testCase.verifyTrue(contains(app.Controls.distributionInfo.Text, "JS ダイバージェンス"));
+        end
+
+        function pauseResumeAndEllipseOnly(testCase)
+            app = testCase.App;
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.xlsx'));
+            app.applyMapping();
+            settings = app.Settings;
+            settings.methods = alignest.recommendedMethods("none");
+            settings.methods.polynomial.enabled = true;
+            settings.methods.tps.enabled = true;
+            settings.sampling.nShots = [10, 20];
+            app.setSettings(settings);
+            % 時間の目安は 1条件 2 秒（2 手法 × 2 学習パターン × 5 枚 = 20 条件）
+            testCase.verifyTrue(contains(app.Controls.countLabel.Text, "= 20 回の推定（目安 40 秒）"));
+            % 一時中断：途中までの結果が出て、「続きから再開」で残りを計算する
+            results = app.runEvaluationNow(false, 6);
+            testCase.verifyTrue(results.cancelled);
+            testCase.verifyEqual(height(results.table), 6);
+            testCase.verifyEqual(string(app.Controls.resumeRun.Enable), "on");
+            testCase.verifyTrue(contains(app.Controls.runStatus.Text, "一時中断しました：6 / 20 件"));
+            results = app.resumeEvaluation(false);
+            testCase.verifyFalse(results.cancelled);
+            testCase.verifyEqual(height(results.table), 20);
+            testCase.verifyEqual(string(app.Controls.resumeRun.Enable), "off");
+            testCase.verifyTrue(contains(app.Controls.runStatus.Text, "一時中断の前と後の合計"));
+            testCase.verifyTrue(all(isfinite(results.table.efficiencyI) & results.table.efficiencyI <= 1));
+            testCase.verifyFalse(any(contains(string(app.Controls.metric.ItemsData), "adjR2")), "調整済み R² は出さない");
+            % 中断の後に設定を変えると、続きからは再開できない
+            app.runEvaluationNow(false, 3);
+            app.Controls.outerRatio.Value = 0.7;
+            app.Controls.outerRatio.ValueChangedFcn([], []);
+            testCase.verifyError(@() app.resumeEvaluation(false), 'alignest:resume');
+            % 共分散楕円だけを描く（矢印を消す）：Wafer マップ（計測値）と Shot 重ね合わせ
+            app.Controls.previewWafer.Value = find([app.Controls.previewWafer.UserData.isGroup], 1);
+            app.Controls.previewEllipseOnly.Value = true;
+            app.Controls.previewEllipseOnly.ValueChangedFcn([], []);
+            vectorAxes = app.Controls.previewAxes(1);
+            testCase.verifyEmpty(findall(vectorAxes, 'Type', 'patch', 'DisplayName', '値（矢印）'));
+            testCase.verifyNotEmpty(findall(vectorAxes, 'Type', 'patch', 'DisplayName', 'Wafer 間のばらつき（1σ 楕円）'));
+            app.Controls.shotOverlayEllipseOnly.Value = true;
+            app.Controls.shotOverlayEllipseOnly.ValueChangedFcn([], []);
+            overlayAxes = app.Controls.shotOverlayAxes(1);
+            testCase.verifyEmpty(findobj(overlayAxes, 'Type', 'quiver'), "平均の矢印も描かない");
+            testCase.verifyEmpty(findobj(overlayAxes, 'Type', 'patch', '-regexp', 'DisplayName', '^個々の Shot'));
+            testCase.verifyNotEmpty(findobj(overlayAxes, 'Type', 'patch', '-regexp', 'DisplayName', '楕円'));
+            % 楕円を描かないとき（「なし」）は矢印を描く
+            app.Controls.shotOverlayEllipse.Value = 0;
+            app.Controls.shotOverlayEllipse.ValueChangedFcn([], []);
+            testCase.verifyNotEmpty(findobj(overlayAxes, 'Type', 'quiver'));
         end
 
         function reloadingDataClearsResults(testCase)

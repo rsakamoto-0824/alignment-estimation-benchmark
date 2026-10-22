@@ -126,6 +126,26 @@ classdef TestMeasurementPlan < matlab.unittest.TestCase
             testCase.verifyTrue(all(ismember([1, 50, 99], plan.shotNos)));
         end
 
+        function efficiencyIsRelativeToMeasuringEveryShot(testCase)
+            % 全計測（候補の全 Mark）では情報行列が単位行列なので I 効率・D 効率は 1
+            unit = testCase.Data.units(1);
+            sampling = alignest.defaultSettings().sampling;
+            candidates = find(unit.shots.nValidX + unit.shots.nValidY > 0);
+            spec = struct("type", "manual", "nShots", numel(candidates), "repeat", 1, "label", "", "group", "", ...
+                "shotNos", unit.shots.shotNo(candidates(1:end - 1)).');
+            nearlyAll = alignest.planTrainingShots(unit, spec, sampling, 150);
+            testCase.verifyGreaterThan(nearlyAll.efficiencyI, 0.9);
+            testCase.verifyLessThan(nearlyAll.efficiencyI, 1);
+            spec = struct("type", "ioptimal", "nShots", 20, "repeat", 1, "label", "", "group", "", "shotNos", []);
+            sampling.exchangeStarts = 2;
+            plan = alignest.planTrainingShots(unit, spec, sampling, 150);
+            nTerms = (sampling.designOrder + 1) * (sampling.designOrder + 2) / 2;
+            testCase.verifyEqual(plan.efficiencyI, nTerms / plan.criterionI, 'RelTol', 1e-12);
+            testCase.verifyEqual(plan.efficiencyD, 1 / plan.criterionD, 'RelTol', 1e-12);
+            testCase.verifyTrue(plan.efficiencyI > 0 && plan.efficiencyI < nearlyAll.efficiencyI, ...
+                "学習 Shot が少ないほど効率は小さい");
+        end
+
         function exchangeNeverRemovesFixedShots(testCase)
             % 1次元の直線モデル：端の点が最も良いが、固定した真ん中の点は外さない
             positions = linspace(-1, 1, 11).';
