@@ -1,7 +1,19 @@
-function settings = loadSettings(filePath)
+function settings = loadSettings(filePath, source)
 %LOADSETTINGS JSON ファイルの設定を読み、初期設定に重ねる（ファイルに無い項目は初期値のまま）。
+%   settings = alignest.loadSettings(text, "text") は JSON の文字列から読む（評価結果の Excel の「設定」シートなど）。
 %   型は初期設定に合わせる（文字列の並び・数値の行ベクトルなど）。知らない項目は無視する。
 %   学習 Shot 数の開始・終了・刻みが無い以前の設定ファイルは、Shot 数の並びから決める（alignest.syncShotCounts）。
+if nargin >= 2 && source == "text"
+    try
+        decoded = jsondecode(char(filePath));
+    catch err
+        error('alignest:loadSettings', '設定を JSON として読めません（%s）', err.message);
+    end
+    settings = merge(alignest.defaultSettings(), decoded);
+    settings.sampling = alignest.syncShotCounts(settings.sampling);
+    settings.methods = alignest.completeMethodSettings(settings.methods);
+    return
+end
 if ~isfile(filePath)
     error('alignest:loadSettings', '設定ファイルが見つかりません: %s', filePath);
 end
@@ -9,13 +21,10 @@ try
     fileId = fopen(filePath, 'r', 'n', 'UTF-8');
     text = fread(fileId, '*char').';
     fclose(fileId);
-    decoded = jsondecode(text);
 catch err
-    error('alignest:loadSettings', '設定ファイルを JSON として読めません: %s（%s）', filePath, err.message);
+    error('alignest:loadSettings', '設定ファイルを読めません: %s（%s）', filePath, err.message);
 end
-settings = merge(alignest.defaultSettings(), decoded);
-settings.sampling = alignest.syncShotCounts(settings.sampling);
-settings.methods = alignest.completeMethodSettings(settings.methods);
+settings = alignest.loadSettings(string(text), "text");
 end
 
 function merged = merge(defaults, decoded)

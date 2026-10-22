@@ -457,6 +457,19 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             app.Controls.factorColumns.ValueChangedFcn([], []);
             testCase.verifyEqual(app.Settings.factors.columns, "Chuck");
             testCase.verifyFalse(app.Settings.factors.scan);
+            % Y 成分は別に選べる（選ぶまでは X 成分と同じで、Y の欄は使えない）
+            testCase.verifyEqual(string(app.Controls.factorColumnsY.Enable), "off");
+            app.Controls.factorSeparate.Value = true;
+            app.Controls.factorSeparate.ValueChangedFcn([], []);
+            testCase.verifyEqual(string(app.Controls.factorColumnsY.Enable), "on");
+            testCase.verifyEqual(string(app.Controls.factorColumnsY.Value), "Chuck", "はじめは X 成分と同じ");
+            app.Controls.factorMarkY.Value = false;
+            app.Controls.factorColumnsY.Value = {};
+            app.Controls.factorColumnsY.ValueChangedFcn([], []);
+            testCase.verifyTrue(app.Settings.factors.separateY);
+            testCase.verifyEmpty(app.Settings.factors.y.columns);
+            testCase.verifyFalse(app.Settings.factors.y.mark);
+            testCase.verifyEqual(app.Settings.factors.columns, "Chuck", "X 成分はそのまま");
             results = app.runEvaluationNow(false);
             testCase.verifyEqual(results.table.methodId(1), "RBF_gaussian_XYR_backfit");
             testCase.verifyTrue(all(results.table.note == ""));
@@ -472,7 +485,7 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             perWafer = readtable(resultsFile, 'Sheet', 'Waferごと', 'VariableNamingRule', 'preserve');
             testCase.verifyTrue(any(string(perWafer.Properties.VariableNames) == "LotID"));
             explanation = readcell(resultsFile, 'Sheet', '説明');
-            testCase.verifyTrue(any(contains(string(explanation(:, 2)), "Mark 番号、列 Chuck")));
+            testCase.verifyTrue(any(contains(string(explanation(:, 2)), "X 成分：Mark 番号、列 Chuck／Y 成分：なし")));
             % 設定の列がデータに無いときは、選択肢に「データに無い」と出て、評価を始めない
             settings = app.Settings;
             settings.factors.columns = ["Chuck", "Nozzle"];
@@ -480,6 +493,54 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyTrue(any(contains(string(app.Controls.factorColumns.Items), "Nozzle（データに無い）")));
             testCase.verifyTrue(contains(app.Controls.factorColumnsError.Text, "Nozzle"));
             testCase.verifyError(@() app.runEvaluationNow(false), 'alignest:settings');
+        end
+
+        function exportedResultsCanBeImportedAndDrawn(testCase)
+            app = testCase.App;
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
+            app.applyMapping();
+            settings = app.Settings;
+            settings.methods = alignest.recommendedMethods("none");
+            settings.methods.polynomial.enabled = true;
+            settings.methods.tps.enabled = true;
+            settings.sampling.nShots = [15, 30];
+            settings.sampling.nShotsStart = 15;
+            settings.sampling.nShotsEnd = 30;
+            settings.sampling.nShotsStep = 15;
+            app.setSettings(settings);
+            results = app.runEvaluationNow(false);
+            folder = tempname;
+            mkdir(folder);
+            cleanup = onCleanup(@() rmdir(folder, 's'));
+            file = fullfile(folder, 'results.xlsx');
+            app.exportResultsTo(file);
+            tableSize = size(app.Controls.summaryTable.Data);
+            curveNames = string(get(findobj(app.Controls.chartAxes, 'Type', 'line'), 'DisplayName'));
+            % 読み込むと、同じ結果の表・グラフ・基準の手法との比較が出る
+            imported = app.importResultsFrom(file);
+            testCase.verifyEqual(imported.imported, string(file));
+            testCase.verifyEqual(size(app.Controls.summaryTable.Data), tableSize);
+            expected = alignest.summarizeResults(results, "RMSE_XY", "mean");
+            actual = alignest.summarizeResults(imported, "RMSE_XY", "mean");
+            testCase.verifyEqual(actual.values, expected.values, 'AbsTol', 1e-9);
+            testCase.verifyEqual(string(get(findobj(app.Controls.chartAxes, 'Type', 'line'), 'DisplayName')), curveNames);
+            testCase.verifyNotEmpty(app.Controls.comparisonTable.Data);
+            app.Controls.chartXAxis.Value = 'criteria';
+            app.Controls.chartXAxis.ValueChangedFcn([], []);
+            testCase.verifyEqual(string(app.Controls.chartAxes2.Visible), "on", "I 基準・D 基準のグラフも描ける");
+            app.Controls.metric.Value = 'improveMeanPct_XY';
+            app.Controls.metric.ValueChangedFcn([], []);
+            testCase.verifyTrue(contains(app.Controls.resultSource.Text, "Excel から読み込んだ結果"));
+            % 推定値が要る画面は使えない（計測ファイルを読み込んで評価し直す）
+            testCase.verifyEqual(string(get([app.Controls.mapWafer, app.Controls.analyze, app.Controls.drawScatterButton, ...
+                app.Controls.compareDistributionsButton, app.Controls.exportEstimates, app.Controls.export], 'Enable')), ...
+                repmat("off", 6, 1));
+            testCase.verifyError(@() app.analyzeResiduals(1, "15 Shot", 0), 'alignest:importedResults');
+            testCase.verifyError(@() app.exportResultsTo(fullfile(folder, 'again.xlsx')), 'alignest:importedResults');
+            % 評価し直すと、読み込んだ結果の表示は消える
+            app.runEvaluationNow(false);
+            testCase.verifyEqual(string(app.Controls.resultSource.Text), "");
+            testCase.verifyEqual(string(app.Controls.mapWafer.Enable), "on");
         end
 
         function overlayCorrectionFromControlsMapAndExport(testCase)
@@ -638,8 +699,9 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             app.Controls.previewWafer.ValueChangedFcn([], []);
             testCase.verifyEqual(numel(findall(app.Controls.previewAxes(1), 'Type', 'patch', 'DisplayName', ...
                 'Wafer 間のばらつき（1σ 楕円）')), 1);
-            testCase.verifyEqual(string(app.Controls.previewAxes(1).Colorbar.Title.String), "|v| [nm]", "右の目盛りは矢印の長さ");
-            testCase.verifyNotEmpty(findall(app.Controls.previewAxes(1), 'Tag', 'correlationScale'), "|r| の目盛りは図の中");
+            testCase.verifyEqual(string(app.Controls.previewAxes(1).Colorbar.Title.String), "|r|", "右の目盛りは楕円の |r|");
+            testCase.verifyEqual(string(findall(app.Controls.previewAxes(1), 'DisplayName', '値（矢印）').Type), "quiver", ...
+                "楕円と重ねる矢印は単色");
             % X・Y の色の図の点の形（■）
             app.Controls.previewMarkerShape.Value = 's';
             app.Controls.previewMarkerShape.ValueChangedFcn([], []);
@@ -662,17 +724,17 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyEqual(ellipses.UserData, expected, 'AbsTol', 1e-12);
             labels = string(get(findall(overlayAxes(1), 'Type', 'text'), 'String'));
             testCase.verifyEqual(nnz(contains(labels, "|r| ")), 4, "Mark 番号の横に |r|");
-            % 個々の Shot の矢印は長さで色分け（右の目盛り）、平均は黒い矢印
-            testCase.verifyNotEmpty(findobj(overlayAxes(1), 'Type', 'patch', '-regexp', 'DisplayName', '^個々の Shot'));
-            testCase.verifyEqual(string(overlayAxes(1).Colorbar.Title.String), "|v| [nm]");
-            testCase.verifyEqual(numel(findobj(overlayAxes(1), 'Type', 'quiver')), 1, "平均の矢印");
+            % 楕円と重ねるので、個々の Shot の矢印は単色・平均は黒い矢印。右の目盛りは楕円の |r|
+            testCase.verifyNotEmpty(findobj(overlayAxes(1), 'Type', 'quiver', '-regexp', 'DisplayName', '^個々の Shot'));
+            testCase.verifyEqual(string(overlayAxes(1).Colorbar.Title.String), "|r|");
+            testCase.verifyNotEmpty(findobj(overlayAxes(1), 'Type', 'quiver', 'DisplayName', '平均'), "平均の矢印");
             testCase.verifyEqual(numel(app.Controls.shotOverlayInfo.Value), 1 + 4);
             testCase.verifyEqual(app.Controls.shotOverlayAxesGrid.ColumnWidth, {'1x', 0, 0});
             app.Controls.shotOverlayWaferOrder.Value = 1;
             app.Controls.shotOverlayIndividual.Value = false;
             app.Controls.shotOverlayIndividual.ValueChangedFcn([], []);
             testCase.verifyTrue(contains(string(overlayAxes(1).Title.String), "Wafer 成分 1次を除く"));
-            testCase.verifyEmpty(findobj(overlayAxes(1), 'Type', 'patch', '-regexp', 'DisplayName', '^個々の Shot'));
+            testCase.verifyEmpty(findobj(overlayAxes(1), '-regexp', 'DisplayName', '^個々の Shot'));
             % Scan 方向で分けた図も並べる（同じ矢印の倍率で、すべての Shot・Scan 方向 1・2）
             overlay = app.drawShotOverlay(1:5, true);
             testCase.verifyEqual(numel(overlay), 3);
@@ -789,13 +851,13 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             app.Controls.previewEllipseOnly.Value = true;
             app.Controls.previewEllipseOnly.ValueChangedFcn([], []);
             vectorAxes = app.Controls.previewAxes(1);
-            testCase.verifyEmpty(findall(vectorAxes, 'Type', 'patch', 'DisplayName', '値（矢印）'));
+            testCase.verifyEmpty(findall(vectorAxes, 'DisplayName', '値（矢印）'));
             testCase.verifyNotEmpty(findall(vectorAxes, 'Type', 'patch', 'DisplayName', 'Wafer 間のばらつき（1σ 楕円）'));
             app.Controls.shotOverlayEllipseOnly.Value = true;
             app.Controls.shotOverlayEllipseOnly.ValueChangedFcn([], []);
             overlayAxes = app.Controls.shotOverlayAxes(1);
             testCase.verifyEmpty(findobj(overlayAxes, 'Type', 'quiver'), "平均の矢印も描かない");
-            testCase.verifyEmpty(findobj(overlayAxes, 'Type', 'patch', '-regexp', 'DisplayName', '^個々の Shot'));
+            testCase.verifyEmpty(findobj(overlayAxes, '-regexp', 'DisplayName', '^個々の Shot'));
             testCase.verifyNotEmpty(findobj(overlayAxes, 'Type', 'patch', '-regexp', 'DisplayName', '楕円'));
             % 楕円を描かないとき（「なし」）は矢印を描く
             app.Controls.shotOverlayEllipse.Value = 0;

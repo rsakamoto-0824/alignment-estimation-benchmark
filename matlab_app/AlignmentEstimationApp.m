@@ -15,6 +15,7 @@ classdef AlignmentEstimationApp < handle
         PRIMARY_COLOR = [0.0, 0.36, 0.67]
         ERROR_COLOR = [0.72, 0.11, 0.11]
         BEST_COLOR = [1.0, 0.93, 0.70]
+        ARROW_COLORS = [0.0, 0.33, 0.62; 0.0, 0.33, 0.62; 0.75, 0.25, 0.10]  % 楕円と重ねるときの矢印（計測値・推定値・残差）
         NONE_LABEL = "（なし）"
         MAX_CURVES = 8
         METHOD_COLUMN_WIDTH = 440        % 結果の表の手法の列の幅 [px]（最も長い名前が収まる幅）
@@ -231,7 +232,22 @@ classdef AlignmentEstimationApp < handle
             if isempty(app.Results)
                 error('alignest:noResults', '先に「3. 実行」で評価してください。');
             end
+            if isImportedResults(app.Results)
+                error('alignest:importedResults', ['Excel から読み込んだ結果は書き出せません（読み込んだファイル「%s」を' ...
+                    'そのまま使ってください）。'], app.Results.imported);
+            end
             alignest.exportResults(app.Results, filePath, app.FilePath);
+        end
+
+        function results = importResultsFrom(app, filePath)
+            %IMPORTRESULTSFROM 「結果を Excel に書き出す」で書き出したファイルを読み込み、結果の画面に出す。
+            %   表・グラフ・基準の手法との比較を見られる。推定値は Excel に無いので、Wafer マップ・推定値と誤差の分布・
+            %   散布図・分布の比較は使えない（計測ファイルを読み込んで「3. 実行」で評価し直すと使える）。
+            results = alignest.importResults(filePath);
+            clearResults(app);
+            app.Results = results;
+            refreshResultControls(app);
+            app.TabGroup.SelectedTab = app.Tabs.results;
         end
 
         function priority = loadShotPriority(app, filePath)
@@ -505,9 +521,7 @@ classdef AlignmentEstimationApp < handle
         function analysis = analyzeResiduals(app, methodIndex, group, unitIndex)
             %ANALYZERESIDUALS 選んだ手法・学習パターンの列・Wafer（0 = すべて）の評価点の残差を、
             %   ヒストグラム・正規性検定・質的変数の ANOVA で調べて「推定値と誤差の分布」に出す。
-            if isempty(app.Results)
-                error('alignest:noResults', '先に「3. 実行」で評価してください。');
-            end
+            requireEstimates(app);
             c = app.Controls;
             if nargin >= 2
                 c.analysisMethod.Value = methodIndex;
@@ -529,9 +543,7 @@ classdef AlignmentEstimationApp < handle
         function summary = drawScatter(app, methodIndex, group, unitIndex, colorBy)
             %DRAWSCATTER 選んだ手法・学習パターンの列・Wafer（0 = すべて）の評価点で、実測値と推定値の散布図を X・Y 別に描く。
             %   colorBy は色分けの項目（none・wafer・lot・eqp・operation・scan・mark・row・col:<列名>）。
-            if isempty(app.Results)
-                error('alignest:noResults', '先に「3. 実行」で評価してください。');
-            end
+            requireEstimates(app);
             c = app.Controls;
             if nargin >= 2
                 c.scatterMethod.Value = methodIndex;
@@ -563,9 +575,7 @@ classdef AlignmentEstimationApp < handle
             %COMPAREDISTRIBUTIONS 選んだ手法・学習パターンの列・Wafer（0 = すべて）で、Wafer 全面・学習データ・予測対象の
             %   計測値の分布と、予測対象の実測値と推定値の分布を、ヒストグラム・代表統計値・JS ダイバージェンスで比べる
             %   （alignest.distributionComparison）。引数を省くと画面の選択を使う。
-            if isempty(app.Results)
-                error('alignest:noResults', '先に「3. 実行」で評価してください。');
-            end
+            requireEstimates(app);
             c = app.Controls;
             if nargin >= 2
                 c.distributionMethod.Value = methodIndex;
@@ -610,9 +620,7 @@ classdef AlignmentEstimationApp < handle
             %   学習データの Mark も書き出し、その推定値・残差は空欄にする（「区分」の列で見分ける）。
             %   scope = "selected"：「推定値と誤差の分布」で選んだ手法・学習パターン・Wafer
             %           "all"     ：すべての手法・学習パターン・Wafer（推定をやり直すので時間がかかる）
-            if isempty(app.Results)
-                error('alignest:noResults', '先に「3. 実行」で評価してください。');
-            end
+            requireEstimates(app);
             if nargin < 3
                 scope = string(app.Controls.estimateScope.Value);
             end
@@ -1061,8 +1069,10 @@ classdef AlignmentEstimationApp < handle
             alignest.plot.waferMap(c.previewAxes(3), points, values, common{:}, mode="Y", colorLimit=limit, ...
                 markerSize=c.previewMarkerSize.Value, markerShape=c.previewMarkerShape.Value, titleText="Y 成分（色）");
             set(c.previewAxes, 'Visible', 'on', 'FontSize', app.AXES_FONT_SIZE);
-            c.previewInfo.Text = sprintf("%s：%d 点。点線は半径 %g mm%s。矢印の色は長さ |v|。色の図の範囲は X・Y 共通で ±%.2f nm。%s", option.label, ...
-                size(points, 1), radius, ternary(c.previewShotFrames.Value, "、灰色の枠は Shot", ""), limit, ...
+            % 楕円と重ねる矢印は単色（色の目盛りは楕円の |r|）、楕円が無ければ矢印の色は長さ
+            arrowText = ternary(ellipseSigma > 0, "矢印は単色（右の目盛りは楕円の |r|）", "矢印の色は長さ |v|");
+            c.previewInfo.Text = sprintf("%s：%d 点。点線は半径 %g mm%s。%s。色の図の範囲は X・Y 共通で ±%.2f nm。%s", option.label, ...
+                size(points, 1), radius, ternary(c.previewShotFrames.Value, "、灰色の枠は Shot", ""), arrowText, limit, ...
                 ternary(option.isGroup, "座標ごとに Wafer 間で平均（楕円は Wafer 間のばらつき、色は X・Y の相関係数の絶対値 |r|）。", ""));
         end
 
@@ -1303,26 +1313,43 @@ classdef AlignmentEstimationApp < handle
             place(c.featureXY, 3, 1);
             c.featureXYR = uicheckbox(m, 'Text', 'X, Y, 半径', 'ValueChangedFcn', onChange);
             place(c.featureXYR, 3, 2);
-            factorGrid = uigridlayout(m, [3, 4], 'Padding', 0, 'RowSpacing', 4, 'RowHeight', {'fit', 'fit', 72}, ...
-                'ColumnWidth', {'fit', 'fit', 'fit', '1x'});
+            factorGrid = uigridlayout(m, [5, 5], 'Padding', 0, 'RowSpacing', 4, ...
+                'RowHeight', {'fit', 'fit', 'fit', 'fit', 72}, 'ColumnWidth', {'fit', 'fit', 'fit', 'fit', '1x'});
             place(factorGrid, 4, [1, 4]);
             label(factorGrid, ['質的変数（GPR・GAM と、TPS・RBF・Kriging の Backfitting で使う。' ...
-                'ANOVA では選ばなくても Scan・Mark・Shot 行を調べる）'], 1, [1, 4]);
+                'ANOVA では選ばなくても Scan・Mark・Shot 行を調べる）'], 1, [1, 5]);
+            label(factorGrid, 'X 成分', 2, 1);
             c.factorScan = uicheckbox(factorGrid, 'Text', 'Scan 方向', 'ValueChangedFcn', onChange, ...
                 'Tooltip', 'Direction の列、または「Scan 方向が無い行に付ける値」で付けた値。値が無い Wafer では使いません。');
-            place(c.factorScan, 2, 1);
+            place(c.factorScan, 2, 2);
             c.factorMark = uicheckbox(factorGrid, 'Text', 'Mark 番号', 'ValueChangedFcn', onChange);
-            place(c.factorMark, 2, 2);
-            c.shotRowParity = uicheckbox(factorGrid, 'Text', 'Shot 行の奇数・偶数', ...
-                'Tooltip', '各 Wafer・測定日時で、入力の Shot 中心 Y 座標を上から1行目として数えます。半径除外前に判定。入力にない行は数えません。', ...
+            place(c.factorMark, 2, 3);
+            rowTooltip = '各 Wafer・測定日時で、入力の Shot 中心 Y 座標を上から1行目として数えます。半径除外前に判定。入力にない行は数えません。';
+            c.shotRowParity = uicheckbox(factorGrid, 'Text', 'Shot 行の奇数・偶数', 'Tooltip', rowTooltip, ...
                 'ValueChangedFcn', onChange);
-            place(c.shotRowParity, 2, 3);
-            c.factorColumnsLabel = label(factorGrid, ['ファイルのその他の列（標準の項目に対応づけなかった列。' ...
-                'Ctrl・Shift で複数選ぶ）'], 2, 4);
+            place(c.shotRowParity, 2, 4);
+            c.factorSeparate = uicheckbox(factorGrid, 'Text', 'Y 成分は別に選ぶ', 'ValueChangedFcn', onChange, ...
+                'Tooltip', 'オフなら Y 成分も X 成分と同じ質的変数を使います。オンにすると下の行で Y 成分の質的変数を選べます。');
+            place(c.factorSeparate, 2, 5);
+            label(factorGrid, 'Y 成分', 3, 1);
+            c.factorScanY = uicheckbox(factorGrid, 'Text', 'Scan 方向', 'ValueChangedFcn', onChange);
+            place(c.factorScanY, 3, 2);
+            c.factorMarkY = uicheckbox(factorGrid, 'Text', 'Mark 番号', 'ValueChangedFcn', onChange);
+            place(c.factorMarkY, 3, 3);
+            c.shotRowParityY = uicheckbox(factorGrid, 'Text', 'Shot 行の奇数・偶数', 'Tooltip', rowTooltip, ...
+                'ValueChangedFcn', onChange);
+            place(c.shotRowParityY, 3, 4);
+            columnsTooltip = ['選んだ列の値（文字・数字）を水準とする質的変数。値が空の Mark がある Wafer では、その列を使いません。' ...
+                '一覧はデータを読み込むと出ます。'];
+            c.factorColumnsLabel = label(factorGrid, 'その他の列：X 成分（標準の項目に対応づけなかった列。Ctrl・Shift で複数）', ...
+                4, [1, 4]);
+            label(factorGrid, 'その他の列：Y 成分', 4, 5);
             c.factorColumns = uilistbox(factorGrid, 'Items', {}, 'Multiselect', 'on', 'ValueChangedFcn', onChange, ...
-                'Tooltip', ['選んだ列の値（文字・数字）を水準とする質的変数。値が空の Mark がある Wafer では、その列を使いません。' ...
-                '一覧はデータを読み込むと出ます。']);
-            place(c.factorColumns, 3, [1, 4]);
+                'Tooltip', columnsTooltip);
+            place(c.factorColumns, 5, [1, 4]);
+            c.factorColumnsY = uilistbox(factorGrid, 'Items', {}, 'Multiselect', 'on', 'ValueChangedFcn', onChange, ...
+                'Tooltip', columnsTooltip);
+            place(c.factorColumnsY, 5, 5);
             c.factorColumnsError = errorLabel(app, m, 5, [1, 4]);
             c.gpr = uicheckbox(m, 'Text', 'GPR（ガウス過程回帰）', 'ValueChangedFcn', onChange);
             place(c.gpr, 6, [1, 4]);
@@ -1426,11 +1453,16 @@ classdef AlignmentEstimationApp < handle
             c.invertDirection.Value = s.data.invertDirection;
             c.invertDirection.Enable = onOff(s.data.directionRule ~= "none");
             fillUnitTable(app);
-            choice = alignest.factorChoice(s);
+            choice = alignest.factorChoice(s, "X");
             c.factorScan.Value = choice.scan;
             c.factorMark.Value = choice.mark;
             c.shotRowParity.Value = choice.row;
-            refreshFactorColumns(app, choice.columns);
+            choiceY = alignest.factorChoice(s, "Y");   % 別に選ばないときは X と同じ（画面にもそのまま出す）
+            c.factorSeparate.Value = isfield(s.factors, "separateY") && s.factors.separateY;
+            c.factorScanY.Value = choiceY.scan;
+            c.factorMarkY.Value = choiceY.mark;
+            c.shotRowParityY.Value = choiceY.row;
+            refreshFactorColumns(app, choice.columns, choiceY.columns);
             c.samplingMethod.Value = char(s.sampling.method);
             c.nShotsStart.Value = s.sampling.nShotsStart;
             c.nShotsEnd.Value = s.sampling.nShotsEnd;
@@ -1515,6 +1547,18 @@ classdef AlignmentEstimationApp < handle
             s.factors.mark = c.factorMark.Value;
             s.factors.shotRowParity = c.shotRowParity.Value;
             s.factors.columns = reshape(string(c.factorColumns.Value), 1, []);
+            s.factors.separateY = c.factorSeparate.Value;
+            if ~s.factors.separateY
+                % 別に選ばないときは、Y 成分の欄を X 成分と同じにしておく（オンにしたときの初めの値）
+                c.factorScanY.Value = c.factorScan.Value;
+                c.factorMarkY.Value = c.factorMark.Value;
+                c.shotRowParityY.Value = c.shotRowParity.Value;
+                c.factorColumnsY.Value = c.factorColumns.Value;
+            end
+            s.factors.y.scan = c.factorScanY.Value;
+            s.factors.y.mark = c.factorMarkY.Value;
+            s.factors.y.shotRowParity = c.shotRowParityY.Value;
+            s.factors.y.columns = reshape(string(c.factorColumnsY.Value), 1, []);
             s.sampling.method = string(c.samplingMethod.Value);
             try
                 s.sampling.nShots = alignest.shotCountList(c.nShotsStart.Value, c.nShotsEnd.Value, c.nShotsStep.Value);
@@ -1653,7 +1697,11 @@ classdef AlignmentEstimationApp < handle
             c.zoneError.Text = text;
             messages = [messages; text(text ~= "")];
             text = "";
-            missing = missingFactorColumns(app, string(c.factorColumns.Value));
+            selectedColumns = string(c.factorColumns.Value);
+            if c.factorSeparate.Value
+                selectedColumns = unique([selectedColumns, string(c.factorColumnsY.Value)], 'stable');
+            end
+            missing = missingFactorColumns(app, selectedColumns);
             if ~isempty(missing)
                 text = "⚠ 質的変数に選んだ列が、読み込んだデータにありません：" + strjoin(missing, "、") + ...
                     "。選び直すか、その列を含むファイルを読み込んでください。";
@@ -1691,6 +1739,7 @@ classdef AlignmentEstimationApp < handle
 
         function updateEnabled(app)
             c = app.Controls;
+            set([c.factorScanY, c.factorMarkY, c.shotRowParityY, c.factorColumnsY], 'Enable', onOff(c.factorSeparate.Value));
             method = string(c.samplingMethod.Value);
             constrained = method ~= "manual";
             byRate = string(c.countBy.Value) == "rate";
@@ -1717,23 +1766,26 @@ classdef AlignmentEstimationApp < handle
             c.rtOrders.Enable = onOff(c.rt.Value);
         end
 
-        function refreshFactorColumns(app, selected)
-            % 質的変数に選べるその他の列の一覧：読み込んだデータの列と、設定で選んであるがデータに無い列
+        function refreshFactorColumns(app, selected, selectedY)
+            % 質的変数に選べるその他の列の一覧（X 成分・Y 成分）：読み込んだデータの列と、設定で選んであるがデータに無い列
             c = app.Controls;
             if nargin < 2
                 selected = string(c.factorColumns.Value);
+                selectedY = string(c.factorColumnsY.Value);
             end
             available = strings(1, 0);
             if ~isempty(app.Data) && isfield(app.Data, "attributeNames")
                 available = reshape(app.Data.attributeNames, 1, []);
             end
-            selected = reshape(string(selected), 1, []);
-            absent = selected(~ismember(selected, available));
-            names = [available, absent];
-            labels = [available, absent + "（データに無い）"];
-            c.factorColumns.Items = cellstr(labels);
-            c.factorColumns.ItemsData = cellstr(names);
-            c.factorColumns.Value = cellstr(selected(ismember(selected, names)));
+            lists = [c.factorColumns, c.factorColumnsY];
+            choices = {reshape(string(selected), 1, []), reshape(string(selectedY), 1, [])};
+            for k = 1:2
+                absent = choices{k}(~ismember(choices{k}, available));
+                names = [available, absent];
+                lists(k).Items = cellstr([available, absent + "（データに無い）"]);
+                lists(k).ItemsData = cellstr(names);
+                lists(k).Value = cellstr(choices{k}(ismember(choices{k}, names)));
+            end
         end
 
         function missing = missingFactorColumns(app, selected)
@@ -2137,8 +2189,8 @@ classdef AlignmentEstimationApp < handle
         % ================= 4. 結果一覧 =================
         function buildResultsTab(app)
             grid = uigridlayout(app.Tabs.results, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 12, 'RowSpacing', 10);
-            controls = uigridlayout(grid, [2, 5], 'ColumnWidth', {260, 160, '1x', 'fit', 'fit'}, 'Padding', 0, ...
-                'RowHeight', {'fit', 'fit'});
+            controls = uigridlayout(grid, [3, 6], 'ColumnWidth', {260, 160, '1x', 'fit', 'fit', 'fit'}, 'Padding', 0, ...
+                'RowHeight', {'fit', 'fit', 0});
             label(controls, '指標', 1, 1);
             label(controls, '集計（Wafer 間）', 1, 2);
             label(controls, '基準の手法（「基準の手法との比較」で比べる相手）', 1, 3);
@@ -2160,6 +2212,13 @@ classdef AlignmentEstimationApp < handle
             c.saveChart = uibutton(controls, 'Text', 'グラフを画像で保存…', 'ButtonPushedFcn', @(~, ~) app.onSaveChart());
             place(c.saveChart, 2, 5);
             set([c.export, c.saveChart], 'Enable', 'off');
+            c.importResults = uibutton(controls, 'Text', '結果を読み込む…', 'ButtonPushedFcn', @(~, ~) app.onImportResults(), ...
+                'Tooltip', '「結果を Excel に書き出す」で書き出したファイルを読み込み、表・グラフ・基準の手法との比較を見ます。');
+            place(c.importResults, 2, 6);
+            c.resultSource = uilabel(controls, 'WordWrap', 'on', 'Text', '');
+            c.resultSource.Layout.Row = 3;
+            c.resultSource.Layout.Column = [1, 6];
+            c.resultControls = controls;
 
             % 表・グラフ・比較・誤差の分布は、それぞれ画面の幅いっぱいに出す（手法の名前が切れないように）
             c.resultTabs = uitabgroup(grid);
@@ -2326,6 +2385,20 @@ classdef AlignmentEstimationApp < handle
             [~, order] = sort(mean(summary.values, 2, 'omitnan'));
             c.chartMethods.Value = num2cell(sort(order(1:min(app.MAX_CURVES, numel(order)))).');
             set([c.export, c.saveChart], 'Enable', 'on');
+            if isImportedResults(results)
+                % Excel から読み込んだ結果：表・グラフ・比較だけ（推定値を使う画面は使えないまま）
+                c.export.Enable = 'off';
+                c.resultSource.Text = sprintf(['Excel から読み込んだ結果：%s（%s に作成）。表・グラフ・基準の手法との' ...
+                    '比較を見られます。Wafer マップ・推定値と誤差の分布・散布図・分布の比較は、計測ファイルを読み込んで' ...
+                    '「3. 実行」で評価し直すと使えます。'], results.imported, results.createdAt);
+                c.resultControls.RowHeight{3} = 'fit';
+                c.mapInfo.Text = "Excel から読み込んだ結果では Wafer ごとの図は描けません（推定値が無いため）。" + ...
+                    "計測ファイルを読み込んで「3. 実行」で評価してください。";
+                refreshResults(app);
+                return
+            end
+            c.resultSource.Text = '';
+            c.resultControls.RowHeight{3} = 0;
             % マップの選択肢
             setGroupItems(c.mapWafer, alignest.groupOptions(app.Data.units));
             planLabels = unique(string({results.plans.label}), 'stable');
@@ -2561,6 +2634,16 @@ classdef AlignmentEstimationApp < handle
             end
         end
 
+        function onImportResults(app)
+            [fileName, folder] = uigetfile({'*.xlsx', 'Excel ブック (*.xlsx)'}, '結果を読み込む');
+            figure(app.Figure);
+            if isequal(fileName, 0)
+                return
+            end
+            runWithAlert(app, @() app.importResultsFrom(fullfile(folder, fileName)), "結果を読み込めませんでした", ...
+                "このアプリの「結果を Excel に書き出す」で書き出したファイル（.xlsx）を選んでください。");
+        end
+
         function onSaveChart(app)
             [fileName, folder] = uiputfile({'*.png', 'PNG 画像 (*.png)'}, 'グラフを保存', 'metric_by_plan.png');
             figure(app.Figure);
@@ -2765,7 +2848,7 @@ classdef AlignmentEstimationApp < handle
         end
 
         function drawMap(app)
-            if isempty(app.Results)
+            if isempty(app.Results) || isImportedResults(app.Results)
                 return
             end
             c = app.Controls;
@@ -2960,7 +3043,7 @@ classdef AlignmentEstimationApp < handle
             for k = 1:3
                 alignest.plot.waferMap(c.mapAxes(k), averages(k).points, averages(k).mean, mode=string(c.mapMode.Value), ...
                     scaleMmPerNm=scale(k), colorLimit=limit, trainPoints=trainPoints, titleText=titles(k), ...
-                    waferRadiusMm=settings.data.waferRadiusMm, magnitudeLimit=magnitudes(k), ...
+                    waferRadiusMm=settings.data.waferRadiusMm, magnitudeLimit=magnitudes(k), arrowColor=app.ARROW_COLORS(k, :), ...
                     markerSize=c.mapMarkerSize.Value, markerShape=c.mapMarkerShape.Value, shotCenters=centers, ...
                     shotSizeMm=sizeMm, covariance=averages(k).covariance, ellipseSigma=c.mapEllipse.Value, ...
                     showArrows=~(c.mapEllipseOnly.Value && c.mapEllipse.Value > 0));
@@ -3031,6 +3114,17 @@ classdef AlignmentEstimationApp < handle
         end
 
         % ================= 共通 =================
+        function requireEstimates(app)
+            % 推定値を計算し直す機能（分析・散布図・分布の比較・推定値の書き出し）を使える結果か確かめる
+            if isempty(app.Results)
+                error('alignest:noResults', '先に「3. 実行」で評価してください。');
+            end
+            if isImportedResults(app.Results)
+                error('alignest:importedResults', ['Excel から読み込んだ結果では推定値を計算できません。計測ファイルを' ...
+                    '読み込んで「3. 実行」で評価し直してください。']);
+            end
+        end
+
         function clearResults(app)
             app.Results = [];
             app.Analysis = [];
@@ -3065,6 +3159,8 @@ classdef AlignmentEstimationApp < handle
             end
             c.runStatus.Text = "";
             c.mapInfo.Text = "「3. 実行」で評価すると、ここに Wafer ごとの図が出ます。";
+            c.resultSource.Text = '';
+            c.resultControls.RowHeight{3} = 0;
             c.analysisNote.Text = c.analysisNote.UserData;
         end
 
@@ -3159,6 +3255,11 @@ function closeDialog(dialog)
 if ~isempty(dialog) && isvalid(dialog)
     close(dialog);
 end
+end
+
+function value = isImportedResults(results)
+% Excel から読み込んだ結果か（alignest.importResults は imported に読んだファイルを入れる）
+value = isstruct(results) && isfield(results, "imported") && strlength(results.imported) > 0;
 end
 
 function state = onOff(condition)

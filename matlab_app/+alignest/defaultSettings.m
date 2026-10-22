@@ -17,6 +17,11 @@ settings.factors.scan = true;           % Scan 方向（Direction）
 settings.factors.mark = true;           % Mark 番号（markNo）
 settings.factors.shotRowParity = false; % Shot 配列の行（上から1行目）の奇数・偶数
 settings.factors.columns = strings(1, 0);  % ファイルのその他の列（標準の項目に対応づけなかった列）の名前
+settings.factors.separateY = false;      % true なら Y 成分は factors.y の質的変数を使う（false なら X と同じ）
+settings.factors.y.scan = true;
+settings.factors.y.mark = true;
+settings.factors.y.shotRowParity = false;
+settings.factors.y.columns = strings(1, 0);
 
 % 学習に使う Shot の選び方
 settings.sampling.method = "ioptimal";  % ioptimal（制約付き I 最適）／random（制約つきランダム）／manual（手動）／file（ファイルの優先順）

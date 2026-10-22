@@ -226,6 +226,45 @@ classdef TestSpatialModels < matlab.unittest.TestCase
             testCase.verifyError(@() alignest.runEvaluation(data, settings), 'alignest:factorColumn');
         end
 
+        function factorsCanDifferBetweenXAndY(testCase)
+            root = fileparts(fileparts(mfilename('fullpath')));
+            raw = alignest.readMeasurementFile(fullfile(root, 'sample_data', 'sample_alignment.csv'));
+            raw.Chuck = "C" + string(mod(raw.shotNo, 2));
+            data = alignest.prepareData(raw, alignest.guessColumnMapping(raw.Properties.VariableNames));
+            unit = data.units(1);
+            chuck = unit.marks.attributes(:, unit.attributeNames == "Chuck");
+            unit.marks.measX = 12 * (chuck == "C1") + 3 * unit.marks.markNo;
+            unit.marks.measY = unit.marks.measX;
+            settings = alignest.defaultSettings();
+            settings.factors.scan = false;
+            settings.factors.columns = "Chuck";
+            % 別に選ばなければ Y 成分も X 成分と同じ
+            testCase.verifyEqual(alignest.factorChoice(settings, "Y"), alignest.factorChoice(settings, "X"));
+            settings.factors.separateY = true;
+            settings.factors.y.scan = false;
+            settings.factors.y.columns = strings(1, 0);
+            testCase.verifyEqual(alignest.factorChoice(settings, "X").columns, "Chuck");
+            testCase.verifyEmpty(alignest.factorChoice(settings, "Y").columns);
+            settings.methods = alignest.recommendedMethods('none');
+            settings.methods.gpr.enabled = true;
+            settings.methods.gpr.factorModes = "basis";
+            shots = 1:3:numel(unit.shots.shotNo);
+            out = alignest.estimateWafer(unit, shots, alignest.buildMethodList(settings.methods), settings);
+            testCase.verifyEqual(out.estimate.X, unit.marks.measX(out.testIndex.X), 'AbsTol', 1e-3, "X は Chuck の効果を推定");
+            testCase.verifyGreaterThan(sqrt(mean((out.estimate.Y - unit.marks.measY(out.testIndex.Y)) .^ 2)), 1, ...
+                "Y は Chuck を使わない");
+            % 加法カーネルの質的変数の項も軸ごと
+            settings.methods.gpr.factorModes = "additive";
+            out = alignest.estimateWafer(unit, shots, alignest.buildMethodList(settings.methods), settings);
+            testCase.verifyTrue(isfield(out.extra, "tau_col_Chuck_X"));
+            testCase.verifyFalse(isfield(out.extra, "tau_col_Chuck_Y"));
+            % Y 成分だけで選んだ列も、データに無ければ評価を始めない
+            settings.factors.y.columns = "Nozzle";
+            testCase.verifyEqual(alignest.factorColumnsUsed(settings), ["Chuck", "Nozzle"]);
+            data.units = data.units(1);
+            testCase.verifyError(@() alignest.runEvaluation(data, settings), 'alignest:factorColumn');
+        end
+
         function iterationLimitIsReportedWithUsableResults(testCase)
             root = fileparts(fileparts(mfilename('fullpath')));
             raw = alignest.readMeasurementFile(fullfile(root, 'sample_data', 'sample_alignment.csv'));

@@ -3,7 +3,8 @@ function waferMap(ax, points, values, options)
 %   points : 点の座標 [x, y]（mm、点数 × 2）
 %   values : 値 [X, Y]（nm、点数 × 2。片方の軸が無効な点は NaN）
 %   options.mode         : "vector"（矢印）・"X"・"Y"（色）
-%   options.scaleMmPerNm : 矢印の長さ [mm/nm]。矢印の色は長さ |v| [nm]（alignest.plot.magnitudeArrows）
+%   options.scaleMmPerNm : 矢印の長さ [mm/nm]。矢印の色は長さ |v| [nm]（alignest.plot.magnitudeArrows）。
+%                          共分散楕円も描くときは、矢印を options.arrowColor の単色にする（色の目盛りは楕円の |r|）
 %   options.magnitudeLimit : 矢印の色の範囲の上限 [nm]（0 なら描く矢印の最大。並べる図をそろえるときに渡す）
 %   options.colorLimit   : 色の範囲 ±[nm]
 %   options.markerShape  : 色で描くときの点の形（"o" = ●、"s" = ■）
@@ -17,7 +18,7 @@ function waferMap(ax, points, values, options)
 %   options.covariance   : 点ごとの Wafer 間の共分散 [X の分散, Y の分散, X・Y の共分散]（nm²、点数 × 3）
 %   options.showArrows   : 矢印（ベクトル）を描くか（既定 true）。false なら楕円だけ（楕円の中心は矢印の先のまま）
 %   options.ellipseSigma : 共分散楕円の大きさ（σ の何倍か。0 なら描かない）。矢印の先を中心に、矢印と同じ倍率で描く。
-%                          楕円の色は X・Y の相関係数の絶対値（alignest.plot.covarianceEllipses。目盛りは図の右上の隅）
+%                          楕円の色は X・Y の相関係数の絶対値（alignest.plot.covarianceEllipses。MATLAB の既定の色）
 %   色だけで意味を伝えないよう、学習 Mark は形（四角）と凡例の文字でも示す。
 arguments
     ax
@@ -31,6 +32,7 @@ arguments
     options.titleText (1, 1) string = ""
     options.waferRadiusMm (1, 1) double = 150
     options.magnitudeLimit (1, 1) double {mustBeNonnegative} = 0
+    options.arrowColor (1, 3) double = [0.0, 0.33, 0.62]   % 楕円も描くときの矢印の色
     options.markerShape (1, 1) string {mustBeMember(options.markerShape, ["o", "s"])} = "o"
     options.showLegend (1, 1) logical = true
     options.markerSize (1, 1) double {mustBePositive} = 30
@@ -62,11 +64,15 @@ if ~isempty(options.outlierPoints)
     legendItems(end + 1) = plot(ax, options.outlierPoints(:, 1), options.outlierPoints(:, 2), 'x', 'MarkerSize', 9, ...
         'LineWidth', 1.8, 'Color', OUTLIER_COLOR, 'LineStyle', 'none', 'DisplayName', '学習から除いた異常値');
 end
-ellipses = gobjects(0);
 if options.mode == "vector"
     usable = all(isfinite(values), 2);
+    withEllipses = options.ellipseSigma > 0 && size(options.covariance, 1) == size(points, 1);
     arrows = gobjects(0);
-    if options.showArrows
+    if options.showArrows && withEllipses
+        % 楕円と重ねるときは矢印を単色にする（色の目盛りは楕円の |r| に使う）
+        arrows = quiver(ax, points(usable, 1), points(usable, 2), values(usable, 1) * options.scaleMmPerNm, ...
+            values(usable, 2) * options.scaleMmPerNm, 0, 'Color', options.arrowColor, 'LineWidth', 1, 'MaxHeadSize', 0.4);
+    elseif options.showArrows
         arrows = alignest.plot.magnitudeArrows(ax, points(usable, :), values(usable, :), options.scaleMmPerNm, ...
             magnitudeLimit=options.magnitudeLimit);
     end
@@ -74,14 +80,13 @@ if options.mode == "vector"
         arrows.DisplayName = '値（矢印）';
         legendItems(end + 1) = arrows;
     end
-    if options.ellipseSigma > 0 && size(options.covariance, 1) == size(points, 1)
+    if withEllipses
         tips = points(usable, :) + values(usable, :) * options.scaleMmPerNm;
         handle = alignest.plot.covarianceEllipses(ax, tips, options.covariance(usable, :), ...
             options.ellipseSigma * options.scaleMmPerNm);
         if ~isempty(handle)
             handle.DisplayName = sprintf('Wafer 間のばらつき（%gσ 楕円）', options.ellipseSigma);
             legendItems(end + 1) = handle;
-            ellipses = handle;
         end
     end
     drawScaleBar(ax, options.scaleMmPerNm, options.waferRadiusMm);
@@ -100,9 +105,6 @@ axis(ax, 'equal');
 limit = options.waferRadiusMm + MARGIN_MM;
 xlim(ax, [-limit, limit]);
 ylim(ax, [-limit, limit]);
-if ~isempty(ellipses)
-    alignest.plot.correlationScale(ax);
-end
 xlabel(ax, 'x [mm]');
 ylabel(ax, 'y [mm]');
 title(ax, options.titleText, 'Interpreter', 'none');

@@ -246,6 +246,9 @@ classdef TestEvaluation < matlab.unittest.TestCase
             settings.methods.featureSets = ["XY", "XYR"];
             settings.data.coordinateUnits.Xmm = "um";
             settings.factors.shotRowParity = true;
+            settings.factors.separateY = true;
+            settings.factors.y.mark = false;
+            settings.factors.y.columns = "Chuck";
             alignest.saveSettings(settings, settingsFile);
             loaded = alignest.loadSettings(settingsFile);
             testCase.verifyEqual(loaded, settings);
@@ -255,6 +258,7 @@ classdef TestEvaluation < matlab.unittest.TestCase
             loaded = alignest.loadSettings(settingsFile);
             testCase.verifyEqual(loaded.data.coordinateUnits, alignest.coordinateUnits());
             testCase.verifyFalse(loaded.factors.shotRowParity);
+            testCase.verifyFalse(loaded.factors.separateY, "以前の設定は Y 成分も X 成分と同じ");
             % 開始・終了・刻みの無い以前の設定は、Shot 数の並びから決める（等間隔でなければ間が加わる）
             legacy.sampling = rmfield(legacy.sampling, ["nShotsStart", "nShotsEnd", "nShotsStep"]);
             legacy.sampling.nShots = [10, 20, 50];

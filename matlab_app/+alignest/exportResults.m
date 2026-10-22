@@ -35,7 +35,8 @@ end
 summary = results.dataSummary;
 timingRecorded = isfield(results, "timingRecorded") && results.timingRecorded;
 overlayEvaluated = isfield(results, "overlayEvaluated") && results.overlayEvaluated;
-choice = alignest.factorChoice(results.settings);
+choice = alignest.factorChoice(results.settings, "X");
+choiceY = alignest.factorChoice(results.settings, "Y");
 items = ["作成日時"; "読み込んだファイル"; "工程（Operation）"; "装置（EqpId）"; "ロット（LotID）"; ...
     "Scan 方向（Direction）"; "質的変数"; ...
     "Wafer（評価の単位）の数"; "学習 Shot の選び方"; "学習パターン"; ...
@@ -43,7 +44,7 @@ items = ["作成日時"; "読み込んだファイル"; "工程（Operation）";
     "ワースト値・95%値"; "I 基準・D 基準"; "Overlay 補正の評価"; "学習データの異常値"];
 values = [results.createdAt; sourceFile; listText(summaryField(summary, "operations")); ...
     listText(summaryField(summary, "eqpIds")); listText(summaryField(summary, "lotIds")); directionText(summary); ...
-    factorText(choice); string(numel(results.unitLabels)); ...
+    factorText(choice, choiceY); string(numel(results.unitLabels)); ...
     samplingLabel(results.settings.sampling); strjoin(results.groups, "、"); string(numel(results.methods)); ...
     sprintf("%.1f", results.elapsedSeconds); string(results.cancelled); ...
     ternary(timingRecorded, "記録した（「処理時間」シート。各手法の初回は予備の推定をして、読み込みの時間を除いた）", ...
@@ -86,16 +87,8 @@ end
 writetable(vertcat(blocks{:}), filePath, 'Sheet', '集計_統計量');
 
 % Wafer ごと
-perWafer = results.table;
-keep = ["Operation", "EqpId", "LotID", "Wafer", "DateTime", "plan", "group", "nShots", "criterionI", "criterionD", ...
-    "efficiencyI", "efficiencyD", ...
-    "methodLabel", "methodId", metricNames, ...
-    "nTest_X", "nTest_Y", "nOutliers", "edf_X", "edf_Y", "aux_X", "aux_Y", "converged", "seconds", "hyperparameters", "note"];
-perWafer = perWafer(:, keep);
-headers = ["Operation", "EqpId", "LotID", "Wafer", "DateTime", "学習パターン", "列", "学習Shot数", "I基準tr(M⁻¹)", ...
-    "D基準det(M)^(-1/p)", "I効率(全計測に対する)", "D効率(全計測に対する)", "手法", "手法の識別子", metricLabels, ...
-    "評価点数X", "評価点数Y", "学習から除いた異常値の数", "有効自由度X", "有効自由度Y", "補助値X", "補助値Y", "最適化の収束", "計算時間[秒]", ...
-    "超パラメータ", "メモ"];
+[keep, headers] = alignest.resultColumnNames(isfield(results, "overlayEvaluated") && results.overlayEvaluated);
+perWafer = results.table(:, keep);
 perWafer.Properties.VariableNames = cellstr(headers);
 writetable(perWafer, filePath, 'Sheet', 'Waferごと');
 
@@ -174,15 +167,22 @@ else
 end
 end
 
-function text = factorText(choice)
-% 推定に使った質的変数（GPR・GAM・Backfitting）
+function text = factorText(choice, choiceY)
+% 推定に使った質的変数（GPR・GAM・Backfitting）。X 成分と Y 成分で違えば別々に書く
+text = usedText(choice);
+if ~isequal(choice, choiceY)
+    text = "X 成分：" + text + "／Y 成分：" + usedText(choiceY);
+end
+text = text + "（GPR・GAM・TPS／RBF／Kriging の Backfitting で使う）";
+end
+
+function text = usedText(choice)
 names = ["Scan 方向", "Mark 番号", "Shot 行の奇偶"];
 used = names([choice.scan, choice.mark, choice.row]);
 used = [used, "列 " + choice.columns];
-if isempty(used)
-    text = "なし";
-else
-    text = strjoin(used, "、") + "（GPR・GAM・TPS／RBF／Kriging の Backfitting で使う）";
+text = "なし";
+if ~isempty(used)
+    text = strjoin(used, "、");
 end
 end
 
