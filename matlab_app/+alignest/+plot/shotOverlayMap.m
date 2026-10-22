@@ -12,6 +12,7 @@ arguments
     options.showIndividual (1, 1) logical = true
     options.titleText (1, 1) string = ""
     options.magnitudeLimit (1, 1) double {mustBeNonnegative} = 0   % 矢印の色の上限 [nm]（0 なら最大。並べる図をそろえる）
+    options.showArrows (1, 1) logical = true   % false なら個々の Shot・平均の矢印を描かず、楕円だけ（中心は平均の矢印の先）
 end
 MEAN_COLOR = [0.0, 0.0, 0.0];
 FRAME_COLOR = [0.45, 0.45, 0.45];
@@ -40,7 +41,7 @@ plot(ax, 0, 0, '+', 'Color', FRAME_COLOR, 'MarkerSize', 10, 'HandleVisibility', 
 legendItems = gobjects(0);
 ellipses = gobjects(0);
 usable = all(isfinite(allValues), 2);
-if options.showIndividual && any(usable)
+if options.showArrows && options.showIndividual && any(usable)
     arrows = alignest.plot.magnitudeArrows(ax, allPoints(usable, :), allValues(usable, :), scale, ...
         magnitudeLimit=options.magnitudeLimit, lineWidth=0.5);
     if ~isempty(arrows)
@@ -49,9 +50,11 @@ if options.showIndividual && any(usable)
     end
 end
 meanUsable = all(isfinite(average.mean), 2);
-legendItems(end + 1) = quiver(ax, average.points(meanUsable, 1), average.points(meanUsable, 2), ...
-    average.mean(meanUsable, 1) * scale, average.mean(meanUsable, 2) * scale, 0, 'Color', MEAN_COLOR, 'LineWidth', 2, ...
-    'MaxHeadSize', 0.4, 'DisplayName', '平均');
+if options.showArrows
+    legendItems(end + 1) = quiver(ax, average.points(meanUsable, 1), average.points(meanUsable, 2), ...
+        average.mean(meanUsable, 1) * scale, average.mean(meanUsable, 2) * scale, 0, 'Color', MEAN_COLOR, ...
+        'LineWidth', 2, 'MaxHeadSize', 0.4, 'DisplayName', '平均');
+end
 if options.ellipseSigma > 0
     tips = average.points(meanUsable, :) + average.mean(meanUsable, :) * scale;
     ellipses = alignest.plot.covarianceEllipses(ax, tips, average.covariance(meanUsable, :), options.ellipseSigma * scale);

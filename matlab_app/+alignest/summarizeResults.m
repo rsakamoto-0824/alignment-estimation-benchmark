@@ -2,7 +2,7 @@ function summary = summarizeResults(results, metricName, statistic)
 %SUMMARIZERESULTS 手法 × 学習パターン（Shot 数など）の表にまとめる。
 %   ランダムの繰り返しは、まず Wafer ごとに平均してから Wafer 間で集計する（Wafer の重みをそろえるため）。
 %   statistic = "mean"（平均）・"median"（中央値）・"worst"（ワースト値）・"p95"（95%値）。alignest.statisticNames を参照。
-%   ワースト値・95%値は、誤差（RMSE・MAE・処理時間）なら大きい側、R²・調整済み R² なら小さい側で取る。
+%   ワースト値・95%値は、誤差（RMSE・MAE・処理時間）なら大きい側、R²・改善量・改善率なら小さい側で取る。
 %   summary.values（手法 × 列）、summary.counts（集計した Wafer 数）、summary.methodIds / methodLabels、summary.groups
 arguments
     results struct
@@ -12,7 +12,7 @@ end
 methods = results.methods;
 groups = results.groups;
 perUnit = alignest.perUnitValues(results, metricName);
-lowerIsBetter = ~startsWith(metricName, ["R2", "adjR2"]);
+lowerIsBetter = ~alignest.metricHigherIsBetter(metricName);
 if ~any(statistic == alignest.statisticNames())
     error('alignest:statistic', '集計のしかたは %s のいずれかです: %s', strjoin(alignest.statisticNames(), "・"), statistic);
 end

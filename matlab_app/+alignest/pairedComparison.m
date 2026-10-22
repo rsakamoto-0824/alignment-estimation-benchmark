@@ -1,7 +1,7 @@
 function comparison = pairedComparison(results, referenceId, metricName)
 %PAIREDCOMPARISON 基準の手法と、同じ Wafer・同じ学習パターンどうしで比べる。
 %   誤差の指標（RMSE・MAE）：差の割合 = 平均[(手法 − 基準) / 基準] × 100 [%]。負なら基準より良い。
-%   R²・調整済み R²       ：差 = 平均[手法 − 基準]。正なら基準より良い。
+%   R²・改善量・改善率    ：差 = 平均[手法 − 基準]。正なら基準より良い。
 %   良かった割合：基準より良かった Wafer の割合。95% 区間は Wafer 間のばらつきから求めた平均の区間（正規近似で 平均 ± 1.96 × 標準誤差）。
 arguments
     results struct
@@ -13,7 +13,7 @@ reference = find(string({methods.id}) == referenceId, 1);
 if isempty(reference)
     error('alignest:reference', '基準の手法が結果にありません: %s', referenceId);
 end
-lowerIsBetter = ~startsWith(metricName, ["R2", "adjR2"]);
+lowerIsBetter = ~alignest.metricHigherIsBetter(metricName);
 perUnit = alignest.perUnitValues(results, metricName);
 groups = results.groups;
 names = strings(0, 1);

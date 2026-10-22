@@ -15,6 +15,7 @@ function waferMap(ax, points, values, options)
 %   options.shotCenters  : Shot 中心の座標 [x, y]（mm、Shot 数 × 2）。空なら Shot の枠を描かない
 %   options.shotSizeMm   : Shot の大きさ [幅, 高さ]（mm）
 %   options.covariance   : 点ごとの Wafer 間の共分散 [X の分散, Y の分散, X・Y の共分散]（nm²、点数 × 3）
+%   options.showArrows   : 矢印（ベクトル）を描くか（既定 true）。false なら楕円だけ（楕円の中心は矢印の先のまま）
 %   options.ellipseSigma : 共分散楕円の大きさ（σ の何倍か。0 なら描かない）。矢印の先を中心に、矢印と同じ倍率で描く。
 %                          楕円の色は X・Y の相関係数の絶対値（alignest.plot.covarianceEllipses。目盛りは図の右上の隅）
 %   色だけで意味を伝えないよう、学習 Mark は形（四角）と凡例の文字でも示す。
@@ -37,6 +38,7 @@ arguments
     options.shotSizeMm (1, 2) double = [NaN, NaN]
     options.covariance double = zeros(0, 3)
     options.ellipseSigma (1, 1) double {mustBeNonnegative} = 0
+    options.showArrows (1, 1) logical = true
 end
 WAFER_EDGE_COLOR = [0.45, 0.45, 0.45];
 TRAIN_FACE_COLOR = [0.80, 0.80, 0.80];
@@ -63,8 +65,11 @@ end
 ellipses = gobjects(0);
 if options.mode == "vector"
     usable = all(isfinite(values), 2);
-    arrows = alignest.plot.magnitudeArrows(ax, points(usable, :), values(usable, :), options.scaleMmPerNm, ...
-        magnitudeLimit=options.magnitudeLimit);
+    arrows = gobjects(0);
+    if options.showArrows
+        arrows = alignest.plot.magnitudeArrows(ax, points(usable, :), values(usable, :), options.scaleMmPerNm, ...
+            magnitudeLimit=options.magnitudeLimit);
+    end
     if ~isempty(arrows)
         arrows.DisplayName = '値（矢印）';
         legendItems(end + 1) = arrows;

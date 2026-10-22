@@ -1,7 +1,11 @@
-function results = runEvaluation(data, settings, progressFcn)
+function results = runEvaluation(data, settings, progressFcn, previous)
 %RUNEVALUATION 全 Wafer × 学習パターン × 手法 で推定し、指標を表にまとめる。
 %   results = alignest.runEvaluation(data, settings, progressFcn)
-%   progressFcn(完了数, 全体数, 説明) は false を返すと途中で止める（省略可）。止めた場合も、それまでの結果を返す。
+%   results = alignest.runEvaluation(data, settings, progressFcn, previous)   % 一時中断した評価の続きから
+%   progressFcn(完了数, 全体数, 説明) は false を返すと一時中断する（省略可）。中断した場合も、それまでの結果を返し、
+%   results.cancelled = true、results.resume に続きに要るもの（学習パターンの記憶など）を入れる。
+%   previous に一時中断した結果を渡すと、済んだ組み合わせ・学習パターンはそのまま使い、残りだけを計算する
+%   （設定とデータは中断したときと同じこと。呼ぶ側で確かめる）。計算時間は中断の前と後を足す。
 %   学習パターン（どの Shot を学習に使うか）は、候補 Shot と計測できた Mark が同じ Wafer どうしで共通にする
 %   （同じ Shot で比べるため。乱数も同じ値から始める）。
 %   1つの手法が失敗しても止めずに、その行の指標を NaN、note に理由を入れて続ける。
@@ -9,6 +13,9 @@ function results = runEvaluation(data, settings, progressFcn)
 %   ファイルの読み込みなど初回だけの時間を処理時間に入れない。処理時間（seconds）は1枚の X・Y の推定にかかった秒数。
 if nargin < 3 || isempty(progressFcn)
     progressFcn = @(varargin) true;
+end
+if nargin < 4
+    previous = [];
 end
 timer = tic;
 methods = alignest.buildMethodList(settings.methods);
@@ -37,19 +44,45 @@ recordTiming = isfield(settings.evaluation, "recordTiming") && settings.evaluati
 overlay = alignest.overlayChoice(settings);
 projectors = cell(numel(units), 1);  % Overlay 補正の射影は Wafer ごとに1回だけ作る（学習パターン・手法によらない）
 warmedUp = false(numel(methods), 1);
+nResumed = 0;            % 一時中断の前に済んだ組み合わせの数（その分は計算しない）
+previousSeconds = 0;
+if ~isempty(previous)
+    if ~isfield(previous, "resume") || isempty(previous.resume) || height(previous.table) > nTotal || ...
+            numel(previous.methods) ~= numel(methods)
+        error('alignest:resume', '続きから再開できる評価がありません。「評価を始める」で最初から計算してください。');
+    end
+    nResumed = height(previous.table);
+    rows(1:nResumed) = table2struct(previous.table);
+    plans = previous.plans;
+    planCache = previous.resume.planCache;
+    warmedUp = previous.resume.warmedUp;
+    logLines = previous.log;
+    previousSeconds = previous.elapsedSeconds;
+end
+pairIndex = 0;
 for u = 1:numel(units)
     unit = units(u);
     for p = 1:numel(specs)
-        plan = alignest.cachedTrainingPlan(unit, specs(p), settings, planCache);
-        plan.unitIndex = u;
-        plan.unitLabel = unit.label;
-        plans(end + 1, 1) = plan; %#ok<AGROW>
-        planIndex = numel(plans);
-        if plan.message ~= ""
-            logLines(end + 1) = unit.label + "｜" + plan.label + "：" + plan.message; %#ok<AGROW>
+        pairIndex = pairIndex + 1;
+        if pairIndex <= numel(plans)
+            % 一時中断の前に作った学習パターン
+            plan = plans(pairIndex);
+            planIndex = pairIndex;
+        else
+            plan = alignest.cachedTrainingPlan(unit, specs(p), settings, planCache);
+            plan.unitIndex = u;
+            plan.unitLabel = unit.label;
+            plans(end + 1, 1) = plan; %#ok<AGROW>
+            planIndex = numel(plans);
+            if plan.message ~= ""
+                logLines(end + 1) = unit.label + "｜" + plan.label + "：" + plan.message; %#ok<AGROW>
+            end
         end
         for m = 1:numel(methods)
             done = done + 1;
+            if done <= nResumed
+                continue
+            end
             row = rowTemplate(metricList);
             row.Operation = unit.operation;
             row.EqpId = unit.eqpId;
@@ -72,6 +105,8 @@ for u = 1:numel(units)
             row.factorMode = methods(m).factorMode;
             row.criterionI = plan.criterionI;
             row.criterionD = plan.criterionD;
+            row.efficiencyI = plan.efficiencyI;
+            row.efficiencyD = plan.efficiencyD;
             if plan.ok
                 try
                     if recordTiming && ~warmedUp(m)
@@ -121,7 +156,12 @@ results.groups = unique(string({specs.group}), 'stable');
 results.settings = settings;
 results.dataSummary = data.summary;
 results.cancelled = cancelled;
-results.elapsedSeconds = toc(timer);
+results.resume = [];
+if cancelled
+    results.resume = struct("planCache", planCache, "warmedUp", warmedUp);
+end
+results.nTotal = nTotal;
+results.elapsedSeconds = previousSeconds + toc(timer);
 results.log = logLines;
 results.timingRecorded = recordTiming;
 results.overlayEvaluated = overlay.enabled;
@@ -146,7 +186,8 @@ truthX = marks.measX(out.testIndex.X);
 truthY = marks.measY(out.testIndex.Y);
 outerX = marks.r(out.testIndex.X) / radius >= ratio;
 outerY = marks.r(out.testIndex.Y) / radius >= ratio;
-metrics = alignest.computeMetrics(truthX, out.estimate.X, out.edf(1), truthY, out.estimate.Y, out.edf(2), outerX, outerY);
+metrics = alignest.computeMetrics(truthX, out.estimate.X, out.edf(1), truthY, out.estimate.Y, out.edf(2), outerX, outerY, ...
+    marks.measX(out.trainIndex.X), marks.measY(out.trainIndex.Y));
 for name = string(fieldnames(metrics)).'
     if isfield(row, name)
         row.(name) = metrics.(name);
@@ -185,7 +226,8 @@ end
 function row = rowTemplate(metricList)
 row = struct("Operation", "", "EqpId", "", "LotID", "", "Wafer", "", "DateTime", "", "unitIndex", 0, "planIndex", 0, "plan", "", "group", "", ...
     "planType", "", "repeat", 0, "nShots", 0, "methodIndex", 0, "methodId", "", "methodLabel", "", ...
-    "family", "", "featureSet", "", "variant", "", "factorMode", "", "criterionI", NaN, "criterionD", NaN);
+    "family", "", "featureSet", "", "variant", "", "factorMode", "", "criterionI", NaN, "criterionD", NaN, ...
+    "efficiencyI", NaN, "efficiencyD", NaN);
 for name = metricList
     row.(name) = NaN;
 end
@@ -208,6 +250,7 @@ end
 function plan = planTemplate()
 plan = struct("label", "", "group", "", "type", "", "repeat", 0, "shotIndex", zeros(0, 1), ...
     "shotNos", zeros(0, 1), "nShots", 0, "criterion", NaN, "violation", 0, "criterionI", NaN, "criterionD", NaN, ...
-    "ok", false, "message", "", "requiredShotIndex", zeros(0, 1), "rate", NaN, "seconds", 0, "reused", false, ...
+    "ok", false, "message", "", "requiredShotIndex", zeros(0, 1), "rate", NaN, "efficiencyI", NaN, "efficiencyD", NaN, ...
+    "seconds", 0, "reused", false, ...
     "unitIndex", 0, "unitLabel", "");
 end

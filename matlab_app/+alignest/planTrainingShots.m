@@ -11,14 +11,14 @@ function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm)
 %   I 最適・ランダムでは、必ず計測する Shot（alignest.requiredShotIndex：指定した shotNo と最外周）を先に入れ、
 %   残りを選ぶ（拡張 I 最適計画）。必ず計測する Shot が学習 Shot 数以上なら、それだけを使う。
 %   plan.requiredShotIndex は必ず計測した Shot（ファイルの優先順では優先度 1）。
-%   選び方によらず、選んだ組の I 基準 tr(M⁻¹) と D 基準 det(M)^(−1/p) を求める（alignest.designCriteria。
-%   基準モデルの項数より学習点が少ないなど、求められないときは NaN）。
+%   選び方によらず、選んだ組の I 基準 tr(M⁻¹) と D 基準 det(M)^(−1/p)、全計測に対する I 効率・D 効率を求める
+%   （alignest.designCriteria。基準モデルの項数より学習点が少ないなど、求められないときは NaN）。
 shots = unit.shots;
 candidates = find(shots.nValidX + shots.nValidY > 0);
 plan = struct("label", spec.label, "group", spec.group, "type", spec.type, "repeat", spec.repeat, ...
     "shotIndex", zeros(0, 1), "shotNos", zeros(0, 1), "nShots", 0, "criterion", NaN, ...
     "violation", 0, "criterionI", NaN, "criterionD", NaN, "ok", false, "message", "", ...
-    "requiredShotIndex", zeros(0, 1), "rate", NaN);
+    "requiredShotIndex", zeros(0, 1), "rate", NaN, "efficiencyI", NaN, "efficiencyD", NaN);
 nShots = spec.nShots;
 if isfield(spec, "rate") && isfinite(spec.rate)
     plan.rate = spec.rate;
@@ -95,20 +95,23 @@ plan.shotIndex = sort(plan.shotIndex);
 plan.shotNos = shots.shotNo(plan.shotIndex);
 plan.nShots = numel(plan.shotIndex);
 plan.ok = true;
-[plan.criterionI, plan.criterionD] = planCriteria(unit, candidates, plan.shotIndex, sampling.designOrder, waferRadiusMm);
+[plan.criterionI, plan.criterionD, plan.efficiencyI, plan.efficiencyD] = planCriteria(unit, candidates, plan.shotIndex, ...
+    sampling.designOrder, waferRadiusMm);
 end
 
-function [iValue, dValue] = planCriteria(unit, candidates, shotIndex, designOrder, waferRadiusMm)
-% 選んだ組の I 基準・D 基準。候補の Mark が基準モデルの項数より少ないときは NaN
+function [iValue, dValue, iEfficiency, dEfficiency] = planCriteria(unit, candidates, shotIndex, designOrder, waferRadiusMm)
+% 選んだ組の I 基準・D 基準と全計測に対する効率。候補の Mark が基準モデルの項数より少ないときは NaN
 iValue = NaN;
 dValue = NaN;
+iEfficiency = NaN;
+dEfficiency = NaN;
 try
     blocks = shotBlocks(unit, candidates, designOrder, waferRadiusMm);
 catch
     return
 end
 [~, selected] = ismember(shotIndex, candidates);
-[iValue, dValue] = alignest.designCriteria(blocks(selected));
+[iValue, dValue, iEfficiency, dEfficiency] = alignest.designCriteria(blocks(selected));
 end
 
 function [shotIndex, message, required] = priorityShots(shots, candidates, sampling, nShots)
