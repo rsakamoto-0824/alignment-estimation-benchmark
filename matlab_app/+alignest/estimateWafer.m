@@ -1,11 +1,13 @@
-function out = estimateWafer(unit, trainShots, method, settings, testMask)
+function out = estimateWafer(unit, training, method, settings, testMask)
 %ESTIMATEWAFER 1つの Wafer（評価の単位）で、学習 Shot の計測値から評価 Shot の全 Mark を推定する。
-%   trainShots は学習に使う Shot の番号（unit.shots の何番目か）。
+%   training は学習に使う Shot の番号（unit.shots の何番目か）、または学習パターン（alignest.planTrainingShots の結果。
+%   Mark 単位の計画なら計測する Mark だけが学習点、残りの Mark が評価点。alignest.trainingMarks）。
 %   X・Y は別々に当てはめる（RT モデルだけは X・Y を同時に当てはめる）。
 %   学習点は学習 Shot の有効な Mark、評価点は学習しなかった Shot の有効な Mark（軸ごとに有効な点が違ってもよい）。
 %   settings.evaluation.removeLinear が true なら、学習点で XY 1次（[1, x, y]、軸ごと）を除いてから推定し、
 %   推定値に戻す（有効自由度は軸ごとに3を足す）。
-%   settings.evaluation.excludeOutliers が true なら、学習点のうち平均から outlierSigma × σ を超えて離れた Mark を
+%   settings.evaluation.excludeOutliers が true なら、学習点のうち中心から outlierSigma × ばらつき（平均と σ、
+%   または outlierMethod = "mad" なら中央値と 1.4826 × MAD）を超えて離れた Mark を
 %   X・Y の両方の学習データから除く（平均・σ はこの Wafer・この学習 Shot の組で求める。alignest.trainingOutliers）。
 %   除いた Mark は評価にも使わない（学習 Shot の Mark なので）。out.outlierIndex はその Mark 番号。
 %   out.testIndex.X / Y は評価点の Mark 番号（unit.marks の何番目か）、out.estimate.X / Y はその推定値。
@@ -19,11 +21,11 @@ radius = settings.data.waferRadiusMm;
 if nargin < 5 || isempty(testMask)
     testMask = true(numel(marks.x), 1);
 end
-inTrain = ismember(marks.shotIndex, trainShots);
+inTrain = alignest.trainingMarks(unit, training);
 outlier = false(size(inTrain));
 outlierTimer = tic;
 if isfield(settings.evaluation, "excludeOutliers") && settings.evaluation.excludeOutliers
-    outlier = alignest.trainingOutliers(marks, inTrain, settings.evaluation.outlierSigma);
+    outlier = alignest.trainingOutliers(marks, inTrain, settings.evaluation.outlierSigma, alignest.outlierMethod(settings));
 end
 outlierSeconds = toc(outlierTimer);
 axisNames = ["X", "Y"];
@@ -61,6 +63,14 @@ switch method.family
         order = sscanf(char(method.variant), 'order%d');
         for k = 1:2
             result = alignest.models.polynomialFitPredict(xyNorm(trainIndex.(axisNames(k)), :), ...
+                xyNorm(testIndex.(axisNames(k)), :), measured.(axisNames(k)), order);
+            estimate.(axisNames(k)) = result.prediction;
+            out.edf(k) = result.edf;
+        end
+    case "FZ"
+        order = sscanf(char(method.variant), 'order%d');
+        for k = 1:2
+            result = alignest.models.zernikeFitPredict(xyNorm(trainIndex.(axisNames(k)), :), ...
                 xyNorm(testIndex.(axisNames(k)), :), measured.(axisNames(k)), order);
             estimate.(axisNames(k)) = result.prediction;
             out.edf(k) = result.edf;

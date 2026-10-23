@@ -91,8 +91,8 @@ if isempty(lengthNm)
 end
 x0 = -half(1);
 y0 = -half(2) * (1 + MARGIN_RATIO / 2);
-quiver(ax, x0, y0, lengthNm * scale, 0, 0, 'Color', [0, 0, 0], 'LineWidth', 1.5, 'MaxHeadSize', 0.6, ...
-    'HandleVisibility', 'off');
+quiver(ax, x0, y0, lengthNm * scale, 0, 0, 'Color', ax.XColor, 'LineWidth', 1.5, 'MaxHeadSize', 0.6, ...
+    'HandleVisibility', 'off', 'Tag', 'foreground');   % 軸と同じ色（ダークモードでは明るい色）
 text(ax, x0 + lengthNm * scale + 0.5, y0, sprintf('%g nm', lengthNm), 'FontSize', 11, 'VerticalAlignment', 'middle');
 hold(ax, 'off');
 axis(ax, 'equal');

@@ -4,6 +4,8 @@ function settings = loadSettings(filePath, source)
 %   型は初期設定に合わせる（文字列の並び・数値の行ベクトルなど）。知らない項目は無視する。
 %   学習 Shot 数の開始・終了・刻みが無い以前の設定ファイルは、Shot 数の並びから決める（alignest.syncShotCounts）。
 %   同心円の区切り・外周の半径を Wafer 半径に対する比で書いた以前の設定は、mm の値に直す（alignest.upgradeRadiusSettings）。
+%   変えたい項目だけを書いたファイル（既定の設定ファイルなど）で、学習 Shot 数の開始・終了・刻みだけがあり並び nShots が
+%   無いときは、開始・終了・刻みから並びを作る（書いた値が使われるように）。
 if nargin >= 2 && source == "text"
     try
         decoded = jsondecode(char(filePath));
@@ -11,6 +13,12 @@ if nargin >= 2 && source == "text"
         error('alignest:loadSettings', '設定を JSON として読めません（%s）', err.message);
     end
     settings = merge(alignest.defaultSettings(), alignest.upgradeRadiusSettings(decoded));
+    if isstruct(decoded) && isfield(decoded, "sampling") && isstruct(decoded.sampling) && ...
+            ~isfield(decoded.sampling, "nShots") && any(isfield(decoded.sampling, ["nShotsStart", "nShotsEnd", "nShotsStep"]))
+        sampling = settings.sampling;
+        sampling.nShots = alignest.shotCountList(sampling.nShotsStart, sampling.nShotsEnd, sampling.nShotsStep);
+        settings.sampling = sampling;
+    end
     settings.sampling = alignest.syncShotCounts(settings.sampling);
     settings.methods = alignest.completeMethodSettings(settings.methods);
     return

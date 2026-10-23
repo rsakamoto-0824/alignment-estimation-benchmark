@@ -34,7 +34,7 @@ hold(ax, 'on');
 boxchart(ax, groups, residual, 'BoxFaceColor', BOX_COLOR, 'MarkerColor', BOX_COLOR, 'DisplayName', '残差の分布');
 plot(ax, categorical(names, names, names + "（" + n + "）"), averages, 'd', 'MarkerSize', 7, ...
     'MarkerFaceColor', MEAN_COLOR, 'MarkerEdgeColor', MEAN_COLOR, 'LineStyle', 'none', 'DisplayName', '平均');
-yline(ax, 0, ':', 'Color', [0.3, 0.3, 0.3], 'HandleVisibility', 'off');
+yline(ax, 0, ':', 'Color', [0.5, 0.5, 0.5], 'HandleVisibility', 'off');   % ライト・ダークのどちらでも見える灰色
 hold(ax, 'off');
 grid(ax, 'on');
 box(ax, 'on');

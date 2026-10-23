@@ -10,14 +10,13 @@ classdef AlignmentEstimationApp < handle
 
     properties (Constant, Access = private)
         APP_TITLE = "アライメント計測値の面内推定 検証ツール"
+        PREF_GROUP = "AlignmentEstimationApp"   % 画面の色（ライト・ダーク）を次に開いたときも使うための保存先（getpref）
         FONT_SIZE = 16
         AXES_FONT_SIZE = 13
         SMALL_AXES_FONT_SIZE = 10       % 図を並べるとき（計測マップ・マップの比較）の文字の大きさ
         FIGURE_SIZE = [1440, 900]          % 画面がこれより小さいときは画面に合わせて縮める
         SCREEN_MARGIN = 40
         PRIMARY_COLOR = [0.0, 0.36, 0.67]
-        ERROR_COLOR = [0.72, 0.11, 0.11]
-        BEST_COLOR = [1.0, 0.93, 0.70]
         ARROW_COLORS = [0.0, 0.33, 0.62; 0.0, 0.33, 0.62; 0.75, 0.25, 0.10]  % 楕円と重ねるときの矢印（計測値・推定値・残差）
         NONE_LABEL = "（なし）"
         MAX_CURVES = 8
@@ -32,6 +31,8 @@ classdef AlignmentEstimationApp < handle
         EXCEL_MAX_DATA_ROWS = 1048575   % Excel の最大行数から見出しの1行を除いた数
         MAX_MATERN_NU = 50              % Matérn の ν の上限（alignest.models.maternNuCheck と同じ）
         FORMULA_CHOICE = -1             % Wafer 成分の選択肢「式を入力」の値（次数 0〜5 と区別する）
+        MAX_ZERNIKE_ORDER = 6           % Fringe Zernike の次数の上限（Z1〜Z49）
+        WORST_PERCENT = 95              % マップに出す「95%値」の百分位（結果一覧の集計と同じ）
         MAX_MEASURE_PANELS = 6          % 計測マップを並べる数の上限（Wafer × 学習パターン）
         MAX_COMPARE_PANELS = 6          % Wafer ごとのマップで並べて比べる条件の数の上限
         TIMING_REPEAT_LIMITS = [1, 10]  % 処理時間の内訳を測る回数の範囲
@@ -54,18 +55,36 @@ classdef AlignmentEstimationApp < handle
         MeasurementCache = []   % 計測マップの学習パターン（設定・データが変わったら作り直す）
         Distribution = []       % 「分布の比較」で最後に比べた結果（alignest.distributionComparison）
         ImportedEstimates = []  % Excel から読み込んだ推定値（alignest.importEstimates。読み込んだ評価結果と組で使う）
+        DefaultsSource = ""     % 初期設定に重ねた既定の設定ファイル（alignest.siteDefaults。無ければ ""）
         BaseResults = []        % 絞り込む前の評価の結果（Results は絞り込みの条件で指標を計算し直したもの）
         ResultFilter            % 評価点の絞り込みの条件（alignest.defaultPointFilter と同じ形）
         MapConditions = struct("option", {}, "plan", {}, "method", {}, "label", {})  % マップで並べて比べる条件
         Timing = []             % 「処理時間の内訳」で最後に測った結果（alignest.timingBreakdown）
+        Theme = "light"         % 画面の色：light（ライトモード）・dark（ダークモード）。setTheme で変える
+    end
+
+    properties (Dependent)
+        Palette                 % 今の画面の色の組（themePalette。文字・背景・エラー・表の最良の色など）
     end
 
     methods
+        function palette = get.Palette(app)
+            palette = themePalette(app.Theme);
+        end
+
         function app = AlignmentEstimationApp(visible)
             if nargin < 1
                 visible = true;
             end
-            app.Settings = alignest.defaultSettings();
+            % 初期設定：管理者が今のフォルダに既定の設定ファイルを置いていれば、それを重ねる（alignest.siteDefaults）。
+            % 読めないときは初期設定で開き、画面を作った後に理由を出す（起動できなくならないように）
+            defaultsError = "";
+            try
+                [app.Settings, app.DefaultsSource] = alignest.siteDefaults();
+            catch err
+                app.Settings = alignest.defaultSettings();
+                defaultsError = string(err.message);
+            end
             app.ResultFilter = alignest.defaultPointFilter();
             app.MapCache = containers.Map('KeyType', 'char', 'ValueType', 'any');
             app.Figure = uifigure('Name', app.APP_TITLE, 'Position', figurePosition(app), ...
@@ -77,16 +96,68 @@ classdef AlignmentEstimationApp < handle
             app.Tabs.run = uitab(app.TabGroup, 'Title', '3. 実行');
             app.Tabs.results = uitab(app.TabGroup, 'Title', '4. 結果一覧');
             app.Tabs.map = uitab(app.TabGroup, 'Title', '5. Waferごとのマップ');
+            app.Tabs.help = uitab(app.TabGroup, 'Title', '6. ヘルプ');
             buildDataTab(app);
             buildSettingsTab(app);
             buildRunTab(app);
             buildResultsTab(app);
             buildMapTab(app);
+            buildHelpTab(app);
+            % 表示のメニュー：ライトモード・ダークモードの切り替えと、ヘルプを開く
+            viewMenu = uimenu(app.Figure, 'Text', '表示');
+            app.Controls.themeLight = uimenu(viewMenu, 'Text', 'ライトモード', 'Checked', 'on', ...
+                'MenuSelectedFcn', @(~, ~) app.setTheme("light"));
+            app.Controls.themeDark = uimenu(viewMenu, 'Text', 'ダークモード', ...
+                'MenuSelectedFcn', @(~, ~) app.setTheme("dark"));
+            uimenu(viewMenu, 'Text', 'ヘルプ（用語・補正の式・カーネル）を開く', 'Separator', 'on', ...
+                'MenuSelectedFcn', @(~, ~) set(app.TabGroup, 'SelectedTab', app.Tabs.help));
             set(findall(app.Figure, '-property', 'FontSize'), 'FontSize', app.FONT_SIZE);
             set(findall(app.Figure, 'Type', 'axes'), 'FontSize', app.AXES_FONT_SIZE);
             set([app.Controls.unitTable, app.Controls.normalityTable, app.Controls.anovaTable], 'FontSize', app.TABLE_FONT_SIZE);
             settingsToControls(app);
             refreshRunSummary(app);
+            if app.DefaultsSource ~= ""
+                app.Controls.log.Value = {char("既定の設定ファイルを読み込みました（初期設定に使います）：" + app.DefaultsSource)};
+            elseif defaultsError ~= ""
+                app.Controls.log.Value = {char("⚠ " + defaultsError + " アプリの初期設定で開きました。")};
+                if visible
+                    uialert(app.Figure, char(defaultsError + " アプリの初期設定で開きました。"), '既定の設定ファイル', ...
+                        'Icon', 'warning');
+                end
+            end
+            if visible
+                % 前回選んだ画面の色を使う（自動テストなど画面を出さないときはライトモードのまま）
+                try
+                    saved = string(getpref(app.PREF_GROUP, 'theme', 'light'));
+                catch
+                    saved = "light";
+                end
+                if saved == "dark"
+                    setTheme(app, "dark");
+                end
+            end
+        end
+
+        function setTheme(app, mode)
+            %SETTHEME 画面の色を mode = "light"（ライトモード）・"dark"（ダークモード）にする（メニューの「表示」と同じ）。
+            %   画面の部品・図（軸・文字・凡例・色の目盛り）・表・ヘルプの色を変え、これから描く図にも同じ色を使う。
+            %   画面を出しているときは、次に開いたときも同じ色にする（setpref）。
+            mode = string(mode);
+            if ~any(mode == ["light", "dark"])
+                error('alignest:theme', '画面の色は light（ライトモード）か dark（ダークモード）です: %s', mode);
+            end
+            previous = themePalette(app.Theme);
+            app.Theme = mode;
+            applyTheme(app, previous, themePalette(mode));
+            app.Controls.themeLight.Checked = onOff(mode == "light");
+            app.Controls.themeDark.Checked = onOff(mode == "dark");
+            if app.Figure.Visible == "on"
+                try
+                    setpref(app.PREF_GROUP, 'theme', char(mode));
+                catch
+                    % 保存できなくても、今の画面の色は変わっている
+                end
+            end
         end
 
         function delete(app)
@@ -125,7 +196,7 @@ classdef AlignmentEstimationApp < handle
             fillUnitTable(app);
             c.mappingStatus.Text = sprintf(['%d 行・%d 列を読みました。「ファイルの列」の対応と、右の「座標の単位」を' ...
                 '確かめてから、「この対応で読み込む」を押してください。'], height(raw), width(raw));
-            c.mappingStatus.FontColor = [0, 0, 0];
+            c.mappingStatus.FontColor = app.Palette.text;
             c.applyMapping.Enable = 'on';
             c.summary.Value = {''};
             c.dataTabs.SelectedTab = c.mappingTab;
@@ -168,7 +239,7 @@ classdef AlignmentEstimationApp < handle
             refreshPreviewGroupBy(app);
             app.Controls.mappingStatus.Text = sprintf(['読み込みました（%d 枚）。上の「Wafer マップ」「Shot レイアウト」で' ...
                 'データを確かめ、「2. 評価の設定」で比べ方を決めてください。'], summary.nUnits);
-            app.Controls.mappingStatus.FontColor = [0, 0, 0];
+            app.Controls.mappingStatus.FontColor = app.Palette.text;
             drawPreview(app);
             drawLayout(app);
             app.Controls.shotOverlayWafers.Items = cellstr(labels);
@@ -341,6 +412,21 @@ classdef AlignmentEstimationApp < handle
             app.Analysis = [];
             app.Distribution = [];
             refreshResultControls(app);
+        end
+
+        function layouts = loadLayoutPlans(app, filePath, sheetName)
+            %LOADLAYOUTPLANS 人が選んだ計測配置の Excel（shotNo と、パターンごとの 1・0 の列。計測マップの Excel と同じ形）を
+            %   読み、手動・人の選択の欄に1パターン1行（「名前: shotNo…」）で入れる（alignest.readLayoutPlans）。
+            %   選び方に「手動・人の選択」を足す（ほかに選んでいた選び方はそのまま。I 最適・D 最適と比べられる）。
+            if nargin < 3
+                sheetName = "";
+            end
+            layouts = alignest.readLayoutPlans(filePath, sheetName);
+            controlsToSettings(app);
+            app.Settings.sampling.manualPlans = layouts.lines;
+            app.Settings.sampling.method = unique([reshape(string(app.Settings.sampling.method), 1, []), "manual"], 'stable');
+            settingsToControls(app);
+            refreshRunSummary(app);
         end
 
         function priority = loadShotPriority(app, filePath)
@@ -548,12 +634,17 @@ classdef AlignmentEstimationApp < handle
                 double(ismember((1:numel(shots.shotNo)).', required.specified)), 'VariableNames', ["shotNo", "Xmm", ...
                 "Ymm", "行（上から）", "列（左から）", "Scan方向", "計測値あり", "最外周", "指定で必ず計測"]);
             summary = cell(numel(specs), 11);
+            marks = unit.marks;
+            markSheet = table(marks.shotNo, marks.markNo, marks.x, marks.y, 'VariableNames', ["shotNo", "markNo", "Xmm", "Ymm"]);
+            hasMarkPlans = false;
             for k = 1:numel(specs)
                 if ~isempty(dialog)
                     dialog.Value = (k - 1) / numel(specs);
                 end
                 plan = measurementPlan(app, unitIndex, specs(k), dialog);
                 sheet.(char(plan.label)) = double(ismember((1:numel(shots.shotNo)).', plan.shotIndex));
+                markSheet.(char(plan.label)) = double(alignest.trainingMarks(unit, plan) & plan.ok);
+                hasMarkPlans = hasMarkPlans || ~isempty(plan.markIndex);
                 summary(k, :) = {plan.label, plan.rate, plan.nShots, numel(plan.requiredShotIndex), plan.criterionI, ...
                     plan.criterionD, plan.efficiencyI, plan.efficiencyD, plan.violation, ...
                     strjoin(string(plan.shotNos(:).'), " "), plan.message};
@@ -565,10 +656,14 @@ classdef AlignmentEstimationApp < handle
                 delete(filePath);
             end
             writetable(sheet, filePath, 'Sheet', '計測マップ');
+            if hasMarkPlans
+                % Mark 単位の計画があるときは、Mark ごとの 1（計測する）・0（しない）も書く
+                writetable(markSheet, filePath, 'Sheet', '計測マップ_Mark');
+            end
             writetable(planSheet, filePath, 'Sheet', '学習パターン');
             notes = table(["Wafer"; "学習 Shot の選び方"; "見方"], [unit.label; ...
-                string(app.Controls.samplingMethod.Items{strcmp(app.Controls.samplingMethod.ItemsData, ...
-                app.Controls.samplingMethod.Value)}); "学習パターンの列は 1 = 計測する（学習に使う）、0 = 計測しない（評価に使う）。" + ...
+                strjoin(string(app.Controls.samplingMethod.Items(ismember(app.Controls.samplingMethod.ItemsData, ...
+                app.Controls.samplingMethod.Value))), "、"); "学習パターンの列は 1 = 計測する（学習に使う）、0 = 計測しない（評価に使う）。" + ...
                 "最外周・指定で必ず計測は 1 = そうである。"], 'VariableNames', ["項目", "内容"]);
             writetable(notes, filePath, 'Sheet', '説明');
         end
@@ -648,13 +743,13 @@ classdef AlignmentEstimationApp < handle
                 parts = checks.name(change) + "：" + displayUnit(checks.unit(change)) + " → " + ...
                     displayUnit(checks.suggested(change));
                 status.Text = "値の大きさから単位を選びました（" + strjoin(parts, "、") + "）。「この対応で読み込む」を押してください。";
-                status.FontColor = [0, 0, 0];
+                status.FontColor = app.Palette.text;
             elseif all(checks.ok)
                 status.Text = "すべての座標の大きさが目安の範囲内なので、単位は変えていません。";
-                status.FontColor = [0, 0, 0];
+                status.FontColor = app.Palette.text;
             else
                 status.Text = "⚠ 目安に合う単位が見つからない列があります。列の対応が正しいか確かめてください。";
-                status.FontColor = app.ERROR_COLOR;
+                status.FontColor = app.Palette.error;
             end
         end
 
@@ -946,6 +1041,87 @@ classdef AlignmentEstimationApp < handle
             drawMap(app);
         end
 
+        function comparison = drawLayoutComparison(app, methodIndex, xAxis)
+            %DRAWLAYOUTCOMPARISON 「計測配置の比較」：1つの手法について、選び方（I 最適・D 最適・ランダム・優先順・
+            %   Mark 単位）ごとに、計測する Mark の数（または学習 Shot 数）に対する指標の線を描き、人の選択・手動は点で
+            %   描く（alignest.layoutComparison。指標と Wafer の集計は結果一覧の上の選択）。引数を省くと画面の選択。
+            c = app.Controls;
+            comparison = table();
+            if isempty(app.Results)
+                return
+            end
+            if nargin >= 2
+                c.compareLayoutMethod.Value = methodIndex;
+            end
+            if nargin >= 3
+                c.compareLayoutXAxis.Value = char(xAxis);
+            end
+            metric = string(c.metric.Value);
+            statistic = string(c.statistic.Value);
+            comparison = alignest.layoutComparison(app.Results, c.compareLayoutMethod.Value, metric, statistic);
+            useMarks = string(c.compareLayoutXAxis.Value) == "marks" && any(isfinite(comparison.nMarks));
+            x = comparison.nShots;
+            axisLabel = "学習 Shot 数（Wafer の平均）";
+            if useMarks
+                x = comparison.nMarks;
+                axisLabel = "計測する Mark の数（Wafer の平均）";
+            end
+            ax = c.compareLayoutAxes;
+            cla(ax, 'reset');
+            legend(ax, 'off');
+            hold(ax, 'on');
+            markers = {'o', 's', 'd', '^', 'v', 'p'};
+            types = unique(comparison.type, 'stable');
+            for k = 1:numel(types)
+                rows = find(comparison.type == types(k) & isfinite(x) & isfinite(comparison.value));
+                if isempty(rows)
+                    continue
+                end
+                [~, order] = sort(x(rows));
+                rows = rows(order);
+                name = comparison.typeLabel(rows(1));
+                if types(k) == "manual"
+                    % 人の選択・手動はパターンごとに点を描き、名前を添える
+                    points = plot(ax, x(rows), comparison.value(rows), markers{mod(k - 1, numel(markers)) + 1}, ...
+                        'MarkerSize', 9, 'LineWidth', 1.5, 'LineStyle', 'none', 'DisplayName', name);
+                    text(ax, x(rows), comparison.value(rows), "  " + comparison.group(rows), 'FontSize', 10, ...
+                        'Color', points.Color, 'VerticalAlignment', 'bottom', 'Interpreter', 'none', 'HandleVisibility', 'off');
+                else
+                    plot(ax, x(rows), comparison.value(rows), ['-', markers{mod(k - 1, numel(markers)) + 1}], ...
+                        'MarkerSize', 7, 'LineWidth', 1.5, 'DisplayName', name);
+                end
+            end
+            hold(ax, 'off');
+            grid(ax, 'on');
+            box(ax, 'on');
+            [names, labels] = alignest.metricNames(true, true);
+            xlabel(ax, axisLabel);
+            ylabel(ax, labels(names == metric));
+            title(ax, sprintf("選び方の比較：%s（Wafer の%s）", comparison.Properties.UserData.methodLabel, ...
+                statisticLabel(statistic)), 'Interpreter', 'none');
+            if ~isempty(ax.Children)
+                legend(ax, 'Location', 'best', 'Box', 'off', 'FontSize', 10);
+            end
+            ax.FontSize = app.AXES_FONT_SIZE;
+            rows = cell(height(comparison), 7);
+            for k = 1:height(comparison)
+                rows(k, :) = {char(comparison.typeLabel(k)), char(comparison.group(k)), numberText(comparison.nShots(k), '%.1f'), ...
+                    numberText(comparison.nMarks(k), '%.1f'), numberText(comparison.value(k), '%.3f'), ...
+                    numberText(comparison.criterionI(k), '%.4g'), numberText(comparison.criterionD(k), '%.4g')};
+            end
+            c.compareLayoutTable.Data = rows;
+            c.compareLayoutTable.ColumnName = cellstr(["選び方", "列", "学習 Shot 数", "計測 Mark 数", labels(names == metric), ...
+                "I 基準", "D 基準"]);
+            note = string(c.compareLayoutInfo.UserData);
+            if comparison.Properties.UserData.nTypes < 2
+                note = "⚠ この評価の選び方は1つです。" + note;
+            end
+            if string(c.compareLayoutXAxis.Value) == "marks" && ~useMarks
+                note = note + "（この結果には計測する Mark の数が無いので、学習 Shot 数で描きました）";
+            end
+            c.compareLayoutInfo.Text = note + filterNote(app);
+        end
+
         function conditions = addMapCondition(app, optionIndex, planLabel, methodIndex)
             %ADDMAPCONDITION 「5. Waferごとのマップ」の並べて比べる一覧に、条件（Wafer・平均 × 学習パターン × 手法）を足して
             %   並べて描く（並べ方を「一覧の条件を並べて比べる」にする）。引数を省くと画面の選択。同じ条件は足さない。
@@ -1041,7 +1217,7 @@ classdef AlignmentEstimationApp < handle
             c.invertDirection = uicheckbox(fileGrid, 'Text', '付ける 1 と 2 を入れ替える', 'ValueChangedFcn', onDataOption);
             place(c.invertDirection, 5, 3);
             directionHelp = label(fileGrid, 'Direction の列に値がある行はそのまま使います。', 5, 4);
-            directionHelp.FontColor = [0.35, 0.35, 0.35];
+            directionHelp.FontColor = app.Palette.muted;
 
             c.dataTabs = uitabgroup(grid);
             c.mappingTab = uitab(c.dataTabs, 'Title', '列の対応・座標の単位');
@@ -1062,7 +1238,7 @@ classdef AlignmentEstimationApp < handle
                 'ColumnWidth', {'fit', 170, '1x'}, 'Padding', 8, 'RowSpacing', 4);
             unitHelp = label(unitGrid, ['mm でない列は「入力の単位」を選び直します（列名が Xmm でも中身が µm なら µm）。' ...
                 '測定値 measX・measY は nm のまま変換しません。'], 1, [1, 3]);
-            unitHelp.FontColor = [0.2, 0.2, 0.2];
+            unitHelp.FontColor = app.Palette.muted;
             label(unitGrid, 'まとめて選ぶ', 2, 1);
             c.unitAll = uidropdown(unitGrid, 'Items', {'（列ごとに選ぶ）', 'すべて mm', 'すべて µm', 'すべて nm', 'すべて m'}, ...
                 'ItemsData', {'', 'mm', 'um', 'nm', 'm'}, 'Value', '', 'ValueChangedFcn', @(~, ~) app.onUnitAll());
@@ -1203,7 +1379,7 @@ classdef AlignmentEstimationApp < handle
                 "「ファイルの列」と「座標の入力単位」を選び直してから、もう一度「この対応で読み込む」を押してください。");
             if ~ok
                 app.Controls.mappingStatus.Text = "⚠ 読み込めませんでした。列の対応を確かめてください。";
-                app.Controls.mappingStatus.FontColor = app.ERROR_COLOR;
+                app.Controls.mappingStatus.FontColor = app.Palette.error;
             end
         end
 
@@ -1245,12 +1421,12 @@ classdef AlignmentEstimationApp < handle
             status = app.Controls.unitStatus;
             if isempty(warnings)
                 status.Text = "読み込むときに、選んだ単位から mm に変換します（ファイルは変更しません）。";
-                status.FontColor = [0, 0, 0];
+                status.FontColor = app.Palette.text;
             else
-                addStyle(unitTable, uistyle('FontColor', app.ERROR_COLOR, 'FontWeight', 'bold'), 'cell', ...
+                addStyle(unitTable, uistyle('FontColor', app.Palette.error, 'FontWeight', 'bold'), 'cell', ...
                     [warnings, repmat(6, numel(warnings), 1)]);
                 status.Text = "⚠ 大きさが目安の外の列があります。入力の単位を確かめてください（「値の大きさから単位を推定」で選べます）。";
-                status.FontColor = app.ERROR_COLOR;
+                status.FontColor = app.Palette.error;
             end
         end
 
@@ -1423,8 +1599,9 @@ classdef AlignmentEstimationApp < handle
             % 平均・楕円の単位の選択肢（ALL・LotID・EqpId・Operation・その他の列）と、表示する Wafer・平均の選択肢
             c = app.Controls;
             columns = string(app.Data.attributeNames);
-            keys = ["all", "lotId", "eqpId", "operation", "col:" + columns];
-            labels = ["ALL（全 Wafer）", "LotID", "EqpId", "Operation", "その他の列：" + columns];
+            keys = ["all", "lotId", "eqpId", "operation", "slotParity", "col:" + columns];
+            labels = ["ALL（全 Wafer）", "LotID", "EqpId", "Operation", "Slot の偶奇（Wafer ID のハイフンの後の番号）", ...
+                "その他の列：" + columns];
             previous = string(c.previewGroupBy.Value);
             c.previewGroupBy.Items = cellstr(labels);
             c.previewGroupBy.ItemsData = cellstr(keys);
@@ -1515,16 +1692,22 @@ classdef AlignmentEstimationApp < handle
         % ================= 2. 評価の設定 =================
         function buildSettingsTab(app)
             grid = uigridlayout(app.Tabs.settings, [2, 2], 'RowHeight', {'1x', 'fit'}, ...
-                'ColumnWidth', {'1x', '1.35x'}, 'Padding', 12, 'ColumnSpacing', 12);
+                'ColumnWidth', {'1x', '1.45x'}, 'Padding', 12, 'ColumnSpacing', 12);
             onChange = @(~, ~) app.onSettingsChanged();
 
             samplingPanel = uipanel(grid, 'Title', '学習に使う Shot（この Shot の計測値で、残りの Shot を推定する）');
-            s = uigridlayout(samplingPanel, [42, 2], 'RowHeight', repmat({'fit'}, 1, 42), 'ColumnWidth', {'1x', '1x'}, ...
+            s = uigridlayout(samplingPanel, [43, 2], 'RowHeight', repmat({'fit'}, 1, 43), 'ColumnWidth', {'1x', '1x'}, ...
                 'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
-            label(s, '選び方', 1, [1, 2]);
-            c.samplingMethod = uidropdown(s, 'Items', {'制約付き I 最適（前回の評価と同じ）', '制約つきランダム', '手動で指定', ...
-                'ファイルの優先順で指定'}, 'ItemsData', {'ioptimal', 'random', 'manual', 'file'}, 'ValueChangedFcn', onChange);
+            label(s, '選び方（Ctrl・Shift で複数選ぶと、選び方どうしを同じ評価の中で比べる）', 1, [1, 2]);
+            c.samplingMethod = uilistbox(s, 'Items', {'制約付き I 最適（前回の評価と同じ）', '制約付き D 最適', ...
+                '制約つきランダム', '手動・人の選択（Excel の計測マップから読み込める）', 'ファイルの優先順で指定', ...
+                'Mark 単位の I 最適（全 Shot で1点以上を計測）'}, 'ItemsData', {'ioptimal', 'doptimal', 'random', 'manual', ...
+                'file', 'mark'}, 'Multiselect', 'on', 'Value', {'ioptimal'}, 'ValueChangedFcn', onChange, ...
+                'Tooltip', ['D 最適：I 最適と同じ制約で det(M) を大きくする組。Mark 単位：計測する Shot ではなく Mark を選ぶ' ...
+                '（全 Shot を1点以上計測し、Mark 番号の割合を全計測とそろえる）。複数選ぶと、結果一覧の「計測配置の比較」で' ...
+                '選び方どうしを比べられます。']);
             place(c.samplingMethod, 2, [1, 2]);
+            s.RowHeight{2} = 160;
             label(s, '学習 Shot 数（開始から終了まで、刻みごとに増やして比べる）', 3, 1);
             c.countBy = uidropdown(s, 'Items', {'Shot 数で決める', '計測率 [%] で決める'}, 'ItemsData', {'shots', 'rate'}, ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['計測率は、Wafer の計測値のある Shot（候補）に対する学習 Shot の' ...
@@ -1560,7 +1743,11 @@ classdef AlignmentEstimationApp < handle
             c.seed = uieditfield(s, 'numeric', 'Limits', [0, 2^32 - 1], 'RoundFractionalValues', 'on', ...
                 'ValueDisplayFormat', '%d', 'ValueChangedFcn', onChange);
             place(c.seed, 8, 2);
-            label(s, '手動で指定する Shot（1行に1パターン。shotNo を空白またはカンマで区切る）', 9, [1, 2]);
+            label(s, '手動・人の選択（1行に1パターン。「名前: shotNo…」、shotNo は空白・カンマ区切り）', 9, 1);
+            c.loadLayouts = uibutton(s, 'Text', '人の選択を Excel から読み込む…', 'ButtonPushedFcn', @(~, ~) app.onLoadLayouts(), ...
+                'Tooltip', ['shotNo の列と、パターンごとの列（1 = 計測する、0 = しない）の Excel（「計測マップを Excel に' ...
+                '書き出す…」と同じ形）を読み、下の欄に1パターン1行で入れます。選び方の「手動・人の選択」も選びます。']);
+            place(c.loadLayouts, 9, 2);
             c.manualPlans = uitextarea(s, 'ValueChangedFcn', onChange);
             place(c.manualPlans, 10, [1, 2]);
             s.RowHeight{10} = 90;
@@ -1602,9 +1789,9 @@ classdef AlignmentEstimationApp < handle
             c.designOrder = uispinner(s, 'Limits', [1, 8], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
             place(c.designOrder, 27, 2);
             label(s, '交換法の初期配置の数（多いほど良い組が見つかるが遅い。時間は数にほぼ比例）', 28, [1, 2]);
-            % 入力欄と時間の目安（目安の文が長くても入力欄が縦に伸びないように、2段の小さな格子に入れる）
-            exchangeGrid = uigridlayout(s, [2, 2], 'ColumnWidth', {'1x', '1x'}, 'RowHeight', {'fit', 'fit'}, 'Padding', 0, ...
-                'RowSpacing', 2);
+            % 入力欄と時間の目安（目安の文が長くても入力欄が縦に伸びないように、小さな格子に入れる）と、Mark 単位の計画
+            exchangeGrid = uigridlayout(s, [6, 2], 'ColumnWidth', {'1x', '1x'}, 'RowHeight', repmat({'fit'}, 1, 6), ...
+                'Padding', 0, 'RowSpacing', 2);
             place(exchangeGrid, 29, [1, 2]);
             c.exchangeStarts = uispinner(exchangeGrid, 'Limits', [1, 100], 'RoundFractionalValues', 'on', ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['初期配置 1 つあたりの時間の目安は 約 0.01 秒 × 学習 Shot 数' ...
@@ -1613,6 +1800,17 @@ classdef AlignmentEstimationApp < handle
             place(c.exchangeStarts, 1, 1);
             c.exchangeInfo = uilabel(exchangeGrid, 'WordWrap', 'on', 'Text', '');
             place(c.exchangeInfo, 2, [1, 2]);
+            markLabel = label(exchangeGrid, ['Mark 単位の I 最適：1 Shot あたりの計測 Mark 数（空白区切りで複数。' ...
+                '1 = 全 Shot で1点）'], 3, [1, 2]);
+            markLabel.FontWeight = 'bold';
+            c.markPerShot = uieditfield(exchangeGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['計測する Mark の数 = ' ...
+                'この値 × 候補 Shot 数（四捨五入）。全 Shot を1点以上計測し、残りの Mark を I 最適で選びます。']);
+            place(c.markPerShot, 4, 1);
+            c.markRatio = uicheckbox(exchangeGrid, 'Text', 'Mark 番号ごとの計測割合を全計測とそろえる', 'ValueChangedFcn', onChange, ...
+                'Tooltip', ['Mark 番号ごとの計測する Mark の数を、候補の全 Mark での割合 × 計測する数 ± 許容幅に収めます' ...
+                '（例：4 Mark なら各 25%）。']);
+            place(c.markRatio, 5, [1, 2]);
+            c.markError = errorLabel(app, exchangeGrid, 6, [1, 2]);
             heading(s, '評価', 30);
             label(s, sprintf('外周とみなす Mark の半径 [mm]（この半径以上を外周。Wafer 半径 %g mm が前提）', radiusMm), 31, [1, 2]);
             c.outerRadius = uieditfield(s, 'numeric', 'Limits', [0, radiusMm], 'ValueDisplayFormat', '%.1f', ...
@@ -1622,16 +1820,22 @@ classdef AlignmentEstimationApp < handle
             c.removeLinear = uicheckbox(s, 'ValueChangedFcn', onChange, ...
                 'Text', 'XY 1次（並進・倍率・回転・直交度）を除いてから推定する');
             place(c.removeLinear, 33, [1, 2]);
-            outlierGrid = uigridlayout(s, [1, 3], 'ColumnWidth', {'fit', 'fit', 70}, 'RowHeight', {'fit'}, 'Padding', 0);
+            outlierGrid = uigridlayout(s, [2, 3], 'ColumnWidth', {'1x', 'fit', 70}, 'RowHeight', {'fit', 'fit'}, 'Padding', 0, ...
+                'RowSpacing', 2);
             place(outlierGrid, 34, [1, 2]);
             c.excludeOutliers = uicheckbox(outlierGrid, 'ValueChangedFcn', onChange, ...
-                'Text', '学習データの異常値（平均から nσ 超）を除いて推定する', ...
-                'Tooltip', ['Wafer・学習パターンごとに、学習点の平均と σ を X・Y 別に求め、|値 − 平均| が n × σ を超える' ...
-                '軸が1つでもある Mark を、X・Y の両方の学習データから除きます。']);
-            label(outlierGrid, 'n =', 1, 2);
+                'Text', '学習データの異常値を除いて推定する（下の判定のしかたと n）', ...
+                'Tooltip', ['Wafer・学習パターンごとに、学習点の中心とばらつきを X・Y 別に求め、|値 − 中心| が n × ばらつき' ...
+                'を超える軸が1つでもある Mark を、X・Y の両方の学習データから除きます。']);
+            place(c.excludeOutliers, 1, [1, 3]);
+            c.outlierMethod = uidropdown(outlierGrid, 'Items', {'平均と σ（nσ）', '中央値と MAD（n × 1.4826 × MAD）'}, ...
+                'ItemsData', {'sigma', 'mad'}, 'ValueChangedFcn', onChange, 'Tooltip', ['MAD = 中央値からの差の絶対値の中央値。' ...
+                '1.4826 を掛けると正規分布では σ と同じ大きさになり、外れ値に引きずられにくい判定になります。']);
+            place(c.outlierMethod, 2, 1);
+            label(outlierGrid, 'n =', 2, 2);
             c.outlierSigma = uieditfield(outlierGrid, 'numeric', 'Limits', [0, Inf], 'LowerLimitInclusive', 'off', ...
                 'ValueDisplayFormat', '%g', 'ValueChangedFcn', onChange);
-            place(c.outlierSigma, 1, 3);
+            place(c.outlierSigma, 2, 3);
             c.recordTiming = uicheckbox(s, 'ValueChangedFcn', onChange, ...
                 'Text', '条件ごとの処理時間を記録する（1 枚あたりの推定時間）', ...
                 'Tooltip', ['手法 × 学習パターンごとに、1 枚（X・Y）の推定にかかった秒数を集計し、「4. 結果一覧」の指標と' ...
@@ -1655,16 +1859,20 @@ classdef AlignmentEstimationApp < handle
             [c.overlayShotDx, c.overlayShotDy] = formulaFields(s, 39, 2, onChange, ['x・y は Shot 内の座標' ...
                 '（markXmm・markYmm、Shot 中心から）。' formulaHelp]);
             label(s, 'Shot ごとの成分', 40, 1);
-            c.overlayPerShot = uidropdown(s, 'Items', {'なし', '並進（k1・k2）', '1次（k1〜k6）'}, ...
-                'ItemsData', {'none', 'translation', 'linear'}, 'ValueChangedFcn', onChange);
+            c.overlayPerShot = uidropdown(s, 'Items', {'なし', '並進（k1・k2）', '1次（k1〜k6）', '式を入力'}, ...
+                'ItemsData', {'none', 'translation', 'linear', 'formula'}, 'ValueChangedFcn', onChange, ...
+                'Tooltip', '式を入力：下の dx・dy の式の係数を、Shot ごとに別々に求めます（x・y は Shot 内の座標）。');
             place(c.overlayPerShot, 41, 1);
+            [c.overlayPerShotDx, c.overlayPerShotDy] = formulaFields(s, 42, 1, onChange, ['x・y は Shot 内の座標' ...
+                '（markXmm・markYmm、Shot 中心から）。係数は Shot ごとに求めます。' formulaHelp]);
             overlayHelp = label(s, ['すべて「なし」なら評価しません。結果一覧の指標「OVL …」と、Wafer ごとのマップの' ...
-                '「Overlay 補正」で見られます。'], [40, 41], 2);
-            overlayHelp.FontColor = [0.35, 0.35, 0.35];
-            c.overlayFormulaError = errorLabel(app, s, 42, [1, 2]);
+                '「Overlay 補正」で見られます。補正の式は「6. ヘルプ」にまとめています。'], [40, 42], 2);
+            overlayHelp.FontColor = app.Palette.muted;
+            overlayHelp.UserData = "muted";
+            c.overlayFormulaError = errorLabel(app, s, 43, [1, 2]);
 
             methodPanel = uipanel(grid, 'Title', '比べる手法');
-            m = uigridlayout(methodPanel, [22, 4], 'RowHeight', repmat({'fit'}, 1, 22), 'ColumnWidth', {'1x', '1x', '1x', '1x'}, ...
+            m = uigridlayout(methodPanel, [24, 4], 'RowHeight', repmat({'fit'}, 1, 24), 'ColumnWidth', {'1x', '1x', '1x', '1x'}, ...
                 'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
             presetGrid = uigridlayout(m, [1, 3], 'Padding', 0, 'ColumnWidth', {'fit', 'fit', 'fit'});
             place(presetGrid, 1, [1, 4]);
@@ -1767,16 +1975,19 @@ classdef AlignmentEstimationApp < handle
             c.variograms(end).Tooltip = '球形モデル（range より遠い点の相関は 0）。説明変数（X,Y・X,Y,半径）は3次元までなので正定値が保証されます。';
             c.gam = uicheckbox(m, 'Text', 'GAM（一般化加法モデル。選んだ質的変数を含む）', 'ValueChangedFcn', onChange);
             place(c.gam, 17, [1, 4]);
-            shapeGrid = uigridlayout(m, [2, 7], 'Padding', 0, 'ColumnWidth', {'fit', 'fit', 'fit', 'fit', 'fit', 'fit', 'fit'}, ...
-                'RowHeight', {'fit', 'fit'});
-            place(shapeGrid, 18, [1, 4]);
-            label(shapeGrid, '形状関数：', 1, 1);
+            % 形状関数は項（X・Y、半径）ごとに1行、カーネルは2行に並べる（画面の幅が狭くても切れないように）
             [termNames, termLabels] = alignest.models.gamTerms("XYR");
+            [gamKernelNames, gamKernelLabels] = alignest.models.gamKernelChoices();
+            kernelColumns = 2;   % カーネルの名前が長いので2列（rationalquadratic（α = 1）が切れないように）
+            nShapeRows = numel(termNames) + ceil(numel(gamKernelNames) / kernelColumns) + 1;
+            shapeGrid = uigridlayout(m, [nShapeRows, kernelColumns + 1], 'Padding', 0, 'RowSpacing', 2, ...
+                'ColumnWidth', [{'fit'}, repmat({'1x'}, 1, kernelColumns)], 'RowHeight', repmat({'fit'}, 1, nShapeRows));
+            place(shapeGrid, 18, [1, 4]);
             shapeNames = ["spline", "gp"];
             shapeLabels = ["スプライン", "ガウス過程回帰"];
             c.gamShapeChecks = gobjects(numel(termNames), numel(shapeNames));
             for k = 1:numel(termNames)
-                label(shapeGrid, termLabels(k), 1, 3 * k - 1);
+                label(shapeGrid, "形状関数（" + termLabels(k) + "）：", k, 1);
                 for j = 1:numel(shapeNames)
                     c.gamShapeChecks(k, j) = uicheckbox(shapeGrid, 'Text', shapeLabels(j), 'ValueChangedFcn', onChange, ...
                         'UserData', struct("term", termNames(k), "shape", shapeNames(j)), ...
@@ -1784,27 +1995,26 @@ classdef AlignmentEstimationApp < handle
                         '両方なら2通り）。スプライン：P-spline（B スプライン＋2階差分の罰則）。ガウス過程回帰：下で選んだカーネルの' ...
                         'ガウス過程（節点で近似、線形部分は罰則なし）。長さスケールは候補から REML で選び、罰則の強さは' ...
                         'どちらも REML で選びます。半径の項は説明変数が X,Y,半径 のときだけ使います。']);
-                    place(c.gamShapeChecks(k, j), 1, 3 * k - 1 + j);
+                    place(c.gamShapeChecks(k, j), k, 1 + j);
                 end
             end
             % ガウス過程回帰の形状関数のカーネル（チェックしたカーネルごとに比べる）
-            [gamKernelNames, gamKernelLabels] = alignest.models.gamKernelChoices();
-            kernelGrid = uigridlayout(shapeGrid, [1, numel(gamKernelNames) + 3], 'Padding', 0, ...
-                'ColumnWidth', [{'fit'}, repmat({'fit'}, 1, numel(gamKernelNames)), {'fit', 60}]);
-            kernelGrid.Layout.Row = 2;
-            kernelGrid.Layout.Column = [1, 7];
-            label(kernelGrid, 'ガウス過程回帰のカーネル：', 1, 1);
+            kernelRow = numel(termNames) + 1;
+            label(shapeGrid, 'ガウス過程回帰のカーネル：', kernelRow, 1);
             c.gamKernelChecks = gobjects(1, numel(gamKernelNames));
             for k = 1:numel(gamKernelNames)
-                c.gamKernelChecks(k) = uicheckbox(kernelGrid, 'Text', gamKernelLabels(k), 'UserData', gamKernelNames(k), ...
+                c.gamKernelChecks(k) = uicheckbox(shapeGrid, 'Text', gamKernelLabels(k), 'UserData', gamKernelNames(k), ...
                     'ValueChangedFcn', onChange, 'Tooltip', ['形状関数をガウス過程回帰にした項で使うカーネル（等方。' ...
                     '式は GPR と同じ）。チェックしたカーネルごとに評価します。rationalquadratic の α は 1 に固定します。']);
-                place(c.gamKernelChecks(k), 1, k + 1);
+                place(c.gamKernelChecks(k), kernelRow + floor((k - 1) / kernelColumns), 2 + mod(k - 1, kernelColumns));
             end
-            label(kernelGrid, 'ν =', 1, numel(gamKernelNames) + 2);
-            c.gamMaternNu = uieditfield(kernelGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['matern（ν を指定）' ...
+            nuGrid = uigridlayout(shapeGrid, [1, 2], 'ColumnWidth', {'fit', 120}, 'Padding', 0);
+            kernelRows = ceil(numel(gamKernelNames) / kernelColumns);
+            place(nuGrid, kernelRow + kernelRows, [1, kernelColumns + 1]);
+            label(nuGrid, 'matern（ν を指定）の ν =', 1, 1);
+            c.gamMaternNu = uieditfield(nuGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['matern（ν を指定）' ...
                 'の ν。空白で区切ると ν ごとに比べます（例：1 2.5）。']);
-            place(c.gamMaternNu, 1, numel(gamKernelNames) + 3);
+            place(c.gamMaternNu, 1, 2);
             c.polynomial = uicheckbox(m, 'Text', 'XY 多項式　次数：', 'ValueChangedFcn', onChange);
             place(c.polynomial, 19, 1);
             c.polynomialOrder = uispinner(m, 'Limits', [1, 8], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
@@ -1813,14 +2023,26 @@ classdef AlignmentEstimationApp < handle
             place(c.rt, 20, 1);
             c.rtOrders = uieditfield(m, 'text', 'ValueChangedFcn', onChange);
             place(c.rtOrders, 20, 2);
-            c.rtError = errorLabel(app, m, 21, [1, 4]);
-            c.gamShapeError = errorLabel(app, m, 22, [1, 4]);
+            c.zernike = uicheckbox(m, 'Text', 'Fringe Zernike', 'ValueChangedFcn', onChange, ...
+                'Tooltip', ['Fringe Zernike 多項式（Z1〜Z(k+1)²）の最小二乗。k = 3：Z1〜Z16、4：Z1〜Z25、5：Z1〜Z36。' ...
+                '空白で区切ると次数ごとに比べます。式は「6. ヘルプ」。']);
+            place(c.zernike, 21, 1);
+            c.zernikeOrders = uieditfield(m, 'text', 'ValueChangedFcn', onChange);
+            place(c.zernikeOrders, 21, 2);
+            zernikeHelp = label(m, '← 次数 k（空白区切りで複数）。Z1〜Z(k+1)² を使う（k = 4 で Z25 まで）', 21, [3, 4]);
+            zernikeHelp.FontColor = app.Palette.muted;
+            zernikeHelp.UserData = "muted";
+            c.rtError = errorLabel(app, m, 22, [1, 4]);
+            c.zernikeError = errorLabel(app, m, 23, [1, 4]);
+            c.gamShapeError = errorLabel(app, m, 24, [1, 4]);
 
             footer = uigridlayout(grid, [1, 4], 'ColumnWidth', {'fit', 'fit', 'fit', '1x'}, 'Padding', 0);
             place(footer, 2, [1, 2]);
             uibutton(footer, 'Text', '設定を保存…', 'ButtonPushedFcn', @(~, ~) app.onSaveSettings());
             uibutton(footer, 'Text', '設定を読み込む…', 'ButtonPushedFcn', @(~, ~) app.onLoadSettings());
-            uibutton(footer, 'Text', '初期設定に戻す', 'ButtonPushedFcn', @(~, ~) app.setSettings(alignest.defaultSettings()));
+            uibutton(footer, 'Text', '初期設定に戻す', 'ButtonPushedFcn', @(~, ~) app.setSettings(alignest.siteDefaults()), ...
+                'Tooltip', ['アプリの初期設定に戻します（今のフォルダに既定の設定ファイル alignment_estimation_defaults.json が' ...
+                'あれば、その値）。']);
             c.countLabel = uilabel(footer, 'WordWrap', 'on', 'Text', '');
             app.Controls = mergeStruct(app.Controls, c);
         end
@@ -1845,7 +2067,9 @@ classdef AlignmentEstimationApp < handle
             c.factorMarkY.Value = choiceY.mark;
             c.shotRowParityY.Value = choiceY.row;
             refreshFactorColumns(app, choice.columns, choiceY.columns);
-            c.samplingMethod.Value = char(s.sampling.method);
+            c.samplingMethod.Value = cellstr(s.sampling.method(:).');
+            c.markPerShot.Value = char(strjoin(string(fieldOr(s.sampling, "markPerShot", 1)), " "));
+            c.markRatio.Value = logical(fieldOr(s.sampling.constraints, "markRatio", true));
             c.nShotsStart.Value = s.sampling.nShotsStart;
             c.nShotsEnd.Value = s.sampling.nShotsEnd;
             c.nShotsStep.Value = s.sampling.nShotsStep;
@@ -1870,6 +2094,7 @@ classdef AlignmentEstimationApp < handle
             c.recordTiming.Value = s.evaluation.recordTiming;
             c.excludeOutliers.Value = s.evaluation.excludeOutliers;
             c.outlierSigma.Value = s.evaluation.outlierSigma;
+            c.outlierMethod.Value = char(alignest.outlierMethod(s));
             % 式は画面に出してから確かめる（読めない式でも設定を読み込めるように、ここでは式を読まない）
             rawOverlay = fieldOr(s, "overlay", struct());
             defaultOverlay = alignest.defaultSettings().overlay;
@@ -1878,6 +2103,9 @@ classdef AlignmentEstimationApp < handle
             plain.overlay.waferUseFormula = false;
             if string(fieldOr(rawOverlay, "shotCommon", "none")) == "formula"
                 plain.overlay.shotCommon = "none";
+            end
+            if string(fieldOr(rawOverlay, "perShot", "none")) == "formula"
+                plain.overlay.perShot = "none";
             end
             overlay = alignest.overlayChoice(plain);
             useWaferFormula = logical(fieldOr(rawOverlay, "waferUseFormula", false));
@@ -1888,7 +2116,10 @@ classdef AlignmentEstimationApp < handle
                 shotCommon = "linear";
             end
             c.overlayShotCommon.Value = char(shotCommon);
-            c.overlayPerShot.Value = char(overlay.perShot);
+            c.overlayPerShot.Value = char(string(fieldOr(rawOverlay, "perShot", overlay.perShot)));
+            perShotFormula = fieldOr(rawOverlay, "perShotFormula", defaultOverlay.perShotFormula);
+            c.overlayPerShotDx.Value = char(perShotFormula.dx);
+            c.overlayPerShotDy.Value = char(perShotFormula.dy);
             waferFormula = fieldOr(rawOverlay, "waferFormula", defaultOverlay.waferFormula);
             shotFormula = fieldOr(rawOverlay, "shotFormula", defaultOverlay.shotFormula);
             c.overlayWaferDx.Value = char(waferFormula.dx);
@@ -1931,6 +2162,8 @@ classdef AlignmentEstimationApp < handle
             c.polynomialOrder.Value = methods.polynomial.order;
             c.rt.Value = methods.rt.enabled;
             c.rtOrders.Value = char(strjoin(string(methods.rt.orders), " "));
+            c.zernike.Value = methods.zernike.enabled;
+            c.zernikeOrders.Value = char(strjoin(string(methods.zernike.orders), " "));
             validateSettings(app);
             updateEnabled(app);
         end
@@ -1961,7 +2194,14 @@ classdef AlignmentEstimationApp < handle
             s.factors.y.mark = c.factorMarkY.Value;
             s.factors.y.shotRowParity = c.shotRowParityY.Value;
             s.factors.y.columns = reshape(string(c.factorColumnsY.Value), 1, []);
-            s.sampling.method = string(c.samplingMethod.Value);
+            if ~isempty(c.samplingMethod.Value)
+                s.sampling.method = reshape(string(c.samplingMethod.Value), 1, []);   % 空のときは前の値のまま（欄の下に理由）
+            end
+            [values, ok] = parseNumbers(c.markPerShot.Value);
+            if ok && ~isempty(values) && all(values >= 1)
+                s.sampling.markPerShot = unique(values);
+            end
+            s.sampling.constraints.markRatio = c.markRatio.Value;
             try
                 s.sampling.nShots = alignest.shotCountList(c.nShotsStart.Value, c.nShotsEnd.Value, c.nShotsStep.Value);
                 s.sampling.nShotsStart = c.nShotsStart.Value;
@@ -2001,6 +2241,7 @@ classdef AlignmentEstimationApp < handle
             s.evaluation.removeLinear = c.removeLinear.Value;
             s.evaluation.excludeOutliers = c.excludeOutliers.Value;
             s.evaluation.outlierSigma = c.outlierSigma.Value;
+            s.evaluation.outlierMethod = string(c.outlierMethod.Value);
             s.evaluation.recordTiming = c.recordTiming.Value;
             s.overlay.waferUseFormula = c.overlayWafer.Value == app.FORMULA_CHOICE;
             if ~s.overlay.waferUseFormula
@@ -2010,6 +2251,7 @@ classdef AlignmentEstimationApp < handle
             s.overlay.perShot = string(c.overlayPerShot.Value);
             s.overlay.waferFormula = struct("dx", string(c.overlayWaferDx.Value), "dy", string(c.overlayWaferDy.Value));
             s.overlay.shotFormula = struct("dx", string(c.overlayShotDx.Value), "dy", string(c.overlayShotDy.Value));
+            s.overlay.perShotFormula = struct("dx", string(c.overlayPerShotDx.Value), "dy", string(c.overlayPerShotDy.Value));
             featureNames = ["XY", "XYR"];
             s.methods.featureSets = featureNames([c.featureXY.Value, c.featureXYR.Value]);
             s.methods.gpr.enabled = c.gpr.Value;
@@ -2049,6 +2291,11 @@ classdef AlignmentEstimationApp < handle
             if ok && ~isempty(values) && all(values >= 1 & values <= 10 & values == round(values))
                 s.methods.rt.orders = unique(values);
             end
+            s.methods.zernike.enabled = c.zernike.Value;
+            [values, ok] = parseNumbers(c.zernikeOrders.Value);
+            if ok && ~isempty(values) && all(values >= 1 & values <= app.MAX_ZERNIKE_ORDER & values == round(values))
+                s.methods.zernike.orders = unique(values);
+            end
             app.Settings = s;
         end
 
@@ -2070,15 +2317,18 @@ classdef AlignmentEstimationApp < handle
                         sprintf("（%d 通り）", numel(counts));
                 end
             catch err
-                if method ~= "manual"
+                if any(ismember(method, ["ioptimal", "doptimal", "random", "file"]))
                     text = "⚠ " + string(err.message);
                 end
+            end
+            if isempty(method)
+                text = "⚠ 学習 Shot の選び方を1つ以上選んでください。";
             end
             c.nShotsList.Text = listText;
             c.nShotsError.Text = text;
             messages = [messages; text(text ~= "")];
             text = "";
-            if method == "manual"
+            if any(method == "manual")
                 try
                     alignest.buildPlanSpecs(struct("method", "manual", "manualPlans", string(c.manualPlans.Value)));
                 catch err
@@ -2088,14 +2338,14 @@ classdef AlignmentEstimationApp < handle
             c.manualError.Text = text;
             messages = [messages; text(text ~= "")];
             text = "";
-            if method == "file" && isempty(app.Settings.sampling.priorityShots)
+            if any(method == "file") && isempty(app.Settings.sampling.priorityShots)
                 text = "⚠ 「優先順のファイルを読み込む…」で、Shot 番号と優先度のファイルを読み込んでください。";
             end
             c.priorityError.Text = text;
             messages = [messages; text(text ~= "")];
             [values, ok] = parseNumbers(c.requiredShots.Value);
             text = "";
-            if any(method == ["ioptimal", "random"]) && (~ok || any(values ~= round(values)))
+            if any(ismember(method, ["ioptimal", "doptimal", "random"])) && (~ok || any(values ~= round(values)))
                 text = "⚠ 必ず計測する shotNo は整数を空白またはカンマで区切って入れてください（使わないなら空欄）。";
             end
             c.requiredError.Text = text;
@@ -2138,6 +2388,22 @@ classdef AlignmentEstimationApp < handle
             end
             c.rtError.Text = text;
             messages = [messages; text(text ~= "")];
+            [values, ok] = parseNumbers(c.zernikeOrders.Value);
+            text = "";
+            if c.zernike.Value && (~ok || isempty(values) || any(values < 1 | values > app.MAX_ZERNIKE_ORDER | ...
+                    values ~= round(values)))
+                text = sprintf("⚠ Fringe Zernike の次数は 1〜%d の整数を空白で区切って入れてください（例：3 4）。", ...
+                    app.MAX_ZERNIKE_ORDER);
+            end
+            c.zernikeError.Text = text;
+            messages = [messages; text(text ~= "")];
+            [values, ok] = parseNumbers(c.markPerShot.Value);
+            text = "";
+            if any(method == "mark") && (~ok || isempty(values) || any(values < 1))
+                text = "⚠ 1 Shot あたりの計測 Mark 数は 1 以上の数を空白で区切って入れてください（例：1 1.5 2）。";
+            end
+            c.markError.Text = text;
+            messages = [messages; text(text ~= "")];
             text = "";
             if c.gam.Value
                 terms = string(arrayfun(@(k) c.gamShapeChecks(k, 1).UserData.term, 1:size(c.gamShapeChecks, 1), ...
@@ -2161,7 +2427,8 @@ classdef AlignmentEstimationApp < handle
             % Overlay 補正の式（選んだ成分だけ確かめる）
             texts = strings(0, 1);
             formulas = {c.overlayWafer.Value == app.FORMULA_CHOICE, "Wafer 成分", c.overlayWaferDx, c.overlayWaferDy; ...
-                string(c.overlayShotCommon.Value) == "formula", "Shot 共通成分", c.overlayShotDx, c.overlayShotDy};
+                string(c.overlayShotCommon.Value) == "formula", "Shot 共通成分", c.overlayShotDx, c.overlayShotDy; ...
+                string(c.overlayPerShot.Value) == "formula", "Shot ごとの成分", c.overlayPerShotDx, c.overlayPerShotDy};
             for k = 1:size(formulas, 1)
                 if ~formulas{k, 1}
                     continue
@@ -2184,18 +2451,26 @@ classdef AlignmentEstimationApp < handle
             c = app.Controls;
             set([c.factorScanY, c.factorMarkY, c.shotRowParityY, c.factorColumnsY], 'Enable', onOff(c.factorSeparate.Value));
             method = string(c.samplingMethod.Value);
-            constrained = method ~= "manual";
+            constrained = any(ismember(method, ["ioptimal", "doptimal", "random", "file"]));
+            optimal = any(ismember(method, ["ioptimal", "doptimal", "mark"]));
+            shotConstraints = any(ismember(method, ["ioptimal", "doptimal", "random"]));
             byRate = string(c.countBy.Value) == "rate";
             c.countBy.Enable = onOff(constrained);
             c.nShotsList.Enable = onOff(constrained);
             set([c.nShotsStart, c.nShotsEnd, c.nShotsStep], 'Enable', onOff(constrained && ~byRate));
             set([c.rateStart, c.rateEnd, c.rateStep], 'Enable', onOff(constrained && byRate));
-            set([c.requiredShots, c.requireOuter, c.requiredInfo], 'Enable', onOff(any(method == ["ioptimal", "random"])));
-            set([c.zoneEdges, c.quadrants, c.scanConstraint, c.slack], 'Enable', onOff(any(method == ["ioptimal", "random"])));
-            set([c.loadPriority, c.priorityInfo], 'Enable', onOff(method == "file"));
-            set([c.randomRepeats, c.seed], 'Enable', onOff(method == "random"));
-            set([c.designOrder, c.exchangeStarts], 'Enable', onOff(method == "ioptimal"));
-            c.manualPlans.Enable = onOff(method == "manual");
+            set([c.requiredShots, c.requireOuter, c.requiredInfo], 'Enable', onOff(shotConstraints));
+            set([c.zoneEdges, c.quadrants, c.scanConstraint], 'Enable', onOff(shotConstraints));
+            c.slack.Enable = onOff(shotConstraints || any(method == "mark"));
+            set([c.loadPriority, c.priorityInfo], 'Enable', onOff(any(method == "file")));
+            set([c.randomRepeats], 'Enable', onOff(any(method == "random")));
+            c.seed.Enable = onOff(any(ismember(method, ["random", "ioptimal", "doptimal", "mark"])));
+            set([c.designOrder, c.exchangeStarts], 'Enable', onOff(optimal));
+            set([c.markPerShot, c.markRatio], 'Enable', onOff(any(method == "mark")));
+            c.manualPlans.Enable = onOff(any(method == "manual"));
+            c.outlierMethod.Enable = onOff(c.excludeOutliers.Value);
+            set([c.overlayPerShotDx, c.overlayPerShotDy], 'Enable', onOff(string(c.overlayPerShot.Value) == "formula"));
+            c.zernikeOrders.Enable = onOff(c.zernike.Value);
             c.outlierSigma.Enable = onOff(c.excludeOutliers.Value);
             set([c.overlayWaferDx, c.overlayWaferDy], 'Enable', onOff(c.overlayWafer.Value == app.FORMULA_CHOICE));
             set([c.overlayShotDx, c.overlayShotDy], 'Enable', onOff(string(c.overlayShotCommon.Value) == "formula"));
@@ -2266,6 +2541,17 @@ classdef AlignmentEstimationApp < handle
             end
             runWithAlert(app, @() app.loadShotPriority(fullfile(folder, fileName)), "優先順のファイルを読み込めませんでした", ...
                 "1行目に項目名（Shot 番号・優先度）、2行目から Shot 番号と優先度を書いたファイルを選んでください。");
+        end
+
+        function onLoadLayouts(app)
+            [fileName, folder] = uigetfile({'*.xlsx;*.xlsm;*.xls;*.csv', '計測配置 (*.xlsx, *.xlsm, *.xls, *.csv)'}, ...
+                '人が選んだ計測配置のファイルを選ぶ');
+            figure(app.Figure);
+            if isequal(fileName, 0)
+                return
+            end
+            runWithAlert(app, @() app.loadLayoutPlans(fullfile(folder, fileName)), "計測配置を読み込めませんでした", ...
+                "1行目に shotNo とパターンの名前、2行目から shotNo と 1（計測する）・0（しない）を書いたファイルを選んでください。");
         end
 
         function onSaveSettings(app)
@@ -2380,7 +2666,7 @@ classdef AlignmentEstimationApp < handle
             set([c.run, c.resumeRun, c.extendRun], 'Enable', 'off');
             restore = onCleanup(@() set(c.run, 'Enable', 'on'));
             c.runStatus.Text = "計算中…";
-            c.runStatus.FontColor = [0, 0, 0];
+            c.runStatus.FontColor = app.Palette.text;
             dialog = [];
             if showProgress
                 dialog = uiprogressdlg(app.Figure, 'Title', '評価中', 'Message', '学習パターンを作っています…', ...
@@ -2398,7 +2684,7 @@ classdef AlignmentEstimationApp < handle
             catch err
                 closeDialog(dialog);
                 c.runStatus.Text = "⚠ 評価を実行できませんでした。";
-                c.runStatus.FontColor = app.ERROR_COLOR;
+                c.runStatus.FontColor = app.Palette.error;
                 c.extendRun.Enable = onOff(~isempty(app.BaseResults) && ~isImportedResults(app.BaseResults));
                 c.resumeRun.Enable = onOff(~isempty(app.BaseResults) && app.BaseResults.cancelled && ...
                     ~isImportedResults(app.BaseResults));
@@ -2544,7 +2830,7 @@ classdef AlignmentEstimationApp < handle
             % 交換法で学習パターンを作る時間の目安（alignest.exchangeSecondsGuide。I 最適のときだけ）
             c = app.Controls;
             text = "";
-            if string(c.samplingMethod.Value) ~= "ioptimal"
+            if ~any(ismember(string(c.samplingMethod.Value), ["ioptimal", "doptimal"]))
                 return
             end
             nCandidates = 99;
@@ -2623,15 +2909,22 @@ classdef AlignmentEstimationApp < handle
             end
             total = numel(methods) * nPlans * nUnits;
             seconds = 0;
+            detail = struct("nMaternNuMethods", 0, "maternNuFactor", 1, "secondsPerRun", 2);
             if nUnits > 0 && nPlans > 0
                 try
-                    seconds = alignest.estimateRunSeconds(app.Data.units, app.Settings);
+                    [seconds, detail] = alignest.estimateRunSeconds(app.Data.units, app.Settings);
                 catch
                     % 設定が正しくないときは目安を出さない（「2. 評価の設定」に理由が出る）
                 end
             end
-            text = sprintf("手法 %d 種類 × 学習パターン %d × Wafer %d 枚 = %d 回の推定（目安 %s）", ...
-                numel(methods), nPlans, nUnits, total, durationText(seconds));
+            nuText = "";
+            if detail.nMaternNuMethods > 0
+                % ν を指定した Matérn は ν ごとに手法が増え、1条件の時間も長いので、目安に含めたことを示す
+                nuText = sprintf("。うち ν を指定した Matérn の手法 %d 種類は 1条件 %g 秒で見積もり", ...
+                    detail.nMaternNuMethods, detail.secondsPerRun * detail.maternNuFactor);
+            end
+            text = sprintf("手法 %d 種類 × 学習パターン %d × Wafer %d 枚 = %d 回の推定（目安 %s%s）", ...
+                numel(methods), nPlans, nUnits, total, durationText(seconds), nuText);
             c.countLabel.Text = text;
             if nUnits == 0
                 c.runSummary.Text = "データがまだ読み込まれていません。「1. データの読み込み」から始めてください。";
@@ -2688,11 +2981,30 @@ classdef AlignmentEstimationApp < handle
         function lines = measurementLines(app, unit, plan)
             % 計測マップの説明（Shot 数・計測率・必ず計測した数・I 基準・D 基準・shotNo・メモ）
             nCandidates = nnz(unit.shots.nValidX + unit.shots.nValidY > 0);
+            if ~isempty(plan.markIndex)
+                % Mark 単位の計画：計測する Mark の数と、Mark 番号ごとの数（全計測での割合と比べる）
+                marks = unit.marks;
+                candidateMarks = ismember(marks.shotIndex, find(unit.shots.nValidX + unit.shots.nValidY > 0)) & ...
+                    (marks.validX | marks.validY);
+                levels = unique(marks.markNo(candidateMarks)).';
+                shares = string(arrayfun(@(level) sprintf("M%d %d（全計測 %.0f%%）", level, ...
+                    nnz(marks.markNo(plan.markIndex) == level), 100 * nnz(marks.markNo(candidateMarks) == level) / ...
+                    nnz(candidateMarks)), levels, 'UniformOutput', false));
+                lines = sprintf(['%s｜%s｜計測 %d / 候補 %d Mark（計測率 %.1f%%）｜全 %d Shot で1点以上｜I 基準 %.4g・' ...
+                    'D 基準 %.4g｜全計測に対する I 効率 %.1f%%・D 効率 %.1f%%｜制約の違反量 %d'], unit.label, plan.label, ...
+                    numel(plan.markIndex), nnz(candidateMarks), 100 * numel(plan.markIndex) / max(nnz(candidateMarks), 1), ...
+                    nCandidates, plan.criterionI, plan.criterionD, 100 * plan.efficiencyI, 100 * plan.efficiencyD, plan.violation);
+                lines = [lines; "Mark 番号ごとの計測数：" + strjoin(shares, "、")];
+                if plan.message ~= ""
+                    lines = [lines; "メモ：" + plan.message];
+                end
+                return
+            end
             lines = sprintf(['%s｜%s｜計測 %d / 候補 %d Shot（計測率 %.1f%%）｜必ず計測 %d Shot｜I 基準 %.4g・D 基準 %.4g' ...
                 '｜全計測に対する I 効率 %.1f%%・D 効率 %.1f%%'], unit.label, plan.label, plan.nShots, nCandidates, ...
                 100 * plan.nShots / max(nCandidates, 1), numel(plan.requiredShotIndex), plan.criterionI, plan.criterionD, ...
                 100 * plan.efficiencyI, 100 * plan.efficiencyD);
-            if any(string(app.Settings.sampling.method) == ["ioptimal", "random"])
+            if any(plan.type == ["ioptimal", "doptimal", "random"])
                 lines = lines + sprintf("｜制約の違反量 %d", plan.violation);
             end
             lines = [lines; "計測する shotNo：" + strjoin(string(plan.shotNos(:).'), " ")];
@@ -2794,6 +3106,31 @@ classdef AlignmentEstimationApp < handle
             c.comparisonNote = uilabel(compareGrid, 'WordWrap', 'on', 'Text', '');
             c.comparisonTable = uitable(compareGrid, 'RowName', {}, ...
                 'ColumnName', {'手法', '列', '基準との差', '95% 区間', '基準より良かった割合', 'Wafer 数'});
+            % 計測配置の比較：選び方（I 最適・D 最適・人の選択など）ごとに、学習点の数に対する指標を比べる
+            c.layoutCompareTab = uitab(c.resultTabs, 'Title', '計測配置の比較');
+            layoutGrid = uigridlayout(c.layoutCompareTab, [3, 2], 'RowHeight', {'fit', '1x', 'fit'}, ...
+                'ColumnWidth', {'1.2x', '1x'}, 'Padding', 8, 'ColumnSpacing', 12);
+            layoutControls = uigridlayout(layoutGrid, [1, 4], 'ColumnWidth', {'fit', '1x', 'fit', 220}, 'Padding', 0);
+            place(layoutControls, 1, [1, 2]);
+            label(layoutControls, '手法', 1, 1);
+            c.compareLayoutMethod = uidropdown(layoutControls, 'Items', {'—'}, 'Enable', 'off', ...
+                'ValueChangedFcn', @(~, ~) app.drawLayoutComparison());
+            place(c.compareLayoutMethod, 1, 2);
+            label(layoutControls, '横軸', 1, 3);
+            c.compareLayoutXAxis = uidropdown(layoutControls, 'Items', {'計測する Mark の数', '学習 Shot 数'}, ...
+                'ItemsData', {'marks', 'shots'}, 'Enable', 'off', 'ValueChangedFcn', @(~, ~) app.drawLayoutComparison(), ...
+                'Tooltip', ['計測する Mark の数：Shot 単位と Mark 単位の計画を同じ計測の手間で比べる。学習 Shot 数：Shot 単位の' ...
+                '計画どうしを比べる（Mark 単位の計画は全 Shot を計測するので右端に寄る）。']);
+            place(c.compareLayoutXAxis, 1, 4);
+            c.compareLayoutAxes = uiaxes(layoutGrid);
+            place(c.compareLayoutAxes, 2, 1);
+            c.compareLayoutTable = uitable(layoutGrid, 'RowName', {}, 'ColumnName', {'選び方', '列', '学習 Shot 数', ...
+                '計測 Mark 数', '指標', 'I 基準', 'D 基準'}, 'ColumnWidth', {120, 150, 80, 80, 'auto', 70, 70});
+            place(c.compareLayoutTable, 2, 2);
+            layoutNote = ['「2. 評価の設定」の選び方を2つ以上選んで評価すると、選び方ごとの線（人の選択・手動は点）で比べられます' ...
+                '（指標と Wafer の集計は上の「指標」「集計」）。I 基準・D 基準は小さいほど良い計画（Wafer の平均）。'];
+            c.compareLayoutInfo = uilabel(layoutGrid, 'WordWrap', 'on', 'Text', layoutNote, 'UserData', string(layoutNote));
+            place(c.compareLayoutInfo, 3, [1, 2]);
 
             analysisTab = uitab(c.resultTabs, 'Title', '推定値と誤差の分布');
             analysisGrid = uigridlayout(analysisTab, [5, 1], 'RowHeight', {'fit', '1.6x', 96, '1x', 'fit'}, ...
@@ -2844,7 +3181,7 @@ classdef AlignmentEstimationApp < handle
             place(c.boxFactor, 1, 2);
             boxHelp = label(boxControls, ['「推定値と誤差の分布」で「分析する」を押した残差を描きます。箱は四分位範囲、中の線は' ...
                 '中央値、ひげは箱から 1.5 × 四分位範囲まで、外の点は外れ値、◆ は平均（ANOVA は水準の平均の違いを調べる）。'], 1, 3);
-            boxHelp.FontColor = [0.35, 0.35, 0.35];
+            boxHelp.FontColor = app.Palette.muted;
             boxAxesGrid = uigridlayout(boxGrid, [1, 2], 'Padding', 0, 'ColumnSpacing', 12);
             c.boxAxes = [uiaxes(boxAxesGrid), uiaxes(boxAxesGrid)];
             set(c.boxAxes, 'Visible', 'off');
@@ -3024,7 +3361,7 @@ classdef AlignmentEstimationApp < handle
                 f.scan.Value = filter.scan;
                 f.outer.Value = char(filter.outer);
                 f.status.Text = status;
-                f.status.FontColor = ternary(active, app.PRIMARY_COLOR, [0, 0, 0]);
+                f.status.FontColor = ternary(active, app.Palette.accent, app.Palette.text);
                 f.clear.Enable = onOff(active && ~isempty(app.Results));
             end
         end
@@ -3082,6 +3419,11 @@ classdef AlignmentEstimationApp < handle
             summary = alignest.summarizeResults(results, "RMSE_XY", "mean");
             [~, order] = sort(mean(summary.values, 2, 'omitnan'));
             c.chartMethods.Value = num2cell(sort(order(1:min(app.MAX_CURVES, numel(order)))).');
+            % 計測配置の比較（初めは推定値と誤差の分布と同じ手法）
+            c.compareLayoutMethod.Items = cellstr(labels);
+            c.compareLayoutMethod.ItemsData = 1:numel(labels);
+            c.compareLayoutMethod.Value = order(1);
+            set([c.compareLayoutMethod, c.compareLayoutXAxis], 'Enable', 'on');
             set([c.export, c.saveChart], 'Enable', 'on');
             imported = isImportedResults(results);
             c.importEstimates.Enable = onOff(imported);
@@ -3208,7 +3550,7 @@ classdef AlignmentEstimationApp < handle
                     data{m, g + 1} = text;
                 end
                 if ~all(isnan(column))
-                    addStyle(c.summaryTable, uistyle('BackgroundColor', app.BEST_COLOR, 'FontWeight', 'bold'), 'cell', [best, g + 1]);
+                    addStyle(c.summaryTable, uistyle('BackgroundColor', app.Palette.best, 'FontWeight', 'bold'), 'cell', [best, g + 1]);
                 end
             end
             c.summaryTable.Data = data;
@@ -3233,6 +3575,7 @@ classdef AlignmentEstimationApp < handle
                 'その 95%% 区間、基準より良かった Wafer の割合。'], comparison.Properties.UserData.referenceLabel, ...
                 ternary(unitText == "%", "誤差の差の割合。負なら基準より良い", "差。正なら基準より良い"));
             drawChart(app);
+            drawLayoutComparison(app);
         end
 
         function drawChart(app)
@@ -3533,6 +3876,15 @@ classdef AlignmentEstimationApp < handle
                 case "row"
                     categories = repmat("偶数行", n, 1);
                     categories(estimates.shotRowParity == 1) = "奇数行";
+                case "slot"
+                    % Wafer ID のハイフンの後の番号（Slot）の奇数・偶数。読めない Wafer は「Slot 不明」
+                    [~, parity] = alignest.waferSlot(estimates.Wafer);
+                    names = ["Slot 奇数", "Slot 偶数", "Slot 不明"];
+                    labels_ = repmat(names(3), n, 1);
+                    labels_(parity == "奇数") = names(1);
+                    labels_(parity == "偶数") = names(2);
+                    categories = categorical(labels_, names);
+                    return
                 case "outer"
                     % 外周の RMSE と同じ境目（Mark の半径が外周の半径以上なら外周）。凡例は 内側 → 外周 の順
                     outerMm = alignest.upgradeRadiusSettings(app.Results.settings).evaluation.outerRadiusMm;
@@ -3646,7 +3998,7 @@ classdef AlignmentEstimationApp < handle
             c.mapRings = uicheckbox(extras, 'Text', '同心円の区切り（制約）を描く', 'ValueChangedFcn', onChange, ...
                 'Tooltip', ['評価で I 最適・ランダムの同心円の制約を使ったとき、区切りの半径（Shot 中心の半径 [mm]）を' ...
                 '橙の一点鎖線で描きます。']);
-            c.mapExtrasInfo = uilabel(extras, 'Text', '', 'FontColor', [0.35, 0.35, 0.35]);
+            c.mapExtrasInfo = uilabel(extras, 'Text', '', 'FontColor', app.Palette.muted);
             c.filterMap = buildFilterControls(app, grid, "map");
             % 図（1つの条件の3枚、または並べて比べる図）と、並べて比べる条件の一覧
             body = uigridlayout(grid, [1, 2], 'ColumnWidth', {'1x', 300}, 'Padding', 0, 'ColumnSpacing', 10);
@@ -3936,7 +4288,7 @@ classdef AlignmentEstimationApp < handle
                     % 学習 Shot の四角・異常値の × は最初の Wafer の位置（平均の図でも）
                     firstUnit = unit;
                     plan = plans(planIndex);
-                    trainMarks = ismember(marks.shotIndex, plan.shotIndex) & (marks.validX | marks.validY) & mask;
+                    trainMarks = alignest.trainingMarks(unit, plan) & (marks.validX | marks.validY) & mask;
                     f.trainPoints = [marks.x(trainMarks), marks.y(trainMarks)];
                     if ~overlayContent && ~option.isGroup && isfield(out, "outlierIndex")
                         outlierIndex = out.outlierIndex(mask(out.outlierIndex));
@@ -3979,6 +4331,7 @@ classdef AlignmentEstimationApp < handle
                     'ばらつき、色は X・Y の相関係数の絶対値 |r|）｜Wafer ごとの RMSE（X・Y）の平均 %.3f nm'], option.label, ...
                     planLabel, method.label, numel(pointsList), ternary(skipped > 0, sprintf("（使えなかった Wafer %d 枚）", ...
                     skipped), ""), f.rmse);
+                f = addWorstValues(app, f, rows);
                 f.ok = true;
                 return
             end
@@ -3993,6 +4346,7 @@ classdef AlignmentEstimationApp < handle
                     planLabel, method.label, choice.description, metrics.overlayActual_X, metrics.overlayActual_Y, ...
                     metrics.overlayEstimated_X, metrics.overlayEstimated_Y, metrics.overlayChange_X, metrics.overlayChange_Y, ...
                     metrics.overlayIncrease_X, metrics.overlayIncrease_Y);
+                f = addWorstValues(app, f, rowsOf(table_, option, planLabel, m));
                 f.ok = true;
                 return
             end
@@ -4010,9 +4364,14 @@ classdef AlignmentEstimationApp < handle
                     evaluation.outlierSigma);
             end
             plan = plans(planIndex);
-            f.info = sprintf("%s｜%s｜%s｜学習 Shot %d（shotNo：%s）｜評価点 X %d・Y %d%s｜%s", firstUnit.label, ...
-                plan.label, method.label, plan.nShots, strjoin(string(plan.shotNos(:).'), " "), ...
-                nnz(firstMask(firstOut.testIndex.X)), nnz(firstMask(firstOut.testIndex.Y)), outlierText, metricsText);
+            trainText = sprintf("学習 Shot %d（shotNo：%s）", plan.nShots, strjoin(string(plan.shotNos(:).'), " "));
+            if ~isempty(plan.markIndex)
+                trainText = sprintf("学習 Mark %d（全 %d Shot で1点以上）", numel(plan.markIndex), plan.nShots);
+            end
+            f.info = sprintf("%s｜%s｜%s｜%s｜評価点 X %d・Y %d%s｜%s", firstUnit.label, ...
+                plan.label, method.label, trainText, nnz(firstMask(firstOut.testIndex.X)), ...
+                nnz(firstMask(firstOut.testIndex.Y)), outlierText, metricsText);
+            f = addWorstValues(app, f, rowsOf(table_, option, planLabel, m));
             f.ok = true;
         end
 
@@ -4083,11 +4442,11 @@ classdef AlignmentEstimationApp < handle
                 f.points = pointsList{1};
                 f.values = cellfun(@(values) values{1}, panelValues, 'UniformOutput', false);
             end
-            rows = results.table(ismember(results.table.unitIndex, option.unitIndex) & results.table.plan == planLabel & ...
-                results.table.methodIndex == m, :);
+            rows = rowsOf(results.table, option, planLabel, m);
             f.rmse = mean(rows.RMSE_XY, 'omitnan');
             f.info = sprintf("%s｜%s｜%s｜Excel から読み込んだ推定値（Wafer %d 枚）｜Wafer ごとの RMSE（X・Y）の平均 %.3f nm", ...
                 option.label, planLabel, method.label, numel(pointsList), f.rmse);
+            f = addWorstValues(app, f, rows);
             f.ok = true;
         end
 
@@ -4098,6 +4457,27 @@ classdef AlignmentEstimationApp < handle
             c.mapConditions.Items = cellstr(string({conditions.label}));
             c.mapConditions.ItemsData = num2cell(1:numel(conditions));
             c.mapConditions.Value = {};
+        end
+
+        function f = addWorstValues(app, f, rows)
+            % マップの3枚目（残差・推定による変化）の点の大きさ |v| のワースト値と 95%値を題名に、X・Y 別の値と
+            % （平均の図では）Wafer ごとの RMSE のワースト値・95%値を説明に足す（結果一覧の集計と同じ PERCENTILE.INC）
+            values = f.values{3};
+            magnitude = hypot(values(:, 1), values(:, 2));
+            worst = max(magnitude, [], 'omitnan');
+            if isempty(worst) || ~isfinite(worst)
+                return
+            end
+            f.titles(3) = f.titles(3) + newline + sprintf("|v| のワースト %.2f nm・95%%値 %.2f nm", worst, ...
+                alignest.stats.percentile(magnitude, app.WORST_PERCENT));
+            f.info = f.info + sprintf("｜%s：ワースト値 X %.3f・Y %.3f nm、95%%値 X %.3f・Y %.3f nm", ...
+                extractBefore(f.titles(3) + "（", "（"), max(abs(values(:, 1)), [], 'omitnan'), ...
+                max(abs(values(:, 2)), [], 'omitnan'), alignest.stats.percentile(abs(values(:, 1)), app.WORST_PERCENT), ...
+                alignest.stats.percentile(abs(values(:, 2)), app.WORST_PERCENT));
+            if f.isGroup && height(rows) > 0
+                f.info = f.info + sprintf("｜Wafer ごとの RMSE（X・Y）：ワースト値 %.3f nm、95%%値 %.3f nm", ...
+                    max(rows.RMSE_XY, [], 'omitnan'), alignest.stats.percentile(rows.RMSE_XY, app.WORST_PERCENT));
+            end
         end
 
         function onAddMapCondition(app)
@@ -4116,7 +4496,7 @@ classdef AlignmentEstimationApp < handle
             drawnow;
             restore = onCleanup(@() set(app.Figure, 'Pointer', 'arrow'));
             plan = app.Results.plans(planIndex);
-            out = alignest.estimateWafer(app.Data.units(u), plan.shotIndex, app.Results.methods(m), app.Results.settings);
+            out = alignest.estimateWafer(app.Data.units(u), plan, app.Results.methods(m), app.Results.settings);
             app.MapCache(key) = out;
         end
 
@@ -4145,6 +4525,73 @@ classdef AlignmentEstimationApp < handle
             if runWithAlert(app, @() exportgraphics(app.Controls.mapPanel, target, 'Resolution', 150), ...
                     "図を保存できませんでした", "保存先のフォルダを変えてもう一度試してください。")
                 uialert(app.Figure, sprintf('保存しました：%s', target), '保存しました', 'Icon', 'success');
+            end
+        end
+
+        % ================= 6. ヘルプ =================
+        function buildHelpTab(app)
+            % 用語・推定の手法・カーネル・Overlay 補正の式の説明（help/help.html。exe にも入れる）を出す
+            grid = uigridlayout(app.Tabs.help, [1, 1], 'Padding', 0);
+            helpFile = fullfile(fileparts(mfilename('fullpath')), 'help', 'help.html');
+            c.helpView = uihtml(grid, 'HTMLSource', helpFile, 'Data', struct("theme", app.Theme));
+            if ~isfile(helpFile)
+                c.helpView.HTMLSource = ['<p style="font-family:sans-serif">ヘルプのファイルが見つかりません：', ...
+                    char(helpFile), '</p>'];
+            end
+            app.Controls = mergeStruct(app.Controls, c);
+        end
+
+        % ================= 画面の色（ライト・ダーク） =================
+        function applyTheme(app, old, new)
+            % 画面の部品と図の色を old から new の色の組に変える。これから描く図の色は、図の既定値（Default…）で決める
+            % （図を描き直す関数は cla(ax, 'reset') で既定値に戻すので、そのまま新しい色になる）
+            fig = app.Figure;
+            fig.Color = new.background;
+            set(fig, 'DefaultAxesColor', new.axes, 'DefaultAxesXColor', new.axisLine, 'DefaultAxesYColor', new.axisLine, ...
+                'DefaultAxesZColor', new.axisLine, 'DefaultAxesGridColor', new.grid, 'DefaultAxesMinorGridColor', new.grid, ...
+                'DefaultTextColor', new.text, 'DefaultLegendTextColor', new.text, 'DefaultLegendColor', new.axes, ...
+                'DefaultLegendEdgeColor', new.grid, 'DefaultColorbarColor', new.axisLine);
+            for object = reshape(findall(fig), 1, [])
+                if ~isvalid(object) || ~isprop(object, 'Type')
+                    continue   % 色を持たない部品（図の中の空の置き場など）
+                end
+                switch object.Type
+                    case 'uigridlayout'
+                        object.BackgroundColor = new.background;
+                    case 'uipanel'
+                        object.BackgroundColor = new.background;
+                        object.ForegroundColor = new.text;
+                    case 'uitab'
+                        % タブの見出しの地はどちらのモードでも明るいので、見出しの文字は黒のまま（中の地だけ変える）
+                        object.BackgroundColor = new.background;
+                    case 'uilabel'
+                        object.FontColor = themeColor(object.FontColor, old, new);
+                    case 'uicheckbox'
+                        object.FontColor = new.text;
+                    case 'uibutton'
+                        if object.Tag ~= "primary"
+                            object.BackgroundColor = new.button;
+                            object.FontColor = new.text;
+                        end
+                    case 'uidropdown'
+                        object.BackgroundColor = new.button;
+                        object.FontColor = new.text;
+                    case {'uieditfield', 'uinumericeditfield', 'uispinner', 'uitextarea', 'uilistbox'}
+                        object.BackgroundColor = new.field;
+                        object.FontColor = new.text;
+                    case 'uitable'
+                        object.BackgroundColor = [new.field; new.fieldAlt];
+                        object.ForegroundColor = new.text;
+                    case 'axes'
+                        themeAxes(object, old, new);
+                    case 'uihtml'
+                        object.Data = struct("theme", app.Theme);
+                end
+            end
+            % 色に依存する表の印（座標の単位の警告・各列の最良）を付け直す
+            fillUnitTable(app);
+            if ~isempty(app.Results)
+                refreshResults(app);
             end
         end
 
@@ -4218,6 +4665,10 @@ classdef AlignmentEstimationApp < handle
             refreshMapConditions(app);
             c.boxFactor.Items = {'—'};
             c.boxInfo.Text = '';
+            cla(c.compareLayoutAxes, 'reset');
+            legend(c.compareLayoutAxes, 'off');
+            c.compareLayoutTable.Data = {};
+            c.compareLayoutInfo.Text = c.compareLayoutInfo.UserData;
             c.timingTable.Data = {};
             c.timingInfo.Text = c.timingInfo.UserData;
             c.chartAxes2.Visible = 'off';
@@ -4230,6 +4681,7 @@ classdef AlignmentEstimationApp < handle
                 c.compareDistributionsButton, c.resumeRun, c.extendRun, c.mapScanFrames, c.mapRings, c.mapView, ...
                 c.mapCompareValue, c.mapConditions, c.mapAddCondition, c.mapRemoveCondition, c.mapClearConditions, ...
                 c.boxFactor, c.timingWafer, c.timingPlan, c.timingMethods, c.timingRepeats, c.measureTimingButton, ...
+                c.compareLayoutMethod, c.compareLayoutXAxis, ...
                 c.filterResults.apply, c.filterMap.apply], 'Enable', 'off');
             showFilter(app);
             app.Distribution = [];
@@ -4260,7 +4712,7 @@ classdef AlignmentEstimationApp < handle
         function button = primaryButton(app, parent, text, callback)
             % 画面ごとに1つだけの主な操作（塗りつぶしのボタン）
             button = uibutton(parent, 'Text', text, 'ButtonPushedFcn', callback, ...
-                'BackgroundColor', app.PRIMARY_COLOR, 'FontColor', [1, 1, 1], 'FontWeight', 'bold');
+                'BackgroundColor', app.PRIMARY_COLOR, 'FontColor', [1, 1, 1], 'FontWeight', 'bold', 'Tag', 'primary');
         end
 
         function spinner = markerSizeSpinner(app, parent, callback)
@@ -4270,7 +4722,7 @@ classdef AlignmentEstimationApp < handle
         end
 
         function item = errorLabel(app, parent, row, column)
-            item = uilabel(parent, 'Text', '', 'FontColor', app.ERROR_COLOR, 'WordWrap', 'on');
+            item = uilabel(parent, 'Text', '', 'FontColor', app.Palette.error, 'WordWrap', 'on');
             place(item, row, column);
         end
 
@@ -4301,7 +4753,7 @@ end
 end
 
 function heading(parent, text, row)
-item = uilabel(parent, 'Text', text, 'FontWeight', 'bold');
+item = uilabel(parent, 'Text', text, 'FontWeight', 'bold', 'WordWrap', 'on');   % 欄が狭くても切れないように折り返す
 place(item, row, [1, 2]);
 end
 
@@ -4398,8 +4850,8 @@ end
 end
 
 function [values, ok] = parseNumbers(text)
-% 空白・カンマ区切りの数字を読む。空欄は空の並び
-text = strtrim(regexprep(char(strjoin(string(text), " ")), '[,、\s]+', ' '));
+% 空白・カンマ区切りの数字を読む。空欄は空の並び。全角の数字・空白・カンマも読む（日本語入力のまま打てるように）
+text = strtrim(regexprep(char(alignest.normalizeNumberText(strjoin(string(text), " "))), '[,、\s]+', ' '));
 if isempty(text)
     values = zeros(1, 0);
     ok = true;
@@ -4490,9 +4942,10 @@ function [keys, labels] = scatterColorChoices(source, settings)
 % 散布図の色分けの選択肢（ファイルのその他の列も加える）。source は読み込んだデータ、または推定値の表
 % （読み込んだ推定値の Excel。その他の列は「質的変数:<列名>」の列だけ）。settings は評価の設定（外周の半径）
 outerMm = alignest.upgradeRadiusSettings(settings).evaluation.outerRadiusMm;
-keys = ["none", "wafer", "lot", "eqp", "operation", "scan", "mark", "row", "outer", "quadrant"];
-labels = ["なし（1色）", "Wafer", "LotID", "EqpId", "Operation", "Scan 方向", "Mark 番号", "Shot 行の奇偶", ...
-    sprintf("外周・内側（Mark の半径 %g mm で分ける）", outerMm), "象限（Mark の位置、第1〜第4象限）"];
+keys = ["none", "wafer", "lot", "eqp", "operation", "slot", "scan", "mark", "row", "outer", "quadrant"];
+labels = ["なし（1色）", "Wafer", "LotID", "EqpId", "Operation", "Slot の偶奇（Wafer ID のハイフンの後の番号）", ...
+    "Scan 方向", "Mark 番号", "Shot 行の奇偶", sprintf("外周・内側（Mark の半径 %g mm で分ける）", outerMm), ...
+    "象限（Mark の位置、第1〜第4象限）"];
 columns = strings(1, 0);
 if istable(source)
     names = string(source.Properties.VariableNames);
@@ -4747,7 +5200,7 @@ end
 function edges = activeZoneEdges(settings)
 % 同心円の制約の区切り [mm]（I 最適・ランダムで使うときだけ。手動・ファイルの優先順では制約を使わないので空）
 edges = zeros(1, 0);
-if any(string(settings.sampling.method) == ["ioptimal", "random"])
+if any(ismember(string(settings.sampling.method), ["ioptimal", "doptimal", "random"]))
     edges = alignest.zoneEdgesMm(settings.sampling, settings.data.waferRadiusMm);
 end
 end
@@ -4771,5 +5224,69 @@ for rows = 1:nPanels
         nRows = rows;
         nColumns = columns;
     end
+end
+end
+
+function rows = rowsOf(table_, option, planLabel, methodIndex)
+% マップの条件（Wafer・平均 × 学習パターン × 手法）の、結果の表の行
+rows = table_(ismember(table_.unitIndex, option.unitIndex) & table_.plan == planLabel & ...
+    table_.methodIndex == methodIndex, :);
+end
+
+function palette = themePalette(mode)
+% 画面の色の組（ライトモードは MATLAB の画面の既定の色、ダークモードは暗い背景に明るい文字）
+if string(mode) == "dark"
+    palette = struct("background", [0.13, 0.14, 0.16], "text", [0.92, 0.92, 0.93], "muted", [0.66, 0.67, 0.70], ...
+        "error", [1.0, 0.48, 0.45], "accent", [0.45, 0.70, 1.0], "best", [0.42, 0.36, 0.10], ...
+        "field", [0.20, 0.21, 0.24], "fieldAlt", [0.17, 0.18, 0.21], "button", [0.25, 0.26, 0.30], ...
+        "axes", [0.10, 0.11, 0.13], "axisLine", [0.82, 0.82, 0.84], "grid", [0.55, 0.55, 0.58]);
+else
+    palette = struct("background", [0.94, 0.94, 0.94], "text", [0, 0, 0], "muted", [0.35, 0.35, 0.35], ...
+        "error", [0.72, 0.11, 0.11], "accent", [0.0, 0.36, 0.67], "best", [1.0, 0.93, 0.70], ...
+        "field", [1, 1, 1], "fieldAlt", [0.94, 0.94, 0.94], "button", [0.96, 0.96, 0.96], ...
+        "axes", [1, 1, 1], "axisLine", [0.15, 0.15, 0.15], "grid", [0.15, 0.15, 0.15]);
+end
+end
+
+function color = themeColor(current, old, new)
+% 文字の色を、前の色の組での役割（エラー・補足・強調・ふつう）のまま新しい色の組の色にする
+near = @(a, b) isnumeric(a) && numel(a) == 3 && all(abs(a(:).' - b) < 0.03);
+if near(current, old.error)
+    color = new.error;
+elseif near(current, old.muted)
+    color = new.muted;
+elseif near(current, old.accent)
+    color = new.accent;
+else
+    color = new.text;
+end
+end
+
+function themeAxes(ax, old, new)
+% 描いてある図の色を変える（軸・題名・凡例・色の目盛り・文字。塗りの上に書いた文字（Tag = keepColor）は変えない）
+if ~(ischar(ax.Color) || isstring(ax.Color))
+    ax.Color = new.axes;
+end
+set(ax, 'XColor', new.axisLine, 'YColor', new.axisLine, 'ZColor', new.axisLine, 'GridColor', new.grid, ...
+    'MinorGridColor', new.grid);
+set([ax.Title, ax.XLabel, ax.YLabel], 'Color', new.text);
+if ~isempty(ax.Legend) && isvalid(ax.Legend)
+    ax.Legend.TextColor = new.text;
+    ax.Legend.EdgeColor = new.grid;
+    if ~(ischar(ax.Legend.Color) || isstring(ax.Legend.Color))
+        ax.Legend.Color = new.axes;
+    end
+end
+if ~isempty(ax.Colorbar) && isvalid(ax.Colorbar)
+    ax.Colorbar.Color = new.axisLine;
+    set([ax.Colorbar.Title, ax.Colorbar.Label], 'Color', new.text);
+end
+for item = reshape(findall(ax, 'Type', 'text'), 1, [])
+    if item.Tag ~= "keepColor" && isnumeric(item.Color) && all(abs(item.Color - old.text) < 0.03)
+        item.Color = new.text;
+    end
+end
+for item = reshape(findall(ax, 'Tag', 'foreground'), 1, [])
+    item.Color = new.text;   % 長さの目安の矢印など、背景と反対の色で描くもの
 end
 end

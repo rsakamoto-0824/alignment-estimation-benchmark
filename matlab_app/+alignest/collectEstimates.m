@@ -93,7 +93,7 @@ if useCache && isKey(cache, key)
     out = cache(key);
     return
 end
-out = alignest.estimateWafer(unit, plan.shotIndex, method, settings);
+out = alignest.estimateWafer(unit, plan, method, settings);
 if useCache
     cache(key) = out; %#ok<NASGU> containers.Map は参照で共有される
 end
@@ -113,7 +113,8 @@ else
         index = find(marks.validX | marks.validY);
     end
     role = repmat("評価", numel(index), 1);
-    inTrain = ismember(marks.shotIndex(index), plan.shotIndex);
+    inTrain = alignest.trainingMarks(unit, plan);
+    inTrain = inTrain(index);
     role(inTrain) = "学習";
     if isfield(out, "outlierIndex")
         role(inTrain & ismember(index, out.outlierIndex)) = "学習（異常値として除外）";
@@ -162,7 +163,8 @@ marks = unit.marks;
 index = find(marks.validX | marks.validY);
 n = numel(index);
 role = repmat("学習", n, 1);
-role(~ismember(marks.shotIndex(index), plan.shotIndex)) = "評価";
+inTrain = alignest.trainingMarks(unit, plan);
+role(~inTrain(index)) = "評価";
 fields = correction.fields;
 text = @(value) repmat(string(value), n, 1);
 points = table(text(unit.operation), text(unit.eqpId), text(unit.lotId), text(unit.label), text(unit.dateTime), ...

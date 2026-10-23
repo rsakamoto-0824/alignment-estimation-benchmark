@@ -8,7 +8,7 @@ if isempty(featureSets)
     featureSets = "XYR";
 end
 config.featureSets = reshape(featureSets, 1, []);
-for group = ["gpr", "rbf", "tps", "kriging", "gam", "options"]
+for group = ["gpr", "rbf", "tps", "kriging", "gam", "zernike", "options"]
     if ~isfield(config, group)
         config.(group) = defaults.(group);
         continue
