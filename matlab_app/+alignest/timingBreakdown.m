@@ -38,15 +38,15 @@ if ~plan.ok
     error('alignest:timingBreakdown', 'この Wafer では学習パターンを作れませんでした：%s', plan.message);
 end
 marks = unit.marks;
-oneMask = singleTestMark(marks, plan.shotIndex);
+oneMask = singleTestMark(marks, alignest.trainingMarks(unit, plan));
 outerMm = alignest.upgradeRadiusSettings(settings).evaluation.outerRadiusMm;
 overlay = alignest.overlayChoice(settings);
 values = zeros(numel(methods), numel(STAGES));
 for m = 1:numel(methods)
     samples = zeros(nRepeats + 1, 6);   % 1回目は予備の計算（捨てる）
     for r = 1:nRepeats + 1
-        out = alignest.estimateWafer(unit, plan.shotIndex, methods(m), settings);
-        single = alignest.estimateWafer(unit, plan.shotIndex, methods(m), settings, oneMask);
+        out = alignest.estimateWafer(unit, plan, methods(m), settings);
+        single = alignest.estimateWafer(unit, plan, methods(m), settings, oneMask);
         metricTimer = tic;
         alignest.computeMetrics(marks.measX(out.testIndex.X), out.estimate.X, NaN, marks.measY(out.testIndex.Y), ...
             out.estimate.Y, NaN, marks.r(out.testIndex.X) >= outerMm, marks.r(out.testIndex.Y) >= outerMm, ...
@@ -78,9 +78,9 @@ breakdown.nTest = [numel(out.testIndex.X), numel(out.testIndex.Y)];
 breakdown.nTrain = [numel(out.trainIndex.X), numel(out.trainIndex.Y)];
 end
 
-function mask = singleTestMark(marks, trainShots)
+function mask = singleTestMark(marks, inTrain)
 % 評価点を1点にする Mark（X・Y の両方が有効な最初の評価 Mark。無ければ X と Y の最初の評価 Mark）
-test = ~ismember(marks.shotIndex, trainShots);
+test = ~inTrain;
 mask = false(numel(marks.x), 1);
 both = find(test & marks.validX & marks.validY, 1);
 if ~isempty(both)

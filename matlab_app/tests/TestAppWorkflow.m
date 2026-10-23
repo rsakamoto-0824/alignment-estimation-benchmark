@@ -651,7 +651,8 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyEqual(string(app.Controls.mapContent.Enable), "on");
             % Wafer ごとのマップ：実測値で補正・推定値で補正・推定による変化
             app.showMap(1, results.plans(1).label, 1, "vector", "overlay");
-            testCase.verifyEqual(string(app.Controls.mapAxes(3).Title.String), "推定による変化（推定値で補正 − 実測値で補正）");
+            testCase.verifyTrue(startsWith(strjoin(string(app.Controls.mapAxes(3).Title.String), newline), ...
+                "推定による変化（推定値で補正 − 実測値で補正）" + newline + "|v| のワースト"), "題名にワースト値・95%値");
             testCase.verifyTrue(contains(app.Controls.mapInfo.Text, "補正モデル"));
             row = results.table(1, :);
             testCase.verifyTrue(contains(app.Controls.mapInfo.Text, sprintf("推定値で補正 X %.3f", row.overlayEstimated_X)));
@@ -762,8 +763,9 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             app = testCase.App;
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.xlsx'));
             app.applyMapping();
-            % 読み込んだデータの平均の図と共分散楕円。平均の単位（ALL・LotID・EqpId・Operation・その他の列）を選ぶ
-            testCase.verifyEqual(string(app.Controls.previewGroupBy.ItemsData), ["all", "lotId", "eqpId", "operation"]);
+            % 読み込んだデータの平均の図と共分散楕円。平均の単位（ALL・LotID・EqpId・Operation・Slot の偶奇・その他の列）を選ぶ
+            testCase.verifyEqual(string(app.Controls.previewGroupBy.ItemsData), ["all", "lotId", "eqpId", "operation", ...
+                "slotParity"]);
             testCase.verifyEqual(string(app.Controls.previewWafer.Items(6:end)), "平均：全 Wafer（5 枚）");
             app.Controls.previewGroupBy.Value = 'lotId';
             app.Controls.previewGroupBy.ValueChangedFcn([], []);
@@ -861,7 +863,9 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             app.Controls.mapWafer.Value = group;
             app.showMap(group, "優先順 20 Shot", 1, "vector", "estimate");
             testCase.verifyTrue(startsWith(app.Controls.mapInfo.Text, "平均：全 Wafer"));
-            testCase.verifyEqual(string(app.Controls.mapAxes(3).Title.String), "残差（計測値 − 推定値）の平均");
+            testCase.verifyTrue(startsWith(strjoin(string(app.Controls.mapAxes(3).Title.String), newline), ...
+                "残差（計測値 − 推定値）の平均"));
+            testCase.verifyTrue(contains(app.Controls.mapInfo.Text, "Wafer ごとの RMSE（X・Y）：ワースト値"));
             app.showMap(group, "優先順 20 Shot", 1, "vector", "overlay");
             testCase.verifyEqual(string(app.Controls.mapAxes(2).Title.String), "推定値で補正した残差の平均");
             testCase.verifyNotEmpty(findall(app.Controls.mapAxes(1), 'Type', 'patch', 'DisplayName', 'Wafer 間のばらつき（1σ 楕円）'));
@@ -1070,6 +1074,87 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyEqual(numel(app.Controls.compareAxes), 2);
             app.showMap(1, "I最適 15 Shot", 1, "vector", "estimate");
             testCase.verifyEqual(string(app.Controls.mapView.Value), "single");
+        end
+
+        function selectionComparisonThemeHelpAndMarkMap(testCase)
+            app = testCase.App;
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.xlsx'));
+            app.applyMapping();
+            settings = app.Settings;
+            settings.methods = alignest.recommendedMethods("none");
+            settings.methods.polynomial.enabled = true;
+            settings.methods.polynomial.order = 3;
+            settings.sampling.nShots = [15, 25];
+            settings.sampling.exchangeStarts = 2;
+            app.setSettings(settings);
+            c = app.Controls;
+            % 選び方を複数選ぶ（I 最適・D 最適・Mark 単位）と、人の選択を Excel から読み込む
+            c.samplingMethod.Value = {'ioptimal', 'doptimal', 'mark'};
+            c.samplingMethod.ValueChangedFcn([], []);
+            c.markPerShot.Value = '１';
+            c.markPerShot.ValueChangedFcn([], []);
+            testCase.verifyEqual(app.Settings.sampling.method, ["ioptimal", "doptimal", "mark"]);
+            testCase.verifyEqual(app.Settings.sampling.markPerShot, 1, "全角の数字も読む");
+            testCase.verifyEqual(string(c.markRatio.Enable), "on");
+            folder = tempname;
+            mkdir(folder);
+            cleanup = onCleanup(@() rmdir(folder, 's'));
+            file = fullfile(folder, 'layouts.xlsx');
+            writetable(table((1:99).', double(mod((1:99).', 5) == 0), 'VariableNames', ["shotNo", "担当者A"]), file);
+            layouts = app.loadLayoutPlans(file);
+            testCase.verifyEqual(layouts.names, "担当者A");
+            testCase.verifyEqual(app.Settings.sampling.method, ["ioptimal", "doptimal", "mark", "manual"]);
+            testCase.verifyTrue(startsWith(string(c.manualPlans.Value{1}), "担当者A: 5 10 15"));
+            % 異常値の MAD・Shot ごとの成分の式・Fringe Zernike
+            c.excludeOutliers.Value = true;
+            c.outlierMethod.Value = 'mad';
+            c.outlierMethod.ValueChangedFcn([], []);
+            testCase.verifyEqual(app.Settings.evaluation.outlierMethod, "mad");
+            c.overlayPerShot.Value = 'formula';
+            c.overlayPerShotDx.Value = 'k1 + (x)';
+            c.overlayPerShot.ValueChangedFcn([], []);
+            testCase.verifyEqual(string(c.overlayPerShotDx.Enable), "on");
+            testCase.verifyTrue(contains(c.overlayFormulaError.Text, "Shot ごとの成分の dx"));
+            c.overlayPerShotDx.Value = 'k1 + k3*x';
+            c.overlayPerShotDx.ValueChangedFcn([], []);
+            testCase.verifyEqual(string(c.overlayFormulaError.Text), "");
+            c.zernike.Value = true;
+            c.zernikeOrders.Value = '3 9';
+            c.zernike.ValueChangedFcn([], []);
+            testCase.verifyTrue(contains(c.zernikeError.Text, "Fringe Zernike の次数"));
+            c.zernikeOrders.Value = '3';
+            c.zernikeOrders.ValueChangedFcn([], []);
+            testCase.verifyEqual(app.Settings.methods.zernike.orders, 3);
+            % 計測マップ：Mark 単位の計画は計測する Mark を描く
+            plans = app.drawMeasurementMap(1, "Mark最適 1 点/Shot");
+            testCase.verifyEqual(numel(plans.markIndex), 99);
+            names = string(get(findobj(app.Controls.measureAxes(1), '-regexp', 'DisplayName', '.+'), 'DisplayName'));
+            testCase.verifyTrue(any(names == "計測する Mark（99）"));
+            testCase.verifyTrue(any(contains(string(app.Controls.measureInfo.Value), "Mark 番号ごとの計測数")));
+            % 評価して、計測配置の比較とマップのワースト値・95%値
+            results = app.runEvaluationNow(false);
+            testCase.verifyEqual(results.groups, ["I最適 15 Shot", "I最適 25 Shot", "D最適 15 Shot", "D最適 25 Shot", ...
+                "担当者A", "Mark最適 1 点/Shot"]);
+            comparison = app.drawLayoutComparison(1, "marks");
+            testCase.verifyEqual(height(comparison), 6);
+            testCase.verifyEqual(size(app.Controls.compareLayoutTable.Data, 1), 6);
+            testCase.verifyGreaterThanOrEqual(numel(findobj(app.Controls.compareLayoutAxes, 'Type', 'line')), 4);
+            app.showMap(1, "Mark最適 1 点/Shot", 1, "vector", "estimate");
+            testCase.verifyTrue(contains(app.Controls.mapInfo.Text, "学習 Mark 99（全 99 Shot で1点以上）"));
+            testCase.verifyTrue(contains(app.Controls.mapInfo.Text, "残差：ワースト値 X"));
+            % 画面の色（ダークモード ↔ ライトモード）とヘルプ
+            app.setTheme("dark");
+            testCase.verifyEqual(app.Figure.Color, [0.13, 0.14, 0.16]);
+            testCase.verifyEqual(app.Controls.mapAxes(1).Color, [0.10, 0.11, 0.13]);
+            testCase.verifyEqual(string(app.Controls.themeDark.Checked), "on");
+            testCase.verifyEqual(app.Controls.helpView.Data.theme, "dark");
+            app.showMap(2, "D最適 15 Shot", 1, "X", "estimate");
+            testCase.verifyEqual(app.Controls.mapAxes(2).Color, [0.10, 0.11, 0.13], "描き直してもダークモードの色");
+            app.setTheme("light");
+            testCase.verifyEqual(app.Controls.mapAxes(1).Color, [1, 1, 1]);
+            testCase.verifyError(@() app.setTheme("blue"), 'alignest:theme');
+            testCase.verifyTrue(endsWith(string(app.Controls.helpView.HTMLSource), "help.html"));
+            testCase.verifyEqual(app.Tabs.help.Title, '6. ヘルプ');
         end
     end
 end

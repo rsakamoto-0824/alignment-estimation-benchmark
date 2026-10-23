@@ -45,8 +45,9 @@ for s = 1:numel(shots.Xmm)
     if unit.hasDirection && isfinite(shots.direction(s))
         label = [label; "S" + shots.direction(s)];
     end
+    % 薄い塗りの上に書くので、ダークモードでも黒い文字のまま（Tag = keepColor）
     text(ax, shots.Xmm(s), shots.Ymm(s), label, 'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
-        'FontSize', LABEL_FONT_SIZE, 'Interpreter', 'none');
+        'FontSize', LABEL_FONT_SIZE, 'Interpreter', 'none', 'Color', [0, 0, 0], 'Tag', 'keepColor');
 end
 hold(ax, 'off');
 axis(ax, 'equal');

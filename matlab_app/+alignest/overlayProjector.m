@@ -6,7 +6,8 @@ function projector = overlayProjector(unit, choice, waferRadiusMm)
 %   - Shot 共通成分  ：Shot 内の座標（markXmm・markYmm）の補正式（alignest.overlayTerms、または入力した式
 %                      choice.shotTerms）。全 Shot で同じ係数
 %   座標を割る値（Wafer 半径・LOCAL_SCALE_MM）は、べき乗の桁をそろえるためだけで、補正量（射影）は変わらない。
-%   - Shot ごとの成分：Shot ごとに並進（k1・k2）または1次（k1〜k6）の係数を持つ
+%   - Shot ごとの成分：Shot ごとに並進（k1・k2）・1次（k1〜k6）、または入力した式（choice.perShotTerms。x・y は
+%                      Shot 内の座標）の係数を持つ（同じ式の係数を Shot ごとに別々に求める）
 %   成分どうしで重なる項（例：Wafer 成分の定数と k1）や、Mark の位置が少なくて決まらない項があっても、
 %   当てはめた補正量（射影）は一つに決まるので、係数を求めずに列空間の正規直交基底で射影する。
 %   projector.X・.Y は index（その軸が有効な Mark の番号）と basis（正規直交基底）。
@@ -33,10 +34,13 @@ for k = 1:2
         blocks{end + 1} = localTerms(alignest.overlayTerms(choice.shotCommon), k, localX, localY); %#ok<AGROW>
     end
     if choice.perShot ~= "none"
-        perShotModel = "linear";
-        local = localTerms(alignest.overlayTerms(perShotModel), k, localX, localY);
-        if choice.perShot == "translation"
-            local = local(:, 1);  % k1（X）・k2（Y）だけ
+        if choice.perShot == "formula"
+            local = localTerms(choice.perShotTerms, k, localX, localY);
+        else
+            local = localTerms(alignest.overlayTerms("linear"), k, localX, localY);
+            if choice.perShot == "translation"
+                local = local(:, 1);  % k1（X）・k2（Y）だけ
+            end
         end
         shots = marks.shotIndex(index);
         indicator = double(shots == unique(shots).');

@@ -1,8 +1,11 @@
 function options = groupOptions(units, groupBy)
 %GROUPOPTIONS 図に出す Wafer・グループの選択肢：Wafer ごとと、平均（共分散楕円）の単位ごと。
 %   options = alignest.groupOptions(units)            % 全 Wafer と、LotID・EqpId・Operation の値ごと（2種類以上のとき）
+%                                                      と、Slot の偶奇（Wafer ID のハイフンの後の番号。奇数・偶数が
+%                                                      どちらもあるとき。alignest.waferSlot）
 %   options = alignest.groupOptions(units, groupBy)   % 平均の単位を1つ選ぶ
-%   groupBy："all"（全 Wafer）・"lotId"・"eqpId"・"operation"（その値ごと）・"col:<列名>"（ファイルのその他の列の値ごと）。
+%   groupBy："all"（全 Wafer）・"lotId"・"eqpId"・"operation"（その値ごと）・"slotParity"（Slot の奇数・偶数）・
+%            "col:<列名>"（ファイルのその他の列の値ごと）。
 %   選んだ単位では、値が1種類でも平均を出す。その他の列は Mark ごとの値なので、その値の Mark だけを集めて平均する
 %   （Wafer の中で値が変わる列でもよい）。
 %   options は構造体配列（label：画面に出す名前、unitIndex：含む Wafer の番号、isGroup：平均の図か、
@@ -26,14 +29,17 @@ if groupBy == "default"
     for k = 1:numel(FIELDS)
         options = [options, fieldGroups(units, FIELDS(k), NAMES(k), 2)]; %#ok<AGROW>
     end
+    options = [options, slotGroups(units, 2)];
 elseif groupBy == "all"
     options(end + 1) = option(sprintf("平均：全 Wafer（%d 枚）", numel(units)), 1:numel(units), true);
+elseif groupBy == "slotParity"
+    options = [options, slotGroups(units, 1)];
 elseif any(groupBy == FIELDS)
     options = [options, fieldGroups(units, groupBy, NAMES(FIELDS == groupBy), 1)];
 elseif startsWith(groupBy, "col:")
     options = [options, columnGroups(units, extractAfter(groupBy, "col:"))];
 else
-    error('alignest:groupBy', '平均の単位は all・lotId・eqpId・operation・col:<列名> のどれかです: %s', groupBy);
+    error('alignest:groupBy', '平均の単位は all・lotId・eqpId・operation・slotParity・col:<列名> のどれかです: %s', groupBy);
 end
 end
 
@@ -51,6 +57,29 @@ end
 for level = levels
     members = find(values == level);
     groups(end + 1) = option(sprintf("平均：%s = %s（%d 枚）", name, level, numel(members)), members, true); %#ok<AGROW>
+end
+end
+
+function groups = slotGroups(units, minLevels)
+% Slot の奇数・偶数ごとの平均（Wafer ID のハイフンの後の番号。読めない Wafer は入れない）
+groups = struct("label", {}, "unitIndex", {}, "isGroup", {}, "column", {}, "level", {});
+names = strings(1, numel(units));
+for u = 1:numel(units)
+    if isfield(units, "wafer") && strlength(string(units(u).wafer)) > 0
+        names(u) = string(units(u).wafer);
+    else
+        names(u) = string(units(u).label);
+    end
+end
+[~, parity] = alignest.waferSlot(names);
+levels = ["奇数", "偶数"];
+levels = levels(ismember(levels, parity));
+if numel(levels) < minLevels
+    return
+end
+for level = levels
+    members = find(parity == level);
+    groups(end + 1) = option(sprintf("平均：Slot %s（%d 枚）", level, numel(members)), members, true); %#ok<AGROW>
 end
 end
 

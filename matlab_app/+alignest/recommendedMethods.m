@@ -28,6 +28,8 @@ methods.polynomial.enabled = true;
 methods.polynomial.order = 5;
 methods.rt.enabled = true;
 methods.rt.orders = 5;
+methods.zernike.enabled = false;   % Fringe Zernike 多項式の近似（次数 k：Z1〜Z(k+1)²。複数なら次数ごとに比べる）
+methods.zernike.orders = 4;
 % 手法の細かい設定（Python 版と同じ値）
 methods.options.gprMaxIterations = 300;
 methods.options.backfitMaxIterations = 20;
@@ -55,6 +57,8 @@ switch selection
         methods.kriging.universal = true;
         methods.kriging.variograms = ["linear", "gaussian", "power", "exponential", "spherical"];
         methods.rt.orders = [4, 5];
+        methods.zernike.enabled = true;
+        methods.zernike.orders = [3, 4, 5];
     case "none"
         methods.gpr.enabled = false;
         methods.tps.enabled = false;
@@ -63,6 +67,7 @@ switch selection
         methods.gam.enabled = false;
         methods.polynomial.enabled = false;
         methods.rt.enabled = false;
+        methods.zernike.enabled = false;
     otherwise
         error('alignest:selection', '選び方は recommended・all・none のいずれかです: %s', selection);
 end

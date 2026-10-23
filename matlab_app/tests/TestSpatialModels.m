@@ -109,8 +109,8 @@ classdef TestSpatialModels < matlab.unittest.TestCase
             settings.methods = alignest.recommendedMethods('all');
             methods = alignest.buildMethodList(settings.methods);
             % 説明変数 X,Y・X,Y,半径 の2組 ×（GPR 12カーネル × 8扱い、TPS・RBF・通常 Kriging（5バリオグラム）・
-            % Universal Kriging の質的変数なし／Backfitting、GAM）＋ XY5・RT4・RT5
-            testCase.verifyEqual(numel(methods), 2 * (12 * 8 + 2 + 2 + 10 + 10 + 1) + 3);
+            % Universal Kriging の質的変数なし／Backfitting、GAM）＋ XY5・RT4・RT5 ＋ Fringe Zernike（次数 3・4・5）
+            testCase.verifyEqual(numel(methods), 2 * (12 * 8 + 2 + 2 + 10 + 10 + 1) + 3 + 3);
             testCase.verifyEqual(numel(unique(string({methods.id}))), numel(methods));
             testCase.verifyTrue(all(ismember(["RBF_gaussian_XY", "TPS_XY_backfit", ...
                 "OK_linear_XY_backfit", "UK_linear_XY_backfit", "GPR_matern_nu2_XY_none", "OK_spherical_XYR_backfit", ...

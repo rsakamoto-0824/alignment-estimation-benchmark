@@ -38,7 +38,7 @@ end
 if ~isempty(measured)
     span = [min([measured; estimated]), max([measured; estimated])];
     span = span + [-1, 1] * 0.05 * max(diff(span), eps);
-    plot(ax, span, span, '--', 'Color', [0.3, 0.3, 0.3], 'DisplayName', 'y = x');
+    plot(ax, span, span, '--', 'Color', [0.5, 0.5, 0.5], 'DisplayName', 'y = x');   % ライト・ダークのどちらでも見える灰色
     if isfinite(summary.slope)
         plot(ax, span, summary.intercept + summary.slope * span, '-', 'Color', [0.80, 0.22, 0.17], 'LineWidth', 1.5, ...
             'DisplayName', '回帰直線');

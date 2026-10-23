@@ -2,7 +2,7 @@ function methods = buildMethodList(config)
 %BUILDMETHODLIST 手法一覧。説明変数の組ごとに GPR → TPS → RBF → Kriging → GAM、最後に XY・RT。
 %   id の書き方は Python 版と同じ：GPR_<カーネル>_<説明変数>_<質的変数の扱い>、TPS_<説明変数>、
 %   OK_<バリオグラム>_<説明変数>（通常 Kriging）、UK_<バリオグラム>_<説明変数>（Universal Kriging）、
-%   GAM_<説明変数>、XY<次数>、RT<次数>。
+%   GAM_<説明変数>、XY<次数>、RT<次数>、FringeZ_k<次数>（Fringe Zernike。Z1〜Z(k+1)²）。
 %   RBF_gaussian_<説明変数> を追加。TPS・RBF・OK・UK の Backfitting は既存 id に _backfit を付ける。
 %   GPR のカーネル matern・ardmatern は config.gpr.maternNu の ν ごとに matern_nu<ν>・ardmatern_nu<ν> にする。
 %   GAM の形状関数にガウス過程回帰の項があれば、id に _gp-<項>（例：GAM_XYR_gp-xy-r）を付ける。
@@ -75,6 +75,13 @@ end
 if config.polynomial.enabled
     order = config.polynomial.order;
     methods(end + 1) = item(sprintf("XY%d", order), "XY", "-", sprintf("order%d", order), "none", sprintf("XY%d次多項式", order));
+end
+if config.zernike.enabled
+    for order = unique(double(config.zernike.orders(:))).'
+        alignest.basis.fringeZernikeModes(order);   % 次数を確かめる
+        methods(end + 1) = item(sprintf("FringeZ_k%d", order), "FZ", "-", sprintf("order%d", order), "none", ...
+            sprintf("Fringe Zernike Z1〜Z%d（次数 %d）", (order + 1)^2, order)); %#ok<AGROW>
+    end
 end
 if config.rt.enabled
     for order = config.rt.orders(:).'

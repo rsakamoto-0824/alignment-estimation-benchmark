@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>ヘルプ：用語・補正の式・カーネル</title>
+<style>
+  :root {
+    --bg: #ffffff; --text: #1d1f24; --muted: #555b66; --line: #d6d9df; --panel: #f3f5f8;
+    --accent: #0b5cab; --code: #f0f2f5; --formula: #fbfbf4;
+  }
+  body.dark {
+    --bg: #1f2125; --text: #e8e9ec; --muted: #a9adb6; --line: #3a3e45; --panel: #272a30;
+    --accent: #7db3ff; --code: #2c3037; --formula: #2a2c27;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif; font-size: 14px; line-height: 1.7;
+  }
+  .layout { display: flex; min-height: 100vh; }
+  nav {
+    position: sticky; top: 0; align-self: flex-start; width: 220px; flex: 0 0 220px; height: 100vh; overflow-y: auto;
+    padding: 14px 10px; border-right: 1px solid var(--line); background: var(--panel);
+  }
+  nav a { display: block; padding: 4px 8px; color: var(--text); text-decoration: none; border-radius: 4px; }
+  nav a:hover, nav a:focus { background: var(--line); outline: none; }
+  nav .sub { padding-left: 20px; font-size: 13px; color: var(--muted); }
+  main { flex: 1; padding: 16px 28px 60px; max-width: 1100px; }
+  h1 { font-size: 20px; margin: 4px 0 8px; }
+  h2 { font-size: 17px; margin: 28px 0 8px; padding-bottom: 4px; border-bottom: 2px solid var(--accent); }
+  h3 { font-size: 15px; margin: 18px 0 6px; }
+  p { margin: 6px 0; }
+  .lead { color: var(--muted); }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 12px; }
+  th, td { border: 1px solid var(--line); padding: 5px 8px; vertical-align: top; text-align: left; }
+  th { background: var(--panel); font-weight: 600; white-space: nowrap; }
+  td.term { white-space: nowrap; font-weight: 600; }
+  .formula {
+    font-family: "Times New Roman", "STIX Two Math", serif; font-size: 15px; background: var(--formula);
+    border-left: 3px solid var(--accent); padding: 6px 12px; margin: 6px 0; white-space: pre-wrap;
+  }
+  td .formula { margin: 0; border-left-width: 2px; padding: 2px 8px; }
+  code { background: var(--code); padding: 1px 5px; border-radius: 3px; font-family: Consolas, Menlo, monospace; font-size: 13px; }
+  .note { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav aria-label="目次">
+  <a href="#flow">使い方の流れ</a>
+  <a href="#terms">用語</a>
+  <a class="sub" href="#terms-design">学習 Shot の選び方</a>
+  <a class="sub" href="#terms-metrics">評価の指標</a>
+  <a class="sub" href="#terms-factors">質的変数</a>
+  <a class="sub" href="#terms-stats">統計・図</a>
+  <a href="#methods">推定の手法</a>
+  <a href="#kernels">カーネル（すべて）</a>
+  <a class="sub" href="#kernels-gpr">GPR のカーネル</a>
+  <a class="sub" href="#kernels-factor">質的変数の項</a>
+  <a class="sub" href="#kernels-gam">GAM のガウス過程</a>
+  <a class="sub" href="#kernels-other">TPS・RBF・Kriging</a>
+  <a href="#zernike">Fringe Zernike</a>
+  <a href="#overlay">Overlay 補正の式</a>
+  <a class="sub" href="#overlay-model">補正モデル</a>
+  <a class="sub" href="#overlay-shot">Shot 内の式</a>
+  <a class="sub" href="#overlay-eval">評価のしかた</a>
+  <a class="sub" href="#overlay-formula">式の書き方</a>
+</nav>
+<main>
+<h1>ヘルプ：用語・補正の式・カーネル</h1>
+<p class="lead">このアプリで使う主な用語と、推定の手法・カーネル・Overlay 補正の式をまとめています。式の記号は画面と Excel の書き出しと同じです。
+座標は Wafer 半径（150 mm）で割った値（x, y, r = √(x² + y²)）を使います（Overlay 補正の Shot 内の座標を除く）。</p>
+
+<h2 id="flow">使い方の流れ</h2>
+<ol>
+  <li><strong>1. データの読み込み</strong>：計測ファイルを読み、列の対応・座標の単位・Scan 方向を確かめる。Wafer マップ・Shot レイアウト・Shot 重ね合わせで中身を見る。</li>
+  <li><strong>2. 評価の設定</strong>：学習 Shot の選び方（I 最適・D 最適・ランダム・人の選択・優先順・Mark 単位）と数、制約、比べる手法、Overlay 補正のモデルを決める。</li>
+  <li><strong>3. 実行</strong>：計測マップで学習に使う Shot（Mark）を確かめてから「評価を始める」。後から「条件を追加して評価」で手法・学習 Shot 数を足せる。</li>
+  <li><strong>4. 結果一覧</strong>：表・グラフ・基準の手法との比較・計測配置の比較・誤差の分布（ANOVA・箱ひげ図）・散布図・分布の比較・処理時間の内訳。</li>
+  <li><strong>5. Wafer ごとのマップ</strong>：計測値・推定値・残差（または Overlay 補正）を Wafer 上で見る。条件を並べて比べられる。</li>
+</ol>
+<p class="note">画面の色はメニューの「表示」でライトモード・ダークモードを選べます（次に開いたときも同じ色）。</p>
+
+<h2 id="terms">用語</h2>
+<h3 id="terms-design">学習 Shot の選び方</h3>
+<table>
+<tr><th>用語</th><th>意味</th></tr>
+<tr><td class="term">学習 Shot・学習点</td><td>計測する（推定の学習に使う）Shot と、その Shot の有効な Mark。残りの Shot の Mark を推定する。</td></tr>
+<tr><td class="term">評価点</td><td>学習しなかった Shot（Mark 単位の計画では、学習しなかった Mark）の有効な Mark。推定値と計測値を比べて誤差を求める。実データには真の値が無いので、計測値を真の値の代わりに使う（計測ノイズの分だけ誤差は大きく出る）。</td></tr>
+<tr><td class="term">学習パターン</td><td>どの Shot（Mark）を学習に使うかの1つの組。例：「I最適 20 Shot」。結果の表の列は学習パターンの列（ランダムのくり返しは1列にまとめる）。</td></tr>
+<tr><td class="term">計測率</td><td>候補 Shot（計測値のある Shot）に対する学習 Shot の割合 [%]。Wafer ごとに 候補 Shot 数 × 計測率 を四捨五入した数を使う。</td></tr>
+<tr><td class="term">I 最適計画</td><td>基準モデル（XY 多項式、既定は5次・21項）の予測分散の平均が最も小さくなる組。I 基準 tr(M<sup>−1</sup>) を小さくする（M = 選んだ点の情報行列）。</td></tr>
+<tr><td class="term">D 最適計画</td><td>同じ基準モデルで det(M) を最も大きくする組（係数の推定のばらつきの体積を小さくする）。D 基準 det(M)<sup>−1/p</sup> を小さくする。</td></tr>
+<tr><td class="term">交換法</td><td>最適計画を探す方法。初めの組から「1つ外して1つ入れる」交換のうち基準が最も良くなるものを、良くならなくなるまでくり返す。初めの組（初期配置）を変えて何回か行い、最も良い組を使う。時間は初期配置の数にほぼ比例する。</td></tr>
+<tr><td class="term">制約</td><td>I 最適・D 最適・ランダムで、同心円（Shot 中心の半径 [mm] の区切り）・4象限・Scan 方向の区画ごとの Shot 数を、全体の割合 × 選ぶ数 ± 許容幅にそろえる。</td></tr>
+<tr><td class="term">必ず計測する Shot（拡張 I 最適計画）</td><td>指定した shotNo・最外周の Shot を先に学習に入れ、残りを最適計画で選ぶ。交換法は必ず計測する Shot を外さない。</td></tr>
+<tr><td class="term">最外周の Shot</td><td>上下左右のどこかに隣の Shot が無い Shot（Shot 中心の座標から数えた行・列で判断）。</td></tr>
+<tr><td class="term">Mark 単位の I 最適計画</td><td>全 Shot を1点以上計測し、計測する Mark を I 最適で選ぶ。計測する Mark の数 = 1 Shot あたりの Mark 数 × 候補 Shot 数。Mark 番号ごとの数は、全計測での割合 × 計測する数 ± 許容幅にそろえる（例：4 Mark なら各 25%）。評価点は計測しなかった Mark。</td></tr>
+<tr><td class="term">人の選択（手動）</td><td>人が決めた計測配置。Excel（shotNo と、パターンごとの 1 = 計測する・0 = しない の列。計測マップの Excel と同じ形）から読み込める。I 最適・D 最適と同じ評価の中で比べられる。</td></tr>
+<tr><td class="term">I 基準・D 基準・I 効率・D 効率</td><td>選んだ組の良さ（小さいほど良い計画）。全候補を計測すると I 基準 = 項数 p、D 基準 = 1。I 効率 = p / I 基準、D 効率 = 1 / D 基準（全計測に対する割合、1 に近いほど良い）。</td></tr>
+</table>
+
+<h3 id="terms-metrics">評価の指標</h3>
+<table>
+<tr><th>用語</th><th>意味</th></tr>
+<tr><td class="term">残差</td><td>計測値 − 推定値（評価点）。</td></tr>
+<tr><td class="term">RMSE</td><td>残差の二乗平均の平方根 √(Σe²/n) [nm]。X・Y・X と Y の合計（XY）。外周（Mark の半径が外周とみなす半径 [mm] 以上）と内側も出す。</td></tr>
+<tr><td class="term">MAE</td><td>残差の絶対値の平均 Σ|e|/n [nm]。</td></tr>
+<tr><td class="term">R²</td><td>1 − Σ(計測値 − 推定値)² / Σ(計測値 − 平均)²。1 に近いほど良い。</td></tr>
+<tr><td class="term">平均値・中央値に対する改善</td><td>学習点の平均値（中央値）をそのまま推定値にした場合の RMSE と比べた改善量 [nm] と改善率 [%]（大きいほど良い）。</td></tr>
+<tr><td class="term">ワースト値・95%値</td><td>Wafer 間の集計。ワースト値は最も悪い Wafer の値、95%値は 95% の Wafer がそれより良い値（Excel の PERCENTILE.INC と同じ補間）。Wafer ごとのマップでは、点の大きさ |v| と X・Y の絶対値のワースト値・95%値も出す。</td></tr>
+<tr><td class="term">評価点の絞り込み</td><td>半径・shotNo・Scan 方向・最外周の条件に合う評価点だけで指標を計算し直す（推定はやり直さない）。</td></tr>
+<tr><td class="term">異常値の除外（nσ・MAD）</td><td>学習点のうち、中心から n × ばらつき を超えて離れた Mark を X・Y の両方の学習データから除く。nσ：中心 = 平均、ばらつき = 標準偏差 σ。MAD：中心 = 中央値、ばらつき = 1.4826 × MAD（MAD = 中央値からの差の絶対値の中央値。正規分布では σ と同じ大きさで、外れ値に引きずられにくい）。</td></tr>
+</table>
+
+<h3 id="terms-factors">質的変数</h3>
+<table>
+<tr><th>用語</th><th>意味</th></tr>
+<tr><td class="term">質的変数</td><td>数ではなく区分を表す変数。Scan 方向（1・2）・Mark 番号・Shot 行の奇偶・ファイルのその他の列。X 成分と Y 成分で別に選べる。</td></tr>
+<tr><td class="term">Scan 方向</td><td>露光装置が Shot を走査する向き（Direction の列、または規則で付けた 1・2）。計測マップ・Wafer マップでは緑 ▲ = 1、紫 ▼ = 2。</td></tr>
+<tr><td class="term">Shot 行の奇偶</td><td>Shot 中心の Y 座標で上から数えた行が奇数か偶数か。</td></tr>
+<tr><td class="term">Slot の偶奇</td><td>Wafer ID のハイフンの後の整数（例：LOT123-05 → Slot 5 → 奇数）。平均の図・ANOVA・箱ひげ図・散布図で、偶数と奇数で傾向が違うかを見る。</td></tr>
+<tr><td class="term">効果コード（固定効果）</td><td>水準ごとのずれを平均の基底関数に入れ、ほかの係数と同時に推定する（GPR の「同時推定」）。</td></tr>
+<tr><td class="term">変量効果（加法カーネル）</td><td>水準ごとのずれを確率変数とみなし、カーネルに項 τ²δ を足す（下の「質的変数の項」）。ずれは 0 の方へ縮んで推定される。</td></tr>
+<tr><td class="term">交互作用</td><td>2つの質的変数の組み合わせごとのずれ（例：Scan 方向 × Mark 番号）。</td></tr>
+<tr><td class="term">Backfitting</td><td>空間の推定と質的変数の効果の推定を、交互に当てはめ直して収束させる方法。</td></tr>
+</table>
+
+<h3 id="terms-stats">統計・図</h3>
+<table>
+<tr><th>用語</th><th>意味</th></tr>
+<tr><td class="term">正規性検定</td><td>残差が正規分布から外れているか。Shapiro–Wilk（5000 点以下）・Anderson–Darling・Jarque–Bera。p &lt; 0.05 なら外れていると判定。</td></tr>
+<tr><td class="term">ANOVA・η²</td><td>質的変数の水準で残差の平均が違うかの F 検定。η² は水準の違いで説明できる残差のばらつきの割合。「ほかの変数で調整」はほかの質的変数を入れた主効果モデル（Type II）。</td></tr>
+<tr><td class="term">箱ひげ図</td><td>箱は四分位範囲、中の線は中央値、ひげは箱から 1.5 × 四分位範囲まで、外の点は外れ値、◆ は平均。</td></tr>
+<tr><td class="term">JS ダイバージェンス</td><td>2つの分布の違い（0 = 同じ、1 = 重なりなし。底 2）。共通の区間のヒストグラムの割合 P・Q で、M = (P + Q)/2、JS = KL(P‖M)/2 + KL(Q‖M)/2。</td></tr>
+<tr><td class="term">共分散楕円</td><td>座標ごとの Wafer 間（Shot 間）の X・Y のばらつきと相関を表す楕円。色は相関係数の絶対値 |r|。</td></tr>
+<tr><td class="term">同心円の区切り線</td><td>同心円の制約の区切りの半径（Shot 中心の半径 [mm]）を橙の一点鎖線で描いたもの。</td></tr>
+</table>
+
+<h2 id="methods">推定の手法</h2>
+<table>
+<tr><th>手法</th><th>式・考え方</th></tr>
+<tr><td class="term">GPR（ガウス過程回帰）</td><td><div class="formula">f(z) ~ GP(m(z), k(z, z′))、  y = f(z) + ε、ε ~ N(0, σ<sub>n</sub><sup>2</sup>)</div>
+平均 m(z) は定数（質的変数を固定効果にするときは効果コードを加える）。カーネルの長さスケール ℓ・σ<sub>f</sub>・σ<sub>n</sub>・τ は、対数周辺尤度を最大にして求める。説明変数 z は (x, y) または (x, y, r)。</td></tr>
+<tr><td class="term">TPS（薄板スプライン）</td><td><div class="formula">f(z) = c<sub>0</sub> + c<sup>T</sup>z + Σ<sub>i</sub> w<sub>i</sub> φ(‖z − z<sub>i</sub>‖)、  φ(r) = r<sup>2</sup> log r</div>平滑化の強さ λ は一般化交差検証（GCV）で選ぶ。</td></tr>
+<tr><td class="term">RBF（ガウス型）</td><td><div class="formula">f(z) = c<sub>0</sub> + c<sup>T</sup>z + Σ<sub>i</sub> w<sub>i</sub> exp(−‖z − z<sub>i</sub>‖<sup>2</sup> / (2ℓ<sup>2</sup>))</div>ℓ は候補（0.05〜1.6）から、λ とともに GCV で選ぶ。</td></tr>
+<tr><td class="term">Kriging（通常・Universal）</td><td>バリオグラム γ(d)（下の表）を経験バリオグラムに当てはめ、重み付きの線形予測をする。通常は平均（ドリフト）が定数、Universal はドリフトを説明変数の1次式 [1, z]（z = (x, y) または (x, y, r)）にし、ドリフトを除いた残差で経験バリオグラムを求める。</td></tr>
+<tr><td class="term">GAM（一般化加法モデル）</td><td><div class="formula">y = β<sub>0</sub> + s(x, y) [+ s(r)] + 質的変数の効果 + ε</div>形状関数 s はスプライン（3次 B スプライン＋2階差分の罰則、P-spline）かガウス過程回帰（節点での低ランク近似、下の「GAM のガウス過程」）。罰則の強さと長さスケールは REML で選ぶ。</td></tr>
+<tr><td class="term">XY 多項式</td><td><div class="formula">f(x, y) = Σ<sub>a + b ≤ N</sub> c<sub>ab</sub> x<sup>a</sup> y<sup>b</sup></div>最小二乗（特異値分解の擬似逆行列、相対の打ち切り 10<sup>−10</sup>）。</td></tr>
+<tr><td class="term">RT モデル（次数 K）</td><td>変位を半径方向 R と接線方向 T に分け、R = ρ·M(x, y)、T = ρ·Θ(x, y)。局所倍率 M・局所回転 Θ を Zernike 多項式（動径次数 n ≤ K）で展開し、並進2項・非対称倍率・直交度の4項を加える。X・Y を同時に当てはめる。</td></tr>
+<tr><td class="term">Fringe Zernike</td><td><div class="formula">f(ρ, θ) = Σ<sub>j = 1</sub><sup>(k+1)²</sup> c<sub>j</sub> Z<sub>j</sub>(ρ, θ)</div>次数 k の Fringe Zernike 多項式（下の「Fringe Zernike」）の最小二乗。X・Y は別々に当てはめる。</td></tr>
+</table>
+
+<h2 id="kernels">カーネル（すべて）</h2>
+<h3 id="kernels-gpr">GPR のカーネル</h3>
+<p>距離 r は説明変数の差を長さスケールで割ったもの。等方のカーネルは r = ‖z − z′‖ / ℓ（長さスケール1つ）、ARD（ard…）は説明変数ごとに長さスケールを持つ：
+<span class="formula">r<sup>2</sup> = Σ<sub>d</sub> (z<sub>d</sub> − z′<sub>d</sub>)<sup>2</sup> / ℓ<sub>d</sub><sup>2</sup>　（d = x, y, r）</span>
+カーネルは k(z, z′) = σ<sub>f</sub><sup>2</sup> g(r)。g は下の表のとおり（MATLAB の fitrgp と同じ10種類と、ν を指定する Matérn）。</p>
+<table>
+<tr><th>カーネル</th><th>g(r)</th><th>説明</th></tr>
+<tr><td class="term">exponential・ardexponential</td><td><div class="formula">exp(−r)</div></td><td>Matérn ν = 1/2 と同じ。最も粗い（連続だが微分できない）。</td></tr>
+<tr><td class="term">squaredexponential・ardsquaredexponential</td><td><div class="formula">exp(−r<sup>2</sup>/2)</div></td><td>最も滑らか（何回でも微分できる）。</td></tr>
+<tr><td class="term">matern32・ardmatern32</td><td><div class="formula">(1 + √3 r) exp(−√3 r)</div></td><td>Matérn ν = 3/2（1回微分できる）。</td></tr>
+<tr><td class="term">matern52・ardmatern52</td><td><div class="formula">(1 + √5 r + 5r<sup>2</sup>/3) exp(−√5 r)</div></td><td>Matérn ν = 5/2（2回微分できる）。推奨の組み合わせの既定。</td></tr>
+<tr><td class="term">rationalquadratic・ardrationalquadratic</td><td><div class="formula">(1 + r<sup>2</sup>/(2α))<sup>−α</sup></div></td><td>いろいろな長さスケールの squaredexponential の重ね合わせ。α も推定する。</td></tr>
+<tr><td class="term">matern（ν を指定）・ardmatern（ν を指定）</td><td><div class="formula">2<sup>1−ν</sup>/Γ(ν) · z<sup>ν</sup> K<sub>ν</sub>(z)、 z = √(2ν) r</div></td><td>K<sub>ν</sub> は第2種変形ベッセル関数。ν が大きいほど滑らか（ν = 0.5・1.5・2.5 は上の3つと同じ）。ν を複数入れると ν ごとに比べる。ベッセル関数の計算のぶん遅い（時間の目安は 1条件 6 秒で見積もる）。</td></tr>
+</table>
+
+<h3 id="kernels-factor">質的変数の項（GPR の質的変数の扱い）</h3>
+<p>δ<sub>f</sub>(z, z′) は、2点の質的変数 f（Scan 方向 s・Mark 番号 m・Shot 行の奇偶・その他の列）の水準が同じなら 1、違えば 0。</p>
+<table>
+<tr><th>扱い</th><th>カーネル・平均</th></tr>
+<tr><td class="term">使わない</td><td><div class="formula">k = σ<sub>f</sub><sup>2</sup> g(r)、 平均 = 定数</div></td></tr>
+<tr><td class="term">同時推定（基底関数）</td><td><div class="formula">k = σ<sub>f</sub><sup>2</sup> g(r)、 平均 = β<sub>0</sub> + Σ 効果コード × β</div>水準ごとのずれを固定効果として同時に推定。</td></tr>
+<tr><td class="term">同時推定＋交互作用</td><td>上の平均に、2つの質的変数の効果コードの積の列を加える。</td></tr>
+<tr><td class="term">Backfitting</td><td>GPR の当てはめと質的変数の効果の推定を交互にくり返す。</td></tr>
+<tr><td class="term">加法カーネル</td><td><div class="formula">k = σ<sub>f</sub><sup>2</sup> g(r) + Σ<sub>f</sub> τ<sub>f</sub><sup>2</sup> δ<sub>f</sub>(z, z′)</div>例：k = σ<sub>f</sub><sup>2</sup>g(r) + τ<sub>s</sub><sup>2</sup>δ<sub>s</sub> + τ<sub>m</sub><sup>2</sup>δ<sub>m</sub>（変量効果）。</td></tr>
+<tr><td class="term">加法カーネル＋交互作用</td><td><div class="formula">k = σ<sub>f</sub><sup>2</sup> g(r) + Σ<sub>f</sub> τ<sub>f</sub><sup>2</sup> δ<sub>f</sub> + Σ<sub>f&lt;h</sub> τ<sub>fh</sub><sup>2</sup> δ<sub>f</sub> δ<sub>h</sub></div>選んだ質的変数のすべての2つの組（3つ以上の組は入れない）。</td></tr>
+<tr><td class="term">混合（Mark 変量／他は固定）</td><td>Mark 番号は加法カーネルの項 τ<sub>m</sub><sup>2</sup>δ<sub>m</sub>、それ以外の質的変数は効果コード（固定効果）。「混合＋交互作用」は交互作用の項も加える。</td></tr>
+</table>
+
+<h3 id="kernels-gam">GAM のガウス過程の形状関数</h3>
+<p>形状関数をガウス過程回帰にした項は、節点 κ<sub>k</sub> でのカーネルによる低ランクの近似：
+<span class="formula">s(z) = 線形部分 + Σ<sub>k</sub> b<sub>k</sub> k(z, κ<sub>k</sub>)、 罰則 λ b<sup>T</sup> K(κ, κ) b</span>
+カーネル k は等方で σ<sub>f</sub> = 1 の上の g(r)（exponential・squaredexponential・matern32・matern52・rationalquadratic（α = 1 に固定）・matern（ν を指定））。長さスケールは候補（0.15・0.3・0.6）から REML で選ぶ。</p>
+
+<h3 id="kernels-other">TPS・RBF・Kriging のカーネル・バリオグラム</h3>
+<table>
+<tr><th>手法</th><th>式</th></tr>
+<tr><td class="term">TPS</td><td><div class="formula">φ(r) = r<sup>2</sup> log r（r = ‖z − z′‖）</div></td></tr>
+<tr><td class="term">RBF（Gaussian）</td><td><div class="formula">φ(r) = exp(−r<sup>2</sup> / (2ℓ<sup>2</sup>))</div></td></tr>
+<tr><td class="term">Kriging：linear</td><td><div class="formula">γ(d) = a·d + c<sub>0</sub></div></td></tr>
+<tr><td class="term">Kriging：power</td><td><div class="formula">γ(d) = a·d<sup>b</sup> + c<sub>0</sub>（0 &lt; b &lt; 2）</div></td></tr>
+<tr><td class="term">Kriging：gaussian</td><td><div class="formula">γ(d) = c·(1 − exp(−d<sup>2</sup> / (4a/7)<sup>2</sup>)) + c<sub>0</sub></div></td></tr>
+<tr><td class="term">Kriging：exponential</td><td><div class="formula">γ(d) = c·(1 − exp(−d / (a/3))) + c<sub>0</sub></div></td></tr>
+<tr><td class="term">Kriging：spherical</td><td><div class="formula">γ(d) = c·(3d/(2a) − d<sup>3</sup>/(2a<sup>3</sup>)) + c<sub>0</sub>（d ≤ a）、 c + c<sub>0</sub>（d &gt; a）</div></td></tr>
+</table>
+<p class="note">c：シル（psill）、a：レンジ、c<sub>0</sub>：ナゲット。PyKrige の既定と同じ式。</p>
+
+<h2 id="zernike">Fringe Zernike 多項式</h2>
+<p>単位円（ρ = r/R ≤ 1、θ = 偏角）で直交する多項式。RMS で正規化した実数値の Zernike 多項式を使う：
+<span class="formula">Z<sub>n</sub><sup>m</sup>(ρ, θ) = N<sub>n</sub><sup>m</sup> R<sub>n</sub><sup>|m|</sup>(ρ) × {cos(mθ)（m ≥ 0）、 sin(|m|θ)（m &lt; 0）}、 N = √(2(n+1)/(1+δ<sub>m0</sub>))</span>
+<span class="formula">R<sub>n</sub><sup>|m|</sup>(ρ) = Σ<sub>s=0</sub><sup>(n−|m|)/2</sup> (−1)<sup>s</sup> (n−s)! / [ s! ((n+|m|)/2 − s)! ((n−|m|)/2 − s)! ] ρ<sup>n−2s</sup></span>
+Fringe 番号は、Fringe の次数 k = (n + |m|)/2 の小さい順、同じ k の中では |m| の大きい順、cos → sin、m = 0 が最後。次数 k までの項は Z<sub>1</sub>〜Z<sub>(k+1)²</sub>（k = 3：Z1〜Z16、k = 4：Z1〜Z25、k = 5：Z1〜Z36）。</p>
+<table>
+<tr><th>番号</th><th>(n, m)</th><th>形（正規化の係数を除く）</th><th>名前</th></tr>
+<tr><td>Z1</td><td>(0, 0)</td><td>1</td><td>ピストン（平均）</td></tr>
+<tr><td>Z2・Z3</td><td>(1, ±1)</td><td>ρ cos θ・ρ sin θ</td><td>チルト（X・Y の1次）</td></tr>
+<tr><td>Z4</td><td>(2, 0)</td><td>2ρ<sup>2</sup> − 1</td><td>パワー（デフォーカス）</td></tr>
+<tr><td>Z5・Z6</td><td>(2, ±2)</td><td>ρ<sup>2</sup> cos 2θ・ρ<sup>2</sup> sin 2θ</td><td>非点収差（3次）</td></tr>
+<tr><td>Z7・Z8</td><td>(3, ±1)</td><td>(3ρ<sup>3</sup> − 2ρ) cos θ・sin θ</td><td>コマ（3次）</td></tr>
+<tr><td>Z9</td><td>(4, 0)</td><td>6ρ<sup>4</sup> − 6ρ<sup>2</sup> + 1</td><td>球面収差（3次）</td></tr>
+<tr><td>Z10・Z11</td><td>(3, ±3)</td><td>ρ<sup>3</sup> cos 3θ・sin 3θ</td><td>トレフォイル</td></tr>
+<tr><td>Z12・Z13</td><td>(4, ±2)</td><td>(4ρ<sup>4</sup> − 3ρ<sup>2</sup>) cos 2θ・sin 2θ</td><td>非点収差（5次）</td></tr>
+<tr><td>Z14・Z15</td><td>(5, ±1)</td><td>(10ρ<sup>5</sup> − 12ρ<sup>3</sup> + 3ρ) cos θ・sin θ</td><td>コマ（5次）</td></tr>
+<tr><td>Z16</td><td>(6, 0)</td><td>20ρ<sup>6</sup> − 30ρ<sup>4</sup> + 12ρ<sup>2</sup> − 1</td><td>球面収差（5次）</td></tr>
+<tr><td>Z17〜Z25</td><td>k = 4</td><td>(4, ±4)、(5, ±3)、(6, ±2)、(7, ±1)、(8, 0)</td><td>高次の項</td></tr>
+<tr><td>Z26〜Z36</td><td>k = 5</td><td>(5, ±5)、(6, ±4)、(7, ±3)、(8, ±2)、(9, ±1)、(10, 0)</td><td>高次の項</td></tr>
+</table>
+
+<h2 id="overlay">Overlay 補正の式</h2>
+<p>推定値で補正量を求めたとき、実際の値で求めた補正と比べて Overlay 残差がどれだけ増えるかを評価します（「2. 評価の設定」の「Overlay 補正の評価」）。</p>
+<h3 id="overlay-model">補正モデル</h3>
+<div class="formula">補正量(Mark) = Wafer 成分(X, Y) + Shot 共通成分(x, y) + Shot ごとの成分<sub>Shot</sub>(x, y)</div>
+<p>X・Y は Shot 中心の座標（Wafer 半径で割る）、x・y は Shot 内の Mark の座標（markXmm・markYmm、Shot 中心から）。dx（X 成分）・dy（Y 成分）を別々に最小二乗で当てはめます。
+成分どうしで重なる項（例：Wafer 成分の定数と k1）や、Mark が少なくて決まらない項があっても、当てはめた補正量は一つに決まります（列空間への射影）。</p>
+<table>
+<tr><th>成分</th><th>選択</th><th>式</th></tr>
+<tr><td class="term" rowspan="3">Wafer 成分</td><td>1次（並進・倍率・回転・直交度）</td><td><div class="formula">dx = a<sub>0</sub> + a<sub>1</sub>X + a<sub>2</sub>Y、 dy = b<sub>0</sub> + b<sub>1</sub>X + b<sub>2</sub>Y</div></td></tr>
+<tr><td>N 次（2〜5次）</td><td><div class="formula">dx = Σ<sub>i+j≤N</sub> a<sub>ij</sub> X<sup>i</sup>Y<sup>j</sup>、 dy = Σ<sub>i+j≤N</sub> b<sub>ij</sub> X<sup>i</sup>Y<sup>j</sup></div></td></tr>
+<tr><td>式を入力</td><td>入力した dx・dy の式（x・y が Shot 中心の座標）</td></tr>
+<tr><td class="term" rowspan="2">Shot 共通成分</td><td>1次（k1〜k6）</td><td><div class="formula">dx = k1 + k3·x + k5·y、 dy = k2 + k4·y + k6·x</div>全 Shot で同じ係数。</td></tr>
+<tr><td>式を入力</td><td>入力した dx・dy の式（x・y が Shot 内の座標）。全 Shot で同じ係数。</td></tr>
+<tr><td class="term" rowspan="3">Shot ごとの成分</td><td>並進（k1・k2）</td><td><div class="formula">dx = k1<sub>Shot</sub>、 dy = k2<sub>Shot</sub></div></td></tr>
+<tr><td>1次（k1〜k6）</td><td><div class="formula">dx = k1<sub>Shot</sub> + k3<sub>Shot</sub>·x + k5<sub>Shot</sub>·y、 dy = k2<sub>Shot</sub> + k4<sub>Shot</sub>·y + k6<sub>Shot</sub>·x</div></td></tr>
+<tr><td>式を入力</td><td>入力した dx・dy の式（x・y が Shot 内の座標）。係数を Shot ごとに別々に求める。</td></tr>
+</table>
+
+<h3 id="overlay-shot">Shot 内の高次の補正式（Overlay 計測ルール）</h3>
+<p>以前の設定ファイルで選べた装置メーカー別の式です（画面では「式を入力」で同じ式を書けます）。</p>
+<table>
+<tr><th>式</th><th>dx</th><th>dy</th></tr>
+<tr><td class="term">ASML</td><td><div class="formula">k1 + k3·x + k5·y + k7·x² + k11·y² + k13·x³ + k19·y³</div></td><td><div class="formula">k2 + k4·y + k6·x + k8·y² + k10·x·y + k12·x² + k14·y³ + k16·x·y²</div></td></tr>
+<tr><td class="term">Canon</td><td><div class="formula">k1 + k3·x + k5·y + k9·x·y + k11·y² + k17·x·y² + k19·y³ + k27·x·y³</div></td><td><div class="formula">k2 + k4·y + k6·x + k8·y² + k10·x·y + k14·y³ + k16·x·y² + k24·x·y³</div></td></tr>
+<tr><td class="term">Nikon</td><td><div class="formula">k1 + k3·x + k5·y + k7·x² + k9·x·y + k11·y² + k13·x³ + k17·x·y² + k19·y³ + k29·y⁴ + k41·y⁵ + k55·y⁶</div></td><td><div class="formula">k2 + k4·y + k6·x + k8·y² + k10·x·y + k12·x² + k14·y³ + k16·x·y² + k18·x²·y + k22·y⁴ + k24·x·y³ + k32·y⁵ + k34·x·y⁴ + k44·y⁶ + k46·x·y⁵</div></td></tr>
+</table>
+
+<h3 id="overlay-eval">評価のしかた</h3>
+<div class="formula">A：全 Mark の計測値、 E：学習点は計測値・評価点は推定値（実際の運用で補正に使う値）
+実測値で補正した残差   R<sub>A</sub> = A − 補正量(A)
+推定値で補正した残差   R<sub>E</sub> = A − 補正量(E)
+推定による変化         D = R<sub>E</sub> − R<sub>A</sub> = 補正量(A) − 補正量(E)
+代表値                 |平均| + 3σ（X・Y 別、σ は不偏標準偏差）、 増加量 = (R<sub>E</sub> の値) − (R<sub>A</sub> の値)</div>
+
+<h3 id="overlay-formula">式の書き方（「式を入力」）</h3>
+<ul>
+  <li>項を <code>+</code>（または <code>−</code>）でつなぎ、各項は係数と x・y のべきの積：<code>k1 + k3*x + k5*y + k7*x^2 + k9*x*y</code></li>
+  <li>係数の名前（k1 など）は何でもよく、係数の値は最小二乗で求めるので、名前・符号は補正量に影響しません。</li>
+  <li>べきは <code>x^2</code>・<code>x²</code>・<code>x³</code> と書けます（9 乗まで）。<code>xy</code> は <code>x*y</code> と同じ。全角の文字や「dx =」も読めます。</li>
+  <li>かっこ、<code>2x</code> のような * の省略、<code>x1</code> のような書き方は使えません。</li>
+</ul>
+</main>
+</div>
+<script>
+  // MATLAB の uihtml から画面の色（light・dark）を受け取って切り替える
+  function applyTheme(data) {
+    var theme = data && data.theme ? String(data.theme) : "light";
+    document.body.classList.toggle("dark", theme === "dark");
+  }
+  function setup(htmlComponent) {
+    applyTheme(htmlComponent.Data);
+    htmlComponent.addEventListener("DataChanged", function () { applyTheme(htmlComponent.Data); });
+  }
+</script>
+</body>
+</html>

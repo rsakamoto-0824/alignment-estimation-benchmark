@@ -68,10 +68,11 @@ for u = unique([plans(planIndex).unitIndex])
 end
 for p = planIndex
     marks = data.units(plans(p).unitIndex).marks;
-    inTrain = ismember(marks.shotIndex, plans(p).shotIndex);
+    inTrain = alignest.trainingMarks(data.units(plans(p).unitIndex), plans(p));
     use = inTrain & marks.("valid" + axisName);
     if excludeOutliers
-        use = use & ~alignest.trainingOutliers(marks, inTrain, settings.evaluation.outlierSigma);
+        use = use & ~alignest.trainingOutliers(marks, inTrain, settings.evaluation.outlierSigma, ...
+            alignest.outlierMethod(settings));
     end
     train{end + 1} = marks.("meas" + axisName)(use); %#ok<AGROW>
 end

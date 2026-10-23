@@ -216,22 +216,36 @@ end
 end
 
 function label = samplingLabel(sampling)
-switch string(sampling.method)
-    case "ioptimal"
-        label = "制約付き I 最適";
-    case "random"
-        label = sprintf("制約つきランダム（%d 回）", sampling.randomRepeats);
-    case "file"
-        label = sprintf("ファイルの優先順（%s、%d 行。優先度 1 = 必ず計測、0 = 計測しない）", sampling.priorityFile, ...
-            numel(sampling.priorityShots));
-    otherwise
-        label = "手動で指定";
-        return
+% 学習 Shot の選び方の説明（複数選んだときは「、」でつなぐ）
+methods = string(sampling.method(:)).';
+parts = strings(1, 0);
+for method = methods
+    switch method
+        case "ioptimal"
+            parts(end + 1) = "制約付き I 最適"; %#ok<AGROW>
+        case "doptimal"
+            parts(end + 1) = "制約付き D 最適"; %#ok<AGROW>
+        case "random"
+            parts(end + 1) = sprintf("制約つきランダム（%d 回）", sampling.randomRepeats); %#ok<AGROW>
+        case "file"
+            parts(end + 1) = sprintf("ファイルの優先順（%s、%d 行。優先度 1 = 必ず計測、0 = 計測しない）", ...
+                sampling.priorityFile, numel(sampling.priorityShots)); %#ok<AGROW>
+        case "mark"
+            parts(end + 1) = "Mark 単位の I 最適（全 Shot で1点以上、1 Shot あたり " + ...
+                strjoin(string(sampling.markPerShot), "・") + " 点）"; %#ok<AGROW>
+        otherwise
+            parts(end + 1) = "手動・人の選択"; %#ok<AGROW>
+    end
 end
-if isfield(sampling, "countBy") && sampling.countBy == "rate"
+label = strjoin(parts, "、");
+if numel(methods) > 1
+    label = label + "（選び方を比べた）";
+end
+if any(ismember(methods, ["ioptimal", "doptimal", "random", "file"])) && isfield(sampling, "countBy") && ...
+        sampling.countBy == "rate"
     label = label + "。学習 Shot 数は計測率（Wafer の候補 Shot 数に対する割合）で決めた";
 end
-if any(string(sampling.method) == ["ioptimal", "random"])
+if any(ismember(methods, ["ioptimal", "doptimal", "random"]))
     required = strings(0, 1);
     if isfield(sampling, "requiredShots") && ~isempty(sampling.requiredShots)
         required(end + 1) = "shotNo " + strjoin(string(sampling.requiredShots), " ");
@@ -249,8 +263,14 @@ function text = outlierText(settings)
 % 学習データの異常値を除いたかどうかと、その決め方
 text = "除かない";
 if isfield(settings.evaluation, "excludeOutliers") && settings.evaluation.excludeOutliers
-    text = sprintf(['除いた（Wafer・学習パターンごとに学習点の平均と σ を X・Y 別に求め、|値 − 平均| > %g σ の軸が' ...
-        'ある Mark を X・Y の両方の学習データから除いた。「Waferごと」の「学習から除いた異常値の数」）'], ...
-        settings.evaluation.outlierSigma);
+    if alignest.outlierMethod(settings) == "mad"
+        text = sprintf(['除いた（Wafer・学習パターンごとに学習点の中央値と MAD を X・Y 別に求め、|値 − 中央値| > ' ...
+            '%g × 1.4826 × MAD の軸がある Mark を X・Y の両方の学習データから除いた。「Waferごと」の「学習から除いた' ...
+            '異常値の数」）'], settings.evaluation.outlierSigma);
+    else
+        text = sprintf(['除いた（Wafer・学習パターンごとに学習点の平均と σ を X・Y 別に求め、|値 − 平均| > %g σ の軸が' ...
+            'ある Mark を X・Y の両方の学習データから除いた。「Waferごと」の「学習から除いた異常値の数」）'], ...
+            settings.evaluation.outlierSigma);
+    end
 end
 end

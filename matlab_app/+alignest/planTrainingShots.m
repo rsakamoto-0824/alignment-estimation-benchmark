@@ -11,6 +11,13 @@ function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm)
 %   I 最適・ランダムでは、必ず計測する Shot（alignest.requiredShotIndex：指定した shotNo と最外周）を先に入れ、
 %   残りを選ぶ（拡張 I 最適計画）。必ず計測する Shot が学習 Shot 数以上なら、それだけを使う。
 %   plan.requiredShotIndex は必ず計測した Shot（ファイルの優先順では優先度 1）。
+%   制約付き D 最適（doptimal）は、I 最適と同じ制約・必ず計測する Shot で、det(M) を大きくする組を選ぶ
+%   （alignest.exchangeDesign）。
+%   Mark 単位の I 最適（mark）：候補 Shot をすべて計測し（全 Shot で1点以上）、計測する Mark を I 最適で選ぶ。
+%   Mark の数 = round(spec.markPerShot × 候補 Shot 数)。sampling.constraints.markRatio が true（既定）なら、
+%   Mark 番号ごとの計測する数を、全計測（候補の全 Mark）での割合 × Mark の数 ± 許容幅にそろえる。
+%   plan.markIndex に計測する Mark（unit.marks の何番目か）を入れる（Shot 単位の選び方では空）。
+%   plan.nMarks は学習に使う Mark の数（その軸が有効な Mark。X・Y のどちらか）。
 %   選び方によらず、選んだ組の I 基準 tr(M⁻¹) と D 基準 det(M)^(−1/p)、全計測に対する I 効率・D 効率を求める
 %   （alignest.designCriteria。基準モデルの項数より学習点が少ないなど、求められないときは NaN）。
 shots = unit.shots;
@@ -18,7 +25,8 @@ candidates = find(shots.nValidX + shots.nValidY > 0);
 plan = struct("label", spec.label, "group", spec.group, "type", spec.type, "repeat", spec.repeat, ...
     "shotIndex", zeros(0, 1), "shotNos", zeros(0, 1), "nShots", 0, "criterion", NaN, ...
     "violation", 0, "criterionI", NaN, "criterionD", NaN, "ok", false, "message", "", ...
-    "requiredShotIndex", zeros(0, 1), "rate", NaN, "efficiencyI", NaN, "efficiencyD", NaN);
+    "requiredShotIndex", zeros(0, 1), "rate", NaN, "efficiencyI", NaN, "efficiencyD", NaN, "markIndex", zeros(0, 1), ...
+    "nMarks", 0);
 nShots = spec.nShots;
 if isfield(spec, "rate") && isfinite(spec.rate)
     plan.rate = spec.rate;
@@ -43,7 +51,10 @@ switch spec.type
         if isempty(plan.shotIndex)
             return
         end
-    case {"ioptimal", "random"}
+    case "mark"
+        plan = markPlan(unit, spec, sampling, waferRadiusMm, candidates, plan);
+        return
+    case {"ioptimal", "doptimal", "random"}
         if nShots >= numel(candidates)
             plan.message = sprintf("学習 Shot 数 %d が候補の Shot 数 %d 以上なので、評価する Shot が残りません。", ...
                 nShots, numel(candidates));
@@ -68,6 +79,11 @@ switch spec.type
                 blocks = shotBlocks(unit, candidates, sampling.designOrder, waferRadiusMm);
                 [selected, plan.criterion, plan.violation] = alignest.constrainedIOptimal(blocks, nShots, labels, ...
                     sampling.constraints.slack, stream, sampling.exchangeStarts, sampling.exchangeMaxIterations, fixed);
+            elseif spec.type == "doptimal"
+                blocks = shotBlocks(unit, candidates, sampling.designOrder, waferRadiusMm);
+                [selected, plan.criterion, plan.violation] = alignest.exchangeDesign(blocks, nShots, labels, ...
+                    sampling.constraints.slack, stream, sampling.exchangeStarts, sampling.exchangeMaxIterations, ...
+                    criterion="D", fixed=fixed);
             else
                 [chosen, plan.violation] = alignest.randomFeasibleShots(numel(candidates), nShots, labels, ...
                     sampling.constraints.slack, stream, fixed);
@@ -94,9 +110,57 @@ end
 plan.shotIndex = sort(plan.shotIndex);
 plan.shotNos = shots.shotNo(plan.shotIndex);
 plan.nShots = numel(plan.shotIndex);
+plan.nMarks = nnz(ismember(unit.marks.shotIndex, plan.shotIndex) & (unit.marks.validX | unit.marks.validY));
 plan.ok = true;
 [plan.criterionI, plan.criterionD, plan.efficiencyI, plan.efficiencyD] = planCriteria(unit, candidates, plan.shotIndex, ...
     sampling.designOrder, waferRadiusMm);
+end
+
+function plan = markPlan(unit, spec, sampling, waferRadiusMm, candidates, plan)
+% Mark 単位の I 最適：全候補 Shot で1点以上を計測し、Mark 番号の割合をそろえて、計測する Mark を交換法で選ぶ
+marks = unit.marks;
+markCandidates = find(ismember(marks.shotIndex, candidates) & (marks.validX | marks.validY));
+[~, ~, groupOfMark] = unique(marks.shotIndex(markCandidates));
+nGroups = max(groupOfMark);
+nMarks = max(nGroups, round(spec.markPerShot * nGroups));
+plan.nShots = numel(candidates);
+if nMarks >= numel(markCandidates)
+    plan.message = sprintf("計測する Mark の数 %d が候補の Mark の数 %d 以上なので、評価する Mark が残りません。", ...
+        nMarks, numel(markCandidates));
+    return
+end
+blocks = markBlocks(unit, markCandidates, sampling.designOrder, waferRadiusMm);
+labels = zeros(numel(markCandidates), 0);
+if ~isfield(sampling.constraints, "markRatio") || sampling.constraints.markRatio
+    [~, ~, labels] = unique(marks.markNo(markCandidates));
+end
+stream = RandStream('mt19937ar', 'Seed', seedFor(sampling.seed, nMarks, spec.repeat));
+[selected, plan.criterion, plan.violation] = alignest.exchangeDesign(blocks, nMarks, labels, ...
+    sampling.constraints.slack, stream, sampling.exchangeStarts, sampling.exchangeMaxIterations, criterion="I", ...
+    group=groupOfMark, minPerGroup=1);
+if plan.violation > 0
+    plan.message = sprintf("Mark 番号ごとの数をそろえる制約を満たす組が見つからず、違反量 %d の組を使いました。", ...
+        plan.violation);
+end
+plan.markIndex = sort(markCandidates(selected(:)));
+plan.shotIndex = sort(candidates(:));
+plan.shotNos = unit.shots.shotNo(plan.shotIndex);
+plan.nMarks = numel(plan.markIndex);
+plan.ok = true;
+[plan.criterionI, plan.criterionD, plan.efficiencyI, plan.efficiencyD] = alignest.designCriteria(blocks(selected));
+end
+
+function blocks = markBlocks(unit, markCandidates, designOrder, waferRadiusMm)
+% 候補 Mark ごとの基底の行（全候補 Mark で正規直交化した XY 多項式。Shot 単位の shotBlocks と同じ正規化）
+marks = unit.marks;
+design = alignest.basis.polynomialDesign(marks.x(markCandidates) / waferRadiusMm, ...
+    marks.y(markCandidates) / waferRadiusMm, designOrder);
+if size(design, 1) < size(design, 2)
+    error('alignest:designOrder', 'I 最適の基準モデル（%d 次、%d 項）より候補の Mark（%d 点）が少ないです。次数を下げてください。', ...
+        designOrder, size(design, 2), size(design, 1));
+end
+[q, ~] = qr(design, 0);
+blocks = num2cell(q, 2);
 end
 
 function [iValue, dValue, iEfficiency, dEfficiency] = planCriteria(unit, candidates, shotIndex, designOrder, waferRadiusMm)

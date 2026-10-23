@@ -144,7 +144,8 @@ if isempty(lengthNm)
 end
 x0 = -waferRadiusMm;
 y0 = -waferRadiusMm + 2;
-quiver(ax, x0, y0, lengthNm * scaleMmPerNm, 0, 0, 'Color', [0, 0, 0], 'LineWidth', 1.5, 'MaxHeadSize', 0.6, ...
-    'HandleVisibility', 'off');
+% 軸と同じ色（ダークモードでは明るい色。Tag = foreground は画面の色を変えたときに一緒に変える）
+quiver(ax, x0, y0, lengthNm * scaleMmPerNm, 0, 0, 'Color', ax.XColor, 'Tag', 'foreground', 'LineWidth', 1.5, ...
+    'MaxHeadSize', 0.6, 'HandleVisibility', 'off');
 text(ax, x0, y0 + 8, sprintf('%g nm', lengthNm), 'FontSize', 12, 'VerticalAlignment', 'bottom');
 end

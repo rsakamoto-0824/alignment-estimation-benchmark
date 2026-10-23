@@ -164,10 +164,10 @@ for u = 1:numel(units)
             if plan.ok
                 try
                     if recordTiming && ~warmedUp(m)
-                        warmUp(unit, plan.shotIndex, methods(m), settings);
+                        warmUp(unit, plan, methods(m), settings);
                         warmedUp(m) = true;
                     end
-                    out = alignest.estimateWafer(unit, plan.shotIndex, methods(m), settings);
+                    out = alignest.estimateWafer(unit, plan, methods(m), settings);
                     row = fillMetrics(row, unit, out, settings);
                     pointEstimates{slot} = alignest.compactEstimate(out);
                     if overlay.enabled
@@ -330,10 +330,10 @@ if ~isempty(values)
 end
 end
 
-function warmUp(unit, shotIndex, method, settings)
+function warmUp(unit, plan, method, settings)
 % 処理時間を記録するとき、初回だけかかる時間（ファイルの読み込みなど）を除くための予備の推定
 try
-    alignest.estimateWafer(unit, shotIndex, method, settings);
+    alignest.estimateWafer(unit, plan, method, settings);
 catch
     % 失敗は本番の推定で記録する
 end
