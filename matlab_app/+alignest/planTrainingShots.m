@@ -2,7 +2,7 @@ function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm)
 %PLANTRAININGSHOTS 1つの Wafer（評価の単位）で、学習に使う Shot を選ぶ。
 %   候補は、X か Y の有効な計測値を1点以上持つ Shot。選ばなかった候補 Shot の Mark を評価に使う。
 %   I 最適の基準モデルは XY 多項式（sampling.designOrder 次）。候補の全 Mark で正規直交化して使う。
-%   制約（sampling.constraints）：同心円の区画（Shot 中心の半径 / Wafer 半径 を radialZoneEdges で区切る）、
+%   制約（sampling.constraints）：同心円の区画（Shot 中心の半径 [mm] を radialZoneEdgesMm で区切る）、
 %   4象限（Shot 中心の偏角、軸上は反時計回りに次の象限）、Scan方向。各区画の Shot 数を割合 × 選ぶ数 ± slack に収める。
 %   乱数は sampling.seed・Shot 数・繰り返し番号から決めるので、候補が同じ Wafer では同じ Shot が選ばれる。
 %   ファイルの優先順（file）：優先度 1 の Shot は必ず学習に使い、残りを優先度 0（計測しない）を除いてファイルの行の順に
@@ -164,11 +164,9 @@ function labels = partitionLabels(shots, candidates, sampling, waferRadiusMm, ha
 % 候補 Shot × 制約の種類 の区分番号（1始まり）
 constraints = sampling.constraints;
 labels = zeros(numel(candidates), 0);
-edges = sort(constraints.radialZoneEdges(:)).';
-edges = edges(edges > 0 & edges < 1);
+edges = alignest.zoneEdgesMm(sampling, waferRadiusMm);
 if ~isempty(edges)
-    rho = shots.radius(candidates) / waferRadiusMm;
-    labels(:, end + 1) = 1 + sum(rho >= edges, 2);
+    labels(:, end + 1) = 1 + sum(shots.radius(candidates) >= edges, 2);
 end
 if constraints.quadrants
     angle = mod(atan2(shots.Ymm(candidates), shots.Xmm(candidates)), 2 * pi);

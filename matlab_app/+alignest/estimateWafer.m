@@ -1,4 +1,4 @@
-function out = estimateWafer(unit, trainShots, method, settings)
+function out = estimateWafer(unit, trainShots, method, settings, testMask)
 %ESTIMATEWAFER 1つの Wafer（評価の単位）で、学習 Shot の計測値から評価 Shot の全 Mark を推定する。
 %   trainShots は学習に使う Shot の番号（unit.shots の何番目か）。
 %   X・Y は別々に当てはめる（RT モデルだけは X・Y を同時に当てはめる）。
@@ -9,19 +9,28 @@ function out = estimateWafer(unit, trainShots, method, settings)
 %   X・Y の両方の学習データから除く（平均・σ はこの Wafer・この学習 Shot の組で求める。alignest.trainingOutliers）。
 %   除いた Mark は評価にも使わない（学習 Shot の Mark なので）。out.outlierIndex はその Mark 番号。
 %   out.testIndex.X / Y は評価点の Mark 番号（unit.marks の何番目か）、out.estimate.X / Y はその推定値。
+%   testMask（省略可、Mark ごとの論理ベクトル）を渡すと、評価点をその Mark に限る（処理時間の内訳で、推定する点を
+%   減らして当てはめだけの時間を測るため。alignest.timingBreakdown）。
+%   out.timing は段階ごとの秒数（outliers：異常値の判定、model：モデルの当てはめと評価点の推定、
+%   prepare：それ以外の準備。合計が out.seconds）。
 timer = tic;
 marks = unit.marks;
 radius = settings.data.waferRadiusMm;
+if nargin < 5 || isempty(testMask)
+    testMask = true(numel(marks.x), 1);
+end
 inTrain = ismember(marks.shotIndex, trainShots);
 outlier = false(size(inTrain));
+outlierTimer = tic;
 if isfield(settings.evaluation, "excludeOutliers") && settings.evaluation.excludeOutliers
     outlier = alignest.trainingOutliers(marks, inTrain, settings.evaluation.outlierSigma);
 end
+outlierSeconds = toc(outlierTimer);
 axisNames = ["X", "Y"];
 for axisName = axisNames
     valid = marks.("valid" + axisName);
     trainIndex.(axisName) = find(inTrain & valid & ~outlier);
-    testIndex.(axisName) = find(~inTrain & valid);
+    testIndex.(axisName) = find(~inTrain & valid & testMask(:));
     measured.(axisName) = marks.("meas" + axisName)(trainIndex.(axisName));
     if numel(trainIndex.(axisName)) < 3
         error('alignest:fewPoints', '%s の学習点が %d 点しかありません。学習 Shot を増やしてください。', ...
@@ -46,6 +55,7 @@ out.extra = struct();
 out.converged = true;
 out.aux = [NaN, NaN];
 out.edf = [NaN, NaN];
+modelTimer = tic;
 switch method.family
     case "XY"
         order = sscanf(char(method.variant), 'order%d');
@@ -132,6 +142,7 @@ switch method.family
             out.edf(k) = result.edf;
         end
 end
+modelSeconds = toc(modelTimer);
 for axisName = axisNames
     if settings.evaluation.removeLinear
         estimate.(axisName) = estimate.(axisName) + linearPart.(axisName);
@@ -145,6 +156,8 @@ out.testIndex = testIndex;
 out.trainIndex = trainIndex;
 out.outlierIndex = find(outlier);
 out.seconds = toc(timer);
+out.timing = struct("outliers", outlierSeconds, "model", modelSeconds, ...
+    "prepare", max(out.seconds - outlierSeconds - modelSeconds, 0));
 end
 
 function result = fitWithFactors(fitSpatial, unit, train, test, y, method, settings, axisName)

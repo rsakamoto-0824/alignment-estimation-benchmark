@@ -3,13 +3,16 @@ classdef AlignmentEstimationApp < handle
     %   app = AlignmentEstimationApp();       画面を開く
     %   app = AlignmentEstimationApp(false);  画面を出さずに作る（自動テスト用）
     %   流れ：1. データの読み込み（列の対応・座標の単位・Wafer マップ・Shot レイアウト） → 2. 評価の設定 → 3. 実行
-    %         → 4. 結果一覧（表・グラフ・基準の手法との比較・推定値と誤差の分布） → 5. Waferごとのマップ
+    %         （評価の後に条件を足して追加の評価もできる）→ 4. 結果一覧（表・グラフ・基準の手法との比較・推定値と誤差の
+    %         分布・残差の箱ひげ図・散布図・分布の比較・処理時間の内訳。評価点を半径・Shot の条件で絞り込んで計算し直せる）
+    %         → 5. Waferごとのマップ（1つの条件の計測値・推定値・残差、または複数の条件を並べて比べる）
     %   計算は +alignest パッケージ（MATLAB 本体だけで動く）。画面はその呼び出しと表示だけを受け持つ。
 
     properties (Constant, Access = private)
         APP_TITLE = "アライメント計測値の面内推定 検証ツール"
         FONT_SIZE = 16
         AXES_FONT_SIZE = 13
+        SMALL_AXES_FONT_SIZE = 10       % 図を並べるとき（計測マップ・マップの比較）の文字の大きさ
         FIGURE_SIZE = [1440, 900]          % 画面がこれより小さいときは画面に合わせて縮める
         SCREEN_MARGIN = 40
         PRIMARY_COLOR = [0.0, 0.36, 0.67]
@@ -29,6 +32,9 @@ classdef AlignmentEstimationApp < handle
         EXCEL_MAX_DATA_ROWS = 1048575   % Excel の最大行数から見出しの1行を除いた数
         MAX_MATERN_NU = 50              % Matérn の ν の上限（alignest.models.maternNuCheck と同じ）
         FORMULA_CHOICE = -1             % Wafer 成分の選択肢「式を入力」の値（次数 0〜5 と区別する）
+        MAX_MEASURE_PANELS = 6          % 計測マップを並べる数の上限（Wafer × 学習パターン）
+        MAX_COMPARE_PANELS = 6          % Wafer ごとのマップで並べて比べる条件の数の上限
+        TIMING_REPEAT_LIMITS = [1, 10]  % 処理時間の内訳を測る回数の範囲
     end
 
     properties (SetAccess = private)
@@ -48,6 +54,10 @@ classdef AlignmentEstimationApp < handle
         MeasurementCache = []   % 計測マップの学習パターン（設定・データが変わったら作り直す）
         Distribution = []       % 「分布の比較」で最後に比べた結果（alignest.distributionComparison）
         ImportedEstimates = []  % Excel から読み込んだ推定値（alignest.importEstimates。読み込んだ評価結果と組で使う）
+        BaseResults = []        % 絞り込む前の評価の結果（Results は絞り込みの条件で指標を計算し直したもの）
+        ResultFilter            % 評価点の絞り込みの条件（alignest.defaultPointFilter と同じ形）
+        MapConditions = struct("option", {}, "plan", {}, "method", {}, "label", {})  % マップで並べて比べる条件
+        Timing = []             % 「処理時間の内訳」で最後に測った結果（alignest.timingBreakdown）
     end
 
     methods
@@ -56,6 +66,7 @@ classdef AlignmentEstimationApp < handle
                 visible = true;
             end
             app.Settings = alignest.defaultSettings();
+            app.ResultFilter = alignest.defaultPointFilter();
             app.MapCache = containers.Map('KeyType', 'char', 'ValueType', 'any');
             app.Figure = uifigure('Name', app.APP_TITLE, 'Position', figurePosition(app), ...
                 'Visible', matlab.lang.OnOffSwitchState(visible), 'CloseRequestFcn', @(~, ~) delete(app));
@@ -174,6 +185,8 @@ classdef AlignmentEstimationApp < handle
         function setSettings(app, settings)
             %SETSETTINGS 設定を画面に反映する（設定ファイルの読み込みと同じ）。
             %   以前の設定に無い項目は初期値にする。学習 Shot 数は並び（nShots）と開始・終了・刻みをそろえる。
+            %   同心円の区切り・外周の半径が比（以前の設定）なら mm に直す。
+            settings = alignest.upgradeRadiusSettings(settings);
             settings.methods = alignest.completeMethodSettings(settings.methods);
             defaults = alignest.defaultSettings();
             for group = ["data", "factors", "sampling", "evaluation", "overlay"]
@@ -217,16 +230,65 @@ classdef AlignmentEstimationApp < handle
             if nargin < 2
                 showProgress = true;
             end
-            previous = app.Results;
+            previous = app.BaseResults;
             if isempty(previous) || ~previous.cancelled || ~isfield(previous, "resume") || isempty(previous.resume)
                 error('alignest:resume', '続きから再開できる評価がありません。「評価を始める」で計算してください。');
             end
             prepareEvaluation(app);
-            if ~isequaln(previous.settings, app.Settings)
+            runSettings = previous.settings;
+            if isfield(previous, "runSettings")
+                runSettings = previous.runSettings;   % 条件を足した評価では、合わせた設定ではなく最後に実行した設定と比べる
+            end
+            if ~isequaln(runSettings, app.Settings)
                 error('alignest:resume', ['一時中断した後に評価の設定が変わったので、続きから再開できません。' ...
                     '設定を戻すか、「評価を始める」で最初から計算してください。']);
             end
-            results = evaluate(app, showProgress, previous, Inf);
+            results = evaluate(app, showProgress, previous, Inf, "resume");
+        end
+
+        function results = extendEvaluation(app, showProgress)
+            %EXTENDEVALUATION 評価済みの結果に、「2. 評価の設定」で増やした手法・学習パターン（学習 Shot 数・計測率など）を
+            %   足して評価する。済んだ組み合わせ（Wafer × 学習パターン × 手法）は計算せず、無いものだけを計算して結果に
+            %   加える（alignest.runEvaluation の "extend"）。推定の結果を変える設定（データ・質的変数・制約・評価の条件・
+            %   Overlay 補正など。alignest.extensionConflicts）を変えたときは追加できない（「評価を始める」で計算し直す）。
+            if nargin < 2
+                showProgress = true;
+            end
+            prepareEvaluation(app);
+            previous = app.BaseResults;
+            if isempty(previous) || isImportedResults(previous)
+                error('alignest:extend', ['条件を追加できる評価の結果がありません。先に「評価を始める」で評価してください' ...
+                    '（Excel から読み込んだ結果には追加できません）。']);
+            end
+            results = evaluate(app, showProgress, previous, Inf, "extend");
+        end
+
+        function results = applyResultFilter(app, filter)
+            %APPLYRESULTFILTER 評価点を半径・Shot の条件で絞り込み、結果一覧の表・グラフ・基準の手法との比較と、
+            %   Wafer ごとのマップを描き直す（指標は alignest.filterResults で計算し直す。推定はやり直さない）。
+            %   filter（alignest.defaultPointFilter と同じ形）を省くと、絞り込みを解除する。推定値と誤差の分布・箱ひげ図・
+            %   散布図・分布の比較・推定値の書き出しは、次に計算するときに同じ条件で評価点を絞り込む。
+            %   Excel から読み込んだ結果では表・グラフは計算し直せない（読み込んだ推定値を使う図だけを絞り込む）。
+            if nargin < 2
+                filter = alignest.defaultPointFilter();
+            end
+            if isempty(app.BaseResults)
+                error('alignest:noResults', '先に「3. 実行」で評価してください。');
+            end
+            validateFilter(filter);
+            if isImportedResults(app.BaseResults)
+                results = app.BaseResults;
+                results.filter = filter;
+                [~, results.filterText] = alignest.pointFilterMask(filter);
+            else
+                results = alignest.filterResults(app.BaseResults, app.Data, filter);
+            end
+            app.ResultFilter = filter;
+            app.Results = results;
+            clearPointViews(app);
+            showFilter(app);
+            refreshResults(app);
+            drawMap(app);
         end
 
         function exportResultsTo(app, filePath)
@@ -248,6 +310,7 @@ classdef AlignmentEstimationApp < handle
             results = alignest.importResults(filePath);
             clearResults(app);
             app.Results = results;
+            app.BaseResults = results;
             refreshResultControls(app);
             app.TabGroup.SelectedTab = app.Tabs.results;
         end
@@ -365,10 +428,12 @@ classdef AlignmentEstimationApp < handle
             c.shotOverlayInfo.Value = cellstr([notes; lines]);
         end
 
-        function plan = drawMeasurementMap(app, unitIndex, planLabel)
-            %DRAWMEASUREMENTMAP 選んだ Wafer・学習パターン（省略時は画面の選択）の計測マップを「3. 実行」に描く。
-            %   学習に使う（計測する）Shot・必ず計測する Shot・計測しない Shot を塗り分ける。評価の前に使える。
-            %   学習パターンは評価と同じ作り方なので、同じ設定なら評価でも同じ Shot を使う。
+        function plans = drawMeasurementMap(app, unitIndex, planLabels)
+            %DRAWMEASUREMENTMAP 選んだ Wafer・学習パターン（省略時は画面の選択。どちらも複数可）の計測マップを「3. 実行」に
+            %   並べて描く（Wafer × 学習パターン、最大 MAX_MEASURE_PANELS 枚）。学習に使う（計測する）Shot・必ず計測する Shot・
+            %   計測しない Shot を塗り分け、選べば Scan 方向（Shot の内側の色の枠と ▲・▼）と同心円の制約の区切りも描く。
+            %   評価の前に使える。学習パターンは評価と同じ作り方なので、同じ設定なら評価でも同じ Shot を使う。
+            %   plans は描いた学習パターン（Wafer ごとに学習パターンの順）。
             c = app.Controls;
             if isempty(app.Data)
                 error('alignest:noData', '先に「1. データの読み込み」でデータを読み込んでください。');
@@ -380,37 +445,78 @@ classdef AlignmentEstimationApp < handle
             end
             refreshMeasurementChoices(app);
             if nargin >= 2
-                c.measureWafer.Value = unitIndex;
+                c.measureWafer.Value = num2cell(unitIndex);
             end
             if nargin >= 3
-                if ~any(string(c.measurePlan.Items) == string(planLabel))
+                planLabels = string(planLabels);
+                unknown = planLabels(~ismember(planLabels, string(c.measurePlan.Items)));
+                if ~isempty(unknown)
                     error('alignest:measurementPlan', '学習パターン「%s」はありません（「2. 評価の設定」を確かめてください）。', ...
-                        planLabel);
+                        unknown(1));
                 end
-                c.measurePlan.Value = char(planLabel);
+                c.measurePlan.Value = cellstr(planLabels);
             end
             specs = alignest.buildPlanSpecs(app.Settings.sampling);
-            spec = specs(string({specs.label}) == string(c.measurePlan.Value));
-            if isempty(spec)
-                error('alignest:measurementPlan', '学習パターンを選んでください（「2. 評価の設定」を確かめてください）。');
+            units = cell2mat(c.measureWafer.Value);
+            labels = string(c.measurePlan.Value);
+            if isempty(units) || isempty(labels)
+                error('alignest:measurementPlan', 'Wafer と学習パターンを1つ以上選んでください。');
             end
-            unitIndex = c.measureWafer.Value;
+            [unitGrid, labelGrid] = ndgrid(1:numel(units), 1:numel(labels));
+            pairs = [reshape(units(unitGrid.'), [], 1), reshape(labelGrid.', [], 1)];   % Wafer ごとに学習パターンの順
+            nPanels = min(size(pairs, 1), app.MAX_MEASURE_PANELS);
             dialog = [];
             if app.Figure.Visible == "on"
                 dialog = uiprogressdlg(app.Figure, 'Title', '計測マップ', 'Indeterminate', 'on', 'Message', '');
             end
             cleanup = onCleanup(@() closeDialog(dialog));
-            plan = measurementPlan(app, unitIndex, spec(1), dialog);
-            unit = app.Data.units(unitIndex);
-            alignest.plot.measurementMap(c.measureAxes, unit, plan, app.Settings.data.waferRadiusMm, ...
-                unit.label + "｜" + plan.label);
-            c.measureAxes.Visible = 'on';
-            c.measureAxes.FontSize = app.AXES_FONT_SIZE;
-            c.measureInfo.Value = cellstr(measurementLines(app, unit, plan));
+            if app.Figure.Visible == "on" && app.TabGroup.SelectedTab ~= app.Tabs.run
+                % 並べ方は枠の大きさで決めるので、枠が画面に出ている状態で描く
+                app.TabGroup.SelectedTab = app.Tabs.run;
+                drawnow;
+            end
+            layout = resetMeasurePanel(app, nPanels);
+            rings = zeros(1, 0);
+            if c.measureRings.Value
+                rings = activeZoneEdges(app.Settings);
+            end
+            plans = repmat(alignest.planTemplate(), 0, 1);
+            lines = strings(0, 1);
+            axesList = gobjects(1, nPanels);
+            for k = 1:nPanels
+                unit = app.Data.units(pairs(k, 1));
+                spec = specs(string({specs.label}) == labels(pairs(k, 2)));
+                plan = measurementPlan(app, pairs(k, 1), spec(1), dialog);
+                ax = nexttile(layout);
+                alignest.plot.measurementMap(ax, unit, plan, app.Settings.data.waferRadiusMm, ...
+                    unit.label + "｜" + plan.label, showScan=c.measureScan.Value, ringRadiiMm=rings, ...
+                    showLegend=nPanels == 1, allCategories=k == 1 && nPanels > 1);
+                ax.FontSize = ternary(nPanels > 1, app.SMALL_AXES_FONT_SIZE, app.AXES_FONT_SIZE);
+                axesList(k) = ax;
+                plans(end + 1, 1) = orderfields(plan, alignest.planTemplate()); %#ok<AGROW>
+                lines = [lines; measurementLines(app, unit, plan)]; %#ok<AGROW>
+            end
+            if nPanels > 1
+                % 並べるときは凡例を1つだけ右に、短い名前で出す（区分の数は図ごとに違うので、数は下の欄に書く）
+                items = flipud(findobj(axesList(1), '-regexp', 'DisplayName', '.+'));
+                names = regexprep(string(get(items, 'DisplayName')), '（\d+）$', '');
+                names = replace(names, ["必ず計測する Shot（指定・最外周など）", "選んで計測する Shot", ...
+                    "計測しない Shot（評価に使う）", "計測値の無い Shot"], ["必ず計測", "選んで計測", "計測しない（評価）", ...
+                    "計測値なし"]);
+                shown = legend(axesList(1), items, cellstr(names), 'Box', 'off', 'FontSize', app.SMALL_AXES_FONT_SIZE);
+                shown.Layout.Tile = 'east';
+            end
+            app.Controls.measureAxes = axesList;
+            if size(pairs, 1) > nPanels
+                lines = [sprintf("選んだ %d 通りのうち、はじめの %d 通りを描きました（Wafer・学習パターンを減らしてください）。", ...
+                    size(pairs, 1), nPanels); lines];
+            end
+            c.measureInfo.Value = cellstr(lines);
         end
 
         function sheet = exportMeasurementMap(app, filePath)
-            %EXPORTMEASUREMENTMAP 選んだ Wafer の計測マップを、すべての学習パターンについて Excel に書き出す。
+            %EXPORTMEASUREMENTMAP 選んだ Wafer（複数選んだときは1枚目）の計測マップを、すべての学習パターンについて
+            %   Excel に書き出す。
             %   「計測マップ」シート：Shot ごとの座標・行・列・最外周・指定の有無と、学習パターンごとの 1（計測する）／0（しない）。
             %   「学習パターン」シート：学習パターンごとの Shot 数・計測率・必ず計測した数・I 基準・D 基準・shotNo・メモ。
             if isempty(app.Data)
@@ -422,7 +528,11 @@ classdef AlignmentEstimationApp < handle
                 error('alignest:settings', '%s', strjoin(settingsErrors, newline));
             end
             refreshMeasurementChoices(app);
-            unitIndex = app.Controls.measureWafer.Value;
+            selected = cell2mat(app.Controls.measureWafer.Value);
+            if isempty(selected)
+                error('alignest:measurementPlan', '書き出す Wafer を選んでください。');
+            end
+            unitIndex = selected(1);
             unit = app.Data.units(unitIndex);
             shots = unit.shots;
             specs = alignest.buildPlanSpecs(app.Settings.sampling);
@@ -568,6 +678,127 @@ classdef AlignmentEstimationApp < handle
             app.Analysis = struct("estimates", estimates, "analysis", analysis, "selection", selection, ...
                 "messages", messages);
             showAnalysis(app);
+            % 同じ残差の箱ひげ図（質的変数は前の選択があればそのまま、無ければ最初の変数）
+            names = string({alignest.residualFactors(estimates).name});
+            c.boxFactor.Enable = onOff(~isempty(names));
+            if isempty(names)
+                c.boxFactor.Items = {'—'};
+                c.boxInfo.Text = '質的変数に値が無いため、箱ひげ図は描けません。';
+                return
+            end
+            previous = string(c.boxFactor.Value);
+            c.boxFactor.Items = cellstr(names);
+            c.boxFactor.Value = char(ternary(any(names == previous), previous, names(1)));
+            drawResidualBoxplot(app);
+        end
+
+        function summary = drawResidualBoxplot(app, factorName)
+            %DRAWRESIDUALBOXPLOT 最後に分析した残差（「推定値と誤差の分布」の「分析する」）を、質的変数の水準ごとの
+            %   箱ひげ図で X・Y 別に「残差の箱ひげ図（ANOVA）」に描く。題名に一元配置の ANOVA の F・p 値・η² を書く。
+            %   factorName（省略時は画面の選択）は alignest.residualFactors の変数の名前（例："Scan 方向"・"Mark 番号"）。
+            %   summary は X・Y の水準ごとの点数・平均・中央値（alignest.plot.residualBoxplot）。
+            c = app.Controls;
+            if isempty(app.Analysis)
+                error('alignest:noAnalysis', '先に「推定値と誤差の分布」で「分析する」を押してください。');
+            end
+            factors = alignest.residualFactors(app.Analysis.estimates);
+            names = string({factors.name});
+            if nargin >= 2
+                if ~any(names == string(factorName))
+                    error('alignest:boxFactor', '質的変数「%s」はこの分析にありません（%s）。', factorName, strjoin(names, "、"));
+                end
+                c.boxFactor.Items = cellstr(names);
+                c.boxFactor.Value = char(factorName);
+            end
+            factor = factors(names == string(c.boxFactor.Value));
+            anova = app.Analysis.analysis.anova;
+            notes = strings(1, 2);
+            axisNames = ["X", "Y"];
+            for k = 1:2
+                titleText = axisNames(k) + " の残差：" + factor.name;
+                row = table();
+                if height(anova) > 0
+                    row = anova(anova.axis == axisNames(k) & anova.factor == factor.name, :);
+                end
+                if height(row) > 0 && isfinite(row.F(1))
+                    titleText = titleText + sprintf("（一元配置 F = %.2f、p = %s、η² = %.3f）", row.F(1), ...
+                        pValueText(row.p(1)), row.etaSquared(1));
+                    notes(k) = axisNames(k) + "：" + judgementWithNote(row.judgement(1), row.note(1));
+                else
+                    notes(k) = axisNames(k) + "：検定できません（水準が1つ、または点が少ない）";
+                end
+                part = alignest.plot.residualBoxplot(c.boxAxes(k), factor.levels, ...
+                    app.Analysis.estimates.("residual" + axisNames(k)), titleText);
+                summary(k) = struct("axis", axisNames(k), "levels", part); %#ok<AGROW>
+            end
+            set(c.boxAxes, 'Visible', 'on', 'FontSize', app.AXES_FONT_SIZE);
+            results = app.Results;
+            selection = app.Analysis.selection;
+            c.boxInfo.Text = sprintf("%s｜%s｜Wafer %d 枚｜判定（5%%）：%s", results.methods(selection.methodIndex).label, ...
+                selection.groups, numel(selection.unitIndex), strjoin(notes, "、")) + filterNote(app);
+        end
+
+        function breakdown = measureTiming(app, unitIndex, planLabel, methodIndex, nRepeats)
+            %MEASURETIMING 選んだ Wafer・学習パターン・手法（複数可）の処理時間を段階ごとに測り、「処理時間の内訳」に
+            %   積み上げ横棒（秒・割合）と表で出す（alignest.timingBreakdown。評価の結果は変えない）。引数を省くと画面の選択。
+            c = app.Controls;
+            if isempty(app.BaseResults) || isImportedResults(app.BaseResults) || isempty(app.Data)
+                error('alignest:noResults', ['処理時間は、計測データを読み込んで評価した結果で測れます' ...
+                    '（Excel から読み込んだ結果では測れません）。']);
+            end
+            if nargin >= 2
+                c.timingWafer.Value = unitIndex;
+                c.timingPlan.Value = char(planLabel);
+                c.timingMethods.Value = num2cell(methodIndex);
+            end
+            if nargin >= 5
+                c.timingRepeats.Value = nRepeats;
+            end
+            results = app.BaseResults;
+            methodIndex = cell2mat(c.timingMethods.Value);
+            if isempty(methodIndex)
+                error('alignest:timingBreakdown', '手法を1つ以上選んでください。');
+            end
+            runSettings = results.settings;
+            if isfield(results, "runSettings")
+                runSettings = results.runSettings;
+            end
+            if isfield(results, "specs")
+                specs = results.specs;
+            else
+                specs = alignest.buildPlanSpecs(runSettings.sampling);
+            end
+            spec = specs(string({specs.label}) == string(c.timingPlan.Value));
+            if isempty(spec)
+                error('alignest:timingBreakdown', '学習パターン「%s」がありません。', c.timingPlan.Value);
+            end
+            dialog = [];
+            if app.Figure.Visible == "on"
+                dialog = uiprogressdlg(app.Figure, 'Title', '処理時間の内訳', 'Indeterminate', 'on', ...
+                    'Message', '同じ計算をくり返して時間を測っています…');
+            end
+            cleanup = onCleanup(@() closeDialog(dialog));
+            unit = app.Data.units(c.timingWafer.Value);
+            breakdown = alignest.timingBreakdown(unit, spec(1), results.methods(methodIndex), runSettings, ...
+                c.timingRepeats.Value);
+            app.Timing = breakdown;
+            alignest.plot.timingBars(c.timingAxes(1), c.timingAxes(2), breakdown);
+            set(c.timingAxes, 'Visible', 'on', 'FontSize', app.AXES_FONT_SIZE);
+            values = breakdown.table{:, cellstr(breakdown.stages)};
+            rows = cell(height(breakdown.table), numel(breakdown.stages) + 2);
+            for m = 1:height(breakdown.table)
+                total = breakdown.table.total(m);
+                rows{m, 1} = char(breakdown.table.methodLabel(m));
+                rows{m, 2} = sprintf('%.3f', total);
+                for k = 1:numel(breakdown.stages)
+                    rows{m, k + 2} = sprintf('%.4f（%.0f%%）', values(m, k), 100 * values(m, k) / max(total, eps));
+                end
+            end
+            c.timingTable.Data = rows;
+            c.timingTable.ColumnName = cellstr(["手法", "合計 [秒]", breakdown.labels + " [秒]"]);
+            c.timingTable.ColumnWidth = [{app.METHOD_COLUMN_WIDTH, 90}, repmat({'auto'}, 1, numel(breakdown.stages))];
+            c.timingInfo.Text = sprintf("%s｜%s｜学習点 X %d・Y %d、評価点 X %d・Y %d｜", unit.label, spec(1).label, ...
+                breakdown.nTrain, breakdown.nTest) + c.timingInfo.UserData;
         end
 
         function summary = drawScatter(app, methodIndex, group, unitIndex, colorBy)
@@ -598,7 +829,7 @@ classdef AlignmentEstimationApp < handle
             c.scatterInfo.Text = sprintf(['%s｜%s｜Wafer %d 枚｜色：%s。破線は y = x、赤い線は回帰直線' ...
                 '（推定値 = a + b·実測値）、r は相関係数。'], app.Results.methods(selection.methodIndex).label, ...
                 selection.groups, numel(unitIndex), string(c.scatterColor.Items{strcmp(c.scatterColor.ItemsData, ...
-                c.scatterColor.Value)}));
+                c.scatterColor.Value)})) + filterNote(app);
         end
 
         function comparison = compareDistributions(app, methodIndex, group, unitIndex)
@@ -632,7 +863,7 @@ classdef AlignmentEstimationApp < handle
             end
             comparison = alignest.distributionComparison(data, app.Results, selection, estimates);
             comparison.title = sprintf("%s｜%s｜Wafer %d 枚", app.Results.methods(selection.methodIndex).label, ...
-                selection.groups, comparison.nWafers);
+                selection.groups, comparison.nWafers) + filterNote(app);
             app.Distribution = comparison;
             statsRows = cell(0, 9);
             jsRows = cell(0, 4);
@@ -657,7 +888,7 @@ classdef AlignmentEstimationApp < handle
             %EXPORTESTIMATESTO 推定値（Mark ごとの計測値・推定値・残差）と残差の検定結果を Excel に書き出す。
             %   学習データの Mark も書き出し、その推定値・残差は空欄にする（「区分」の列で見分ける）。
             %   scope = "selected"：「推定値と誤差の分布」で選んだ手法・学習パターン・Wafer
-            %           "all"     ：すべての手法・学習パターン・Wafer（推定をやり直すので時間がかかる）
+            %           "all"     ：すべての手法・学習パターン・Wafer（評価で求めた推定値を使う。行が多いと書き出しに時間がかかる）
             requireEstimates(app);
             if isImportedResults(app.Results)
                 error('alignest:importedResults', ['Excel から読み込んだ推定値は書き出せません（読み込んだファイル「%s」を' ...
@@ -670,14 +901,13 @@ classdef AlignmentEstimationApp < handle
             if scope == "all"
                 selection = struct("methodIndex", 1:numel(results.methods), "groups", results.groups, ...
                     "unitIndex", 1:numel(results.unitLabels));
-                cache = [];  % すべての組み合わせを画面の記憶に残すと大きくなるので、使い回さない
                 scopeText = "すべての手法・学習パターン・Wafer";
             else
                 selection = analysisSelection(app);
-                cache = app.MapCache;
                 scopeText = "選んだ手法・学習パターン・Wafer";
             end
-            [estimates, messages, overlayPoints] = collectWithProgress(app, selection, cache, app.EXCEL_MAX_DATA_ROWS, ...
+            % 評価で求めた推定値は記憶（app.MapCache）にあるので、推定し直さずに使う
+            [estimates, messages, overlayPoints] = collectWithProgress(app, selection, app.MapCache, app.EXCEL_MAX_DATA_ROWS, ...
                 "推定値を計算しています", true);
             analysis = alignest.residualAnalysis(estimates(estimates.role == "評価", :));
             notes = ["読み込んだファイル", app.FilePath; "書き出した範囲", scopeText; ...
@@ -689,6 +919,11 @@ classdef AlignmentEstimationApp < handle
             end
             if isfield(results, "overlayEvaluated") && results.overlayEvaluated
                 notes = [notes; "Overlay 補正のモデル", results.overlayDescription];
+            end
+            [~, filterText, filterActive] = alignest.pointFilterMask(app.ResultFilter);
+            if filterActive
+                notes = [notes; "評価点の絞り込み", filterText + "（「推定値」シートの評価の行と検定。Overlay 残差のシートは" + ...
+                    "絞り込まない）"];
             end
             alignest.exportEstimates(estimates, analysis, filePath, notes, overlayPoints=overlayPoints);
         end
@@ -707,6 +942,44 @@ classdef AlignmentEstimationApp < handle
             if nargin >= 5
                 c.mapMode.Value = char(displayMode);
             end
+            c.mapView.Value = 'single';
+            drawMap(app);
+        end
+
+        function conditions = addMapCondition(app, optionIndex, planLabel, methodIndex)
+            %ADDMAPCONDITION 「5. Waferごとのマップ」の並べて比べる一覧に、条件（Wafer・平均 × 学習パターン × 手法）を足して
+            %   並べて描く（並べ方を「一覧の条件を並べて比べる」にする）。引数を省くと画面の選択。同じ条件は足さない。
+            c = app.Controls;
+            if isempty(app.Results)
+                error('alignest:noResults', '先に「3. 実行」で評価してください。');
+            end
+            if nargin >= 2
+                c.mapWafer.Value = optionIndex;
+                c.mapPlan.Value = char(planLabel);
+                c.mapMethod.Value = methodIndex;
+            end
+            option = c.mapWafer.UserData(c.mapWafer.Value);
+            condition = struct("option", c.mapWafer.Value, "plan", string(c.mapPlan.Value), "method", c.mapMethod.Value, ...
+                "label", option.label + "｜" + string(c.mapPlan.Value) + "｜" + app.Results.methods(c.mapMethod.Value).label);
+            known = arrayfun(@(item) item.option == condition.option && item.plan == condition.plan && ...
+                item.method == condition.method, app.MapConditions);
+            if ~any(known)
+                if numel(app.MapConditions) >= app.MAX_COMPARE_PANELS
+                    error('alignest:mapCompare', '並べて比べる条件は %d までです。「選んだ条件を外す」で減らしてから追加してください。', ...
+                        app.MAX_COMPARE_PANELS);
+                end
+                app.MapConditions(end + 1) = condition;
+            end
+            refreshMapConditions(app);
+            c.mapView.Value = 'compare';
+            drawMap(app);
+            conditions = app.MapConditions;
+        end
+
+        function removeMapConditions(app, indices)
+            %REMOVEMAPCONDITIONS 並べて比べる一覧から条件（一覧の何番目か）を外して描き直す。
+            app.MapConditions(indices) = [];
+            refreshMapConditions(app);
             drawMap(app);
         end
 
@@ -810,8 +1083,8 @@ classdef AlignmentEstimationApp < handle
 
             c.previewTab = uitab(c.dataTabs, 'Title', 'Wafer マップ（計測値）');
             previewGrid = uigridlayout(c.previewTab, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 8, 'RowSpacing', 8);
-            previewControls = uigridlayout(previewGrid, [2, 11], 'ColumnWidth', {'fit', 260, 'fit', 170, 'fit', 80, 60, ...
-                'fit', 'fit', 90, '1x'}, 'RowHeight', {'fit', 'fit'}, 'Padding', 0);
+            previewControls = uigridlayout(previewGrid, [3, 11], 'ColumnWidth', {'fit', 260, 'fit', 170, 'fit', 80, 60, ...
+                'fit', 'fit', 90, '1x'}, 'RowHeight', {'fit', 'fit', 'fit'}, 'Padding', 0);
             label(previewControls, '表示する Wafer・平均', 1, 1);
             c.previewWafer = uidropdown(previewControls, 'Items', {'—'}, 'ValueChangedFcn', @(~, ~) app.drawPreview());
             place(c.previewWafer, 1, 2);
@@ -834,8 +1107,15 @@ classdef AlignmentEstimationApp < handle
             place(c.previewEllipse, 1, 10);
             c.previewEllipseOnly = ellipseOnlyCheckbox(previewControls, @(~, ~) app.drawPreview());
             place(c.previewEllipseOnly, 1, 11);
+            c.previewScanFrames = uicheckbox(previewControls, 'Text', 'Shot の枠を Scan 方向で色分け（緑 ▲ = 1、紫 ▼ = 2）', ...
+                'ValueChangedFcn', @(~, ~) app.drawPreview());
+            place(c.previewScanFrames, 2, [1, 2]);
+            c.previewRings = uicheckbox(previewControls, 'Text', '同心円の区切り（「2. 評価の設定」の制約）を描く', ...
+                'ValueChangedFcn', @(~, ~) app.drawPreview(), 'Tooltip', ['I 最適・ランダムで同心円の制約を使うとき、' ...
+                '区切りの半径（Shot 中心の半径 [mm]）を橙の一点鎖線で描きます。']);
+            place(c.previewRings, 2, [3, 7]);
             c.previewInfo = uilabel(previewControls, 'WordWrap', 'on', 'Text', '');
-            place(c.previewInfo, 2, [1, 11]);
+            place(c.previewInfo, 3, [1, 11]);
             c.previewPanel = uipanel(previewGrid, 'BorderType', 'none');
             previewAxesGrid = uigridlayout(c.previewPanel, [1, 3], 'Padding', 0, 'ColumnSpacing', 8);
             c.previewAxes = [uiaxes(previewAxesGrid), uiaxes(previewAxesGrid), uiaxes(previewAxesGrid)];
@@ -1096,12 +1376,23 @@ classdef AlignmentEstimationApp < handle
                 points = pointsList{1};
                 values = valuesList{1};
             end
-            [centers, sizeMm] = shotFrameData(unit, c.previewShotFrames.Value);
+            [centers, sizeMm] = shotFrameData(unit, c.previewShotFrames.Value || c.previewScanFrames.Value);
+            directions = zeros(0, 1);
+            if c.previewScanFrames.Value
+                directions = nan(numel(unit.shots.Xmm), 1);
+                if unit.hasDirection
+                    directions = unit.shots.direction;
+                end
+            end
+            rings = zeros(1, 0);
+            if c.previewRings.Value
+                rings = activeZoneEdges(app.Settings);
+            end
             limit = colorLimitOf(values);
             radius = app.Settings.data.waferRadiusMm;
             ellipseSigma = c.previewEllipse.Value * option.isGroup;
             common = {'waferRadiusMm', radius, 'shotCenters', centers, 'shotSizeMm', sizeMm, 'showLegend', option.isGroup, ...
-                'covariance', covariance, 'ellipseSigma', ellipseSigma};
+                'covariance', covariance, 'ellipseSigma', ellipseSigma, 'shotDirections', directions, 'ringRadiiMm', rings};
             % name=value の書き方は最後に置く決まりなので、共通の指定（common）を先に渡す
             alignest.plot.waferMap(c.previewAxes(1), points, values, common{:}, ...
                 scaleMmPerNm=alignest.plot.vectorScale(values), titleText=ternary(option.isGroup, "計測値の平均（ベクトル）", ...
@@ -1113,9 +1404,19 @@ classdef AlignmentEstimationApp < handle
             set(c.previewAxes, 'Visible', 'on', 'FontSize', app.AXES_FONT_SIZE);
             % 楕円と重ねる矢印は単色（色の目盛りは楕円の |r|）、楕円が無ければ矢印の色は長さ
             arrowText = ternary(ellipseSigma > 0, "矢印は単色（右の目盛りは楕円の |r|）", "矢印の色は長さ |v|");
+            extras = "";
+            if ~isempty(directions)
+                extras = extras + "枠の色は Scan 方向（緑 ▲ = 1、紫 ▼ = 2）。";
+            end
+            if ~isempty(rings)
+                extras = extras + "橙の一点鎖線は同心円の区切り（" + strjoin(string(rings), "・") + " mm）。";
+            elseif c.previewRings.Value
+                extras = extras + "同心円の制約は使っていません（「2. 評価の設定」で I 最適・ランダムと区切りを選ぶと描きます）。";
+            end
             c.previewInfo.Text = sprintf("%s：%d 点。点線は半径 %g mm%s。%s。色の図の範囲は X・Y 共通で ±%.2f nm。%s", option.label, ...
                 size(points, 1), radius, ternary(c.previewShotFrames.Value, "、灰色の枠は Shot", ""), arrowText, limit, ...
-                ternary(option.isGroup, "座標ごとに Wafer 間で平均（楕円は Wafer 間のばらつき、色は X・Y の相関係数の絶対値 |r|）。", ""));
+                ternary(option.isGroup, "座標ごとに Wafer 間で平均（楕円は Wafer 間のばらつき、色は X・Y の相関係数の絶対値 |r|）。", "")) + ...
+                extras;
         end
 
         function refreshPreviewGroupBy(app)
@@ -1206,10 +1507,8 @@ classdef AlignmentEstimationApp < handle
             c.previewInfo.Text = '';
             c.layoutInfo.Text = '';
             c.shotOverlayInfo.Value = {''};
-            if isfield(c, 'measureAxes')
-                cla(c.measureAxes, 'reset');
-                legend(c.measureAxes, 'off');
-                c.measureAxes.Visible = 'off';
+            if isfield(c, 'measurePanel')
+                clearMeasurePanel(app);
             end
         end
 
@@ -1285,8 +1584,11 @@ classdef AlignmentEstimationApp < handle
             place(c.requiredInfo, 18, [1, 2]);
             c.requiredError = errorLabel(app, s, 19, [1, 2]);
             heading(s, '制約（I 最適・ランダム）', 20);
-            label(s, '同心円の区切り（Wafer 半径に対する比、空白区切り）', 21, [1, 2]);
-            c.zoneEdges = uieditfield(s, 'text', 'ValueChangedFcn', onChange);
+            radiusMm = app.Settings.data.waferRadiusMm;
+            label(s, sprintf('同心円の区切り：Shot 中心の半径 [mm]（Wafer 半径 %g mm が前提。空白区切り）', radiusMm), 21, [1, 2]);
+            c.zoneEdges = uieditfield(s, 'text', 'ValueChangedFcn', onChange, 'Tooltip', sprintf(['Shot 中心の Wafer 中心からの' ...
+                '距離 [mm] で区画を分け、区画ごとの Shot 数をそろえます（例：67.5 105 → 0〜67.5・67.5〜105・105 mm 以上の' ...
+                '3区画）。0 より大きく %g mm より小さい値。使わないなら空欄。'], radiusMm));
             place(c.zoneEdges, 22, [1, 2]);
             c.zoneError = errorLabel(app, s, 23, [1, 2]);
             c.quadrants = uicheckbox(s, 'Text', '4象限の Shot 数をそろえる', 'ValueChangedFcn', onChange);
@@ -1299,13 +1601,24 @@ classdef AlignmentEstimationApp < handle
             place(c.slack, 27, 1);
             c.designOrder = uispinner(s, 'Limits', [1, 8], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
             place(c.designOrder, 27, 2);
-            label(s, '交換法の初期配置の数（多いほど良い組が見つかるが遅い）', 28, [1, 2]);
-            c.exchangeStarts = uispinner(s, 'Limits', [1, 100], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
-            place(c.exchangeStarts, 29, 1);
+            label(s, '交換法の初期配置の数（多いほど良い組が見つかるが遅い。時間は数にほぼ比例）', 28, [1, 2]);
+            % 入力欄と時間の目安（目安の文が長くても入力欄が縦に伸びないように、2段の小さな格子に入れる）
+            exchangeGrid = uigridlayout(s, [2, 2], 'ColumnWidth', {'1x', '1x'}, 'RowHeight', {'fit', 'fit'}, 'Padding', 0, ...
+                'RowSpacing', 2);
+            place(exchangeGrid, 29, [1, 2]);
+            c.exchangeStarts = uispinner(exchangeGrid, 'Limits', [1, 100], 'RoundFractionalValues', 'on', ...
+                'ValueChangedFcn', onChange, 'Tooltip', ['初期配置 1 つあたりの時間の目安は 約 0.01 秒 × 学習 Shot 数' ...
+                '（候補 99 Shot の模擬データで測った値）。10 → 20 にすると学習パターンを作る時間は約 2 倍。模擬データでは' ...
+                ' 10〜20 を超えると I 基準はほとんど良くならなかった。']);
+            place(c.exchangeStarts, 1, 1);
+            c.exchangeInfo = uilabel(exchangeGrid, 'WordWrap', 'on', 'Text', '');
+            place(c.exchangeInfo, 2, [1, 2]);
             heading(s, '評価', 30);
-            label(s, '外周とみなす半径（Wafer 半径に対する比）', 31, [1, 2]);
-            c.outerRatio = uieditfield(s, 'numeric', 'Limits', [0, 1], 'ValueDisplayFormat', '%.2f', 'ValueChangedFcn', onChange);
-            place(c.outerRatio, 32, 1);
+            label(s, sprintf('外周とみなす Mark の半径 [mm]（この半径以上を外周。Wafer 半径 %g mm が前提）', radiusMm), 31, [1, 2]);
+            c.outerRadius = uieditfield(s, 'numeric', 'Limits', [0, radiusMm], 'ValueDisplayFormat', '%.1f', ...
+                'ValueChangedFcn', onChange, 'Tooltip', ['Mark の Wafer 中心からの距離 [mm]。結果一覧の「外周の RMSE」' ...
+                '「内側の RMSE」と、散布図の色分け「外周・内側」の境目です。']);
+            place(c.outerRadius, 32, 1);
             c.removeLinear = uicheckbox(s, 'ValueChangedFcn', onChange, ...
                 'Text', 'XY 1次（並進・倍率・回転・直交度）を除いてから推定する');
             place(c.removeLinear, 33, [1, 2]);
@@ -1546,13 +1859,13 @@ classdef AlignmentEstimationApp < handle
             c.seed.Value = s.sampling.seed;
             c.manualPlans.Value = cellstr(ternary(isempty(s.sampling.manualPlans), "", s.sampling.manualPlans(:)));
             c.priorityInfo.Text = priorityText(s.sampling);
-            c.zoneEdges.Value = char(strjoin(string(s.sampling.constraints.radialZoneEdges), " "));
+            c.zoneEdges.Value = char(strjoin(string(s.sampling.constraints.radialZoneEdgesMm), " "));
             c.quadrants.Value = s.sampling.constraints.quadrants;
             c.scanConstraint.Value = s.sampling.constraints.scanDirection;
             c.slack.Value = s.sampling.constraints.slack;
             c.designOrder.Value = s.sampling.designOrder;
             c.exchangeStarts.Value = s.sampling.exchangeStarts;
-            c.outerRatio.Value = s.evaluation.outerRadiusRatio;
+            c.outerRadius.Value = s.evaluation.outerRadiusMm;
             c.removeLinear.Value = s.evaluation.removeLinear;
             c.recordTiming.Value = s.evaluation.recordTiming;
             c.excludeOutliers.Value = s.evaluation.excludeOutliers;
@@ -1676,15 +1989,15 @@ classdef AlignmentEstimationApp < handle
             lines = string(c.manualPlans.Value);
             s.sampling.manualPlans = lines(strlength(strtrim(lines)) > 0);
             [values, ok] = parseNumbers(c.zoneEdges.Value);
-            if ok && all(values > 0 & values < 1)
-                s.sampling.constraints.radialZoneEdges = sort(values);
+            if ok && all(values > 0 & values < s.data.waferRadiusMm)
+                s.sampling.constraints.radialZoneEdgesMm = unique(values);
             end
             s.sampling.constraints.quadrants = c.quadrants.Value;
             s.sampling.constraints.scanDirection = c.scanConstraint.Value;
             s.sampling.constraints.slack = c.slack.Value;
             s.sampling.designOrder = c.designOrder.Value;
             s.sampling.exchangeStarts = c.exchangeStarts.Value;
-            s.evaluation.outerRadiusRatio = c.outerRatio.Value;
+            s.evaluation.outerRadiusMm = c.outerRadius.Value;
             s.evaluation.removeLinear = c.removeLinear.Value;
             s.evaluation.excludeOutliers = c.excludeOutliers.Value;
             s.evaluation.outlierSigma = c.outlierSigma.Value;
@@ -1787,11 +2100,14 @@ classdef AlignmentEstimationApp < handle
             end
             c.requiredError.Text = text;
             c.requiredInfo.Text = requiredText(app);
+            c.exchangeInfo.Text = exchangeText(app);
             messages = [messages; text(text ~= "")];
             [values, ok] = parseNumbers(c.zoneEdges.Value);
             text = "";
-            if ~ok || any(values <= 0 | values >= 1)
-                text = "⚠ 同心円の区切りは 0 より大きく 1 より小さい数を空白で区切って入れてください（使わないなら空欄）。";
+            radiusMm = app.Settings.data.waferRadiusMm;
+            if ~ok || any(values <= 0 | values >= radiusMm)
+                text = sprintf("⚠ 同心円の区切りは 0 より大きく %g mm より小さい半径 [mm] を空白で区切って入れてください" + ...
+                    "（使わないなら空欄）。", radiusMm);
             end
             c.zoneError.Text = text;
             messages = [messages; text(text ~= "")];
@@ -1980,38 +2296,54 @@ classdef AlignmentEstimationApp < handle
             grid = uigridlayout(app.Tabs.run, [4, 1], 'RowHeight', {'fit', 'fit', 'fit', '1x'}, 'Padding', 12, ...
                 'RowSpacing', 10);
             c.runSummary = uilabel(grid, 'WordWrap', 'on', 'Text', '');
-            buttonGrid = uigridlayout(grid, [1, 3], 'ColumnWidth', {240, 200, '1x'}, 'Padding', 0);
+            buttonGrid = uigridlayout(grid, [1, 4], 'ColumnWidth', {240, 200, 280, '1x'}, 'Padding', 0);
             c.run = primaryButton(app, buttonGrid, '評価を始める', @(~, ~) app.onRun());
             c.resumeRun = uibutton(buttonGrid, 'Text', '続きから再開', 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~, ~) app.onResumeRun(), 'Tooltip', ['「一時中断」で止めた評価の残りを計算します' ...
                 '（中断の後に設定を変えると再開できません）。']);
+            c.extendRun = uibutton(buttonGrid, 'Text', '条件を追加して評価（評価済みに足す）', 'Enable', 'off', ...
+                'ButtonPushedFcn', @(~, ~) app.onExtendRun(), 'Tooltip', ['評価の後に「2. 評価の設定」で手法や学習 Shot 数' ...
+                '（計測率）を増やしてから押すと、増えた組み合わせだけを計算して今の結果に加えます。データ・質的変数・制約・' ...
+                '評価の条件などを変えたときは追加できません（「評価を始める」で計算し直してください）。']);
             c.runStatus = uilabel(buttonGrid, 'WordWrap', 'on', 'Text', '');
             uilabel(grid, 'WordWrap', 'on', 'Text', ['評価の考え方：学習 Shot の計測値で推定し、学習しなかった Shot の計測値と比べます。' ...
                 '実データには計測ノイズが含まれるので、誤差は模擬データの評価（真の値と比べた値）より少し大きく出ます。' ...
-                '計算中は「一時中断」で途中までの結果を残して止め、「続きから再開」で残りを計算できます。']);
-            lower = uigridlayout(grid, [1, 2], 'ColumnWidth', {'1x', '1.5x'}, 'Padding', 0, 'ColumnSpacing', 12);
+                '計算中は「一時中断」で途中までの結果を残して止め、「続きから再開」で残りを計算できます。' ...
+                '評価の後に手法や学習 Shot 数を増やしたときは「条件を追加して評価」で、増えた分だけを計算して結果に足せます。']);
+            lower = uigridlayout(grid, [1, 2], 'ColumnWidth', {'1x', '2.4x'}, 'Padding', 0, 'ColumnSpacing', 12);
             logGrid = uigridlayout(lower, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 0);
             label(logGrid, '記録（データの確認・学習パターン・推定できなかった組み合わせ）');
             c.log = uitextarea(logGrid, 'Editable', 'off', 'Value', {''});
             % 計測マップ：評価の前に、学習に使う（計測する）Shot を Wafer 上で確かめる
             mapPanel = uipanel(lower, 'Title', '計測マップ（学習に使う Shot。評価の前に確かめられます）');
             mapGrid = uigridlayout(mapPanel, [4, 1], 'RowHeight', {'fit', 'fit', '1x', 90}, 'Padding', 8, 'RowSpacing', 6);
-            choose = uigridlayout(mapGrid, [1, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1.4x'}, 'Padding', 0);
+            choose = uigridlayout(mapGrid, [2, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1.4x'}, 'RowHeight', {66, 'fit'}, ...
+                'Padding', 0);
             label(choose, 'Wafer', 1, 1);
             onMeasure = @(~, ~) app.onDrawMeasurementMap();
-            c.measureWafer = uidropdown(choose, 'Items', {'—'}, 'ValueChangedFcn', onMeasure);
+            multiTip = 'Ctrl・Shift で複数選ぶと、Wafer × 学習パターンの図を並べます（最大 6 枚）。';
+            c.measureWafer = uilistbox(choose, 'Items', {'—'}, 'ItemsData', {1}, 'Multiselect', 'on', 'Tooltip', multiTip);
             place(c.measureWafer, 1, 2);
             label(choose, '学習パターン', 1, 3);
-            c.measurePlan = uidropdown(choose, 'Items', {'—'}, 'ValueChangedFcn', onMeasure);
+            c.measurePlan = uilistbox(choose, 'Items', {'—'}, 'Multiselect', 'on', 'Tooltip', multiTip);
             place(c.measurePlan, 1, 4);
+            c.measureScan = uicheckbox(choose, 'Text', 'Scan 方向を色で示す（緑 ▲ = 1、紫 ▼ = 2）', 'Value', true, ...
+                'ValueChangedFcn', onMeasure, 'Tooltip', ['緑の枠と ▲ が Scan 方向 1、紫の枠と ▼ が Scan 方向 2 の Shot' ...
+                '（Scan 方向の制約で Shot 数がそろっているかを確かめる）。']);
+            place(c.measureScan, 2, [1, 2]);
+            c.measureRings = uicheckbox(choose, 'Text', '同心円の区切り（制約）を描く', 'Value', true, ...
+                'ValueChangedFcn', onMeasure, 'Tooltip', ['I 最適・ランダムで同心円の制約を使うとき、区切りの半径（Shot 中心' ...
+                'の半径）を橙の一点鎖線で描きます。']);
+            place(c.measureRings, 2, [3, 4]);
             buttons = uigridlayout(mapGrid, [1, 3], 'ColumnWidth', {'fit', 'fit', 'fit'}, 'Padding', 0);
             c.drawMeasure = uibutton(buttons, 'Text', '計測マップを作る', 'ButtonPushedFcn', onMeasure);
             c.saveMeasure = uibutton(buttons, 'Text', '図を画像で保存…', 'ButtonPushedFcn', @(~, ~) app.onSaveMeasurementMap());
             c.exportMeasure = uibutton(buttons, 'Text', '計測マップを Excel に書き出す…', ...
                 'ButtonPushedFcn', @(~, ~) app.onExportMeasurementMap(), 'Tooltip', ['選んだ Wafer の Shot ごとに、' ...
                 'すべての学習パターンで計測するか（1）しないか（0）を書き出します。']);
-            % 図は専用の格子に入れる（凡例は図の親の格子に入るので、ほかの部品と同じ格子だと配置がずれるため）
-            c.measureAxes = uiaxes(uigridlayout(mapGrid, [1, 1], 'Padding', 0), 'Visible', 'off');
+            % 図は専用の枠に、並べる数に合わせて tiledlayout で作る（凡例を1つにまとめて右に置くため）
+            c.measurePanel = uipanel(mapGrid, 'BorderType', 'none');
+            c.measureAxes = gobjects(1, 0);
             c.measureInfo = uitextarea(mapGrid, 'Editable', 'off', 'Value', ...
                 {'「2. 評価の設定」で学習 Shot の選び方を決め、Wafer と学習パターンを選んで「計測マップを作る」を押してください。'});
             app.Controls = mergeStruct(app.Controls, c);
@@ -2038,10 +2370,14 @@ classdef AlignmentEstimationApp < handle
             end
         end
 
-        function results = evaluate(app, showProgress, previous, pauseAfter)
-            % 評価を実行して（previous があれば続きから）結果の画面を更新する。pauseAfter 件で一時中断する
+        function results = evaluate(app, showProgress, previous, pauseAfter, mode)
+            % 評価を実行して（previous があれば続きから、mode = "extend" なら条件を足して）結果の画面を更新する。
+            % pauseAfter 件で一時中断する
+            if nargin < 5
+                mode = "resume";
+            end
             c = app.Controls;
-            set([c.run, c.resumeRun], 'Enable', 'off');
+            set([c.run, c.resumeRun, c.extendRun], 'Enable', 'off');
             restore = onCleanup(@() set(c.run, 'Enable', 'on'));
             c.runStatus.Text = "計算中…";
             c.runStatus.FontColor = [0, 0, 0];
@@ -2058,21 +2394,29 @@ classdef AlignmentEstimationApp < handle
             end
             progressFcn = @(done, total, message) reportProgress(done, total, message);
             try
-                results = alignest.runEvaluation(app.Data, app.Settings, progressFcn, previous);
+                results = alignest.runEvaluation(app.Data, app.Settings, progressFcn, previous, mode);
             catch err
                 closeDialog(dialog);
                 c.runStatus.Text = "⚠ 評価を実行できませんでした。";
                 c.runStatus.FontColor = app.ERROR_COLOR;
+                c.extendRun.Enable = onOff(~isempty(app.BaseResults) && ~isImportedResults(app.BaseResults));
+                c.resumeRun.Enable = onOff(~isempty(app.BaseResults) && app.BaseResults.cancelled && ...
+                    ~isImportedResults(app.BaseResults));
                 rethrow(err);
             end
             closeDialog(dialog);
-            app.Results = results;
-            app.MapCache = containers.Map('KeyType', 'char', 'ValueType', 'any');
+            app.BaseResults = results;
+            app.Results = alignest.filterResults(results, app.Data, app.ResultFilter);
+            app.MapCache = estimateCache(results);
             nFailed = nnz(results.table.note ~= "");
             if results.cancelled
                 status = sprintf(['一時中断しました：%d / %d 件を計算済み（%.0f 秒）。結果一覧には途中までの結果が' ...
                     '出ています。「続きから再開」で残りを計算します。'], height(results.table), results.nTotal, ...
                     results.elapsedSeconds);
+            elseif mode == "extend"
+                status = sprintf("追加の評価が完了：新たに %d 件を計算し、評価済みの %d 件と合わせて %d 件になりました" + ...
+                    "（計算時間は合計 %.0f 秒）。", height(results.table) - height(previous.table), height(previous.table), ...
+                    height(results.table), results.elapsedSeconds);
             else
                 status = sprintf("完了：%d 件を %.0f 秒で計算しました%s。", height(results.table), results.elapsedSeconds, ...
                     ternary(isempty(previous), "", "（一時中断の前と後の合計）"));
@@ -2081,9 +2425,10 @@ classdef AlignmentEstimationApp < handle
                 status = status + sprintf(" うち %d 件は推定できませんでした（理由は下の記録）。", nFailed);
             end
             c.runStatus.Text = status;
-            c.log.Value = cellstr([status; results.log(:)]);
+            c.log.Value = cellstr([status; results.additions(:); results.log(:)]);
             refreshResultControls(app);
             c.resumeRun.Enable = onOff(results.cancelled);
+            c.extendRun.Enable = 'on';
             app.TabGroup.SelectedTab = app.Tabs.results;
 
             function continueRun = reportProgress(done, total, message)
@@ -2108,6 +2453,12 @@ classdef AlignmentEstimationApp < handle
         function onResumeRun(app)
             runWithAlert(app, @() app.resumeEvaluation(true), "続きから再開できませんでした", ...
                 "「評価を始める」で最初から計算してください。");
+        end
+
+        function onExtendRun(app)
+            runWithAlert(app, @() app.extendEvaluation(true), "条件を追加して評価できませんでした", ...
+                "「2. 評価の設定」で増やしたのが手法か学習 Shot 数（計測率）だけか確かめてください。" + ...
+                "ほかの設定を変えたときは「評価を始める」で最初から計算してください。");
         end
 
         function onCompareDistributions(app)
@@ -2146,7 +2497,7 @@ classdef AlignmentEstimationApp < handle
                 return
             end
             target = fullfile(folder, fileName);
-            if runWithAlert(app, @() exportgraphics(app.Controls.measureAxes, target, 'Resolution', 150), ...
+            if runWithAlert(app, @() exportgraphics(app.Controls.measurePanel, target, 'Resolution', 150), ...
                     "計測マップを保存できませんでした", "保存先のフォルダを変えてもう一度試してください。")
                 uialert(app.Figure, sprintf('計測マップを保存しました：%s', target), '保存しました', 'Icon', 'success');
             end
@@ -2187,6 +2538,35 @@ classdef AlignmentEstimationApp < handle
             counts = max(1, round(rates / 100 * nCandidates));
             text = sprintf("。%s（候補 %d Shot）では %s Shot", unit.label, nCandidates, ...
                 previewList(counts, app.LIST_PREVIEW_COUNT));
+        end
+
+        function text = exchangeText(app)
+            % 交換法で学習パターンを作る時間の目安（alignest.exchangeSecondsGuide。I 最適のときだけ）
+            c = app.Controls;
+            text = "";
+            if string(c.samplingMethod.Value) ~= "ioptimal"
+                return
+            end
+            nCandidates = 99;
+            source = "候補 99 Shot として";
+            if ~isempty(app.Data)
+                unit = app.Data.units(1);
+                nCandidates = nnz(unit.shots.nValidX + unit.shots.nValidY > 0);
+                source = sprintf("%s の候補 %d Shot で", unit.label, nCandidates);
+            end
+            try
+                if string(c.countBy.Value) == "rate"
+                    rates = alignest.measurementRateList(c.rateStart.Value, c.rateEnd.Value, c.rateStep.Value);
+                    counts = max(1, round(rates / 100 * nCandidates));
+                else
+                    counts = alignest.shotCountList(c.nShotsStart.Value, c.nShotsEnd.Value, c.nShotsStep.Value);
+                end
+            catch
+                return   % 学習 Shot 数の欄が正しくないとき（欄の下に理由が出る）
+            end
+            seconds = alignest.exchangeSecondsGuide(counts, c.exchangeStarts.Value, nCandidates);
+            text = sprintf("→ 目安（%s）：学習パターン1つ 約 %s〜%s、全 %d 個で 約 %s（配置が同じ Wafer は使い回す）", ...
+                source, durationText(min(seconds)), durationText(max(seconds)), numel(counts), durationText(sum(seconds)));
         end
 
         function text = requiredText(app)
@@ -2279,9 +2659,11 @@ classdef AlignmentEstimationApp < handle
             if ~isequal(string(c.measurePlan.Items), labels)
                 previous = string(c.measurePlan.Value);
                 c.measurePlan.Items = cellstr(labels);
-                if any(labels == previous)
-                    c.measurePlan.Value = char(previous);
+                kept = previous(ismember(previous, labels));
+                if isempty(kept)
+                    kept = labels(1);
                 end
+                c.measurePlan.Value = cellstr(kept);
             end
             units = "—";
             if ~isempty(app.Data)
@@ -2289,19 +2671,17 @@ classdef AlignmentEstimationApp < handle
             end
             if ~isequal(string(c.measureWafer.Items), units)
                 c.measureWafer.Items = cellstr(units);
-                c.measureWafer.ItemsData = 1:numel(units);
-                c.measureWafer.Value = 1;
+                c.measureWafer.ItemsData = num2cell(1:numel(units));
+                c.measureWafer.Value = {1};
             end
             signature = {app.Settings.sampling, app.Settings.data.waferRadiusMm, numel(app.Data)};
-            if ~isequaln(signature, c.measureAxes.UserData)
+            if ~isequaln(signature, c.measurePanel.UserData)
                 app.MeasurementCache = [];
-                if c.measureAxes.Visible == "on"
-                    cla(c.measureAxes, 'reset');
-                    legend(c.measureAxes, 'off');
-                    c.measureAxes.Visible = 'off';
+                if ~isempty(c.measurePanel.Children)
+                    clearMeasurePanel(app);
                     c.measureInfo.Value = {'設定またはデータが変わりました。「計測マップを作る」で作り直してください。'};
                 end
-                c.measureAxes.UserData = signature;
+                c.measurePanel.UserData = signature;
             end
         end
 
@@ -2321,9 +2701,22 @@ classdef AlignmentEstimationApp < handle
             end
         end
 
+        function layout = resetMeasurePanel(app, nPanels)
+            % 計測マップの枠を空にし、nPanels 枚を並べる tiledlayout を作る（枠の縦横に合わせ、1枚が最も大きくなる並べ方）
+            clearMeasurePanel(app);
+            [nRows, nColumns] = tileShape(app.Controls.measurePanel, nPanels);
+            layout = tiledlayout(app.Controls.measurePanel, nRows, nColumns, 'TileSpacing', 'compact', 'Padding', 'compact');
+        end
+
+        function clearMeasurePanel(app)
+            % 描いた計測マップを消す（枠の中の tiledlayout と図）
+            delete(app.Controls.measurePanel.Children);
+            app.Controls.measureAxes = gobjects(1, 0);
+        end
+
         % ================= 4. 結果一覧 =================
         function buildResultsTab(app)
-            grid = uigridlayout(app.Tabs.results, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 12, 'RowSpacing', 10);
+            grid = uigridlayout(app.Tabs.results, [3, 1], 'RowHeight', {'fit', 'fit', '1x'}, 'Padding', 12, 'RowSpacing', 8);
             controls = uigridlayout(grid, [3, 7], 'ColumnWidth', {260, 160, '1x', 'fit', 'fit', 'fit', 'fit'}, 'Padding', 0, ...
                 'RowHeight', {'fit', 'fit', 0});
             label(controls, '指標', 1, 1);
@@ -2359,6 +2752,7 @@ classdef AlignmentEstimationApp < handle
             c.resultSource.Layout.Row = 3;
             c.resultSource.Layout.Column = [1, 7];
             c.resultControls = controls;
+            c.filterResults = buildFilterControls(app, grid, "results");
 
             % 表・グラフ・比較・誤差の分布は、それぞれ画面の幅いっぱいに出す（手法の名前が切れないように）
             c.resultTabs = uitabgroup(grid);
@@ -2419,7 +2813,7 @@ classdef AlignmentEstimationApp < handle
             c.analyze = uibutton(analysisControls, 'Text', '分析する', 'ButtonPushedFcn', @(~, ~) app.onAnalyze());
             place(c.analyze, 2, 4);
             c.estimateScope = uidropdown(analysisControls, 'Items', {'左で選んだ手法・学習パターン・Wafer', ...
-                'すべての手法・学習パターン・Wafer（時間がかかる）'}, 'ItemsData', {'selected', 'all'});
+                'すべての手法・学習パターン・Wafer（行が多い）'}, 'ItemsData', {'selected', 'all'});
             place(c.estimateScope, 2, 5);
             c.exportEstimates = uibutton(analysisControls, 'Text', '推定値を Excel に書き出す…', ...
                 'ButtonPushedFcn', @(~, ~) app.onExportEstimates());
@@ -2439,6 +2833,22 @@ classdef AlignmentEstimationApp < handle
                 'Tooltip', ['評価点は学習しなかった Shot の有効な Mark。選んだ Wafer の評価点をまとめて検定します。' ...
                 'Shapiro–Wilk は 5000 点以下のときだけ計算し、判定に使います（超えるときは Anderson–Darling）。' ...
                 '「ほかの変数で調整」は、ほかの質的変数の効果を差し引いた主効果（交互作用なし、Type II）の検定です。']);
+            % 残差の箱ひげ図：「推定値と誤差の分布」で分析した残差を、質的変数の水準ごとに X・Y 別に描く（ANOVA の中身を見る）
+            c.boxTab = uitab(c.resultTabs, 'Title', '残差の箱ひげ図（ANOVA）');
+            boxGrid = uigridlayout(c.boxTab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 8, 'RowSpacing', 8);
+            boxControls = uigridlayout(boxGrid, [1, 3], 'ColumnWidth', {'fit', 260, '1x'}, 'Padding', 0);
+            label(boxControls, '質的変数', 1, 1);
+            c.boxFactor = uidropdown(boxControls, 'Items', {'—'}, 'Enable', 'off', ...
+                'ValueChangedFcn', @(~, ~) app.onDrawResidualBoxplot(), 'Tooltip', ['「推定値と誤差の分布」の ANOVA と同じ' ...
+                '質的変数（Scan 方向・Mark 番号・Shot 行の奇偶・工程・装置・ロット・その他の列）。']);
+            place(c.boxFactor, 1, 2);
+            boxHelp = label(boxControls, ['「推定値と誤差の分布」で「分析する」を押した残差を描きます。箱は四分位範囲、中の線は' ...
+                '中央値、ひげは箱から 1.5 × 四分位範囲まで、外の点は外れ値、◆ は平均（ANOVA は水準の平均の違いを調べる）。'], 1, 3);
+            boxHelp.FontColor = [0.35, 0.35, 0.35];
+            boxAxesGrid = uigridlayout(boxGrid, [1, 2], 'Padding', 0, 'ColumnSpacing', 12);
+            c.boxAxes = [uiaxes(boxAxesGrid), uiaxes(boxAxesGrid)];
+            set(c.boxAxes, 'Visible', 'off');
+            c.boxInfo = uilabel(boxGrid, 'WordWrap', 'on', 'Text', '');
             c.scatterTab = uitab(c.resultTabs, 'Title', '推定値と実測値の散布図');
             scatterGrid = uigridlayout(c.scatterTab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 8, 'RowSpacing', 8);
             scatterControls = uigridlayout(scatterGrid, [2, 5], 'ColumnWidth', {'1x', 150, 220, 240, 'fit'}, ...
@@ -2454,7 +2864,8 @@ classdef AlignmentEstimationApp < handle
             c.scatterWafer = uidropdown(scatterControls, 'Items', {'—'});
             place(c.scatterWafer, 2, 3);
             c.scatterColor = uidropdown(scatterControls, 'Items', {'—'}, ...
-                'Tooltip', '点の色を分ける項目（LotID・EqpId・Operation・Scan 方向・Mark 番号・Shot 行・ファイルのその他の列）');
+                'Tooltip', ['点の色を分ける項目（LotID・EqpId・Operation・Scan 方向・Mark 番号・Shot 行・外周と内側' ...
+                '（「2. 評価の設定」の外周の半径）・象限・ファイルのその他の列）']);
             place(c.scatterColor, 2, 4);
             c.drawScatterButton = uibutton(scatterControls, 'Text', '描く', 'ButtonPushedFcn', @(~, ~) app.onDrawScatter());
             place(c.drawScatterButton, 2, 5);
@@ -2498,7 +2909,154 @@ classdef AlignmentEstimationApp < handle
                 '底 2）は分布の一致性で、0 なら同じ、1 なら重なりなし（同じ区間で求める）。'];
             c.distributionInfo = uilabel(distributionGrid, 'WordWrap', 'on', 'Text', distributionNote, ...
                 'UserData', string(distributionNote));
+            % 処理時間の内訳：1つの条件の処理を段階（学習パターンの作成・異常値の判定・学習・推論など）に分けて測る
+            c.timingTab = uitab(c.resultTabs, 'Title', '処理時間の内訳');
+            timingGrid = uigridlayout(c.timingTab, [4, 1], 'RowHeight', {'fit', '1x', 120, 'fit'}, 'Padding', 8, ...
+                'RowSpacing', 8);
+            timingControls = uigridlayout(timingGrid, [2, 5], 'ColumnWidth', {220, 220, '1x', 110, 'fit'}, ...
+                'RowHeight', {'fit', 66}, 'Padding', 0);
+            label(timingControls, 'Wafer', 1, 1);
+            label(timingControls, '学習パターン', 1, 2);
+            label(timingControls, '手法（Ctrl・Shift で複数選ぶ）', 1, 3);
+            label(timingControls, '測る回数', 1, 4);
+            c.timingWafer = uidropdown(timingControls, 'Items', {'—'}, 'Enable', 'off');
+            place(c.timingWafer, 2, 1);
+            c.timingPlan = uidropdown(timingControls, 'Items', {'—'}, 'Enable', 'off');
+            place(c.timingPlan, 2, 2);
+            c.timingMethods = uilistbox(timingControls, 'Items', {}, 'Multiselect', 'on', 'Enable', 'off');
+            place(c.timingMethods, 2, 3);
+            c.timingRepeats = uispinner(timingControls, 'Limits', app.TIMING_REPEAT_LIMITS, 'Value', 3, ...
+                'RoundFractionalValues', 'on', 'Enable', 'off', 'Tooltip', '同じ計算を何回測って中央値をとるか（多いほど安定するが遅い）。');
+            place(c.timingRepeats, 2, 4);
+            c.measureTimingButton = uibutton(timingControls, 'Text', '測る', 'Enable', 'off', ...
+                'ButtonPushedFcn', @(~, ~) app.onMeasureTiming());
+            place(c.measureTimingButton, 2, 5);
+            timingAxesGrid = uigridlayout(timingGrid, [1, 2], 'ColumnWidth', {'1x', '1.2x'}, 'Padding', 0, 'ColumnSpacing', 12);
+            c.timingAxes = [uiaxes(timingAxesGrid), uiaxes(timingAxesGrid)];
+            set(c.timingAxes, 'Visible', 'off');
+            c.timingTable = uitable(timingGrid, 'RowName', {}, 'ColumnName', {'手法'});
+            timingNote = ['選んだ Wafer・学習パターン・手法の1回分の処理（学習パターンの作成 → 異常値の判定 → 推定の準備 → ' ...
+                '学習 → 推論 → 評価指標・Overlay 補正の評価）を、評価と同じ関数で測ります（評価の結果は変えません）。' ...
+                '学習と推論は、全評価点を推定した時間と評価点を1点にした時間の差を推論としています。評価では学習パターンを' ...
+                '同じ配置の Wafer・手法で使い回すので、評価全体に占める作成の割合はこれより小さくなります。'];
+            c.timingInfo = uilabel(timingGrid, 'WordWrap', 'on', 'Text', timingNote, 'UserData', string(timingNote));
             app.Controls = mergeStruct(app.Controls, c);
+        end
+
+        function f = buildFilterControls(app, parent, source)
+            % 評価点の絞り込みの欄。「4. 結果一覧」と「5. Waferごとのマップ」に同じものを置き、どちらで変えても両方をそろえる
+            f.grid = uigridlayout(parent, [2, 14], 'ColumnWidth', {'fit', 64, 'fit', 64, 'fit', 175, 110, 'fit', 80, 'fit', ...
+                160, 'fit', 'fit', '1x'}, 'RowHeight', {'fit', 'fit'}, 'Padding', 0, 'ColumnSpacing', 6, 'RowSpacing', 2);
+            filterTip = ['評価点（学習しなかった Shot の Mark）を、Mark の半径・Shot の条件で絞り込み、指標を計算し直して' ...
+                '表・グラフ・比較・マップを描き直します（推定はやり直しません）。'];
+            title_ = label(f.grid, '評価点の絞り込み：半径 [mm]', 1, 1);
+            title_.FontWeight = 'bold';
+            title_.Tooltip = filterTip;
+            f.radiusMin = uieditfield(f.grid, 'numeric', 'Limits', [0, Inf], 'Value', 0, 'ValueDisplayFormat', '%g', ...
+                'Tooltip', 'Mark の半径の下限 [mm]（この値以上）');
+            place(f.radiusMin, 1, 2);
+            label(f.grid, '〜', 1, 3);
+            f.radiusMax = uieditfield(f.grid, 'numeric', 'Limits', [0, Inf], 'Value', Inf, 'ValueDisplayFormat', '%g', ...
+                'Tooltip', 'Mark の半径の上限 [mm]（この値未満。Inf なら上限なし）');
+            place(f.radiusMax, 1, 4);
+            label(f.grid, 'Shot', 1, 5);
+            f.shotMode = uidropdown(f.grid, 'Items', {'すべて', '右の shotNo だけ', '右の shotNo を除く'}, ...
+                'ItemsData', {'all', 'include', 'exclude'});
+            place(f.shotMode, 1, 6);
+            f.shotNos = uieditfield(f.grid, 'text', 'Placeholder', '例：1 5 12', ...
+                'Tooltip', 'shotNo を空白またはカンマで区切って入れます。');
+            place(f.shotNos, 1, 7);
+            label(f.grid, 'Scan', 1, 8);
+            f.scan = uidropdown(f.grid, 'Items', {'すべて', '1', '2'}, 'ItemsData', {0, 1, 2});
+            place(f.scan, 1, 9);
+            label(f.grid, '最外周', 1, 10);
+            f.outer = uidropdown(f.grid, 'Items', {'含める', '最外周の Shot だけ', '最外周の Shot を除く'}, ...
+                'ItemsData', {'all', 'only', 'exclude'}, 'Tooltip', '最外周の Shot：上下左右のどこかに隣の Shot が無い Shot');
+            place(f.outer, 1, 11);
+            f.apply = uibutton(f.grid, 'Text', '絞り込んで再計算', 'Enable', 'off', 'Tooltip', filterTip, ...
+                'ButtonPushedFcn', @(~, ~) app.onApplyFilter(source));
+            place(f.apply, 1, 12);
+            f.clear = uibutton(f.grid, 'Text', '解除', 'Enable', 'off', 'ButtonPushedFcn', @(~, ~) app.onClearFilter());
+            place(f.clear, 1, 13);
+            f.status = uilabel(f.grid, 'WordWrap', 'on', 'Text', '絞り込みなし');
+            place(f.status, 2, [1, 14]);
+        end
+
+        function onApplyFilter(app, source)
+            % 押した側（結果一覧・マップ）の欄から条件を読んで絞り込む
+            controls = app.Controls.(ternary(source == "map", "filterMap", "filterResults"));
+            runWithAlert(app, @() app.applyResultFilter(readFilterControls(controls)), "絞り込めませんでした", ...
+                "半径は 下限 < 上限 にし、shotNo を使うときは整数を空白で区切って入れてください。");
+        end
+
+        function onClearFilter(app)
+            runWithAlert(app, @() app.applyResultFilter(), "絞り込みを解除できませんでした", ...
+                "もう一度「解除」を押してください。");
+        end
+
+        function showFilter(app)
+            % 絞り込みの条件を、結果一覧とマップの両方の欄と説明に出す
+            filter = app.ResultFilter;
+            [~, text, active] = alignest.pointFilterMask(filter);
+            status = "絞り込みなし";
+            if active && ~isempty(app.Results)
+                if isImportedResults(app.Results)
+                    status = "絞り込み中：" + text + "（Excel から読み込んだ結果の表・グラフは計算し直せません。" + ...
+                        "読み込んだ推定値の図・分布・散布図だけに使います）";
+                else
+                    base = app.BaseResults.table;
+                    shown = app.Results.table;
+                    status = sprintf("絞り込み中：%s（評価点 %d / %d 点。X・Y の合計、全行）", text, ...
+                        sum(shown.nTest_X + shown.nTest_Y), sum(base.nTest_X + base.nTest_Y));
+                end
+            elseif active
+                status = "絞り込みの条件：" + text;
+            end
+            for name = ["filterResults", "filterMap"]
+                if ~isfield(app.Controls, name)
+                    continue
+                end
+                f = app.Controls.(name);
+                f.radiusMin.Value = filter.radiusMinMm;
+                f.radiusMax.Value = filter.radiusMaxMm;
+                f.shotMode.Value = char(filter.shotMode);
+                f.shotNos.Value = char(strjoin(string(filter.shotNos), " "));
+                f.scan.Value = filter.scan;
+                f.outer.Value = char(filter.outer);
+                f.status.Text = status;
+                f.status.FontColor = ternary(active, app.PRIMARY_COLOR, [0, 0, 0]);
+                f.clear.Enable = onOff(active && ~isempty(app.Results));
+            end
+        end
+
+        function clearPointViews(app)
+            % 絞り込みを変えたら、評価点から描いた図・表（分布・箱ひげ図・散布図・分布の比較）を消す（古い点のままにしない）
+            c = app.Controls;
+            app.Analysis = [];
+            app.Distribution = [];
+            c.normalityTable.Data = {};
+            c.anovaTable.Data = {};
+            c.distributionTable.Data = {};
+            c.jsTable.Data = {};
+            for ax = [c.histogramAxes, c.scatterAxes, c.boxAxes, c.distributionAxes]
+                cla(ax, 'reset');
+                legend(ax, 'off');
+            end
+            set([c.boxAxes, c.distributionAxes], 'Visible', 'off');
+            c.boxFactor.Items = {'—'};
+            c.boxFactor.Enable = 'off';
+            c.boxInfo.Text = '';
+            c.analysisNote.Text = c.analysisNote.UserData;
+        end
+
+        function onDrawResidualBoxplot(app)
+            runWithAlert(app, @() app.drawResidualBoxplot(), "箱ひげ図を描けませんでした", ...
+                "「推定値と誤差の分布」で「分析する」を押してから、質的変数を選び直してください。");
+        end
+
+        function onMeasureTiming(app)
+            runWithAlert(app, @() app.measureTiming(), "処理時間を測れませんでした", ...
+                "Wafer・学習パターン・手法を選び直してから、もう一度「測る」を押してください。");
         end
 
         function refreshResultControls(app)
@@ -2557,10 +3115,14 @@ classdef AlignmentEstimationApp < handle
             c.mapMethod.Items = cellstr(labels);
             c.mapMethod.ItemsData = 1:numel(labels);
             set([c.mapWafer, c.mapPlan, c.mapMethod, c.mapMode, c.mapScale, c.mapMarkerSize, c.mapMarkerShape, c.mapEllipse, ...
-                c.mapEllipseOnly, c.mapShotFrames, c.saveMap], 'Enable', 'on');
+                c.mapEllipseOnly, c.mapShotFrames, c.saveMap, c.mapScanFrames, c.mapRings, c.mapView, c.mapCompareValue, ...
+                c.mapConditions, c.mapAddCondition, c.mapRemoveCondition, c.mapClearConditions], 'Enable', 'on');
+            app.MapConditions = app.MapConditions([]);   % 結果が変わると Wafer・手法の番号が変わるので、一覧は空にする
+            refreshMapConditions(app);
+            c.mapView.Value = 'single';
             c.mapContent.Enable = onOff(isfield(results, "overlayEvaluated") && results.overlayEvaluated && ...
                 (~imported || height(app.ImportedEstimates.overlayPoints) > 0));
-            c.mapShotFrames.Enable = onOff(~imported);   % 読み込んだ推定値には Shot 中心の座標が無い
+            set([c.mapShotFrames, c.mapScanFrames], 'Enable', onOff(~imported));   % 読み込んだ推定値には Shot 中心の座標が無い
             if c.mapContent.Enable == "off"
                 c.mapContent.Value = 'estimate';
             end
@@ -2586,9 +3148,9 @@ classdef AlignmentEstimationApp < handle
             c.scatterWafer.ItemsData = c.analysisWafer.ItemsData;
             c.scatterWafer.Value = 0;
             if imported
-                [colorKeys, colorLabels] = scatterColorChoices(app.ImportedEstimates.estimates);
+                [colorKeys, colorLabels] = scatterColorChoices(app.ImportedEstimates.estimates, results.settings);
             else
-                [colorKeys, colorLabels] = scatterColorChoices(app.Data);
+                [colorKeys, colorLabels] = scatterColorChoices(app.Data, results.settings);
             end
             c.scatterColor.Items = cellstr(colorLabels);
             c.scatterColor.ItemsData = cellstr(colorKeys);
@@ -2604,6 +3166,19 @@ classdef AlignmentEstimationApp < handle
             c.distributionWafer.Value = 0;
             set([c.distributionMethod, c.distributionGroup, c.distributionWafer, c.distributionAxis, ...
                 c.compareDistributionsButton], 'Enable', 'on');
+            % 処理時間の内訳（計測データを読み込んで評価した結果だけ。初めは推定値と誤差の分布と同じ手法・最も多い学習 Shot 数）
+            c.timingWafer.Items = cellstr(results.unitLabels);
+            c.timingWafer.ItemsData = 1:numel(results.unitLabels);
+            c.timingWafer.Value = 1;
+            c.timingPlan.Items = cellstr(planLabels);
+            c.timingPlan.Value = char(planLabels(end));
+            c.timingMethods.Items = cellstr(labels);
+            c.timingMethods.ItemsData = num2cell(1:numel(labels));
+            c.timingMethods.Value = {order(1)};
+            set([c.timingWafer, c.timingPlan, c.timingMethods, c.timingRepeats, c.measureTimingButton], ...
+                'Enable', onOff(~imported && ~isempty(app.Data)));
+            set([c.filterResults.apply, c.filterMap.apply], 'Enable', 'on');
+            showFilter(app);
             refreshResults(app);
             drawMap(app);
         end
@@ -2845,6 +3420,7 @@ classdef AlignmentEstimationApp < handle
             end
             if isImportedResults(app.Results)
                 [estimates, messages, overlayPoints] = importedEstimates(app, selection, includeTraining);
+                estimates = filterEstimates(app, estimates);
                 return
             end
             dialog = [];
@@ -2861,6 +3437,36 @@ classdef AlignmentEstimationApp < handle
                 includeTraining=includeTraining);
             if cancelled
                 error('alignest:cancelled', '途中で止めました。');
+            end
+            estimates = filterEstimates(app, estimates);
+        end
+
+        function estimates = filterEstimates(app, estimates)
+            % 評価点の絞り込み（結果一覧・マップと同じ条件）に合わない評価の行を除く（学習の行はそのまま）
+            [~, ~, active] = alignest.pointFilterMask(app.ResultFilter);
+            if ~active || height(estimates) == 0
+                return
+            end
+            if isImportedResults(app.Results)
+                mask = alignest.pointFilterMask(app.ResultFilter, estimates);
+            else
+                mask = true(height(estimates), 1);
+                [~, unitOfRow] = ismember(estimates.Wafer, app.Results.unitLabels);
+                for u = unique(unitOfRow(unitOfRow > 0)).'
+                    unitMask = alignest.unitPointFilter(app.Data.units(u), app.ResultFilter);
+                    rows = unitOfRow == u;
+                    mask(rows) = unitMask(estimates.markIndex(rows));
+                end
+            end
+            estimates = estimates(estimates.role ~= "評価" | mask, :);
+        end
+
+        function text = filterNote(app)
+            % 説明の文の後ろに付ける、絞り込みの条件（絞り込んでいなければ空）
+            [~, description, active] = alignest.pointFilterMask(app.ResultFilter);
+            text = "";
+            if active
+                text = "｜評価点の絞り込み：" + description;
             end
         end
 
@@ -2893,7 +3499,7 @@ classdef AlignmentEstimationApp < handle
             selection = app.Analysis.selection;
             scopeText = sprintf("%s｜%s｜Wafer %d 枚", results.methods(selection.methodIndex).label, selection.groups, ...
                 numel(selection.unitIndex));
-            note = "分析した範囲：" + scopeText + "。" + c.analysisNote.UserData;
+            note = "分析した範囲：" + scopeText + filterNote(app) + "。" + c.analysisNote.UserData;
             if ~isempty(app.Analysis.messages)
                 note = note + " ⚠ 推定できなかった組み合わせ：" + strjoin(app.Analysis.messages, "／");
             end
@@ -2927,6 +3533,19 @@ classdef AlignmentEstimationApp < handle
                 case "row"
                     categories = repmat("偶数行", n, 1);
                     categories(estimates.shotRowParity == 1) = "奇数行";
+                case "outer"
+                    % 外周の RMSE と同じ境目（Mark の半径が外周の半径以上なら外周）。凡例は 内側 → 外周 の順
+                    outerMm = alignest.upgradeRadiusSettings(app.Results.settings).evaluation.outerRadiusMm;
+                    names = [sprintf("内側（半径 %g mm 未満）", outerMm), sprintf("外周（半径 %g mm 以上）", outerMm)];
+                    categories = categorical(names(1 + (estimates.r >= outerMm)).', names);
+                    return
+                case "quadrant"
+                    % I 最適の4象限の制約と同じ分け方（偏角で数え、軸の上は反時計回りに次の象限）。Mark の座標で分ける
+                    names = ["第1象限（x > 0, y > 0）", "第2象限（x < 0, y > 0）", "第3象限（x < 0, y < 0）", ...
+                        "第4象限（x > 0, y < 0）"];
+                    angle = mod(atan2(estimates.y, estimates.x), 2 * pi);
+                    categories = categorical(names(mod(floor(angle / (pi / 2)), 4) + 1).', names);
+                    return
                 otherwise
                     column = extractAfter(colorBy, "col:");
                     categories = repmat("（空）", n, 1);
@@ -2976,7 +3595,8 @@ classdef AlignmentEstimationApp < handle
 
         % ================= 5. Waferごとのマップ =================
         function buildMapTab(app)
-            grid = uigridlayout(app.Tabs.map, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 12, 'RowSpacing', 10);
+            grid = uigridlayout(app.Tabs.map, [5, 1], 'RowHeight', {'fit', 'fit', 'fit', '1x', 'fit'}, 'Padding', 12, ...
+                'RowSpacing', 8);
             controls = uigridlayout(grid, [2, 11], 'ColumnWidth', {170, 140, '2x', '1x', 110, 110, 80, 70, 80, 'fit', 'fit'}, ...
                 'Padding', 0, 'RowHeight', {'fit', 'fit'});
             label(controls, 'Wafer・平均', 1, 1);
@@ -3018,113 +3638,471 @@ classdef AlignmentEstimationApp < handle
             place(c.mapEllipseOnly, 1, [10, 11]);
             c.saveMap = uibutton(controls, 'Text', '図を画像で保存…', 'ButtonPushedFcn', @(~, ~) app.onSaveMap());
             place(c.saveMap, 2, 11);
-            set([c.mapWafer, c.mapPlan, c.mapMethod, c.mapContent, c.mapMode, c.mapScale, c.mapMarkerSize, ...
-                c.mapMarkerShape, c.mapEllipse, c.mapEllipseOnly, c.mapShotFrames, c.saveMap], 'Enable', 'off');
-            c.mapPanel = uipanel(grid, 'BorderType', 'none');
-            axesGrid = uigridlayout(c.mapPanel, [1, 3], 'Padding', 0, 'ColumnSpacing', 8);
+            % 図に重ねるもの：Scan 方向の色の Shot の枠・同心円の制約の区切り
+            extras = uigridlayout(grid, [1, 3], 'ColumnWidth', {'fit', 'fit', '1x'}, 'Padding', 0);
+            c.mapScanFrames = uicheckbox(extras, 'Text', 'Shot の枠を Scan 方向で色分け（緑 ▲ = 1、紫 ▼ = 2）', ...
+                'ValueChangedFcn', onChange, 'Tooltip', ['Shot の枠を Scan 方向の色で描き、枠の左上に ▲（Scan 方向 1）・' ...
+                '▼（Scan 方向 2）を付けます。Scan 方向が無い Shot は灰色の枠です。']);
+            c.mapRings = uicheckbox(extras, 'Text', '同心円の区切り（制約）を描く', 'ValueChangedFcn', onChange, ...
+                'Tooltip', ['評価で I 最適・ランダムの同心円の制約を使ったとき、区切りの半径（Shot 中心の半径 [mm]）を' ...
+                '橙の一点鎖線で描きます。']);
+            c.mapExtrasInfo = uilabel(extras, 'Text', '', 'FontColor', [0.35, 0.35, 0.35]);
+            c.filterMap = buildFilterControls(app, grid, "map");
+            % 図（1つの条件の3枚、または並べて比べる図）と、並べて比べる条件の一覧
+            body = uigridlayout(grid, [1, 2], 'ColumnWidth', {'1x', 300}, 'Padding', 0, 'ColumnSpacing', 10);
+            c.mapPanel = uipanel(body, 'BorderType', 'none');
+            c.mapStack = uigridlayout(c.mapPanel, [2, 1], 'RowHeight', {'1x', 0}, 'Padding', 0, 'RowSpacing', 0);
+            axesGrid = uigridlayout(c.mapStack, [1, 3], 'Padding', 0, 'ColumnSpacing', 8);
             c.mapAxes = [uiaxes(axesGrid), uiaxes(axesGrid), uiaxes(axesGrid)];
+            c.comparePanel = uipanel(c.mapStack, 'BorderType', 'none');
+            c.compareAxes = gobjects(1, 0);
+            side = uigridlayout(body, [9, 1], 'RowHeight', {'fit', 'fit', 'fit', 'fit', 'fit', '1x', 'fit', 'fit', 'fit'}, ...
+                'Padding', 0, 'RowSpacing', 4);
+            label(side, '並べ方', 1, 1);
+            c.mapView = uidropdown(side, 'Items', {'1つの条件（計測値・推定値・残差）', '一覧の条件を並べて比べる'}, ...
+                'ItemsData', {'single', 'compare'}, 'ValueChangedFcn', onChange);
+            place(c.mapView, 2, 1);
+            label(side, '並べて比べる値', 3, 1);
+            c.mapCompareValue = uidropdown(side, 'Items', {'計測値', '推定値', '残差'}, 'ItemsData', {1, 2, 3}, 'Value', 3, ...
+                'ValueChangedFcn', onChange, 'Tooltip', ['並べた図はすべて同じ値の種類で、矢印の倍率と色の範囲をそろえて' ...
+                '描きます（上の「図の内容」が Overlay 補正なら、補正した残差・推定による変化）。']);
+            place(c.mapCompareValue, 4, 1);
+            label(side, sprintf('比べる条件（最大 %d。上の選択を追加）', app.MAX_COMPARE_PANELS), 5, 1);
+            c.mapConditions = uilistbox(side, 'Items', {}, 'Multiselect', 'on');
+            place(c.mapConditions, 6, 1);
+            c.mapAddCondition = uibutton(side, 'Text', '上の条件を一覧に追加', ...
+                'ButtonPushedFcn', @(~, ~) app.onAddMapCondition(), 'Tooltip', ['上で選んだ Wafer・平均、学習パターン、手法を' ...
+                '一覧に足して、並べて描きます（Wafer どうし、手法どうし、学習パターンどうしを比べられます）。']);
+            place(c.mapAddCondition, 7, 1);
+            c.mapRemoveCondition = uibutton(side, 'Text', '選んだ条件を外す', ...
+                'ButtonPushedFcn', @(~, ~) app.removeMapConditions(cell2mat(app.Controls.mapConditions.Value)));
+            place(c.mapRemoveCondition, 8, 1);
+            c.mapClearConditions = uibutton(side, 'Text', '一覧を空にする', ...
+                'ButtonPushedFcn', @(~, ~) app.removeMapConditions(1:numel(app.MapConditions)));
+            place(c.mapClearConditions, 9, 1);
+            set([c.mapWafer, c.mapPlan, c.mapMethod, c.mapContent, c.mapMode, c.mapScale, c.mapMarkerSize, ...
+                c.mapMarkerShape, c.mapEllipse, c.mapEllipseOnly, c.mapShotFrames, c.saveMap, c.mapScanFrames, c.mapRings, ...
+                c.mapView, c.mapCompareValue, c.mapConditions, c.mapAddCondition, c.mapRemoveCondition, ...
+                c.mapClearConditions], 'Enable', 'off');
             c.mapInfo = uilabel(grid, 'WordWrap', 'on', 'Text', '「3. 実行」で評価すると、ここに Wafer ごとの図が出ます。');
             app.Controls = mergeStruct(app.Controls, c);
         end
 
         function drawMap(app)
-            if isempty(app.Results)
-                return
-            end
-            if isImportedResults(app.Results)
-                if ~isempty(app.ImportedEstimates)
-                    drawImportedMap(app);
-                end
+            % 「5. Waferごとのマップ」を描く：1つの条件の 計測値・推定値・残差（または Overlay 補正の3つ）を並べるか、
+            % 一覧の条件を同じ値の種類で並べて比べる
+            if isempty(app.Results) || (isImportedResults(app.Results) && isempty(app.ImportedEstimates))
                 return
             end
             c = app.Controls;
-            option = c.mapWafer.UserData(c.mapWafer.Value);
-            if option.isGroup
-                drawGroupMap(app, option);
+            content = string(c.mapContent.Value);
+            overlayContent = content == "overlay";
+            names = ternary(overlayContent, ["実測値で補正した残差", "推定値で補正した残差", "推定による変化"], ...
+                ["計測値", "推定値", "残差"]);
+            if ~isequal(string(c.mapCompareValue.Items), names)
+                c.mapCompareValue.Items = cellstr(names);   % ItemsData（1〜3）と選んだ番号はそのまま
+            end
+            rings = activeZoneEdges(app.Results.settings);
+            c.mapRings.Enable = onOff(~isempty(rings));
+            c.mapExtrasInfo.Text = ternary(isempty(rings), "（この評価では同心円の制約を使っていません）", ...
+                "区切り：" + strjoin(string(rings), "・") + " mm");
+            compare = string(c.mapView.Value) == "compare";
+            c.mapStack.RowHeight = ternary(compare, {0, '1x'}, {'1x', 0});
+            if compare
+                drawComparison(app);
                 return
             end
-            u = option.unitIndex;
-            planLabel = string(c.mapPlan.Value);
-            m = c.mapMethod.Value;
-            planIndex = find(string({app.Results.plans.label}) == planLabel & [app.Results.plans.unitIndex] == u, 1);
-            if isempty(planIndex)
-                c.mapInfo.Text = "⚠ この Wafer はこの学習パターンを計算していません（途中で止めた場合など）。";
+            f = mapFields(app, c.mapWafer.Value, string(c.mapPlan.Value), c.mapMethod.Value, content);
+            if ~f.ok
+                c.mapInfo.Text = f.message;
                 arrayfun(@(ax) cla(ax), c.mapAxes);
                 return
             end
-            unit = app.Data.units(u);
-            marks = unit.marks;
-            method = app.Results.methods(m);
-            plan = app.Results.plans(planIndex);
-            if ~plan.ok
-                c.mapInfo.Text = "⚠ この Wafer ではこの学習パターンを作れませんでした：" + plan.message;
-                arrayfun(@(ax) cla(ax), c.mapAxes);
+            [scale, limit, magnitudes] = mapScales(app, f.values, 1 + overlayContent, overlayContent);
+            for k = 1:3
+                drawMapPanel(app, c.mapAxes(k), f, k, scale(k), limit, magnitudes(k), f.titles(k), true);
+            end
+            c.mapInfo.Text = f.info;
+        end
+
+        function drawComparison(app)
+            % 一覧の条件を、選んだ値の種類で並べて描く（矢印の倍率・色の範囲・矢印の色の範囲はすべての図で共通）
+            c = app.Controls;
+            delete(c.comparePanel.Children);
+            app.Controls.compareAxes = gobjects(1, 0);
+            conditions = app.MapConditions;
+            if isempty(conditions)
+                c.mapInfo.Text = "比べる条件がありません。上で Wafer・平均、学習パターン、手法を選び、右の「上の条件を一覧に追加」を" + ...
+                    "押してください。";
                 return
             end
-            try
-                out = cachedEstimate(app, u, planIndex, m);
-            catch err
-                c.mapInfo.Text = "⚠ この組み合わせでは推定できませんでした：" + string(err.message);
-                arrayfun(@(ax) cla(ax), c.mapAxes);
+            content = string(c.mapContent.Value);
+            valueIndex = c.mapCompareValue.Value;
+            nPanels = min(numel(conditions), app.MAX_COMPARE_PANELS);
+            fieldsList = cell(1, nPanels);
+            lines = strings(nPanels, 1);
+            for k = 1:nPanels
+                fieldsList{k} = mapFields(app, conditions(k).option, conditions(k).plan, conditions(k).method, content);
+                lines(k) = conditions(k).label + "：" + ternary(fieldsList{k}.ok, sprintf("RMSE（X・Y）%.3f nm", ...
+                    fieldsList{k}.rmse), fieldsList{k}.message);
+            end
+            usable = cellfun(@(f) f.ok, fieldsList);
+            if ~any(usable)
+                c.mapInfo.Text = strjoin(lines, "　／　");
                 return
             end
-            if string(c.mapContent.Value) == "overlay"
-                drawOverlayMap(app, unit, plan, method, out);
-                return
+            values = cellfun(@(f) f.values, fieldsList(usable), 'UniformOutput', false);
+            stacked = cell2mat(cellfun(@(v) v{valueIndex}, values(:), 'UniformOutput', false));
+            [scale, limit] = mapScales(app, {stacked, stacked, stacked}, 1, false);
+            magnitude = max([0; hypot(stacked(:, 1), stacked(:, 2))], [], 'omitnan');
+            [nRows, nColumns] = tileShape(c.comparePanel, nPanels);
+            layout = tiledlayout(c.comparePanel, nRows, nColumns, 'TileSpacing', 'compact', 'Padding', 'compact');
+            axesList = gobjects(1, nPanels);
+            for k = 1:nPanels
+                ax = nexttile(layout);
+                axesList(k) = ax;
+                f = fieldsList{k};
+                if ~f.ok
+                    title(ax, conditions(k).label + newline + "（描けません）", 'Interpreter', 'none', 'FontSize', 10);
+                    axis(ax, 'off');
+                    continue
+                end
+                titleText = conditions(k).label + newline + f.titles(valueIndex) + sprintf("（RMSE %.3f nm）", f.rmse);
+                drawMapPanel(app, ax, f, valueIndex, scale(1), limit, magnitude, titleText, false);
+                ax.FontSize = app.SMALL_AXES_FONT_SIZE;
+                if ~isempty(ax.Colorbar)
+                    % 色の目盛りの名前は横に書く（並べた図では上に書くと題名と重なる）
+                    ax.Colorbar.Label.String = ax.Colorbar.Title.String;
+                    ax.Colorbar.Title.String = '';
+                end
             end
-            measured = nan(numel(marks.x), 2);
-            estimate = nan(numel(marks.x), 2);
-            measured(out.testIndex.X, 1) = marks.measX(out.testIndex.X);
-            measured(out.testIndex.Y, 2) = marks.measY(out.testIndex.Y);
-            estimate(out.testIndex.X, 1) = out.estimate.X;
-            estimate(out.testIndex.Y, 2) = out.estimate.Y;
-            evaluated = any(isfinite(measured), 2);
-            residual = measured - estimate;
-            trainMarks = ismember(marks.shotIndex, plan.shotIndex) & (marks.validX | marks.validY);
-            trainPoints = [marks.x(trainMarks), marks.y(trainMarks)];
-            outlierIndex = zeros(0, 1);
-            if isfield(out, "outlierIndex")
-                outlierIndex = out.outlierIndex;
+            app.Controls.compareAxes = axesList;
+            header = sprintf("並べて比べる：%s（%d 条件。矢印の倍率・色の範囲は共通。灰色の四角は学習に使った Mark）", ...
+                string(c.mapCompareValue.Items{valueIndex}), nPanels);
+            if numel(conditions) > nPanels
+                header = header + sprintf("。一覧の %d 条件のうち、はじめの %d 条件を描きました", numel(conditions), nPanels);
             end
-            outlierPoints = [marks.x(outlierIndex), marks.y(outlierIndex)];
-            points = [marks.x(evaluated), marks.y(evaluated)];
-            scale = c.mapScale.Value;
-            if scale <= 0
-                scale = alignest.plot.vectorScale(measured(evaluated, :));
+            c.mapInfo.Text = header + "｜" + strjoin(lines, "　／　") + filterNote(app);
+        end
+
+        function drawMapPanel(app, ax, f, k, scale, limit, magnitude, titleText, showLegend)
+            % マップの1枚（mapFields の k 番目の値）を描く。Shot の枠・Scan 方向の色・同心円の区切りは画面の選択に従う
+            c = app.Controls;
+            settings = app.Results.settings;
+            centers = zeros(0, 2);
+            sizeMm = [NaN, NaN];
+            directions = zeros(0, 1);
+            if c.mapShotFrames.Value || c.mapScanFrames.Value
+                centers = f.centers;
+                sizeMm = f.sizeMm;
+                if c.mapScanFrames.Value
+                    directions = f.directions;
+                end
             end
-            mode = string(c.mapMode.Value);
-            limit = max(abs(measured(isfinite(measured))), [], 'all');
-            if isempty(limit)
+            rings = zeros(1, 0);
+            if c.mapRings.Value
+                rings = activeZoneEdges(settings);
+            end
+            ellipseSigma = c.mapEllipse.Value * f.isGroup;
+            alignest.plot.waferMap(ax, f.points, f.values{k}, mode=string(c.mapMode.Value), scaleMmPerNm=scale, ...
+                colorLimit=limit, trainPoints=f.trainPoints, outlierPoints=f.outlierPoints, titleText=titleText, ...
+                waferRadiusMm=settings.data.waferRadiusMm, magnitudeLimit=magnitude, arrowColor=app.ARROW_COLORS(k, :), ...
+                markerSize=c.mapMarkerSize.Value, markerShape=c.mapMarkerShape.Value, shotCenters=centers, ...
+                shotSizeMm=sizeMm, shotDirections=directions, ringRadiiMm=rings, covariance=f.covariance{k}, ...
+                ellipseSigma=ellipseSigma, showArrows=~(c.mapEllipseOnly.Value && ellipseSigma > 0), showLegend=showLegend);
+            ax.FontSize = app.AXES_FONT_SIZE;
+        end
+
+        function [scale, limit, magnitudes] = mapScales(app, values, referenceIndex, separateThird)
+            % 矢印の倍率（0 = 自動なら基準の値から）・色の範囲（基準の値の最大の絶対値）・矢印の色の範囲。
+            % separateThird（Overlay 補正）なら、3つ目（推定による変化）は小さいので自分の値で倍率を決める
+            c = app.Controls;
+            reference = values{referenceIndex};
+            scale = repmat(c.mapScale.Value, 1, 3);
+            if c.mapScale.Value <= 0
+                scale(:) = alignest.plot.vectorScale(reference);
+                if separateThird
+                    scale(3) = alignest.plot.vectorScale(values{3});
+                end
+            end
+            limit = max(abs(reference(isfinite(reference))), [], 'all');
+            if isempty(limit) || limit <= 0
                 limit = 1;
             end
-            panels = {measured(evaluated, :), "計測値（評価した Shot）"; estimate(evaluated, :), "推定値"; ...
-                residual(evaluated, :), "残差（計測値 − 推定値）"};
-            magnitudes = sharedMagnitudeLimits(panels{1, 1}, panels{2, 1});
-            [centers, sizeMm] = shotFrameData(unit, c.mapShotFrames.Value);
-            for k = 1:3
-                alignest.plot.waferMap(c.mapAxes(k), points, panels{k, 1}, mode=mode, scaleMmPerNm=scale, ...
-                    colorLimit=limit, trainPoints=trainPoints, outlierPoints=outlierPoints, titleText=panels{k, 2}, ...
-                    waferRadiusMm=app.Results.settings.data.waferRadiusMm, magnitudeLimit=magnitudes(k), ...
-                    markerSize=c.mapMarkerSize.Value, markerShape=c.mapMarkerShape.Value, shotCenters=centers, ...
-                    shotSizeMm=sizeMm);
-                c.mapAxes(k).FontSize = app.AXES_FONT_SIZE;
-            end
-            row = app.Results.table(app.Results.table.unitIndex == u & app.Results.table.planIndex == planIndex & ...
-                app.Results.table.methodIndex == m, :);
-            if isempty(row)
-                metricsText = "";
+            magnitudes = sharedMagnitudeLimits(values{1}, values{2});
+        end
+
+        function f = mapFields(app, optionIndex, planLabel, m, content)
+            % 1つの条件（Wafer・平均 × 学習パターン × 手法）のマップの値。描けないときは f.ok = false、f.message に理由。
+            % f.values{1〜3}：計測値・推定値・残差（content = "overlay" なら 実測値で補正した残差・推定値で補正した残差・
+            % 推定による変化）。点数 × 2 [nm]、点の座標は f.points。平均（f.isGroup）では座標ごとの Wafer 間の平均と
+            % 共分散（f.covariance）。評価点の絞り込みの条件に合う点だけを入れる。f.rmse は RMSE（X・Y）の値（平均なら
+            % Wafer の平均）、f.info は図の下の説明
+            c = app.Controls;
+            results = app.Results;
+            option = c.mapWafer.UserData(optionIndex);
+            method = results.methods(m);
+            f = struct("ok", false, "message", "", "points", zeros(0, 2), "values", {cell(1, 3)}, ...
+                "covariance", {repmat({zeros(0, 3)}, 1, 3)}, "titles", strings(1, 3), "trainPoints", zeros(0, 2), ...
+                "outlierPoints", zeros(0, 2), "centers", zeros(0, 2), "sizeMm", [NaN, NaN], "directions", zeros(0, 1), ...
+                "isGroup", option.isGroup, "rmse", NaN, "info", "");
+            overlayContent = string(content) == "overlay";
+            if overlayContent && option.isGroup
+                f.titles = ["実測値で補正した残差の平均", "推定値で補正した残差の平均", "推定による変化の平均"];
+            elseif overlayContent
+                f.titles = ["実測値で補正した残差", "推定値で補正した残差", "推定による変化（推定値で補正 − 実測値で補正）"];
+            elseif option.isGroup
+                f.titles = ["計測値の平均（評価した Shot）", "推定値の平均", "残差（計測値 − 推定値）の平均"];
             else
+                f.titles = ["計測値（評価した Shot）", "推定値", "残差（計測値 − 推定値）"];
+            end
+            try
+                if isImportedResults(results)
+                    f = importedMapFields(app, f, option, string(planLabel), method, m, overlayContent);
+                else
+                    f = computedMapFields(app, f, option, string(planLabel), method, m, overlayContent);
+                end
+            catch err
+                f.ok = false;
+                f.message = "⚠ " + string(err.message);
+            end
+            if f.ok
+                f.info = f.info + filterNote(app);
+            end
+        end
+
+        function f = computedMapFields(app, f, option, planLabel, method, m, overlayContent)
+            % このセッションで評価した結果のマップの値（推定値は評価のときの値を使い回す。alignest.compactEstimate）
+            results = app.Results;
+            settings = results.settings;
+            plans = results.plans;
+            [~, ~, filterActive] = alignest.pointFilterMask(app.ResultFilter);
+            if overlayContent
+                choice = alignest.overlayChoice(settings);
+            end
+            pointsList = cell(1, 0);
+            panelValues = {cell(1, 0), cell(1, 0), cell(1, 0)};
+            firstUnit = [];
+            skipped = 0;
+            for u = option.unitIndex
+                planIndex = find(string({plans.label}) == planLabel & [plans.unitIndex] == u, 1);
+                if isempty(planIndex) || ~plans(planIndex).ok
+                    if ~option.isGroup && isempty(planIndex)
+                        f.message = "⚠ この Wafer はこの学習パターンを計算していません（途中で止めた場合など）。";
+                        return
+                    elseif ~option.isGroup
+                        f.message = "⚠ この Wafer ではこの学習パターンを作れませんでした：" + plans(planIndex).message;
+                        return
+                    end
+                    skipped = skipped + 1;
+                    continue
+                end
+                try
+                    out = cachedEstimate(app, u, planIndex, m);
+                catch err
+                    if ~option.isGroup
+                        f.message = "⚠ この組み合わせでは推定できませんでした：" + string(err.message);
+                        return
+                    end
+                    skipped = skipped + 1;
+                    continue
+                end
+                unit = app.Data.units(u);
+                marks = unit.marks;
+                mask = true(numel(marks.x), 1);
+                if filterActive
+                    mask = alignest.unitPointFilter(unit, app.ResultFilter);
+                end
+                if overlayContent
+                    correction = alignest.overlayCorrection(unit, out, ...
+                        alignest.overlayProjector(unit, choice, settings.data.waferRadiusMm), mask);
+                    usable = (marks.validX | marks.validY) & mask;
+                    values = {correction.fields.residualActual, correction.fields.residualEstimated, correction.fields.change};
+                else
+                    measured = nan(numel(marks.x), 2);
+                    estimate = nan(numel(marks.x), 2);
+                    measured(out.testIndex.X, 1) = marks.measX(out.testIndex.X);
+                    measured(out.testIndex.Y, 2) = marks.measY(out.testIndex.Y);
+                    estimate(out.testIndex.X, 1) = out.estimate.X;
+                    estimate(out.testIndex.Y, 2) = out.estimate.Y;
+                    usable = any(isfinite(measured), 2) & mask;
+                    values = {measured, estimate, measured - estimate};
+                end
+                pointsList{end + 1} = [marks.x(usable), marks.y(usable)]; %#ok<AGROW>
+                for k = 1:3
+                    panelValues{k}{end + 1} = values{k}(usable, :);
+                end
+                if isempty(firstUnit)
+                    % 学習 Shot の四角・異常値の × は最初の Wafer の位置（平均の図でも）
+                    firstUnit = unit;
+                    plan = plans(planIndex);
+                    trainMarks = ismember(marks.shotIndex, plan.shotIndex) & (marks.validX | marks.validY) & mask;
+                    f.trainPoints = [marks.x(trainMarks), marks.y(trainMarks)];
+                    if ~overlayContent && ~option.isGroup && isfield(out, "outlierIndex")
+                        outlierIndex = out.outlierIndex(mask(out.outlierIndex));
+                        f.outlierPoints = [marks.x(outlierIndex), marks.y(outlierIndex)];
+                    end
+                    firstOut = out;
+                    firstMask = mask;
+                    if overlayContent
+                        firstCorrection = correction;
+                    end
+                end
+            end
+            if isempty(firstUnit)
+                f.message = "⚠ この平均に使える Wafer がありません（学習パターンを作れなかった、または推定できなかった）。";
+                return
+            end
+            if sum(cellfun(@(points) size(points, 1), pointsList)) == 0
+                f.message = "⚠ 評価点の絞り込みの条件に合う点がありません（「解除」または条件を変えてください）。";
+                return
+            end
+            shots = firstUnit.shots;
+            f.centers = [shots.Xmm, shots.Ymm];
+            f.sizeMm = firstUnit.shotSizeMm;
+            f.directions = nan(numel(shots.Xmm), 1);
+            if firstUnit.hasDirection
+                f.directions = shots.direction;
+            end
+            table_ = results.table;
+            if option.isGroup
+                for k = 1:3
+                    average = alignest.averageFields(pointsList, panelValues{k});
+                    f.values{k} = average.mean;
+                    f.covariance{k} = average.covariance;
+                end
+                f.points = average.points;
+                rows = table_(ismember(table_.unitIndex, option.unitIndex) & table_.plan == planLabel & ...
+                    table_.methodIndex == m, :);
+                f.rmse = mean(rows.RMSE_XY, 'omitnan');
+                f.info = sprintf(['%s｜%s｜%s｜平均した Wafer %d 枚%s｜座標ごとに Wafer 間で平均（楕円は Wafer 間の' ...
+                    'ばらつき、色は X・Y の相関係数の絶対値 |r|）｜Wafer ごとの RMSE（X・Y）の平均 %.3f nm'], option.label, ...
+                    planLabel, method.label, numel(pointsList), ternary(skipped > 0, sprintf("（使えなかった Wafer %d 枚）", ...
+                    skipped), ""), f.rmse);
+                f.ok = true;
+                return
+            end
+            f.points = pointsList{1};
+            f.values = cellfun(@(values) values{1}, panelValues, 'UniformOutput', false);
+            if overlayContent
+                metrics = firstCorrection.metrics;
+                f.rmse = mean(table_.RMSE_XY(table_.unitIndex == option.unitIndex & table_.planIndex == planIndex & ...
+                    table_.methodIndex == m));
+                f.info = sprintf(['%s｜%s｜%s｜補正モデル：%s｜|平均|+3σ [nm]：実測値で補正 X %.3f・Y %.3f、' ...
+                    '推定値で補正 X %.3f・Y %.3f、推定による変化 X %.3f・Y %.3f（増加 X %+.3f・Y %+.3f）'], firstUnit.label, ...
+                    planLabel, method.label, choice.description, metrics.overlayActual_X, metrics.overlayActual_Y, ...
+                    metrics.overlayEstimated_X, metrics.overlayEstimated_Y, metrics.overlayChange_X, metrics.overlayChange_Y, ...
+                    metrics.overlayIncrease_X, metrics.overlayIncrease_Y);
+                f.ok = true;
+                return
+            end
+            row = table_(table_.unitIndex == option.unitIndex & table_.planIndex == planIndex & table_.methodIndex == m, :);
+            metricsText = "";
+            if ~isempty(row)
+                f.rmse = row.RMSE_XY;
                 metricsText = sprintf("RMSE（X・Y）%.3f nm、X %.3f nm、Y %.3f nm｜R² %.3f｜MAE %.3f nm｜平均値に対する改善率 %.1f%%", ...
                     row.RMSE_XY, row.RMSE_X, row.RMSE_Y, row.R2_XY, row.MAE_XY, row.improveMeanPct_XY);
             end
             outlierText = "";
-            evaluation = app.Results.settings.evaluation;
+            evaluation = settings.evaluation;
             if isfield(evaluation, "excludeOutliers") && evaluation.excludeOutliers
-                outlierText = sprintf("｜学習から除いた異常値 %d 点（%gσ 超、×印）", numel(outlierIndex), evaluation.outlierSigma);
+                outlierText = sprintf("｜学習から除いた異常値 %d 点（%gσ 超、×印）", size(f.outlierPoints, 1), ...
+                    evaluation.outlierSigma);
             end
-            c.mapInfo.Text = sprintf("%s｜%s｜%s｜学習 Shot %d（shotNo：%s）｜評価点 X %d・Y %d%s｜%s", unit.label, ...
-                plan.label, method.label, plan.nShots, strjoin(string(plan.shotNos(:).'), " "), numel(out.testIndex.X), ...
-                numel(out.testIndex.Y), outlierText, metricsText);
+            plan = plans(planIndex);
+            f.info = sprintf("%s｜%s｜%s｜学習 Shot %d（shotNo：%s）｜評価点 X %d・Y %d%s｜%s", firstUnit.label, ...
+                plan.label, method.label, plan.nShots, strjoin(string(plan.shotNos(:).'), " "), ...
+                nnz(firstMask(firstOut.testIndex.X)), nnz(firstMask(firstOut.testIndex.Y)), outlierText, metricsText);
+            f.ok = true;
+        end
+
+        function f = importedMapFields(app, f, option, planLabel, method, m, overlayContent)
+            % Excel から読み込んだ推定値のマップの値（Shot 中心の座標は Excel に無いので、Shot の枠は描かない）
+            results = app.Results;
+            if overlayContent
+                source = app.ImportedEstimates.overlayPoints;
+                columns = ["residualActual", "residualEstimated", "change"];
+            else
+                source = app.ImportedEstimates.estimates;
+                source = source(source.role == "評価" | startsWith(source.role, "学習"), :);
+                columns = ["meas", "estimate", "residual"];
+            end
+            [~, ~, filterActive] = alignest.pointFilterMask(app.ResultFilter);
+            pointsList = cell(1, 0);
+            panelValues = {cell(1, 0), cell(1, 0), cell(1, 0)};
+            for u = option.unitIndex
+                rows = source(source.Wafer == results.unitLabels(u) & source.plan == planLabel & ...
+                    source.methodId == method.id, :);
+                if height(rows) == 0
+                    continue
+                end
+                mask = true(height(rows), 1);
+                if filterActive
+                    % Overlay 残差のシートには半径・Scan 方向の列が無いので、座標から半径を求める（Scan 方向は無し）
+                    direction = nan(height(rows), 1);
+                    if any(rows.Properties.VariableNames == "direction")
+                        direction = rows.direction;
+                    end
+                    mask = alignest.pointFilterMask(app.ResultFilter, struct("r", hypot(rows.x, rows.y), ...
+                        "shotNo", rows.shotNo, "direction", direction));
+                end
+                train = startsWith(rows.role, "学習");
+                if isempty(pointsList)
+                    f.trainPoints = [rows.x(train & mask), rows.y(train & mask)];   % 平均の図でも最初の Wafer の位置
+                    outlier = rows.role == "学習（異常値として除外）" & mask;
+                    f.outlierPoints = [rows.x(outlier), rows.y(outlier)];
+                end
+                keep = mask;
+                if ~overlayContent
+                    keep = mask & ~train;   % 計測値・推定値・残差は評価点だけ
+                end
+                rows = rows(keep, :);
+                pointsList{end + 1} = [rows.x, rows.y]; %#ok<AGROW>
+                for k = 1:3
+                    panelValues{k}{end + 1} = [rows.(columns(k) + "X"), rows.(columns(k) + "Y")];
+                end
+            end
+            if isempty(pointsList)
+                f.message = "⚠ この Wafer・学習パターン・手法の推定値は、読み込んだ推定値の Excel にありません" + ...
+                    "（書き出した範囲の外）。";
+                return
+            end
+            if sum(cellfun(@(points) size(points, 1), pointsList)) == 0
+                f.message = "⚠ 評価点の絞り込みの条件に合う点がありません（「解除」または条件を変えてください）。";
+                return
+            end
+            if option.isGroup
+                for k = 1:3
+                    average = alignest.averageFields(pointsList, panelValues{k});
+                    f.values{k} = average.mean;
+                    f.covariance{k} = average.covariance;
+                end
+                f.points = average.points;
+                f.outlierPoints = zeros(0, 2);
+            else
+                f.points = pointsList{1};
+                f.values = cellfun(@(values) values{1}, panelValues, 'UniformOutput', false);
+            end
+            rows = results.table(ismember(results.table.unitIndex, option.unitIndex) & results.table.plan == planLabel & ...
+                results.table.methodIndex == m, :);
+            f.rmse = mean(rows.RMSE_XY, 'omitnan');
+            f.info = sprintf("%s｜%s｜%s｜Excel から読み込んだ推定値（Wafer %d 枚）｜Wafer ごとの RMSE（X・Y）の平均 %.3f nm", ...
+                option.label, planLabel, method.label, numel(pointsList), f.rmse);
+            f.ok = true;
+        end
+
+        function refreshMapConditions(app)
+            % 並べて比べる条件の一覧を画面に出す
+            c = app.Controls;
+            conditions = app.MapConditions;
+            c.mapConditions.Items = cellstr(string({conditions.label}));
+            c.mapConditions.ItemsData = num2cell(1:numel(conditions));
+            c.mapConditions.Value = {};
+        end
+
+        function onAddMapCondition(app)
+            runWithAlert(app, @() app.addMapCondition(), "条件を追加できませんでした", ...
+                "Wafer・平均、学習パターン、手法を選び直してください。");
         end
 
         function out = cachedEstimate(app, u, planIndex, m)
@@ -3142,107 +4120,6 @@ classdef AlignmentEstimationApp < handle
             app.MapCache(key) = out;
         end
 
-        function drawGroupMap(app, option)
-            % 全 Wafer・LotID・EqpId・Operation ごとの平均の図。同じ学習パターン・手法の各 Wafer の場を、座標ごとに平均する
-            c = app.Controls;
-            planLabel = string(c.mapPlan.Value);
-            m = c.mapMethod.Value;
-            method = app.Results.methods(m);
-            settings = app.Results.settings;
-            overlayContent = string(c.mapContent.Value) == "overlay";
-            if overlayContent
-                titles = ["実測値で補正した残差の平均", "推定値で補正した残差の平均", "推定による変化の平均"];
-                choice = alignest.overlayChoice(settings);
-            else
-                titles = ["計測値の平均（評価した Shot）", "推定値の平均", "残差（計測値 − 推定値）の平均"];
-            end
-            pointsList = cell(1, 0);
-            panelValues = {cell(1, 0), cell(1, 0), cell(1, 0)};
-            trainPoints = zeros(0, 2);
-            firstUnit = [];
-            skipped = 0;
-            for u = option.unitIndex
-                planIndex = find(string({app.Results.plans.label}) == planLabel & [app.Results.plans.unitIndex] == u, 1);
-                if isempty(planIndex) || ~app.Results.plans(planIndex).ok
-                    skipped = skipped + 1;
-                    continue
-                end
-                try
-                    out = cachedEstimate(app, u, planIndex, m);
-                catch
-                    skipped = skipped + 1;
-                    continue
-                end
-                unit = app.Data.units(u);
-                marks = unit.marks;
-                if overlayContent
-                    correction = alignest.overlayCorrection(unit, out, ...
-                        alignest.overlayProjector(unit, choice, settings.data.waferRadiusMm));
-                    usable = marks.validX | marks.validY;
-                    values = {correction.fields.residualActual, correction.fields.residualEstimated, ...
-                        correction.fields.change};
-                else
-                    measured = nan(numel(marks.x), 2);
-                    estimate = nan(numel(marks.x), 2);
-                    measured(out.testIndex.X, 1) = marks.measX(out.testIndex.X);
-                    measured(out.testIndex.Y, 2) = marks.measY(out.testIndex.Y);
-                    estimate(out.testIndex.X, 1) = out.estimate.X;
-                    estimate(out.testIndex.Y, 2) = out.estimate.Y;
-                    usable = any(isfinite(measured), 2);
-                    values = {measured, estimate, measured - estimate};
-                end
-                pointsList{end + 1} = [marks.x(usable), marks.y(usable)]; %#ok<AGROW>
-                for k = 1:3
-                    panelValues{k}{end + 1} = values{k}(usable, :);
-                end
-                if isempty(firstUnit)
-                    firstUnit = unit;
-                    trainMarks = ismember(marks.shotIndex, app.Results.plans(planIndex).shotIndex) & ...
-                        (marks.validX | marks.validY);
-                    trainPoints = [marks.x(trainMarks), marks.y(trainMarks)];
-                end
-            end
-            if isempty(firstUnit)
-                c.mapInfo.Text = "⚠ この平均に使える Wafer がありません（学習パターンを作れなかった、または推定できなかった）。";
-                arrayfun(@(ax) cla(ax), c.mapAxes);
-                return
-            end
-            averages = alignest.averageFields(pointsList, panelValues{1});
-            for k = 2:3
-                averages(k) = alignest.averageFields(pointsList, panelValues{k});
-            end
-            scale = repmat(c.mapScale.Value, 1, 3);
-            if c.mapScale.Value <= 0
-                reference = averages(1 + overlayContent).mean;
-                scale(:) = alignest.plot.vectorScale(reference);
-                if overlayContent
-                    scale(3) = alignest.plot.vectorScale(averages(3).mean);
-                end
-            end
-            reference = averages(1 + overlayContent).mean;
-            limit = max(abs(reference(isfinite(reference))), [], 'all');
-            if isempty(limit) || limit <= 0
-                limit = 1;
-            end
-            magnitudes = sharedMagnitudeLimits(averages(1).mean, averages(2).mean);
-            [centers, sizeMm] = shotFrameData(firstUnit, c.mapShotFrames.Value);
-            for k = 1:3
-                alignest.plot.waferMap(c.mapAxes(k), averages(k).points, averages(k).mean, mode=string(c.mapMode.Value), ...
-                    scaleMmPerNm=scale(k), colorLimit=limit, trainPoints=trainPoints, titleText=titles(k), ...
-                    waferRadiusMm=settings.data.waferRadiusMm, magnitudeLimit=magnitudes(k), arrowColor=app.ARROW_COLORS(k, :), ...
-                    markerSize=c.mapMarkerSize.Value, markerShape=c.mapMarkerShape.Value, shotCenters=centers, ...
-                    shotSizeMm=sizeMm, covariance=averages(k).covariance, ellipseSigma=c.mapEllipse.Value, ...
-                    showArrows=~(c.mapEllipseOnly.Value && c.mapEllipse.Value > 0));
-                c.mapAxes(k).FontSize = app.AXES_FONT_SIZE;
-            end
-            used = numel(pointsList);
-            rows = app.Results.table(ismember(app.Results.table.unitIndex, option.unitIndex) & ...
-                app.Results.table.plan == planLabel & app.Results.table.methodIndex == m, :);
-            c.mapInfo.Text = sprintf(['%s｜%s｜%s｜平均した Wafer %d 枚%s｜座標ごとに Wafer 間で平均（楕円は Wafer 間の' ...
-                'ばらつき、色は X・Y の相関係数の絶対値 |r|）｜Wafer ごとの RMSE（X・Y）の平均 %.3f nm'], option.label, planLabel, method.label, used, ...
-                ternary(skipped > 0, sprintf("（使えなかった Wafer %d 枚）", skipped), ""), mean(rows.RMSE_XY, 'omitnan'));
-        end
-
         function units = mapUnits(app)
             % マップの「Wafer・平均」の選択肢を作る Wafer の並び（読み込んだ結果では、結果の表の Wafer・LotID・EqpId・Operation）
             if ~isImportedResults(app.Results)
@@ -3256,143 +4133,6 @@ classdef AlignmentEstimationApp < handle
                 units(u) = struct("label", results.unitLabels(u), "lotId", results.table.LotID(row), ...
                     "eqpId", results.table.EqpId(row), "operation", results.table.Operation(row));
             end
-        end
-
-        function drawImportedMap(app)
-            % 読み込んだ推定値の Excel の値で、Wafer ごと・平均の図を描く（計測値・推定値・残差、または Overlay 補正の残差）。
-            % Shot 中心の座標は Excel に無いので Shot の枠は描かない
-            c = app.Controls;
-            results = app.Results;
-            option = c.mapWafer.UserData(c.mapWafer.Value);
-            planLabel = string(c.mapPlan.Value);
-            m = c.mapMethod.Value;
-            method = results.methods(m);
-            overlayContent = string(c.mapContent.Value) == "overlay";
-            if overlayContent
-                source = app.ImportedEstimates.overlayPoints;
-                columns = ["residualActual", "residualEstimated", "change"];
-                titles = ["実測値で補正した残差", "推定値で補正した残差", "推定による変化（推定値で補正 − 実測値で補正）"];
-            else
-                source = app.ImportedEstimates.estimates;
-                source = source(source.role == "評価" | startsWith(source.role, "学習"), :);
-                columns = ["meas", "estimate", "residual"];
-                titles = ["計測値（評価した Shot）", "推定値", "残差（計測値 − 推定値）"];
-            end
-            pointsList = cell(1, 0);
-            panelValues = {cell(1, 0), cell(1, 0), cell(1, 0)};
-            trainPoints = zeros(0, 2);
-            outlierPoints = zeros(0, 2);
-            for u = option.unitIndex
-                rows = source(source.Wafer == results.unitLabels(u) & source.plan == planLabel & ...
-                    source.methodId == method.id, :);
-                if height(rows) == 0
-                    continue
-                end
-                train = startsWith(rows.role, "学習");
-                if isempty(pointsList)
-                    trainPoints = [rows.x(train), rows.y(train)];   % 平均の図でも、学習 Shot の四角は最初の Wafer の位置
-                    outlier = rows.role == "学習（異常値として除外）";
-                    outlierPoints = [rows.x(outlier), rows.y(outlier)];
-                end
-                if ~overlayContent
-                    rows = rows(~train, :);   % 計測値・推定値・残差は評価点だけ
-                end
-                pointsList{end + 1} = [rows.x, rows.y]; %#ok<AGROW>
-                for k = 1:3
-                    panelValues{k}{end + 1} = [rows.(columns(k) + "X"), rows.(columns(k) + "Y")];
-                end
-            end
-            if isempty(pointsList)
-                c.mapInfo.Text = "⚠ この Wafer・学習パターン・手法の推定値は、読み込んだ推定値の Excel にありません" + ...
-                    "（書き出した範囲の外）。";
-                arrayfun(@(ax) cla(ax), c.mapAxes);
-                return
-            end
-            covariance = {zeros(0, 3), zeros(0, 3), zeros(0, 3)};
-            ellipseSigma = 0;
-            if option.isGroup
-                titles = titles + "の平均";
-                for k = 1:3
-                    average = alignest.averageFields(pointsList, panelValues{k});
-                    points = average.points;
-                    panelValues{k} = average.mean;
-                    covariance{k} = average.covariance;
-                end
-                ellipseSigma = c.mapEllipse.Value;
-                outlierPoints = zeros(0, 2);
-            else
-                points = pointsList{1};
-                panelValues = cellfun(@(values) values{1}, panelValues, 'UniformOutput', false);
-            end
-            reference = panelValues{1 + overlayContent};
-            scale = repmat(c.mapScale.Value, 1, 3);
-            if c.mapScale.Value <= 0
-                scale(:) = alignest.plot.vectorScale(reference);
-                if overlayContent
-                    scale(3) = alignest.plot.vectorScale(panelValues{3});
-                end
-            end
-            limit = max(abs(reference(isfinite(reference))), [], 'all');
-            if isempty(limit) || limit <= 0
-                limit = 1;
-            end
-            magnitudes = sharedMagnitudeLimits(panelValues{1}, panelValues{2});
-            for k = 1:3
-                alignest.plot.waferMap(c.mapAxes(k), points, panelValues{k}, mode=string(c.mapMode.Value), ...
-                    scaleMmPerNm=scale(k), colorLimit=limit, trainPoints=trainPoints, outlierPoints=outlierPoints, ...
-                    titleText=titles(k), waferRadiusMm=results.settings.data.waferRadiusMm, magnitudeLimit=magnitudes(k), ...
-                    arrowColor=app.ARROW_COLORS(k, :), markerSize=c.mapMarkerSize.Value, markerShape=c.mapMarkerShape.Value, ...
-                    covariance=covariance{k}, ellipseSigma=ellipseSigma, ...
-                    showArrows=~(c.mapEllipseOnly.Value && ellipseSigma > 0));
-                c.mapAxes(k).FontSize = app.AXES_FONT_SIZE;
-            end
-            rows = results.table(ismember(results.table.unitIndex, option.unitIndex) & results.table.plan == planLabel & ...
-                results.table.methodIndex == m, :);
-            c.mapInfo.Text = sprintf("%s｜%s｜%s｜Excel から読み込んだ推定値（Wafer %d 枚）｜Wafer ごとの RMSE（X・Y）の平均 %.3f nm", ...
-                option.label, planLabel, method.label, numel(pointsList), mean(rows.RMSE_XY, 'omitnan'));
-        end
-
-        function drawOverlayMap(app, unit, plan, method, out)
-            % 実測値で補正した残差・推定値で補正した残差・推定による変化 を並べる（全 Mark。灰色の四角は学習 Shot の Mark）
-            c = app.Controls;
-            settings = app.Results.settings;
-            choice = alignest.overlayChoice(settings);
-            projector = alignest.overlayProjector(unit, choice, settings.data.waferRadiusMm);
-            correction = alignest.overlayCorrection(unit, out, projector);
-            fields = correction.fields;
-            marks = unit.marks;
-            usable = marks.validX | marks.validY;
-            points = [marks.x(usable), marks.y(usable)];
-            trainMarks = ismember(marks.shotIndex, plan.shotIndex) & usable;
-            panels = {fields.residualActual(usable, :), "実測値で補正した残差"; ...
-                fields.residualEstimated(usable, :), "推定値で補正した残差"; ...
-                fields.change(usable, :), "推定による変化（推定値で補正 − 実測値で補正）"};
-            % 矢印の倍率が自動（0）なら、残差の2つは同じ倍率、推定による変化は小さいので別の倍率にする（左下の目盛りで読む）
-            scale = repmat(c.mapScale.Value, 1, 3);
-            if c.mapScale.Value <= 0
-                scale(1:2) = alignest.plot.vectorScale(fields.residualEstimated(usable, :));
-                scale(3) = alignest.plot.vectorScale(fields.change(usable, :));
-            end
-            limit = max(abs(fields.residualEstimated(isfinite(fields.residualEstimated))), [], 'all');
-            if isempty(limit) || limit <= 0
-                limit = 1;
-            end
-            magnitudes = sharedMagnitudeLimits(panels{1, 1}, panels{2, 1});
-            [centers, sizeMm] = shotFrameData(unit, c.mapShotFrames.Value);
-            for k = 1:3
-                alignest.plot.waferMap(c.mapAxes(k), points, panels{k, 1}, mode=string(c.mapMode.Value), ...
-                    scaleMmPerNm=scale(k), colorLimit=limit, trainPoints=[marks.x(trainMarks), marks.y(trainMarks)], ...
-                    titleText=panels{k, 2}, waferRadiusMm=settings.data.waferRadiusMm, magnitudeLimit=magnitudes(k), ...
-                    markerSize=c.mapMarkerSize.Value, markerShape=c.mapMarkerShape.Value, shotCenters=centers, ...
-                    shotSizeMm=sizeMm);
-                c.mapAxes(k).FontSize = app.AXES_FONT_SIZE;
-            end
-            metrics = correction.metrics;
-            c.mapInfo.Text = sprintf(['%s｜%s｜%s｜補正モデル：%s｜|平均|+3σ [nm]：実測値で補正 X %.3f・Y %.3f、' ...
-                '推定値で補正 X %.3f・Y %.3f、推定による変化 X %.3f・Y %.3f（増加 X %+.3f・Y %+.3f）'], unit.label, ...
-                plan.label, method.label, choice.description, metrics.overlayActual_X, metrics.overlayActual_Y, ...
-                metrics.overlayEstimated_X, metrics.overlayEstimated_Y, metrics.overlayChange_X, metrics.overlayChange_Y, ...
-                metrics.overlayIncrease_X, metrics.overlayIncrease_Y);
         end
 
         function onSaveMap(app)
@@ -3447,8 +4187,12 @@ classdef AlignmentEstimationApp < handle
 
         function clearResults(app)
             app.Results = [];
+            app.BaseResults = [];
             app.ImportedEstimates = [];
             app.Analysis = [];
+            app.Timing = [];
+            app.ResultFilter = alignest.defaultPointFilter();
+            app.MapConditions = app.MapConditions([]);
             app.MapCache = containers.Map('KeyType', 'char', 'ValueType', 'any');
             c = app.Controls;
             if ~isfield(c, 'summaryTable')
@@ -3462,6 +4206,20 @@ classdef AlignmentEstimationApp < handle
                 cla(ax);
                 legend(ax, 'off');
             end
+            for ax = [c.boxAxes, c.timingAxes]
+                cla(ax, 'reset');
+                legend(ax, 'off');
+                ax.Visible = 'off';
+            end
+            delete(c.comparePanel.Children);
+            app.Controls.compareAxes = gobjects(1, 0);
+            c.mapStack.RowHeight = {'1x', 0};
+            c.mapView.Value = 'single';
+            refreshMapConditions(app);
+            c.boxFactor.Items = {'—'};
+            c.boxInfo.Text = '';
+            c.timingTable.Data = {};
+            c.timingInfo.Text = c.timingInfo.UserData;
             c.chartAxes2.Visible = 'off';
             set([c.export, c.saveChart, c.mapWafer, c.mapPlan, c.mapMethod, c.mapContent, c.mapMode, c.mapScale, ...
                 c.mapMarkerSize, c.mapMarkerShape, c.mapEllipse, c.mapEllipseOnly, c.mapShotFrames, c.saveMap, c.analysisMethod, ...
@@ -3469,7 +4227,11 @@ classdef AlignmentEstimationApp < handle
                 c.analysisWafer, c.analyze, ...
                 c.estimateScope, c.exportEstimates, c.scatterMethod, c.scatterGroup, c.scatterWafer, c.scatterColor, ...
                 c.drawScatterButton, c.distributionMethod, c.distributionGroup, c.distributionWafer, c.distributionAxis, ...
-                c.compareDistributionsButton, c.resumeRun], 'Enable', 'off');
+                c.compareDistributionsButton, c.resumeRun, c.extendRun, c.mapScanFrames, c.mapRings, c.mapView, ...
+                c.mapCompareValue, c.mapConditions, c.mapAddCondition, c.mapRemoveCondition, c.mapClearConditions, ...
+                c.boxFactor, c.timingWafer, c.timingPlan, c.timingMethods, c.timingRepeats, c.measureTimingButton, ...
+                c.filterResults.apply, c.filterMap.apply], 'Enable', 'off');
+            showFilter(app);
             app.Distribution = [];
             c.distributionTable.Data = {};
             c.jsTable.Data = {};
@@ -3724,11 +4486,13 @@ control = uidropdown(parent, 'Items', {'なし', '1σ', '2σ', '3σ'}, 'ItemsDat
     '（灰色 = 相関なし、紫 = 強い相関。図の右上の目盛り）です。'], 'ValueChangedFcn', callback);
 end
 
-function [keys, labels] = scatterColorChoices(source)
+function [keys, labels] = scatterColorChoices(source, settings)
 % 散布図の色分けの選択肢（ファイルのその他の列も加える）。source は読み込んだデータ、または推定値の表
-% （読み込んだ推定値の Excel。その他の列は「質的変数:<列名>」の列だけ）
-keys = ["none", "wafer", "lot", "eqp", "operation", "scan", "mark", "row"];
-labels = ["なし（1色）", "Wafer", "LotID", "EqpId", "Operation", "Scan 方向", "Mark 番号", "Shot 行の奇偶"];
+% （読み込んだ推定値の Excel。その他の列は「質的変数:<列名>」の列だけ）。settings は評価の設定（外周の半径）
+outerMm = alignest.upgradeRadiusSettings(settings).evaluation.outerRadiusMm;
+keys = ["none", "wafer", "lot", "eqp", "operation", "scan", "mark", "row", "outer", "quadrant"];
+labels = ["なし（1色）", "Wafer", "LotID", "EqpId", "Operation", "Scan 方向", "Mark 番号", "Shot 行の奇偶", ...
+    sprintf("外周・内側（Mark の半径 %g mm で分ける）", outerMm), "象限（Mark の位置、第1〜第4象限）"];
 columns = strings(1, 0);
 if istable(source)
     names = string(source.Properties.VariableNames);
@@ -3936,5 +4700,76 @@ elseif seconds < 3600
     text = sprintf("%.0f 分", seconds / 60);
 else
     text = sprintf("%.1f 時間", seconds / 3600);
+end
+end
+
+function cache = estimateCache(results)
+% 評価で求めた評価点の推定値（results.pointEstimates）を、マップ・散布図・推定値の表で使い回す記憶に入れる
+% （キーは 'Wafer|学習パターン|手法' の番号。推定をやり直さずに描ける）
+cache = containers.Map('KeyType', 'char', 'ValueType', 'any');
+if ~isfield(results, "pointEstimates")
+    return
+end
+table_ = results.table;
+for k = 1:height(table_)
+    if ~isempty(results.pointEstimates{k})
+        cache(sprintf('%d|%d|%d', table_.unitIndex(k), table_.planIndex(k), table_.methodIndex(k))) = ...
+            results.pointEstimates{k};
+    end
+end
+end
+
+function filter = readFilterControls(controls)
+% 評価点の絞り込みの欄（buildFilterControls）から条件を作る
+filter = alignest.defaultPointFilter();
+filter.radiusMinMm = controls.radiusMin.Value;
+filter.radiusMaxMm = controls.radiusMax.Value;
+filter.shotMode = string(controls.shotMode.Value);
+[values, ok] = parseNumbers(controls.shotNos.Value);
+if ~ok || any(values ~= round(values))
+    error('alignest:pointFilter', 'shotNo は整数を空白またはカンマで区切って入れてください。');
+end
+filter.shotNos = reshape(unique(values), 1, []);
+filter.scan = controls.scan.Value;
+filter.outer = string(controls.outer.Value);
+end
+
+function validateFilter(filter)
+% 絞り込みの条件を確かめる（範囲が逆・shotNo が空など）
+if ~(filter.radiusMinMm >= 0) || ~(filter.radiusMaxMm > filter.radiusMinMm)
+    error('alignest:pointFilter', '半径は 0 以上で、下限 < 上限 にしてください（上限なしは Inf）。');
+end
+if filter.shotMode ~= "all" && isempty(filter.shotNos)
+    error('alignest:pointFilter', 'shotNo で絞り込むときは、右の欄に shotNo を入れてください。');
+end
+end
+
+function edges = activeZoneEdges(settings)
+% 同心円の制約の区切り [mm]（I 最適・ランダムで使うときだけ。手動・ファイルの優先順では制約を使わないので空）
+edges = zeros(1, 0);
+if any(string(settings.sampling.method) == ["ioptimal", "random"])
+    edges = alignest.zoneEdgesMm(settings.sampling, settings.data.waferRadiusMm);
+end
+end
+
+function [nRows, nColumns] = tileShape(panel, nPanels)
+% 図を並べる段と列の数：枠の幅・高さに合わせ、1枚（Wafer の正方形の図）が最も大きくなる並べ方にする
+% （枠の大きさがまだ決まっていないときは、3枚までは横に、4枚以上は2段に並べる）
+MIN_PANEL_SIZE = 50;
+position = panel.Position;
+nRows = 1 + (nPanels > 3);
+nColumns = ceil(nPanels / nRows);
+if numel(position) < 4 || position(3) < MIN_PANEL_SIZE || position(4) < MIN_PANEL_SIZE
+    return
+end
+best = 0;
+for rows = 1:nPanels
+    columns = ceil(nPanels / rows);
+    side = min(position(3) / columns, position(4) / rows);
+    if side > best
+        best = side;
+        nRows = rows;
+        nColumns = columns;
+    end
 end
 end

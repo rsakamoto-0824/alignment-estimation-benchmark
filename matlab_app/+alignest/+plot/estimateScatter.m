@@ -1,6 +1,7 @@
-function summary = estimateScatter(ax, measured, estimated, categories, titleText)
+function summary = estimateScatter(ax, measured, estimated, groupValues, titleText)
 %ESTIMATESCATTER 実測値（横軸）と推定値（縦軸）の散布図。y = x の線と回帰直線を引き、相関を題名に書く。
-%   categories は点ごとの色分けの水準（文字列。"" だけなら1色）。水準が多すぎるときは凡例を出さない。
+%   groupValues は点ごとの色分けの水準（文字列。"" だけなら1色）。水準が多すぎるときは凡例を出さない。
+%   categorical で渡すと、その水準の順（例：内側 → 外周、第1象限 → 第4象限）で色と凡例を並べる。
 %   summary は alignest.scatterSummary の結果。
 MAX_LEGEND_ITEMS = 20;
 POINT_SIZE = 12;
@@ -8,19 +9,25 @@ POINT_ALPHA = 0.55;
 valid = isfinite(measured) & isfinite(estimated);
 measured = measured(valid);
 estimated = estimated(valid);
-categories = string(categories(valid));
+order = strings(0, 1);
+if iscategorical(groupValues)
+    order = string(categories(groupValues));
+end
+groupValues = string(groupValues(valid));
 summary = alignest.scatterSummary(measured, estimated);
 cla(ax, 'reset');
 hold(ax, 'on');
-levels = unique(categories, 'stable');
+levels = unique(groupValues, 'stable');
 numbers = str2double(levels);
-if all(isfinite(numbers))
-    [~, order] = sort(numbers);
-    levels = levels(order);
+if ~isempty(order)
+    levels = order(ismember(order, levels));
+elseif all(isfinite(numbers))
+    [~, sortOrder] = sort(numbers);
+    levels = levels(sortOrder);
 end
 colors = lines(max(numel(levels), 1));
 for k = 1:numel(levels)
-    select = categories == levels(k);
+    select = groupValues == levels(k);
     name = levels(k);
     if name == ""
         name = "評価点";

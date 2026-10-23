@@ -26,7 +26,7 @@ for c = 1:size(combinations, 1)
             result.adA2, result.adP, result.jb, result.jbP, basis, judgement, 'VariableNames', ["methodLabel", ...
             "methodId", "group", "axis", "n", "mean", "std", "skewness", "excessKurtosis", "swW", "swP", "adA2", ...
             "adP", "jb", "jbP", "basis", "judgement"]); %#ok<AGROW>
-        anova = alignest.stats.anovaMainEffects(residual, factorsOf(subset));
+        anova = alignest.stats.anovaMainEffects(residual, alignest.residualFactors(subset));
         if height(anova) == 0
             continue
         end
@@ -42,23 +42,6 @@ end
 analysis.normality = vertcatOrEmpty(normalityRows);
 analysis.anova = vertcatOrEmpty(anovaRows);
 analysis.significance = SIGNIFICANCE;
-end
-
-function factors = factorsOf(points)
-% 質的変数の水準（文字列）。値が1つも無い変数（例：Operation の列が無い）は入れない
-direction = string(points.direction);
-direction(ismissing(direction) | isnan(points.direction)) = "";
-parity = repmat("", height(points), 1);
-parity(points.shotRowParity == 1) = "奇数行";
-parity(points.shotRowParity == 2) = "偶数行";
-candidates = struct("name", {"Scan 方向", "Mark 番号", "Shot 行の奇偶", "工程（Operation）", "装置（EqpId）", ...
-    "ロット（LotID）"}, "levels", {direction, string(points.markNo), parity, string(points.Operation), ...
-    string(points.EqpId), string(points.LotID)});
-for name = string(points.Properties.VariableNames(startsWith(points.Properties.VariableNames, "質的変数:")))
-    candidates(end + 1) = struct("name", extractAfter(name, "質的変数:"), "levels", string(points.(name))); %#ok<AGROW>
-end
-keep = arrayfun(@(factor) any(factor.levels ~= "" & ~ismissing(factor.levels)), candidates);
-factors = candidates(keep);
 end
 
 function [judgement, basis] = normalityJudgement(result, significance)

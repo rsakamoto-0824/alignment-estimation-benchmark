@@ -54,6 +54,15 @@ values = [results.createdAt; sourceFile; listText(summaryField(summary, "operati
     "ワースト値は最も悪い Wafer の値（RMSE・MAE は最大、R² は最小）。95%値は 95% の Wafer がそれより良い値（RMSE・MAE は 95 パーセント点、R² は 5 パーセント点。Excel の PERCENTILE.INC と同じ補間）。"; ...
     "学習 Shot の組の評価指標（XY 多項式の基準モデル、候補の全 Mark で正規直交化）。I 基準 = tr(M⁻¹)、D 基準 = det(M)^(−1/p)。小さいほど良い。全候補を使うと I 基準 = 項数、D 基準 = 1。全計測に対する I 効率 = 項数 / I 基準、D 効率 = 1 / D 基準（0〜1。1 なら全計測と同じ、大きいほど良い）。"; ...
     overlayText(results, overlayEvaluated); outlierText(results.settings)];
+% 評価点の絞り込み（指標を計算し直した表を書き出すとき）と、評価の後に足した条件
+if isfield(results, "filterText") && results.filterText ~= "絞り込みなし"
+    items(end + 1) = "評価点の絞り込み";
+    values(end + 1) = results.filterText + "（指標はこの条件に合う評価点で計算し直した値）";
+end
+if isfield(results, "additions")
+    items = [items; repmat("追加した条件", numel(results.additions), 1)];
+    values = [values; results.additions(:)];
+end
 values = [values; summary.messages(:); results.log(:)];
 items = [items; repmat("データの確認", numel(summary.messages), 1); repmat("計算の注意", numel(results.log), 1)];
 writetable(table(items, values, 'VariableNames', ["項目", "内容"]), filePath, 'Sheet', '説明');
