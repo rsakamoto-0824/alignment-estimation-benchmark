@@ -15,6 +15,9 @@ function waferMap(ax, points, values, options)
 %   options.markerSize   : 色で描くときの点の大きさ（scatter の面積 [ポイント²]、既定 30）
 %   options.shotCenters  : Shot 中心の座標 [x, y]（mm、Shot 数 × 2）。空なら Shot の枠を描かない
 %   options.shotSizeMm   : Shot の大きさ [幅, 高さ]（mm）
+%   options.shotDirections: Shot ごとの Scan 方向（1・2、無ければ NaN。shotCenters と同じ数）。渡すと Shot の枠を
+%                          Scan 方向の色（と ▲・▼ の印）で描く（alignest.plot.scanFrames）。空なら灰色の枠
+%   options.ringRadiiMm  : 同心円の制約の区切りの半径 [mm]（alignest.zoneEdgesMm）。破線の円で描く（空なら描かない）
 %   options.covariance   : 点ごとの Wafer 間の共分散 [X の分散, Y の分散, X・Y の共分散]（nm²、点数 × 3）
 %   options.showArrows   : 矢印（ベクトル）を描くか（既定 true）。false なら楕円だけ（楕円の中心は矢印の先のまま）
 %   options.ellipseSigma : 共分散楕円の大きさ（σ の何倍か。0 なら描かない）。矢印の先を中心に、矢印と同じ倍率で描く。
@@ -38,6 +41,8 @@ arguments
     options.markerSize (1, 1) double {mustBePositive} = 30
     options.shotCenters double = zeros(0, 2)
     options.shotSizeMm (1, 2) double = [NaN, NaN]
+    options.shotDirections double = zeros(0, 1)
+    options.ringRadiiMm double = zeros(1, 0)
     options.covariance double = zeros(0, 3)
     options.ellipseSigma (1, 1) double {mustBeNonnegative} = 0
     options.showArrows (1, 1) logical = true
@@ -47,14 +52,26 @@ TRAIN_FACE_COLOR = [0.80, 0.80, 0.80];
 TRAIN_EDGE_COLOR = [0.25, 0.25, 0.25];
 OUTLIER_COLOR = [0.80, 0.0, 0.0];
 MARGIN_MM = 8;
+MAX_LEGEND_COLUMNS = 2;   % 凡例を横に並べる数（多いと図の幅を超えるので折り返す）
+LEGEND_FONT_SIZE = 9;
+SCAN_FRAME_INSET = 0.08;  % Scan 方向の色の枠を Shot の内側に少し縮める（隣の Shot の枠と重ならないように）
 cla(ax, 'reset');
 colorbar(ax, 'off');
 hold(ax, 'on');
 angle = linspace(0, 2 * pi, 361);
 plot(ax, options.waferRadiusMm * cos(angle), options.waferRadiusMm * sin(angle), '--', ...
     'Color', WAFER_EDGE_COLOR, 'HandleVisibility', 'off');
-alignest.plot.shotFrames(ax, options.shotCenters, options.shotSizeMm);
 legendItems = gobjects(0);
+if ~isempty(options.shotDirections) && numel(options.shotDirections) == size(options.shotCenters, 1)
+    legendItems = alignest.plot.scanFrames(ax, options.shotCenters, options.shotSizeMm, options.shotDirections, ...
+        SCAN_FRAME_INSET);
+else
+    alignest.plot.shotFrames(ax, options.shotCenters, options.shotSizeMm);
+end
+rings = alignest.plot.zoneRings(ax, options.ringRadiiMm);
+if ~isempty(rings)
+    legendItems(end + 1) = rings;
+end
 if ~isempty(options.trainPoints)
     legendItems(end + 1) = plot(ax, options.trainPoints(:, 1), options.trainPoints(:, 2), 's', 'MarkerSize', 6, ...
         'MarkerFaceColor', TRAIN_FACE_COLOR, 'MarkerEdgeColor', TRAIN_EDGE_COLOR, 'LineStyle', 'none', ...
@@ -110,7 +127,8 @@ ylabel(ax, 'y [mm]');
 title(ax, options.titleText, 'Interpreter', 'none');
 box(ax, 'on');
 if options.showLegend && ~isempty(legendItems)
-    legend(ax, legendItems, 'Location', 'southoutside', 'Orientation', 'horizontal', 'Box', 'off');
+    legend(ax, legendItems, 'Location', 'southoutside', 'NumColumns', min(numel(legendItems), MAX_LEGEND_COLUMNS), ...
+        'Box', 'off', 'FontSize', LEGEND_FONT_SIZE);
 end
 end
 

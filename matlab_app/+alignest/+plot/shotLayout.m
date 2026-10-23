@@ -2,7 +2,8 @@ function shotLayout(ax, unit, waferRadiusMm)
 %SHOTLAYOUT Wafer 上の Shot の並び（枠と shotNo）と、計測した Mark の位置を描く。
 %   Scan 方向があれば、Shot を Scan 方向で塗り分け、shotNo の下に「S1」「S2」と書く（色だけに頼らない）。
 %   unit は prepareData の評価の単位（shots・marks・shotSizeMm を使う）。
-SCAN_COLORS = [0.80, 0.88, 0.97; 0.99, 0.87, 0.74];  % Scan 方向 1・2 の塗り（薄い青・薄い橙）
+SCAN_TINT = 0.25;   % Scan 方向 1・2 の塗りは、計測マップ・Wafer マップの枠の色（緑・紫）を薄めた色
+SCAN_COLORS = 1 - SCAN_TINT * (1 - alignest.plot.scanColors());
 NO_SCAN_COLOR = [0.93, 0.93, 0.93];
 EDGE_COLOR = [0.45, 0.45, 0.45];
 MARK_COLOR = [0.10, 0.10, 0.10];

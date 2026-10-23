@@ -183,7 +183,7 @@
             <tr><td>読み込み</td><td>Excel・CSV を読み、列を標準の項目に対応づけ、座標の単位をそろえ、行を除き、Wafer（工程・装置・ロット・測定日時で区別）ごとにまとめる。Scan 方向が無ければ規則で付ける</td><td><code>readMeasurementFile</code>・<code>guessColumnMapping</code>・<code>checkCoordinateUnits</code>・<code>prepareData</code>・<code>directionRules</code></td></tr>
             <tr><td>学習 Shot</td><td>学習 Shot 数（または計測率）ごとに、制約付き I 最適・ランダム・手動・ファイルの優先順で学習 Shot を選ぶ。同じ配置の Wafer は同じ選び方を使い回す</td><td><code>buildPlanSpecs</code>・<code>cachedTrainingPlan</code>・<code>planTrainingShots</code>・<code>constrainedIOptimal</code>・<code>designCriteria</code></td></tr>
             <tr><td>推定</td><td>手法ごとに、学習 Shot の計測値から学習しなかった Shot の値を X・Y 別に推定する</td><td><code>buildMethodList</code>・<code>estimateWafer</code>・<code>+models</code> の関数</td></tr>
-            <tr><td>評価・集計</td><td>評価点（学習しなかった Shot の有効な Mark）の RMSE・MAE・R² などと、Overlay 補正の残差の変化を求め、手法 × 学習パターンで集計する</td><td><code>runEvaluation</code>・<code>computeMetrics</code>・<code>overlayCorrection</code>・<code>summarizeResults</code>・<code>pairedComparison</code></td></tr>
+            <tr><td>評価・集計</td><td>評価点（学習しなかった Shot の有効な Mark）の RMSE・MAE・R² などと、Overlay 補正の残差の変化を求め、手法 × 学習パターンで集計する。評価済みの結果に手法・学習パターンを足す（済んだ組み合わせは計算しない）。行ごとの評価点の推定値を残し、評価点を半径・Shot の条件で絞って指標を計算し直す</td><td><code>runEvaluation</code>（<code>"extend"</code> で追加）・<code>extensionConflicts</code>・<code>computeMetrics</code>・<code>compactEstimate</code>・<code>filterResults</code>・<code>pointFilterMask</code>・<code>overlayCorrection</code>・<code>summarizeResults</code>・<code>pairedComparison</code></td></tr>
             <tr><td>書き出し・読み込み</td><td>評価結果・推定値を Excel に書き出す。書き出した Excel を読み込んで、計測ファイルなしで表・グラフ・マップを描き直す</td><td><code>exportResults</code>・<code>exportEstimates</code>・<code>importResults</code>・<code>importEstimates</code></td></tr>
           </tbody>
         </table>
@@ -207,7 +207,8 @@
 │  ├─ +models/   推定の手法（GPR・TPS・RBF・Kriging・GAM・多項式・RT モデル）
 │  ├─ +basis/    基底関数・設計行列（B スプライン・多項式・Zernike・効果コード）
 │  ├─ +stats/    統計（正規性検定・ANOVA・パーセント点・JS ダイバージェンス）
-│  ├─ +plot/     図（Wafer マップ・共分散楕円・ヒストグラム・計測マップ）
+│  ├─ +plot/     図（Wafer マップ・共分散楕円・ヒストグラム・計測マップ・Scan 方向の枠・同心円の区切り・
+│  │             残差の箱ひげ図・処理時間の積み上げ横棒）
 │  └─ +optim/    上下限つきの最小化（GPR の超パラメータの推定。Toolbox 不要）
 ├─ tests/        自動テスト（runAllTests）と Python 版の基準値（reference/）
 ├─ sample_data/  模擬データ（sample_alignment.xlsx・.csv と作成スクリプト）
@@ -227,9 +228,9 @@
           <tbody>
             <tr><td>1. データの読み込み</td><td><code>buildDataTab</code>・<code>drawPreview</code>・<code>drawLayout</code>・<code>drawShotOverlay</code></td><td><code>readMeasurementFile</code>・<code>prepareData</code>・<code>groupOptions</code>・<code>averageFields</code>・<code>shotOverlay</code>・<code>plot.waferMap</code></td></tr>
             <tr><td>2. 評価の設定</td><td><code>buildSettingsTab</code>・<code>settingsToControls</code>・<code>controlsToSettings</code>・<code>validateSettings</code>・<code>updateEnabled</code></td><td><code>defaultSettings</code>・<code>loadSettings</code>・<code>saveSettings</code>・<code>buildMethodList</code>・<code>estimateRunSeconds</code></td></tr>
-            <tr><td>3. 実行</td><td><code>buildRunTab</code>・<code>evaluate</code>・<code>drawMeasurementMap</code></td><td><code>runEvaluation</code>・<code>cachedTrainingPlan</code>・<code>plot.measurementMap</code></td></tr>
-            <tr><td>4. 結果一覧</td><td><code>buildResultsTab</code>・<code>refreshResultControls</code>・<code>drawChart</code>・<code>analyzeResiduals</code>・<code>drawScatter</code>・<code>compareDistributions</code></td><td><code>summarizeResults</code>・<code>pairedComparison</code>・<code>collectEstimates</code>・<code>residualAnalysis</code>・<code>distributionComparison</code>・<code>exportResults</code>・<code>importResults</code>・<code>importEstimates</code></td></tr>
-            <tr><td>5. Wafer ごとのマップ</td><td><code>buildMapTab</code>・<code>drawMap</code>・<code>drawGroupMap</code>・<code>drawImportedMap</code>・<code>drawOverlayMap</code></td><td><code>estimateWafer</code>・<code>averageFields</code>・<code>overlayProjector</code>・<code>overlayCorrection</code>・<code>plot.waferMap</code></td></tr>
+            <tr><td>3. 実行</td><td><code>buildRunTab</code>・<code>evaluate</code>・<code>extendEvaluation</code>・<code>drawMeasurementMap</code>（並べる数は <code>tileShape</code>）</td><td><code>runEvaluation</code>・<code>cachedTrainingPlan</code>・<code>plot.measurementMap</code>・<code>plot.scanFrames</code>・<code>plot.zoneRings</code></td></tr>
+            <tr><td>4. 結果一覧</td><td><code>buildResultsTab</code>・<code>refreshResultControls</code>・<code>drawChart</code>・<code>analyzeResiduals</code>・<code>drawResidualBoxplot</code>・<code>drawScatter</code>・<code>compareDistributions</code>・<code>measureTiming</code>・<code>applyResultFilter</code>（絞り込みの欄は <code>buildFilterControls</code>）</td><td><code>summarizeResults</code>・<code>pairedComparison</code>・<code>collectEstimates</code>・<code>residualAnalysis</code>・<code>residualFactors</code>・<code>plot.residualBoxplot</code>・<code>distributionComparison</code>・<code>timingBreakdown</code>・<code>plot.timingBars</code>・<code>filterResults</code>・<code>exportResults</code>・<code>importResults</code>・<code>importEstimates</code></td></tr>
+            <tr><td>5. Wafer ごとのマップ</td><td><code>buildMapTab</code>・<code>drawMap</code>（1つの条件）・<code>drawComparison</code>（並べて比べる）・<code>mapFields</code>（図の値。<code>computedMapFields</code>・<code>importedMapFields</code>）・<code>drawMapPanel</code>・<code>addMapCondition</code></td><td><code>estimateWafer</code>・<code>averageFields</code>・<code>overlayProjector</code>・<code>overlayCorrection</code>・<code>unitPointFilter</code>・<code>plot.waferMap</code></td></tr>
           </tbody>
         </table>
       </div>
@@ -279,6 +280,8 @@
         初期値はすべて <code>defaultSettings</code> にあります。設定ファイル（JSON）を読むときは
         <code>loadSettings</code> が初期値に重ねるので、項目を足しても以前の設定ファイルはそのまま読めます
         （無い項目は初期値になる）。手法の項目は <code>completeMethodSettings</code> が補います。
+        同心円の区切り・外周の半径を「Wafer 半径に対する比」（<code>radialZoneEdges</code>・<code>outerRadiusRatio</code>）で書いた以前の設定・評価結果の Excel は、
+        <code>upgradeRadiusSettings</code> が 比 × Wafer 半径（150 mm）の mm の項目に直します（画面の <code>setSettings</code> も同じ）。
       </p>
       <div class="table-wrap">
         <table>
@@ -286,9 +289,9 @@
           <tbody>
             <tr><td><code>data</code></td><td>Wafer 半径・有効半径、座標の単位、行の除外、Scan 方向の規則と画面での変更</td><td><code>prepareData</code></td></tr>
             <tr><td><code>factors</code></td><td>質的変数（Scan 方向・Mark 番号・Shot 行の奇偶・その他の列）。<code>separateY</code> と <code>y</code> で Y 成分を別に選ぶ</td><td><code>factorChoice</code>・<code>factorColumnsUsed</code></td></tr>
-            <tr><td><code>sampling</code></td><td>学習 Shot の選び方・数（開始・終了・刻み、計測率）・必ず計測する Shot・制約・乱数の種</td><td><code>buildPlanSpecs</code>・<code>planTrainingShots</code></td></tr>
+            <tr><td><code>sampling</code></td><td>学習 Shot の選び方・数（開始・終了・刻み、計測率）・必ず計測する Shot・制約（同心円の区切り <code>constraints.radialZoneEdgesMm</code> は Shot 中心の半径 [mm]）・乱数の種</td><td><code>buildPlanSpecs</code>・<code>planTrainingShots</code>・<code>zoneEdgesMm</code></td></tr>
             <tr><td><code>methods</code></td><td>比べる手法と選択肢（GPR のカーネル・質的変数の扱い、GAM の形状関数とガウス過程のカーネル など）。<code>options</code> に細かい数値</td><td><code>buildMethodList</code>・<code>estimateWafer</code></td></tr>
-            <tr><td><code>evaluation</code></td><td>外周とみなす半径の比、学習データの異常値の除外（nσ）、処理時間の記録</td><td><code>runEvaluation</code>・<code>computeMetrics</code></td></tr>
+            <tr><td><code>evaluation</code></td><td>外周とみなす Mark の半径 <code>outerRadiusMm</code> [mm]、学習データの異常値の除外（nσ）、処理時間の記録</td><td><code>runEvaluation</code>・<code>computeMetrics</code></td></tr>
             <tr><td><code>overlay</code></td><td>Overlay 補正の評価のモデル（Wafer 成分・Shot 共通成分・Shot ごとの成分、入力した補正の式）</td><td><code>overlayChoice</code>・<code>overlayProjector</code>・<code>parseCorrectionFormula</code></td></tr>
           </tbody>
         </table>
@@ -325,6 +328,9 @@
           <thead><tr><th>値</th><th>場所</th><th>意味</th></tr></thead>
           <tbody>
             <tr><td><code>SECONDS_PER_RUN = 2</code></td><td><code>estimateRunSeconds</code></td><td>計算時間の目安の 1 条件（Wafer × 学習パターン × 手法）あたりの秒数</td></tr>
+            <tr><td><code>SECONDS_PER_SHOT_START = 0.01</code></td><td><code>exchangeSecondsGuide</code></td><td>交換法の時間の目安：初期配置 1 つ・学習 Shot 1 つあたりの秒数（候補 99 Shot の模擬データで測った値。<code>REFERENCE_CANDIDATES = 99</code> に対する候補 Shot 数の比で伸ばす）</td></tr>
+            <tr><td><code>MAX_MEASURE_PANELS = 6</code>・<code>MAX_COMPARE_PANELS = 6</code></td><td>画面（定数）</td><td>計測マップ・Wafer ごとのマップで並べる図の数の上限</td></tr>
+            <tr><td><code>scanColors</code></td><td><code>plot.scanColors</code></td><td>Scan 方向 1・2 の色（緑・紫）と印（▲・▼）。計測マップ・Wafer マップの枠と Shot レイアウトの塗りで共通</td></tr>
             <tr><td><code>EXCEL_MAX_DATA_ROWS</code></td><td><code>exportEstimates</code>・画面</td><td>Excel の 1 シートに書ける行数（1,048,575 行）。推定値の書き出しはこれを超えると止める</td></tr>
             <tr><td><code>MAX_MATERN_NU = 50</code></td><td><code>models.maternNuCheck</code>・画面</td><td>Matérn の ν の上限</td></tr>
             <tr><td><code>MAX_WAFER_ORDER = 5</code></td><td><code>overlayChoice</code></td><td>Overlay 補正の Wafer 成分の多項式の最大次数</td></tr>
@@ -356,7 +362,9 @@
             <tr><td>設定の項目を足す</td><td>新しい選択肢</td><td><code>defaultSettings</code>（初期値）→ 使う関数 → 画面の設定の4つの関数。以前の設定ファイルは自動で初期値になる</td><td><code>TestEvaluation</code>（保存・読み込み）・<code>TestAppWorkflow</code></td></tr>
             <tr><td>補正の式（メーカーの高次式）を足す</td><td>新しい装置の補正モデル</td><td>組み込むなら <code>overlayTerms</code> と <code>overlayChoice</code> の選択肢。利用者が「式を入力」で書くこともできる（直す必要なし）</td><td><code>TestOverlay</code></td></tr>
             <tr><td>Excel の列を変える</td><td>出力の項目を変えたい</td><td><code>resultColumnNames</code>・<code>estimateColumnNames</code>（書き出しと読み込みで共通）</td><td><code>TestResultsImport</code>・<code>TestAppWorkflow</code></td></tr>
-            <tr><td>時間の目安を合わせる</td><td>会社の PC と目安がずれる</td><td><code>estimateRunSeconds</code> の <code>SECONDS_PER_RUN</code></td><td><code>TestEvaluation</code></td></tr>
+            <tr><td>時間の目安を合わせる</td><td>会社の PC と目安がずれる</td><td><code>estimateRunSeconds</code> の <code>SECONDS_PER_RUN</code>、交換法の目安は <code>exchangeSecondsGuide</code> の <code>SECONDS_PER_SHOT_START</code>（「処理時間の内訳」で学習パターンの作成の時間を測って合わせる）</td><td><code>TestEvaluation</code>・<code>TestFilterExtendTiming</code></td></tr>
+            <tr><td>評価点の絞り込みの条件を足す</td><td>別の Shot の条件で指標を見たい</td><td><code>defaultPointFilter</code>（項目）・<code>pointFilterMask</code>（判定と説明）・<code>unitPointFilter</code>（Wafer の Mark に当てる）・画面の <code>buildFilterControls</code>・<code>readFilterControls</code></td><td><code>TestFilterExtendTiming</code>・<code>TestAppWorkflow</code></td></tr>
+            <tr><td>評価の後に足してよい設定を変える</td><td>条件の追加で止める設定を見直す</td><td><code>extensionConflicts</code>（比べる設定と、足してよい学習パターンの数の項目 <code>COUNT_FIELDS</code>）</td><td><code>TestFilterExtendTiming</code></td></tr>
             <tr><td>MATLAB の版を上げる</td><td>会社の MATLAB の更新</td><td>直す場所は無いことが多い。テストと画面の確認、exe の作り直し（MATLAB Runtime も同じ版に）</td><td>全テスト</td></tr>
             <tr><td>手順書を直す</td><td>画面を変えた</td><td><code>docs/windows_guide/windows_guide.html</code>、<code>docs/powerpoint_guide</code>（画面の撮影は <code>_src/capture_screens.m</code>）、<code>README.md</code></td><td>—</td></tr>
           </tbody>
@@ -381,7 +389,7 @@
 runAllTests</code></pre>
       </div>
       <p>
-        最後に「成功 120 件、失敗 0 件、未完了 0 件」と出れば正常です（2026/10/22 時点の件数。テストを足すと増えます）。
+        最後に「成功 129 件、失敗 0 件、未完了 0 件」と出れば正常です（2026/10/23 時点の件数。テストを足すと増えます）。
         1つのファイルだけ確かめるときは <code>runtests('TestOverlay')</code> のようにファイル名を指定します。
         <code>TestPythonReference</code> は、Python 版の計算結果（<code>tests/reference/python_reference.json</code>）と照合するテストです。
         計算方法をわざと変えたときは、基準値を作り直すか、テストの許容誤差を見直します。
@@ -407,8 +415,8 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
           <h3>画面を変えたら、テストの部品名も確かめる</h3>
           <p>
             画面のテスト（<code>TestAppWorkflow</code>）と PowerPoint の撮影スクリプトは、画面の部品の名前
-            （<code>app.Controls.○○</code>）と公開メソッド（<code>runEvaluationNow</code>・<code>showMap</code>・
-            <code>importResultsFrom</code> など）を使います。名前を変えたときは、これらも一緒に直してください。
+            （<code>app.Controls.○○</code>）と公開メソッド（<code>runEvaluationNow</code>・<code>extendEvaluation</code>・<code>showMap</code>・
+            <code>addMapCondition</code>・<code>applyResultFilter</code>・<code>measureTiming</code>・<code>importResultsFrom</code> など）を使います。名前を変えたときは、これらも一緒に直してください。
           </p>
         </div>
       </div>
@@ -459,7 +467,15 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
         </details>
         <details>
           <summary>評価に時間がかかりすぎる</summary>
-          <div><p>手法・学習 Shot 数・Wafer の数を減らします。進み具合の画面の「一時中断」で止めても、途中までの結果は残り、「続きから再開」で残りを計算できます。時間の目安は 1 条件 2 秒の一律の値なので、実際とずれるときは「処理時間を記録する」で手法ごとの時間を測り、<code>SECONDS_PER_RUN</code> を見直します。</p></div>
+          <div><p>手法・学習 Shot 数・Wafer の数を減らします。進み具合の画面の「一時中断」で止めても、途中までの結果は残り、「続きから再開」で残りを計算できます。時間の目安は 1 条件 2 秒の一律の値なので、実際とずれるときは「処理時間を記録する」で手法ごとの時間を測り、<code>SECONDS_PER_RUN</code> を見直します。「4. 結果一覧」の「処理時間の内訳」で、学習パターンの作成（I 最適の交換法）・学習・推論のどれに時間がかかっているかを見られます。交換法の初期配置の数は、時間にほぼ比例します（README の「交換法の初期配置の数と計算時間」）。評価の後に手法・学習 Shot 数を足すときは「条件を追加して評価」を使うと、済んだ組み合わせを計算し直しません。</p></div>
+        </details>
+        <details>
+          <summary>「条件を追加して評価」で「評価したときと次の設定が違う」と出る</summary>
+          <div><p>追加できるのは、手法の選択と学習パターンの数（学習 Shot 数・計測率の範囲、手動の行、ランダムの繰り返し回数）だけです。表示された設定（データの読み込み・質的変数・学習 Shot の選び方と制約・評価の条件・Overlay 補正・手法の細かい設定）を評価したときに戻すか、「評価を始める」で最初から計算します。判定は <code>extensionConflicts</code> にあります。</p></div>
+        </details>
+        <details>
+          <summary>評価の結果が大きく、メモリが足りなくなる</summary>
+          <div><p>評価の結果には、絞り込みの計算し直しとマップのために、行（Wafer × 学習パターン × 手法）ごとの評価点の推定値（<code>results.pointEstimates</code>。1 行あたり およそ 評価点の数 × 2 軸 × 16 バイト。模擬データでは 1 行 13 KB 程度）を持ちます。行が非常に多いときは、手法・学習パターン・Wafer を分けて評価し、結果の Excel に書き出してから次を評価してください。</p></div>
         </details>
         <details>
           <summary>Excel に書き出せない</summary>

@@ -715,7 +715,8 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             % 設定を変えると、古い計測マップは消える
             app.Controls.requireOuter.Value = false;
             app.Controls.requireOuter.ValueChangedFcn([], []);
-            testCase.verifyEqual(string(app.Controls.measureAxes.Visible), "off");
+            testCase.verifyEmpty(app.Controls.measureAxes);
+            testCase.verifyEmpty(app.Controls.measurePanel.Children);
             % すべての学習パターンの計測マップを Excel に書き出す
             folder = tempname;
             mkdir(folder);
@@ -921,8 +922,8 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyFalse(any(contains(string(app.Controls.metric.ItemsData), "adjR2")), "調整済み R² は出さない");
             % 中断の後に設定を変えると、続きからは再開できない
             app.runEvaluationNow(false, 3);
-            app.Controls.outerRatio.Value = 0.7;
-            app.Controls.outerRatio.ValueChangedFcn([], []);
+            app.Controls.outerRadius.Value = 105;
+            app.Controls.outerRadius.ValueChangedFcn([], []);
             testCase.verifyError(@() app.resumeEvaluation(false), 'alignest:resume');
             % 共分散楕円だけを描く（矢印を消す）：Wafer マップ（計測値）と Shot 重ね合わせ
             app.Controls.previewWafer.Value = find([app.Controls.previewWafer.UserData.isGroup], 1);
@@ -961,6 +962,114 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
 
         function runWithoutDataIsAnError(testCase)
             testCase.verifyError(@() testCase.App.runEvaluationNow(false), 'alignest:noData');
+        end
+
+        function filterCompareBoxTimingAndAddedConditions(testCase)
+            app = testCase.App;
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.xlsx'));
+            app.applyMapping();
+            settings = app.Settings;
+            settings.methods = alignest.recommendedMethods("none");
+            settings.methods.polynomial.enabled = true;
+            settings.methods.tps.enabled = true;
+            settings.sampling.nShots = [10, 20];
+            settings.sampling.exchangeStarts = 2;
+            app.setSettings(settings);
+            % 同心円の区切り・外周の半径は mm で入れる。交換法の時間の目安が出る
+            testCase.verifyEqual(string(app.Controls.zoneEdges.Value), "67.5 105");
+            testCase.verifyEqual(app.Controls.outerRadius.Value, 120);
+            testCase.verifyTrue(contains(app.Controls.exchangeInfo.Text, "学習パターン1つ"));
+            app.Controls.zoneEdges.Value = '0.45 0.7 160';
+            app.Controls.zoneEdges.ValueChangedFcn([], []);
+            testCase.verifyTrue(contains(app.Controls.zoneError.Text, "150 mm より小さい"));
+            app.Controls.zoneEdges.Value = '67.5 105';
+            app.Controls.zoneEdges.ValueChangedFcn([], []);
+            % 計測マップを並べる（2 Wafer × 2 学習パターン）。Scan 方向の印と同心円の区切りも描く
+            plans = app.drawMeasurementMap([1, 2], ["I最適 10 Shot", "I最適 20 Shot"]);
+            testCase.verifyEqual(numel(plans), 4);
+            testCase.verifyEqual(numel(app.Controls.measureAxes), 4);
+            names = string(get(findobj(app.Controls.measureAxes(1), '-regexp', 'DisplayName', '.+'), 'DisplayName'));
+            testCase.verifyTrue(all(ismember(["Scan 1（▲）", "Scan 2（▼）", "同心円の区切り"], names)));
+            % 評価の後に、手法と学習 Shot 数を足して評価する（済んだ組み合わせは計算しない）
+            testCase.verifyEqual(string(app.Controls.extendRun.Enable), "off");
+            first = app.runEvaluationNow(false);
+            testCase.verifyEqual(string(app.Controls.extendRun.Enable), "on");
+            more = app.Settings;
+            more.methods.rt.enabled = true;
+            more.sampling.nShots = [10, 15, 20];
+            app.setSettings(more);
+            extended = app.extendEvaluation(false);
+            testCase.verifyEqual(height(extended.table), 45);
+            testCase.verifyTrue(contains(app.Controls.runStatus.Text, "新たに 25 件を計算"));
+            testCase.verifyEqual(string(app.Controls.summaryTable.ColumnName).', ["手法", "10 Shot", "15 Shot", "20 Shot"]);
+            testCase.verifyEqual(extended.table.RMSE_XY(ismember(extended.table.Wafer + extended.table.plan + ...
+                extended.table.methodId, first.table.Wafer + first.table.plan + first.table.methodId)), first.table.RMSE_XY);
+            changed = app.Settings;
+            changed.sampling.nShots = [10, 15, 20, 25];
+            changed.data.validRadiusMm = 140;
+            app.setSettings(changed);
+            testCase.verifyError(@() app.extendEvaluation(false), 'alignest:noData', "データの条件を変えると読み込み直す");
+            app.setSettings(more);
+            app.applyMapping();
+            app.runEvaluationNow(false);
+            % 評価点の絞り込み：表・グラフを計算し直し、マップにも使う
+            before = app.Controls.summaryTable.Data;
+            filter = alignest.defaultPointFilter();
+            filter.radiusMaxMm = 100;
+            app.Controls.filterMap.radiusMax.Value = 100;
+            app.Controls.filterMap.apply.ButtonPushedFcn([], []);
+            testCase.verifyEqual(app.ResultFilter, filter, "マップの欄からも絞り込める");
+            testCase.verifyEqual(app.Controls.filterResults.radiusMax.Value, 100, "結果一覧の欄にもそろえる");
+            testCase.verifyTrue(startsWith(app.Controls.filterResults.status.Text, "絞り込み中：半径 0〜100 mm"));
+            testCase.verifyFalse(isequal(app.Controls.summaryTable.Data, before));
+            testCase.verifyTrue(all(app.Results.table.nTest_X <= app.BaseResults.table.nTest_X));
+            app.showMap(1, "I最適 15 Shot", 1, "vector", "estimate");
+            testCase.verifyTrue(contains(app.Controls.mapInfo.Text, "評価点の絞り込み：半径 0〜100 mm"));
+            analysis = app.analyzeResiduals(1, "15 Shot", 0);
+            testCase.verifyLessThan(max(app.Analysis.estimates.r), 100);
+            testCase.verifyGreaterThan(height(analysis.anova), 0);
+            % 残差の箱ひげ図（ANOVA の質的変数ごと）
+            testCase.verifyEqual(string(app.Controls.boxFactor.Enable), "on");
+            summary = app.drawResidualBoxplot("Scan 方向");
+            testCase.verifyEqual(summary(1).levels.level, ["1"; "2"]);
+            testCase.verifyTrue(startsWith(string(app.Controls.boxAxes(1).Title.String), "X の残差：Scan 方向（一元配置 F ="));
+            testCase.verifyNotEmpty(findobj(app.Controls.boxAxes(2), 'Type', 'boxchart'));
+            app.applyResultFilter();
+            testCase.verifyEqual(app.Controls.summaryTable.Data, before, "解除すると元の値に戻る");
+            testCase.verifyEqual(string(app.Controls.boxFactor.Enable), "off", "絞り込みを変えたら古い分析は消す");
+            % 散布図の色分け：外周・内側、象限
+            app.drawScatter(1, "15 Shot", 0, "quadrant");
+            names = string(get(findobj(app.Controls.scatterAxes(1), 'Type', 'scatter'), 'DisplayName'));
+            testCase.verifyEqual(sort(names), ["第1象限（x > 0, y > 0）"; "第2象限（x < 0, y > 0）"; ...
+                "第3象限（x < 0, y < 0）"; "第4象限（x > 0, y < 0）"]);
+            app.drawScatter(1, "15 Shot", 0, "outer");
+            names = string(get(findobj(app.Controls.scatterAxes(1), 'Type', 'scatter'), 'DisplayName'));
+            testCase.verifyEqual(sort(names), ["内側（半径 120 mm 未満）"; "外周（半径 120 mm 以上）"]);
+            % 処理時間の内訳
+            breakdown = app.measureTiming(1, "I最適 15 Shot", [1, 2], 1);
+            testCase.verifyEqual(height(breakdown.table), 2);
+            testCase.verifyEqual(size(app.Controls.timingTable.Data), [2, 9]);
+            testCase.verifyEqual(numel(findobj(app.Controls.timingAxes(2), 'Type', 'bar')), 7);
+            % マップ：Scan 方向の色の枠・同心円の区切り、条件を並べて比べる
+            app.Controls.mapScanFrames.Value = true;
+            app.Controls.mapRings.Value = true;
+            app.showMap(1, "I最適 15 Shot", 1, "X", "estimate");
+            names = string(get(findobj(app.Controls.mapAxes(1), '-regexp', 'DisplayName', '.+'), 'DisplayName'));
+            testCase.verifyTrue(all(ismember(["Scan 1（▲）", "Scan 2（▼）", "同心円の区切り"], names)));
+            app.addMapCondition(1, "I最適 15 Shot", 1);
+            app.addMapCondition(2, "I最適 15 Shot", 1);
+            group = find(string(app.Controls.mapWafer.Items) == "平均：全 Wafer（5 枚）");
+            conditions = app.addMapCondition(group, "I最適 20 Shot", 3);
+            testCase.verifyEqual(numel(conditions), 3);
+            testCase.verifyEqual(string(app.Controls.mapView.Value), "compare");
+            testCase.verifyEqual(numel(app.Controls.compareAxes), 3);
+            testCase.verifyTrue(startsWith(app.Controls.mapInfo.Text, "並べて比べる：残差（3 条件"));
+            limits = arrayfun(@(ax) ax.CLim, app.Controls.compareAxes, 'UniformOutput', false);
+            testCase.verifyEqual(limits{1}, limits{3}, "色の範囲は共通");
+            app.removeMapConditions(2);
+            testCase.verifyEqual(numel(app.Controls.compareAxes), 2);
+            app.showMap(1, "I最適 15 Shot", 1, "vector", "estimate");
+            testCase.verifyEqual(string(app.Controls.mapView.Value), "single");
         end
     end
 end

@@ -44,7 +44,7 @@ settings.sampling.requireOuterShots = false;     % 最外周の Shot（alignest.
 settings.sampling.designOrder = 5;      % I 最適の基準モデル（XY 多項式の次数、5次で21項）
 settings.sampling.exchangeStarts = 10;  % 交換法の初期配置の数（Python 版は30）
 settings.sampling.exchangeMaxIterations = 300;
-settings.sampling.constraints.radialZoneEdges = [0.45, 0.7];  % 同心円の区切り（Wafer 半径に対する比）
+settings.sampling.constraints.radialZoneEdgesMm = [67.5, 105];  % 同心円の区切り：Shot 中心の半径 [mm]（半径 150 mm の Wafer が前提）
 settings.sampling.constraints.quadrants = true;
 settings.sampling.constraints.scanDirection = true;
 settings.sampling.constraints.slack = 1;
@@ -53,7 +53,7 @@ settings.sampling.constraints.slack = 1;
 settings.methods = alignest.recommendedMethods();
 
 % 評価
-settings.evaluation.outerRadiusRatio = 0.8;   % 外周とみなす半径（Wafer 半径に対する比）
+settings.evaluation.outerRadiusMm = 120;      % 外周とみなす Mark の半径 [mm]（この半径以上が外周。半径 150 mm の Wafer が前提）
 settings.evaluation.removeLinear = false;     % 学習点の XY 1次（6項）を除いてから推定し、推定値に戻す
 settings.evaluation.recordTiming = false;     % 条件（手法 × 学習パターン）ごとに 1 枚あたりの処理時間を記録して集計する
 settings.evaluation.excludeOutliers = false;  % 学習データの異常値（平均から outlierSigma × σ を超えて離れた Mark）を除いて推定する
