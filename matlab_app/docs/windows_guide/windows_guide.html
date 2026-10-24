@@ -277,8 +277,9 @@ cd C:\work\matlab_app</code></pre>
             追加したモデルの選択肢（Matérn の ν・spherical・GAM の形状関数とガウス過程のカーネル、5件）、
             評価点の絞り込み・条件の追加・処理時間の内訳・半径の mm 指定（8件。条件を足した結果が最初からまとめて評価した結果と同じこと、
             すべての点を残す絞り込みで評価と同じ指標になることなど）、
-            計測配置の選び方（D 最適・Mark 単位・人の選択の読み込み・選び方の比較）・Fringe Zernike・MAD・Slot の偶奇・Shot ごとの補正の式・時間の目安・既定の設定ファイル・ヘルプ（12件）です。
-            全 142 件（2026-10-24 時点）。
+            計測配置の選び方（D 最適・Mark 単位・人の選択の読み込み・選び方の比較）・Fringe Zernike・MAD・Slot の偶奇・Shot ごとの補正の式・時間の目安・既定の設定ファイル・ヘルプ（12件）、
+            未知の座標の推定（評価と同じ推定値になること・学習に無い Mark 番号・外挿の判定・点の読み込みと作り方・Excel の書き出し・画面の流れ、6件）です。
+            全 148 件（2026-10-24 時点）。
           </p>
         </div>
       </div>
@@ -438,7 +439,7 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
       <p class="note">画像は Mac で撮影したものです。Windows ではウィンドウの枠や文字の形が少し違いますが、配置は同じです。</p>
       <p>
         画面の色は、上のメニュー「表示」の「ライトモード」「ダークモード」で切り替えられます（次に開いたときも同じ色）。
-        用語や式が分からないときは、「6. ヘルプ」タブ（メニュー「表示」→「ヘルプを開く」）を見てください。
+        用語や式が分からないときは、「7. ヘルプ」タブ（メニュー「表示」→「ヘルプを開く」）を見てください。
       </p>
 
       <h3 class="sub-heading">8-1. データを読み込む（1. データの読み込み）</h3>
@@ -739,9 +740,37 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
         <figcaption>図 15　全 Wafer の平均と共分散楕円（1σ）</figcaption>
       </figure>
 
-      <h3 class="sub-heading">8-6. 用語と式を調べる（6. ヘルプ）</h3>
+      <h3 class="sub-heading">8-6. 計測していない座標を推定する（6. 未知の座標の推定）</h3>
+      <ol class="numbered-steps">
+        <li><div><strong>推定する点を決める</strong><p>
+          左の「Excel・CSV から読み込む…」で、1行目が見出しの表を選びます。見出しは計測データと同じ名前で、<code>Xmm</code>・<code>Ymm</code>（Shot 中心の座標 [mm]）が必須、
+          <code>markXmm</code>・<code>markYmm</code>（Shot 中心から見た位置 [mm]。空欄は 0 で、Xmm・Ymm が点そのものの座標）・<code>markNo</code>・<code>shotNo</code>・<code>Direction</code>・<code>名前</code> は任意です。
+          例は <code>sample_data\sample_targets.xlsx</code> です。画面で作るときは、「行を追加」で1行足して書き込むか、
+          「全 Shot に置く」（Shot 内の位置 X・Y [mm] と Mark 番号を入れて、全 Shot の同じ位置に点を置く。新しい Mark の位置を見るとき）、
+          「格子で置く」（間隔と半径 [mm] で Wafer 上に格子の点を置く）を使います。数でない欄があると、表の下に行の番号が赤字で出ます。
+        </p></div></li>
+        <li><div><strong>Wafer・学習データ・手法を選んで「推定する」を押す</strong><p>
+          学習データは「計測値のある全 Mark」（読み込んだ計測値をすべて使う）か、評価した後なら「学習パターン」（評価で選んだ Shot だけを使う）です。
+          手法は「2. 評価の設定」で選んだものから選びます。Wafer を「すべての Wafer」にすると、Wafer ごとに推定して表に並べます。
+        </p></div></li>
+        <li><div><strong>メッセージを確かめる</strong><p>
+          学習点の範囲（学習点を囲む凸包）の外にある点は <strong>外挿</strong> として、上に「⚠ 外挿：N / M 点が学習点の範囲の外にあります」と赤字で出ます。
+          表では外挿の行に色が付き、図では × 印になります。外挿の点も推定値は出ますが、学習点から離れるほど信頼できません。
+          学習データに無い Mark 番号（新しい Mark）の点は、Mark 番号の効果を全 Mark の平均として推定することもメッセージに出ます。
+        </p></div></li>
+        <li><div><strong>（必要なとき）Excel に書き出す</strong><p>
+          「推定値を Excel に書き出す…」で、点ごとの推定値 X・Y [nm]・外挿・メモを「推定値」シートに、条件を「説明」シートに保存します。
+          「図」タブの「図を画像で保存…」で図を PNG にできます。
+        </p></div></li>
+      </ol>
+      <figure class="screen-figure">
+        <img src="images/26_target.jpg" alt="未知の座標の推定タブ。左に推定する点の表、右に条件と外挿のメッセージ、推定値の矢印と外挿の点の × 印、学習点の範囲の破線を描いた Wafer の図" loading="lazy">
+        <figcaption>図 26　未知の座標の推定（新しい Mark 9 を全 Shot に置き、格子の点も足した例。外周の点は外挿）</figcaption>
+      </figure>
+
+      <h3 class="sub-heading">8-7. 用語と式を調べる（7. ヘルプ）</h3>
       <p>
-        「6. ヘルプ」タブに、主な専門用語（学習 Shot・評価点・I 基準・D 基準・MAD など）、比べる手法、すべてのカーネル（GPR・GAM のガウス過程・Kriging のバリオグラム・TPS・RBF）の式、
+        「7. ヘルプ」タブに、主な専門用語（学習 Shot・評価点・I 基準・D 基準・MAD など）、比べる手法、すべてのカーネル（GPR・GAM のガウス過程・Kriging のバリオグラム・TPS・RBF）の式、
         Fringe Zernike の項、Overlay 補正の式（Wafer 成分・Shot 共通成分・Shot ごとの成分・メーカー別の式・評価の定義・式の書き方）をまとめています。左の目次で移動できます。
       </p>
       <figure class="screen-figure">

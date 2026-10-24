@@ -28,7 +28,7 @@ DECK_NAME = "デフォルト設定の編集ガイド"
 DECK_TITLE = "デフォルト設定の編集ガイド（管理者向け）"
 CODE_FONT = "Courier New"
 DEFAULTS_FILE = "alignment_estimation_defaults.json"
-TEST_COUNT = 142   # runAllTests の件数（2026-10-24 時点。テストを足したら直す）
+TEST_COUNT = 148   # runAllTests の件数（2026-10-24 時点。テストを足したら直す）
 
 
 class Deck:
@@ -257,7 +257,7 @@ def build(output: Path, reference: Path):
             ["+alignest/estimateRunSeconds.m", "時間の目安（1条件 2 秒、ν を指定した Matérn は 3 倍）", "SECONDS_PER_RUN = 2"],
             ["+alignest/exchangeSecondsGuide.m", "交換法の時間の目安（初期配置1つ × 学習 Shot 1つ）", "0.01 秒"],
             ["+alignest/siteDefaults.m", "既定の設定ファイル（手順 B）を読む", DEFAULTS_FILE],
-            ["help/help.html", "「6. ヘルプ」の説明（用語・カーネル・補正の式）", "手法を足したら説明も足す"]]
+            ["help/help.html", "「7. ヘルプ」の説明（用語・カーネル・補正の式）", "手法を足したら説明も足す"]]
     table(s, 0.6, 1.5, [3.6, 5.2, 3.33], rows, size=12, row_h=0.56, bold_first=True)
     point_bar(s, 6.2, "設定ファイルの項目の名前は、defaultSettings.m の settings.〈グループ〉.〈項目〉 と同じ",
               icon="i", icon_color=BODY, h=0.6, size=13.5)
@@ -333,7 +333,7 @@ def build(output: Path, reference: Path):
         widths=(3.85, 1.95, 4.68, 1.65), row_h=0.44)
     point_bar(s, 6.3, "Overlay 補正をすべて「なし」（waferOrder 0・shotCommon none・perShot none）にすると補正の評価をしない",
               icon="i", icon_color=BODY, h=0.55, size=13)
-    notes(s, "補正の式の書き方と、すべての補正の式は「6. ヘルプ」にまとめている。")
+    notes(s, "補正の式の書き方と、すべての補正の式は「7. ヘルプ」にまとめている。")
 
     # 13. methods
     s = deck.body("03　設定の項目と初期値", "設定の項目⑤：methods（比べる手法）")
@@ -469,7 +469,7 @@ def build(output: Path, reference: Path):
     related = [("README.md", "設定の項目・使い方の全体"),
                ("docs/admin_guide/admin_guide.html", "アプリの構成と保守の作業"),
                ("docs/windows_guide/windows_guide.html", "画面の使い方・exe を作る・配る"),
-               ("「6. ヘルプ」タブ", "用語・カーネル・補正の式")]
+               ("「7. ヘルプ」タブ", "用語・カーネル・補正の式")]
     for index, (name, body) in enumerate(related):
         y = 2.5 + index * 0.98
         circle(s, 8.35, y + 0.08, 0.4, LIGHT, str(index + 1), label_color=INK, size=12)
