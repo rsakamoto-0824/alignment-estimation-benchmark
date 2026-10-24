@@ -62,6 +62,7 @@ matlab_app/**/*.xlsm
 matlab_app/**/*.csv
 !matlab_app/sample_data/sample_alignment.xlsx
 !matlab_app/sample_data/sample_alignment.csv
+!matlab_app/sample_data/sample_targets.xlsx
 # スタンドアローン版の出力（build/buildStandaloneApp.m で作り直せる）
 matlab_app/build/output/
 # MATLAB の自動保存・一時ファイル

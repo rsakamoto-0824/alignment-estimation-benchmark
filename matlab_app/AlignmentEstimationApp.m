@@ -36,6 +36,10 @@ classdef AlignmentEstimationApp < handle
         MAX_MEASURE_PANELS = 6          % 計測マップを並べる数の上限（Wafer × 学習パターン）
         MAX_COMPARE_PANELS = 6          % Wafer ごとのマップで並べて比べる条件の数の上限
         TIMING_REPEAT_LIMITS = [1, 10]  % 処理時間の内訳を測る回数の範囲
+        TARGET_GRID_PITCH_MM = 10       % 「格子で置く」の間隔の初期値 [mm]
+        TARGET_GRID_RADIUS_MM = 140     % 「格子で置く」の半径の初期値 [mm]（有効半径 150 mm の少し内側）
+        TARGET_ALL_TRAINING = "all"     % 学習データの選択肢「計測値のある全 Mark」の値（評価の学習パターンの名前と区別する）
+        TARGET_COLUMNS = {'名前', 'Xmm', 'Ymm', 'markXmm', 'markYmm', 'markNo', 'shotNo', 'Direction'}  % 推定する点の表の列
     end
 
     properties (SetAccess = private)
@@ -61,6 +65,8 @@ classdef AlignmentEstimationApp < handle
         MapConditions = struct("option", {}, "plan", {}, "method", {}, "label", {})  % マップで並べて比べる条件
         Timing = []             % 「処理時間の内訳」で最後に測った結果（alignest.timingBreakdown）
         Theme = "light"         % 画面の色：light（ライトモード）・dark（ダークモード）。setTheme で変える
+        TargetRun = []          % 「6. 未知の座標の推定」で最後に推定した結果（estimateTargets）
+        TargetSelection = zeros(0, 1)  % 推定する点の表で選んでいる行（「選んだ行を削除」で使う）
     end
 
     properties (Dependent)
@@ -96,12 +102,15 @@ classdef AlignmentEstimationApp < handle
             app.Tabs.run = uitab(app.TabGroup, 'Title', '3. 実行');
             app.Tabs.results = uitab(app.TabGroup, 'Title', '4. 結果一覧');
             app.Tabs.map = uitab(app.TabGroup, 'Title', '5. Waferごとのマップ');
-            app.Tabs.help = uitab(app.TabGroup, 'Title', '6. ヘルプ');
+            app.Tabs.target = uitab(app.TabGroup, 'Title', '6. 未知の座標の推定');
+            app.Tabs.help = uitab(app.TabGroup, 'Title', '7. ヘルプ');
+            app.TabGroup.SelectionChangedFcn = @(~, event) app.onTabChanged(event);
             buildDataTab(app);
             buildSettingsTab(app);
             buildRunTab(app);
             buildResultsTab(app);
             buildMapTab(app);
+            buildTargetTab(app);
             buildHelpTab(app);
             % 表示のメニュー：ライトモード・ダークモードの切り替えと、ヘルプを開く
             viewMenu = uimenu(app.Figure, 'Text', '表示');
@@ -113,7 +122,8 @@ classdef AlignmentEstimationApp < handle
                 'MenuSelectedFcn', @(~, ~) set(app.TabGroup, 'SelectedTab', app.Tabs.help));
             set(findall(app.Figure, '-property', 'FontSize'), 'FontSize', app.FONT_SIZE);
             set(findall(app.Figure, 'Type', 'axes'), 'FontSize', app.AXES_FONT_SIZE);
-            set([app.Controls.unitTable, app.Controls.normalityTable, app.Controls.anovaTable], 'FontSize', app.TABLE_FONT_SIZE);
+            set([app.Controls.unitTable, app.Controls.normalityTable, app.Controls.anovaTable, app.Controls.targetTable, ...
+                app.Controls.targetResultTable], 'FontSize', app.TABLE_FONT_SIZE);
             settingsToControls(app);
             refreshRunSummary(app);
             if app.DefaultsSource ~= ""
@@ -251,6 +261,7 @@ classdef AlignmentEstimationApp < handle
             refreshFactorColumns(app);
             validateSettings(app);
             refreshRunSummary(app);
+            refreshTargetChoices(app);
         end
 
         function setSettings(app, settings)
@@ -1159,6 +1170,120 @@ classdef AlignmentEstimationApp < handle
             drawMap(app);
         end
 
+        function targets = setTargetPoints(app, targets)
+            %SETTARGETPOINTS 「6. 未知の座標の推定」の表を targets（alignest.targetTemplate の形）にする。
+            app.Controls.targetTable.Data = targetCells(targets);
+            app.TargetSelection = zeros(0, 1);
+            onTargetEdited(app);
+        end
+
+        function targets = loadTargetPoints(app, filePath, sheetName)
+            %LOADTARGETPOINTS 未知の座標の表（Excel・CSV）を読み、推定する点の表を置き換える（alignest.readTargetPoints）。
+            if nargin < 3
+                sheetName = "";
+            end
+            [targets, info] = alignest.readTargetPoints(filePath, sheetName);
+            setTargetPoints(app, targets);
+            sheetText = "";
+            if info.sheet ~= ""
+                sheetText = "（シート「" + info.sheet + "」）";
+            end
+            app.Controls.targetInfo.Text = sprintf('%s%s から %d 点を読み込みました。', info.file, sheetText, height(targets)) + ...
+                " " + app.Controls.targetInfo.Text;
+        end
+
+        function targets = addTargetPoints(app, kind, varargin)
+            %ADDTARGETPOINTS 推定する点の表に点を足す。
+            %   addTargetPoints(app, "shots", markXmm, markYmm, markNo)  % 全 Shot の同じ位置（Shot は「Wafer」で選んだ
+            %                                                           % Wafer、すべてなら最初の Wafer の並び）
+            %   addTargetPoints(app, "grid", pitchMm, radiusMm)         % Wafer 上の格子
+            %   addTargetPoints(app, "row")                             % 空の1行（画面で書き込む）
+            c = app.Controls;
+            existing = size(c.targetTable.Data, 1);
+            switch string(kind)
+                case "shots"
+                    if isempty(app.Data)
+                        error('alignest:noData', '先に「1. データの読み込み」で計測データを読み込んでください（Shot の並びを使います）。');
+                    end
+                    added = alignest.targetsAtShots(app.Data.units(max(c.targetWafer.Value, 1)), varargin{:});
+                case "grid"
+                    added = alignest.targetGrid(varargin{:});
+                case "row"
+                    added = alignest.targetTemplate(1);
+                    added.name = "P" + string(existing + 1);
+                otherwise
+                    error('alignest:targetKind', '点の足し方は shots・grid・row のどれかです: %s', kind);
+            end
+            c.targetTable.Data = [c.targetTable.Data; targetCells(added)];
+            onTargetEdited(app);
+            targets = added;
+        end
+
+        function run = estimateTargets(app, unitChoice, trainingChoice, methodIndex)
+            %ESTIMATETARGETS 「6. 未知の座標の推定」：表の点の推定値を求め、表・図・メッセージに出す。
+            %   unitChoice：Wafer の番号（0 = すべての Wafer）、trainingChoice："all"（計測値のある全 Mark）または評価の
+            %   学習パターンの名前、methodIndex：手法の番号（alignest.buildMethodList(app.Settings.methods) の何番目か）。
+            %   省略すると画面で選んでいるもの。推定は alignest.predictTargets（評価と同じ推定、条件は今の設定）。
+            if isempty(app.Data)
+                error('alignest:noData', '先に「1. データの読み込み」で計測データを読み込んでください。');
+            end
+            refreshTargetChoices(app);
+            c = app.Controls;
+            if nargin >= 2
+                c.targetWafer.Value = unitChoice;
+            end
+            if nargin >= 3
+                c.targetTraining.Value = char(trainingChoice);
+            end
+            if nargin >= 4
+                c.targetMethod.Value = methodIndex;
+            end
+            targets = currentTargets(app);
+            methods = alignest.buildMethodList(app.Settings.methods);
+            if isempty(methods)
+                error('alignest:noMethods', '手法がありません。「2. 評価の設定」で比べる手法を選んでください。');
+            end
+            method = methods(c.targetMethod.Value);
+            units = c.targetWafer.Value;
+            if units == 0
+                units = 1:numel(app.Data.units);
+            end
+            training = string(c.targetTraining.Value);
+            app.Figure.Pointer = 'watch';
+            drawnow;
+            restore = onCleanup(@() set(app.Figure, 'Pointer', 'arrow'));
+            estimates = table();
+            results = cell(1, numel(units));
+            for k = 1:numel(units)
+                unit = app.Data.units(units(k));
+                [plan, trainingText] = targetTraining(app, units(k), training);
+                results{k} = alignest.predictTargets(unit, plan, method, app.Settings, targets);
+                rows = results{k}.table;
+                rows = addvars(rows, repmat(unit.label, height(rows), 1), 'Before', 1, 'NewVariableNames', "wafer");
+                estimates = [estimates; rows]; %#ok<AGROW>
+            end
+            app.TargetRun = struct("estimates", estimates, "results", {results}, "unitIndex", units, "method", method, ...
+                "trainingText", trainingText, "messages", targetMessages(results, estimates), "stale", false);
+            showTargetRun(app);
+            run = app.TargetRun;
+        end
+
+        function exportTargetsTo(app, filePath)
+            %EXPORTTARGETSTO 最後に推定した未知の座標の推定値を Excel に書き出す（alignest.exportTargetEstimates）。
+            if isempty(app.TargetRun)
+                error('alignest:noTargets', '書き出す推定値がありません。先に「推定する」を押してください。');
+            end
+            run = app.TargetRun;
+            labels = string({app.Data.units(run.unitIndex).label});
+            evaluation = app.Settings.evaluation;
+            conditions = sprintf('XY 1次を除く：%s、学習データの異常値の除外：%s', onOffText(evaluation.removeLinear), ...
+                onOffText(evaluation.excludeOutliers));
+            notes = ["Wafer", strjoin(labels, "・"); "学習データ", run.trainingText; ...
+                "手法", run.method.label + "（" + run.method.id + "）"; "推定の条件", conditions; ...
+                "画面のメッセージ", strjoin(run.messages, " ")];
+            alignest.exportTargetEstimates(filePath, run.estimates, notes);
+        end
+
         function captureTab(app, tabName, filePath)
             %CAPTURETAB タブを表示して画面の画像を保存する（説明資料・動作確認用）。
             % 画面の配置が描き終わるまで少し待ってから保存する（すぐ保存すると古い配置の絵になることがある）
@@ -1484,6 +1609,7 @@ classdef AlignmentEstimationApp < handle
         function invalidatePreparedData(app)
             app.Data = [];
             clearResults(app);
+            clearTargetRun(app);
             app.Controls.summary.Value = {''};
             clearDataMaps(app);
             refreshFactorColumns(app);
@@ -1866,7 +1992,7 @@ classdef AlignmentEstimationApp < handle
             [c.overlayPerShotDx, c.overlayPerShotDy] = formulaFields(s, 42, 1, onChange, ['x・y は Shot 内の座標' ...
                 '（markXmm・markYmm、Shot 中心から）。係数は Shot ごとに求めます。' formulaHelp]);
             overlayHelp = label(s, ['すべて「なし」なら評価しません。結果一覧の指標「OVL …」と、Wafer ごとのマップの' ...
-                '「Overlay 補正」で見られます。補正の式は「6. ヘルプ」にまとめています。'], [40, 42], 2);
+                '「Overlay 補正」で見られます。補正の式は「7. ヘルプ」にまとめています。'], [40, 42], 2);
             overlayHelp.FontColor = app.Palette.muted;
             overlayHelp.UserData = "muted";
             c.overlayFormulaError = errorLabel(app, s, 43, [1, 2]);
@@ -2025,7 +2151,7 @@ classdef AlignmentEstimationApp < handle
             place(c.rtOrders, 20, 2);
             c.zernike = uicheckbox(m, 'Text', 'Fringe Zernike', 'ValueChangedFcn', onChange, ...
                 'Tooltip', ['Fringe Zernike 多項式（Z1〜Z(k+1)²）の最小二乗。k = 3：Z1〜Z16、4：Z1〜Z25、5：Z1〜Z36。' ...
-                '空白で区切ると次数ごとに比べます。式は「6. ヘルプ」。']);
+                '空白で区切ると次数ごとに比べます。式は「7. ヘルプ」。']);
             place(c.zernike, 21, 1);
             c.zernikeOrders = uieditfield(m, 'text', 'ValueChangedFcn', onChange);
             place(c.zernikeOrders, 21, 2);
@@ -4528,7 +4654,365 @@ classdef AlignmentEstimationApp < handle
             end
         end
 
-        % ================= 6. ヘルプ =================
+        % ================= 6. 未知の座標の推定 =================
+        function buildTargetTab(app)
+            % 左：推定する点（未知の座標）の表と、その作り方。右：推定の条件・メッセージ・図・推定値の表
+            grid = uigridlayout(app.Tabs.target, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 12, 'RowSpacing', 8);
+            label(grid, ['学習データ（計測値）から、計測していない座標（新しい Mark の位置・Wafer 上の任意の点）の値を推定します。' ...
+                '左の表で点を決め（Excel・CSV から読み込むか、画面で入力・作成）、右で Wafer・学習データ・手法を選んで' ...
+                '「推定する」を押します。学習点の範囲の外（外挿）になる点は、右のメッセージと表・図で知らせます。'], 1, 1);
+            body = uigridlayout(grid, [1, 2], 'ColumnWidth', {610, '1x'}, 'Padding', 0, 'ColumnSpacing', 14);
+            left = uigridlayout(body, [6, 1], 'RowHeight', {'fit', 'fit', 'fit', '1x', 'fit', 'fit'}, ...
+                'Padding', 0, 'RowSpacing', 6);
+            place(uilabel(left, 'Text', '① 推定する点（未知の座標）', 'FontWeight', 'bold'), 1, 1);
+            buttons = uigridlayout(left, [1, 4], 'ColumnWidth', {'fit', 'fit', 'fit', 'fit'}, 'Padding', 0);
+            c.targetLoad = uibutton(buttons, 'Text', 'Excel・CSV から読み込む…', 'ButtonPushedFcn', @(~, ~) app.onLoadTargets(), ...
+                'Tooltip', ['1行目が見出し（Xmm・Ymm は必須。markXmm・markYmm・markNo・shotNo・Direction・名前 は任意）の表を' ...
+                '読み、下の表を置き換えます。「未知の座標」シートがあればそれを読みます。']);
+            c.targetAddRow = uibutton(buttons, 'Text', '行を追加', 'ButtonPushedFcn', @(~, ~) app.onAddTargets("row"));
+            c.targetDeleteRows = uibutton(buttons, 'Text', '選んだ行を削除', 'ButtonPushedFcn', @(~, ~) app.onDeleteTargetRows());
+            c.targetClear = uibutton(buttons, 'Text', 'すべて消す', 'ButtonPushedFcn', @(~, ~) app.setTargetPoints( ...
+                alignest.targetTemplate()));
+            % 点の作り方：全 Shot の同じ位置（新しい Mark の位置など）・Wafer 上の格子（Wafer 全面）
+            makers = uigridlayout(left, [2, 8], 'ColumnWidth', {'fit', 'fit', 55, 'fit', 55, 'fit', 45, 'fit'}, ...
+                'RowHeight', {'fit', 'fit'}, 'Padding', 0, 'ColumnSpacing', 8);
+            label(makers, '全 Shot に置く [mm]', 1, 1);
+            label(makers, 'X', 1, 2);
+            c.targetShotX = uieditfield(makers, 'numeric', 'Value', 0, 'Tooltip', 'Shot 中心から見た X [mm]（markXmm）');
+            place(c.targetShotX, 1, 3);
+            label(makers, 'Y', 1, 4);
+            c.targetShotY = uieditfield(makers, 'numeric', 'Value', 0, 'Tooltip', 'Shot 中心から見た Y [mm]（markYmm）');
+            place(c.targetShotY, 1, 5);
+            label(makers, 'Mark 番号', 1, 6);
+            c.targetShotMark = uieditfield(makers, 'text', 'Value', '', 'Tooltip', ['空欄でもよい（Mark 番号の効果は平均）。' ...
+                '学習データに無い番号でもよい（新しい Mark）。']);
+            place(c.targetShotMark, 1, 7);
+            c.targetAddShots = uibutton(makers, 'Text', '表に追加', 'ButtonPushedFcn', @(~, ~) app.onAddTargets("shots"), ...
+                'Tooltip', '右で選んだ Wafer（すべてなら最初の Wafer）の全 Shot の、同じ位置に点を置きます。');
+            place(c.targetAddShots, 1, 8);
+            label(makers, '格子で置く [mm]', 2, 1);
+            label(makers, '間隔', 2, 2);
+            c.targetPitch = uieditfield(makers, 'numeric', 'Value', app.TARGET_GRID_PITCH_MM, 'Limits', [0, Inf], ...
+                'LowerLimitInclusive', 'off', 'Tooltip', '格子の点の間隔 [mm]');
+            place(c.targetPitch, 2, 3);
+            label(makers, '半径', 2, 4);
+            c.targetRadius = uieditfield(makers, 'numeric', 'Value', app.TARGET_GRID_RADIUS_MM, 'Limits', [0, Inf], ...
+                'LowerLimitInclusive', 'off', 'Tooltip', 'Wafer の中心からこの半径 [mm] 以内に置く');
+            place(c.targetRadius, 2, 5);
+            c.targetAddGrid = uibutton(makers, 'Text', '表に追加', 'ButtonPushedFcn', @(~, ~) app.onAddTargets("grid"), ...
+                'Tooltip', 'Wafer の中心から半径以内に、間隔ごとの格子の点を置きます（Wafer 全面の推定値を見るとき）。');
+            place(c.targetAddGrid, 2, 8);
+            c.targetTable = uitable(left, 'ColumnName', app.TARGET_COLUMNS, 'ColumnEditable', true, 'RowName', 'numbered', ...
+                'Data', cell(0, numel(app.TARGET_COLUMNS)), 'ColumnFormat', repmat({'char'}, 1, numel(app.TARGET_COLUMNS)), ...
+                'ColumnWidth', [{76}, repmat({66}, 1, numel(app.TARGET_COLUMNS) - 1)], ...
+                'CellEditCallback', @(~, ~) app.onTargetEdited(), ...
+                'CellSelectionCallback', @(~, event) app.onTargetSelected(event));
+            place(c.targetTable, 4, 1);
+            c.targetInfo = uilabel(left, 'WordWrap', 'on', 'FontColor', app.Palette.muted, 'Text', '');
+            place(c.targetInfo, 5, 1);
+            c.targetError = errorLabel(app, left, 6, 1);
+
+            % 右：条件（Wafer・学習データ・手法）、メッセージ、結果（図と推定値の表を中のタブで切り替える）
+            right = uigridlayout(body, [4, 1], 'RowHeight', {'fit', 'fit', 'fit', '1x'}, 'Padding', 0, 'RowSpacing', 6);
+            place(uilabel(right, 'Text', '② 推定の条件と結果', 'FontWeight', 'bold'), 1, 1);
+            controls = uigridlayout(right, [3, 3], 'ColumnWidth', {'1x', '1.2x', '1.6x'}, ...
+                'RowHeight', {'fit', 'fit', 'fit'}, 'Padding', 0);
+            label(controls, 'Wafer', 1, 1);
+            label(controls, '学習データ', 1, 2);
+            label(controls, '手法', 1, 3);
+            c.targetWafer = uidropdown(controls, 'Items', {'—'}, 'ItemsData', {1}, ...
+                'ValueChangedFcn', @(~, ~) app.drawTargetMap());
+            place(c.targetWafer, 2, 1);
+            c.targetTraining = uidropdown(controls, 'Items', {'計測値のある全 Mark（全 Shot）'}, ...
+                'ItemsData', {char(app.TARGET_ALL_TRAINING)}, 'Tooltip', ['計測値のある全 Mark：読み込んだ計測値をすべて学習に' ...
+                '使います。学習パターン：評価で選んだ Shot（Mark）だけを学習に使います（「3. 実行」で評価した後に選べます）。']);
+            place(c.targetTraining, 2, 2);
+            c.targetMethod = uidropdown(controls, 'Items', {'—'}, 'ItemsData', {1}, ...
+                'Tooltip', '「2. 評価の設定」で選んだ手法から選びます。推定の条件（1次を除く・異常値の除外）も今の設定のとおりです。');
+            place(c.targetMethod, 2, 3);
+            actions = uigridlayout(controls, [1, 2], 'ColumnWidth', {160, 'fit'}, 'Padding', 0);
+            place(actions, 3, [1, 3]);
+            c.targetRun = primaryButton(app, actions, '推定する', @(~, ~) app.onEstimateTargets());
+            c.targetExport = uibutton(actions, 'Text', '推定値を Excel に書き出す…', ...
+                'ButtonPushedFcn', @(~, ~) app.onExportTargets());
+            c.targetMessage = uilabel(right, 'WordWrap', 'on', 'FontWeight', 'bold', 'Text', ...
+                '「1. データの読み込み」で計測データを読み込み、左の表に推定する点を決めてから「推定する」を押してください。');
+            place(c.targetMessage, 3, 1);
+            outputs = uitabgroup(right);
+            place(outputs, 4, 1);
+            figureTab = uitab(outputs, 'Title', '図');
+            figureGrid = uigridlayout(figureTab, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 6, 'RowSpacing', 4);
+            figureControls = uigridlayout(figureGrid, [1, 3], 'ColumnWidth', {'fit', 140, 'fit'}, 'Padding', 0);
+            label(figureControls, '表示', 1, 1);
+            c.targetMode = uidropdown(figureControls, 'Items', {'ベクトル（矢印）', 'X（色）', 'Y（色）'}, ...
+                'ItemsData', {'vector', 'X', 'Y'}, 'ValueChangedFcn', @(~, ~) app.drawTargetMap());
+            place(c.targetMode, 1, 2);
+            c.targetSaveFigure = uibutton(figureControls, 'Text', '図を画像で保存…', ...
+                'ButtonPushedFcn', @(~, ~) app.onSaveTargetFigure());
+            place(c.targetSaveFigure, 1, 3);
+            c.targetPanel = uipanel(figureGrid, 'BorderType', 'none');
+            place(c.targetPanel, 2, 1);
+            c.targetAxes = uiaxes(uigridlayout(c.targetPanel, [1, 1], 'Padding', 0));
+            tableTab = uitab(outputs, 'Title', '推定値の表');
+            c.targetResultTable = uitable(uigridlayout(tableTab, [1, 1], 'Padding', 6), 'RowName', {}, 'Data', table());
+            set([c.targetRun, c.targetExport, c.targetSaveFigure, c.targetAddShots], 'Enable', 'off');
+            app.Controls = mergeStruct(app.Controls, c);
+            onTargetEdited(app);
+        end
+
+        function onTabChanged(app, event)
+            % 「6. 未知の座標の推定」を開いたら、選択肢（Wafer・学習データ・手法）を今のデータ・結果・設定に合わせる
+            if event.NewValue == app.Tabs.target
+                refreshTargetChoices(app);
+            end
+        end
+
+        function refreshTargetChoices(app)
+            % 推定の条件の選択肢を作り直す（前に選んでいたものが残っていれば、そのまま選ぶ）
+            c = app.Controls;
+            hasData = ~isempty(app.Data);
+            if hasData
+                labels = string({app.Data.units.label});
+                setChoices(c.targetWafer, [labels, "すべての Wafer（Wafer ごとに推定して並べる）"], [num2cell(1:numel(labels)), {0}]);
+            else
+                setChoices(c.targetWafer, "—（データを読み込んでください）", {1});
+            end
+            trainingItems = "計測値のある全 Mark（全 Shot）";
+            trainingData = {char(app.TARGET_ALL_TRAINING)};
+            if ~isempty(app.Results) && ~isImportedResults(app.Results) && isfield(app.Results, 'plans')
+                planLabels = unique(string({app.Results.plans.label}), 'stable');
+                trainingItems = [trainingItems, "学習パターン：" + planLabels];
+                trainingData = [trainingData, cellstr(planLabels)];
+            end
+            setChoices(c.targetTraining, trainingItems, trainingData);
+            methods = alignest.buildMethodList(app.Settings.methods);
+            if isempty(methods)
+                setChoices(c.targetMethod, "—（「2. 評価の設定」で手法を選んでください）", {1});
+            else
+                setChoices(c.targetMethod, string({methods.label}), num2cell(1:numel(methods)));
+            end
+            c.targetAddShots.Enable = onOff(hasData);   % 「全 Shot に置く」は読み込んだ Wafer の Shot の並びを使う
+            c.targetRun.Enable = onOff(hasData && ~isempty(methods));
+        end
+
+        function targets = currentTargets(app)
+            % 表（画面）の点を alignest.targetTemplate の形にする。数でない欄は行の番号を出して止める
+            data = app.Controls.targetTable.Data;
+            n = size(data, 1);
+            if n == 0
+                error('alignest:noTargets', '推定する点がありません。左の表に点を読み込むか、足してください。');
+            end
+            text = strings(size(data));
+            for k = 1:numel(data)
+                if ~isempty(data{k})
+                    text(k) = strtrim(alignest.normalizeNumberText(string(data{k})));
+                end
+            end
+            numbers = str2double(text(:, 2:end));
+            targets = alignest.targetTemplate(n);
+            targets.name = text(:, 1);
+            unnamed = targets.name == "";
+            targets.name(unnamed) = "P" + string(find(unnamed));
+            names = ["Xmm", "Ymm", "markXmm", "markYmm", "markNo", "shotNo", "direction"];
+            for k = 1:numel(names)
+                column = numbers(:, k);
+                unreadable = isnan(column) & text(:, k + 1) ~= "";
+                if any(unreadable)
+                    error('alignest:targetTable', '%s 列に数でない値があります（表の %s 行目）。', app.TARGET_COLUMNS{k + 1}, ...
+                        strjoin(string(find(unreadable).'), "・"));
+                end
+                targets.(names(k)) = column;
+            end
+            missing = isnan(targets.Xmm) | isnan(targets.Ymm);
+            if any(missing)
+                error('alignest:targetTable', 'Xmm・Ymm が空欄の行があります（表の %s 行目）。', ...
+                    strjoin(string(find(missing).'), "・"));
+            end
+            badDirection = ~isnan(targets.direction) & ~ismember(targets.direction, [1, 2]);
+            if any(badDirection)
+                error('alignest:targetTable', 'Direction（Scan 方向）は 1 か 2 にしてください（表の %s 行目）。', ...
+                    strjoin(string(find(badDirection).'), "・"));
+            end
+            targets.markXmm(isnan(targets.markXmm)) = 0;   % 空欄は Shot 中心（Xmm・Ymm がそのまま点の座標）
+            targets.markYmm(isnan(targets.markYmm)) = 0;
+        end
+
+        function onTargetEdited(app)
+            % 表を変えたら、点の数と入力の誤りを出す（前の推定値は残すが、推定し直すよう伝える）
+            c = app.Controls;
+            n = size(c.targetTable.Data, 1);
+            c.targetInfo.Text = sprintf(['%d 点。Xmm・Ymm：Shot 中心の Wafer 上の座標 [mm]（markXmm・markYmm が 0 なら点そのもの）、' ...
+                'markXmm・markYmm：Shot 中心から見た位置 [mm]。markNo・shotNo・Direction は空欄でもよい' ...
+                '（推定のとき、点を含む Shot から Scan 方向を補います）。'], n);
+            c.targetError.Text = '';
+            if n > 0
+                try
+                    currentTargets(app);
+                catch err
+                    c.targetError.Text = ['⚠ ', err.message];
+                end
+            end
+            if ~isempty(app.TargetRun) && ~app.TargetRun.stale
+                app.TargetRun.stale = true;
+                c.targetMessage.Text = ['表の点を変えました。「推定する」を押すと、今の点で推定し直します。' newline ...
+                    char(strjoin(app.TargetRun.messages, newline))];
+            end
+        end
+
+        function onTargetSelected(app, event)
+            app.TargetSelection = unique(event.Indices(:, 1));
+        end
+
+        function onDeleteTargetRows(app)
+            rows = app.TargetSelection;
+            data = app.Controls.targetTable.Data;
+            rows = rows(rows >= 1 & rows <= size(data, 1));
+            if isempty(rows)
+                uialert(app.Figure, '削除する行を表で選んでください（Ctrl・Shift で複数選べます）。', '行を選んでください', ...
+                    'Icon', 'info');
+                return
+            end
+            data(rows, :) = [];
+            app.Controls.targetTable.Data = data;
+            app.TargetSelection = zeros(0, 1);
+            onTargetEdited(app);
+        end
+
+        function onAddTargets(app, kind)
+            c = app.Controls;
+            switch kind
+                case "shots"
+                    markNo = str2double(alignest.normalizeNumberText(c.targetShotMark.Value));
+                    if strtrim(c.targetShotMark.Value) ~= "" && isnan(markNo)
+                        uialert(app.Figure, 'Mark 番号は数にしてください（空欄でもよい）。', 'Mark 番号', 'Icon', 'warning');
+                        return
+                    end
+                    runWithAlert(app, @() app.addTargetPoints("shots", c.targetShotX.Value, c.targetShotY.Value, markNo), ...
+                        "点を足せませんでした", "Shot 内の位置と Mark 番号を確かめてください。");
+                case "grid"
+                    runWithAlert(app, @() app.addTargetPoints("grid", c.targetPitch.Value, c.targetRadius.Value), ...
+                        "点を足せませんでした", "間隔を広げるか、半径を小さくしてください。");
+                otherwise
+                    app.addTargetPoints("row");
+                    scroll(c.targetTable, 'bottom');
+            end
+        end
+
+        function onLoadTargets(app)
+            [fileName, folder] = uigetfile({'*.xlsx;*.xls;*.csv', 'Excel・CSV (*.xlsx, *.xls, *.csv)'}, ...
+                '未知の座標（推定する点）の表を選ぶ');
+            figure(app.Figure);
+            if isequal(fileName, 0)
+                return
+            end
+            runWithAlert(app, @() app.loadTargetPoints(fullfile(folder, fileName)), "点を読み込めませんでした", ...
+                "1行目に Xmm・Ymm の見出しがあるか、数の欄に文字が入っていないかを確かめてください。");
+        end
+
+        function onEstimateTargets(app)
+            runWithAlert(app, @() app.estimateTargets(), "推定できませんでした", ...
+                "左の表の点・学習データ・手法を確かめてください。学習点が少ないときは学習データを「計測値のある全 Mark」にしてください。");
+        end
+
+        function onExportTargets(app)
+            [fileName, folder] = uiputfile({'*.xlsx', 'Excel ブック (*.xlsx)'}, '推定値を書き出す', 'target_estimates.xlsx');
+            figure(app.Figure);
+            if isequal(fileName, 0)
+                return
+            end
+            target = fullfile(folder, fileName);
+            if runWithAlert(app, @() app.exportTargetsTo(target), "書き出せませんでした", ...
+                    "同じ名前のファイルを Excel で開いていれば閉じて、もう一度試してください。")
+                uialert(app.Figure, sprintf('書き出しました：%s', target), '書き出しました', 'Icon', 'success');
+            end
+        end
+
+        function onSaveTargetFigure(app)
+            [fileName, folder] = uiputfile({'*.png', 'PNG 画像 (*.png)'}, '図を保存', 'target_map.png');
+            figure(app.Figure);
+            if isequal(fileName, 0)
+                return
+            end
+            target = fullfile(folder, fileName);
+            if runWithAlert(app, @() exportgraphics(app.Controls.targetPanel, target, 'Resolution', 150), ...
+                    "図を保存できませんでした", "保存先のフォルダを変えてもう一度試してください。")
+                uialert(app.Figure, sprintf('保存しました：%s', target), '保存しました', 'Icon', 'success');
+            end
+        end
+
+        function [plan, text] = targetTraining(app, unitIndex, training)
+            % 学習データ：計測値のある全 Mark（全 Shot）、または評価の学習パターン（その Wafer のもの）
+            if training == app.TARGET_ALL_TRAINING
+                plan = 1:numel(app.Data.units(unitIndex).shots.shotNo);
+                text = "計測値のある全 Mark（全 Shot）";
+                return
+            end
+            plans = app.Results.plans;
+            position = find(string({plans.label}) == training & [plans.unitIndex] == unitIndex, 1);
+            if isempty(position)
+                error('alignest:targetTraining', 'Wafer「%s」には学習パターン「%s」がありません。', ...
+                    app.Data.units(unitIndex).label, training);
+            end
+            plan = plans(position);
+            text = "学習パターン：" + training;
+        end
+
+        function showTargetRun(app)
+            % 推定値の表・メッセージ・図を出す（外挿の行は色を付け、メッセージは目立つ色にする）
+            run = app.TargetRun;
+            c = app.Controls;
+            e = run.estimates;
+            mark = strings(height(e), 1);
+            mark(e.extrapolated) = "外挿";
+            c.targetResultTable.Data = table(e.wafer, e.name, round(e.x, 3), round(e.y, 3), e.markNo, e.shotNo, ...
+                round(e.estimateX, 3), round(e.estimateY, 3), mark, round(e.outsideMm, 1), e.note, 'VariableNames', ...
+                ["Wafer", "名前", "x [mm]", "y [mm]", "markNo", "shotNo", "推定値 X [nm]", "推定値 Y [nm]", "外挿", ...
+                "範囲の外 [mm]", "メモ"]);
+            removeStyle(c.targetResultTable);
+            if any(e.extrapolated)
+                addStyle(c.targetResultTable, uistyle('BackgroundColor', app.Palette.warning), 'row', find(e.extrapolated));
+            end
+            warn = any(e.extrapolated) || any(e.unseenMark);
+            c.targetMessage.Text = char(strjoin(run.messages, newline));
+            c.targetMessage.FontColor = ternary(warn, app.Palette.error, app.Palette.text);
+            set([c.targetExport, c.targetSaveFigure], 'Enable', 'on');
+            drawTargetMap(app);
+        end
+
+        function drawTargetMap(app)
+            % 推定した Wafer（すべてなら選んだもの、無ければ最初）の図を描く
+            run = app.TargetRun;
+            c = app.Controls;
+            if isempty(run)
+                return
+            end
+            position = find(run.unitIndex == c.targetWafer.Value, 1);
+            if isempty(position)
+                position = 1;
+            end
+            unit = app.Data.units(run.unitIndex(position));
+            titleText = unit.label + " の推定値";   % 手法・学習データは上の欄に出ている（題名が長いと色の目盛りの名前と重なる）
+            alignest.plot.targetMap(c.targetAxes, run.results{position}, unit, mode=string(c.targetMode.Value), ...
+                titleText=titleText, waferRadiusMm=app.Settings.data.waferRadiusMm);
+            c.targetAxes.FontSize = app.AXES_FONT_SIZE;
+        end
+
+        function clearTargetRun(app)
+            app.TargetRun = [];
+            c = app.Controls;
+            if ~isfield(c, 'targetResultTable')
+                return
+            end
+            c.targetResultTable.Data = table();
+            removeStyle(c.targetResultTable);
+            cla(c.targetAxes, 'reset');
+            legend(c.targetAxes, 'off');
+            set([c.targetExport, c.targetSaveFigure], 'Enable', 'off');
+            c.targetMessage.Text = '左の表に推定する点を決めてから「推定する」を押してください。';
+            c.targetMessage.FontColor = app.Palette.text;
+        end
+
+        % ================= 7. ヘルプ =================
         function buildHelpTab(app)
             % 用語・推定の手法・カーネル・Overlay 補正の式の説明（help/help.html。exe にも入れる）を出す
             grid = uigridlayout(app.Tabs.help, [1, 1], 'Padding', 0);
@@ -4592,6 +5076,9 @@ classdef AlignmentEstimationApp < handle
             fillUnitTable(app);
             if ~isempty(app.Results)
                 refreshResults(app);
+            end
+            if ~isempty(app.TargetRun)
+                showTargetRun(app);   % 外挿の行の色・メッセージの色を新しい色の組にする
             end
         end
 
@@ -5233,16 +5720,68 @@ rows = table_(ismember(table_.unitIndex, option.unitIndex) & table_.plan == plan
     table_.methodIndex == methodIndex, :);
 end
 
+function cells = targetCells(targets)
+% 推定する点（alignest.targetTemplate の形）を、画面の表の文字の欄にする（NaN は空欄）
+columns = {targets.name, targets.Xmm, targets.Ymm, targets.markXmm, targets.markYmm, targets.markNo, targets.shotNo, ...
+    targets.direction};
+cells = cell(height(targets), numel(columns));
+for k = 1:numel(columns)
+    text = string(columns{k});
+    text(ismissing(text)) = "";
+    cells(:, k) = cellstr(text);
+end
+end
+
+function messages = targetMessages(results, estimates)
+% 画面に出すメッセージ。Wafer が1枚ならその結果のまま、複数なら外挿の数をまとめ、ほかの注意は重ねずに並べる
+if isscalar(results)
+    messages = results{1}.messages;
+    return
+end
+n = height(estimates);
+nOutside = nnz(estimates.extrapolated);
+if nOutside > 0
+    messages = sprintf(['⚠ 外挿：%d 枚の Wafer の計 %d / %d 点が学習点の範囲（学習点を囲む凸包）の外にあります' ...
+        '（最大 %.1f mm 外）。学習点から離れるほど推定値は信頼できません（表の「外挿」、図の × 印）。'], numel(results), ...
+        nOutside, n, max(estimates.outsideMm));
+else
+    messages = sprintf('外挿なし：%d 枚の Wafer の計 %d 点すべてが学習点の範囲（学習点を囲む凸包）の中です。', ...
+        numel(results), n);
+end
+others = strings(0, 1);
+for k = 1:numel(results)
+    others = [others; results{k}.messages(2:end)]; %#ok<AGROW>
+end
+messages = [string(messages); unique(others, 'stable')];
+end
+
+function text = onOffText(value)
+text = "しない";
+if value
+    text = "する";
+end
+end
+
+function setChoices(dropdown, items, itemsData)
+% ドロップダウンの選択肢を変える（前に選んでいた値が残っていれば、そのまま選ぶ）
+previous = dropdown.Value;
+dropdown.Items = cellstr(items);
+dropdown.ItemsData = itemsData;
+if any(cellfun(@(value) isequal(value, previous), itemsData))
+    dropdown.Value = previous;
+end
+end
+
 function palette = themePalette(mode)
 % 画面の色の組（ライトモードは MATLAB の画面の既定の色、ダークモードは暗い背景に明るい文字）
 if string(mode) == "dark"
     palette = struct("background", [0.13, 0.14, 0.16], "text", [0.92, 0.92, 0.93], "muted", [0.66, 0.67, 0.70], ...
-        "error", [1.0, 0.48, 0.45], "accent", [0.45, 0.70, 1.0], "best", [0.42, 0.36, 0.10], ...
+        "error", [1.0, 0.48, 0.45], "accent", [0.45, 0.70, 1.0], "best", [0.42, 0.36, 0.10], "warning", [0.45, 0.24, 0.16], ...
         "field", [0.20, 0.21, 0.24], "fieldAlt", [0.17, 0.18, 0.21], "button", [0.25, 0.26, 0.30], ...
         "axes", [0.10, 0.11, 0.13], "axisLine", [0.82, 0.82, 0.84], "grid", [0.55, 0.55, 0.58]);
 else
     palette = struct("background", [0.94, 0.94, 0.94], "text", [0, 0, 0], "muted", [0.35, 0.35, 0.35], ...
-        "error", [0.72, 0.11, 0.11], "accent", [0.0, 0.36, 0.67], "best", [1.0, 0.93, 0.70], ...
+        "error", [0.72, 0.11, 0.11], "accent", [0.0, 0.36, 0.67], "best", [1.0, 0.93, 0.70], "warning", [1.0, 0.86, 0.80], ...
         "field", [1, 1, 1], "fieldAlt", [0.94, 0.94, 0.94], "button", [0.96, 0.96, 0.96], ...
         "axes", [1, 1, 1], "axisLine", [0.15, 0.15, 0.15], "grid", [0.15, 0.15, 0.15]);
 end

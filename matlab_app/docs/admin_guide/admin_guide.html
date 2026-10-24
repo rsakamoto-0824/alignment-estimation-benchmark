@@ -184,6 +184,7 @@
             <tr><td>学習 Shot</td><td>学習 Shot 数（または計測率）ごとに、制約付き I 最適・D 最適・ランダム・手動（人が選んだ配置の Excel から読める）・ファイルの優先順・Mark 単位の I 最適で学習 Shot（Mark 単位なら学習 Mark）を選ぶ。選び方は複数選べて、学習パターンの名前の先頭に選び方が付く。同じ配置の Wafer は同じ選び方を使い回す</td><td><code>buildPlanSpecs</code>・<code>cachedTrainingPlan</code>・<code>planTrainingShots</code>・<code>constrainedIOptimal</code>・<code>exchangeDesign</code>（D 最適・Mark 単位の交換法）・<code>readLayoutPlans</code>・<code>trainingMarks</code>・<code>designCriteria</code></td></tr>
             <tr><td>推定</td><td>手法ごとに、学習 Shot の計測値から学習しなかった Shot の値を X・Y 別に推定する</td><td><code>buildMethodList</code>・<code>estimateWafer</code>・<code>+models</code> の関数</td></tr>
             <tr><td>評価・集計</td><td>評価点（学習しなかった Shot の有効な Mark）の RMSE・MAE・R² などと、Overlay 補正の残差の変化を求め、手法 × 学習パターンで集計する。評価済みの結果に手法・学習パターンを足す（済んだ組み合わせは計算しない）。行ごとの評価点の推定値を残し、評価点を半径・Shot の条件で絞って指標を計算し直す</td><td><code>runEvaluation</code>（<code>"extend"</code> で追加）・<code>extensionConflicts</code>・<code>computeMetrics</code>・<code>compactEstimate</code>・<code>filterResults</code>・<code>pointFilterMask</code>・<code>overlayCorrection</code>・<code>summarizeResults</code>・<code>pairedComparison</code></td></tr>
+            <tr><td>未知の座標の推定</td><td>計測していない点を計測値の無い Mark として Wafer に足し、評価と同じ推定で値を求める。学習点の凸包の外を外挿として知らせる</td><td><code>predictTargets</code>・<code>estimateWafer</code></td></tr>
             <tr><td>書き出し・読み込み</td><td>評価結果・推定値を Excel に書き出す。書き出した Excel を読み込んで、計測ファイルなしで表・グラフ・マップを描き直す</td><td><code>exportResults</code>・<code>exportEstimates</code>・<code>importResults</code>・<code>importEstimates</code></td></tr>
           </tbody>
         </table>
@@ -210,7 +211,7 @@
 │  ├─ +plot/     図（Wafer マップ・共分散楕円・ヒストグラム・計測マップ・Scan 方向の枠・同心円の区切り・
 │  │             残差の箱ひげ図・処理時間の積み上げ横棒）
 │  └─ +optim/    上下限つきの最小化（GPR の超パラメータの推定。Toolbox 不要）
-├─ help/         「6. ヘルプ」の中身（help.html。exe にも入れる）
+├─ help/         「7. ヘルプ」の中身（help.html。exe にも入れる）
 ├─ tests/        自動テスト（runAllTests）と Python 版の基準値（reference/）
 ├─ sample_data/  模擬データ（sample_alignment.xlsx・.csv と作成スクリプト）
 ├─ build/        exe を作るスクリプト（buildStandaloneApp.m）
@@ -233,7 +234,8 @@
             <tr><td>3. 実行</td><td><code>buildRunTab</code>・<code>evaluate</code>・<code>extendEvaluation</code>・<code>drawMeasurementMap</code>（並べる数は <code>tileShape</code>）</td><td><code>runEvaluation</code>・<code>cachedTrainingPlan</code>・<code>plot.measurementMap</code>・<code>plot.scanFrames</code>・<code>plot.zoneRings</code></td></tr>
             <tr><td>4. 結果一覧</td><td><code>buildResultsTab</code>・<code>refreshResultControls</code>・<code>drawChart</code>・<code>analyzeResiduals</code>・<code>drawResidualBoxplot</code>・<code>drawScatter</code>・<code>compareDistributions</code>・<code>measureTiming</code>・<code>drawLayoutComparison</code>（計測配置の比較）・<code>applyResultFilter</code>（絞り込みの欄は <code>buildFilterControls</code>）</td><td><code>summarizeResults</code>・<code>pairedComparison</code>・<code>collectEstimates</code>・<code>residualAnalysis</code>・<code>residualFactors</code>・<code>plot.residualBoxplot</code>・<code>distributionComparison</code>・<code>timingBreakdown</code>・<code>plot.timingBars</code>・<code>layoutComparison</code>・<code>filterResults</code>・<code>exportResults</code>・<code>importResults</code>・<code>importEstimates</code></td></tr>
             <tr><td>5. Wafer ごとのマップ</td><td><code>buildMapTab</code>・<code>drawMap</code>（1つの条件）・<code>drawComparison</code>（並べて比べる）・<code>mapFields</code>（図の値。<code>computedMapFields</code>・<code>importedMapFields</code>）・<code>drawMapPanel</code>・<code>addMapCondition</code></td><td><code>estimateWafer</code>・<code>averageFields</code>・<code>overlayProjector</code>・<code>overlayCorrection</code>・<code>unitPointFilter</code>・<code>plot.waferMap</code>（題名・説明のワースト値・95%値は画面の <code>addWorstValues</code>）</td></tr>
-            <tr><td>6. ヘルプ</td><td><code>buildHelpTab</code>（<code>help/help.html</code> を uihtml で表示）</td><td>—（説明は HTML に直接書く。手法・カーネル・補正の式を足したら、ここも足す）</td></tr>
+            <tr><td>6. 未知の座標の推定</td><td><code>buildTargetTab</code>・<code>loadTargetPoints</code>・<code>addTargetPoints</code>・<code>currentTargets</code>（表 → 点）・<code>estimateTargets</code>・<code>showTargetRun</code>・<code>drawTargetMap</code>・<code>exportTargetsTo</code></td><td><code>readTargetPoints</code>・<code>targetTemplate</code>・<code>targetsAtShots</code>・<code>targetGrid</code>・<code>predictTargets</code>（中で <code>estimateWafer</code>）・<code>exportTargetEstimates</code>・<code>plot.targetMap</code></td></tr>
+            <tr><td>7. ヘルプ</td><td><code>buildHelpTab</code>（<code>help/help.html</code> を uihtml で表示）</td><td>—（説明は HTML に直接書く。手法・カーネル・補正の式を足したら、ここも足す）</td></tr>
             <tr><td>画面の色</td><td><code>setTheme</code>（メニュー「表示」、次に開いたときのために <code>PREF_GROUP</code> に保存）・<code>applyTheme</code>・<code>themePalette</code>（色の定義）</td><td>—（色は <code>Palette</code>（今の色の組）から取る）</td></tr>
           </tbody>
         </table>
@@ -345,6 +347,8 @@
             <tr><td><code>EXCEL_MAX_DATA_ROWS</code></td><td><code>exportEstimates</code>・画面</td><td>Excel の 1 シートに書ける行数（1,048,575 行）。推定値の書き出しはこれを超えると止める</td></tr>
             <tr><td><code>MAX_MATERN_NU = 50</code></td><td><code>models.maternNuCheck</code>・画面</td><td>Matérn の ν の上限</td></tr>
             <tr><td><code>MAX_WAFER_ORDER = 5</code></td><td><code>overlayChoice</code></td><td>Overlay 補正の Wafer 成分の多項式の最大次数</td></tr>
+            <tr><td><code>EXTRAPOLATION_TOLERANCE_MM = 0.5</code></td><td><code>predictTargets</code></td><td>学習点の凸包の外でも、この距離 [mm] 以内は範囲内とみなす（境界の上の点・座標の丸め）</td></tr>
+            <tr><td><code>MAX_POINTS = 20000</code>・<code>TARGET_GRID_PITCH_MM = 10</code>・<code>TARGET_GRID_RADIUS_MM = 140</code></td><td><code>targetGrid</code>・画面（定数）</td><td>「格子で置く」の点の数の上限と、間隔・半径の初期値 [mm]</td></tr>
             <tr><td><code>MAX_POWER = 9</code></td><td><code>parseCorrectionFormula</code></td><td>補正の式で使える x・y のべきの上限</td></tr>
             <tr><td><code>gamGpLengthScales</code></td><td><code>recommendedMethods</code>（<code>methods.options</code>）</td><td>GAM のガウス過程の長さスケールの候補（Wafer 半径で割った単位）</td></tr>
             <tr><td><code>ARROW_COLORS</code></td><td>画面（定数）</td><td>共分散楕円と重ねるときの矢印の色（計測値・推定値・残差）</td></tr>
@@ -379,6 +383,8 @@
             <tr><td>部署の標準の初期値を変える</td><td>評価の条件・比べる手法の初期値をそろえたい</td><td>exe を作り直さないなら既定の設定ファイル <code>alignment_estimation_defaults.json</code>（<code>siteDefaults</code>）。アプリの初期値そのものは <code>defaultSettings</code>・<code>recommendedMethods</code>（<code>docs/defaults_guide</code> の手順書）</td><td><code>TestLayoutDesignZernike</code>・<code>TestSpatialModels</code></td></tr>
             <tr><td>ヘルプの説明を直す</td><td>手法・カーネル・補正の式を足した</td><td><code>help/help.html</code>（exe には <code>buildStandaloneApp</code> の <code>additionalFiles</code> で入る）</td><td><code>TestLayoutDesignZernike</code>（主な用語・カーネルが載っていること）</td></tr>
             <tr><td>画面の色を直す</td><td>ダークモードで見えにくい部品がある</td><td><code>themePalette</code>（ライト・ダークの色）、<code>applyTheme</code>（部品の色の切り替え）。図の線・文字の色は各 <code>plot.*</code> の関数</td><td><code>TestAppWorkflow</code></td></tr>
+            <tr><td>外挿の決め方を変える</td><td>外挿の知らせ方を厳しく・緩くしたい</td><td><code>predictTargets</code> の <code>EXTRAPOLATION_TOLERANCE_MM</code>（凸包からの距離）。判定の考え方そのもの（凸包）は <code>hullOf</code>・<code>distanceOutside</code></td><td><code>TestTargetPrediction</code></td></tr>
+            <tr><td>未知の座標の表の列を足す</td><td>点に別の情報を持たせたい</td><td><code>targetTemplate</code>（列）・<code>readTargetPoints</code>（見出し）・画面の <code>TARGET_COLUMNS</code>・<code>currentTargets</code>・<code>targetCells</code>・<code>exportTargetEstimates</code></td><td><code>TestTargetPrediction</code></td></tr>
             <tr><td>MATLAB の版を上げる</td><td>会社の MATLAB の更新</td><td>直す場所は無いことが多い。テストと画面の確認、exe の作り直し（MATLAB Runtime も同じ版に）</td><td>全テスト</td></tr>
             <tr><td>手順書を直す</td><td>画面を変えた</td><td><code>docs/windows_guide/windows_guide.html</code>、<code>docs/powerpoint_guide</code>（画面の撮影は <code>_src/capture_screens.m</code>）、<code>README.md</code></td><td>—</td></tr>
           </tbody>
@@ -403,7 +409,7 @@
 runAllTests</code></pre>
       </div>
       <p>
-        最後に「成功 142 件、失敗 0 件、未完了 0 件」と出れば正常です（2026/10/24 時点の件数。テストを足すと増えます）。
+        最後に「成功 148 件、失敗 0 件、未完了 0 件」と出れば正常です（2026/10/24 時点の件数。テストを足すと増えます）。
         1つのファイルだけ確かめるときは <code>runtests('TestOverlay')</code> のようにファイル名を指定します。
         <code>TestPythonReference</code> は、Python 版の計算結果（<code>tests/reference/python_reference.json</code>）と照合するテストです。
         計算方法をわざと変えたときは、基準値を作り直すか、テストの許容誤差を見直します。

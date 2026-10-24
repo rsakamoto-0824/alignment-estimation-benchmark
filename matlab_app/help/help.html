@@ -60,6 +60,7 @@
   <a class="sub" href="#kernels-gam">GAM のガウス過程</a>
   <a class="sub" href="#kernels-other">TPS・RBF・Kriging</a>
   <a href="#zernike">Fringe Zernike</a>
+  <a href="#targets">未知の座標の推定・外挿</a>
   <a href="#overlay">Overlay 補正の式</a>
   <a class="sub" href="#overlay-model">補正モデル</a>
   <a class="sub" href="#overlay-shot">Shot 内の式</a>
@@ -78,6 +79,7 @@
   <li><strong>3. 実行</strong>：計測マップで学習に使う Shot（Mark）を確かめてから「評価を始める」。後から「条件を追加して評価」で手法・学習 Shot 数を足せる。</li>
   <li><strong>4. 結果一覧</strong>：表・グラフ・基準の手法との比較・計測配置の比較・誤差の分布（ANOVA・箱ひげ図）・散布図・分布の比較・処理時間の内訳。</li>
   <li><strong>5. Wafer ごとのマップ</strong>：計測値・推定値・残差（または Overlay 補正）を Wafer 上で見る。条件を並べて比べられる。</li>
+  <li><strong>6. 未知の座標の推定</strong>：計測していない座標（新しい Mark の位置・Wafer 上の任意の点）の推定値を求める。点は Excel・CSV から読むか、画面で入力・作成する。外挿の点は知らせる（<a href="#targets">下</a>）。</li>
 </ol>
 <p class="note">画面の色はメニューの「表示」でライトモード・ダークモードを選べます（次に開いたときも同じ色）。</p>
 
@@ -135,6 +137,8 @@
 <tr><td class="term">JS ダイバージェンス</td><td>2つの分布の違い（0 = 同じ、1 = 重なりなし。底 2）。共通の区間のヒストグラムの割合 P・Q で、M = (P + Q)/2、JS = KL(P‖M)/2 + KL(Q‖M)/2。</td></tr>
 <tr><td class="term">共分散楕円</td><td>座標ごとの Wafer 間（Shot 間）の X・Y のばらつきと相関を表す楕円。色は相関係数の絶対値 |r|。</td></tr>
 <tr><td class="term">同心円の区切り線</td><td>同心円の制約の区切りの半径（Shot 中心の半径 [mm]）を橙の一点鎖線で描いたもの。</td></tr>
+<tr><td class="term">凸包</td><td>点の集まりをすべて含む、いちばん小さい凸の多角形（輪ゴムを外側からかけた形）。「6. 未知の座標の推定」では学習点の凸包を「学習点の範囲」とし、図に破線で描く。</td></tr>
+<tr><td class="term">外挿・内挿</td><td>学習点の範囲の中の点を推定するのが内挿、外の点を推定するのが外挿。外挿は学習点から離れるほど信頼できない（手法ごとの外側の形の仮定で値が大きく変わる）。</td></tr>
 </table>
 
 <h2 id="methods">推定の手法</h2>
@@ -217,6 +221,18 @@ Fringe 番号は、Fringe の次数 k = (n + |m|)/2 の小さい順、同じ k �
 <tr><td>Z17〜Z25</td><td>k = 4</td><td>(4, ±4)、(5, ±3)、(6, ±2)、(7, ±1)、(8, 0)</td><td>高次の項</td></tr>
 <tr><td>Z26〜Z36</td><td>k = 5</td><td>(5, ±5)、(6, ±4)、(7, ±3)、(8, ±2)、(9, ±1)、(10, 0)</td><td>高次の項</td></tr>
 </table>
+
+<h2 id="targets">未知の座標の推定・外挿</h2>
+<p>「6. 未知の座標の推定」では、学習データ（計測値のある全 Mark、または評価の学習パターン）で選んだ手法を当てはめ、表の点の推定値を求めます。推定は評価と同じ計算です（点を、計測値の無い Mark として足して推定する）。</p>
+<table>
+<tr><th>項目</th><th>決まり</th></tr>
+<tr><td class="term">点の座標</td><td>計測データと同じく、Wafer 上の座標 x = Xmm + markXmm、y = Ymm + markYmm [mm]。Xmm・Ymm は Shot 中心、markXmm・markYmm は Shot 中心から見た位置（空欄は 0 で、Xmm・Ymm が点そのものの座標）。</td></tr>
+<tr><td class="term">点の Shot・Scan 方向</td><td>shotNo があればその Shot、無ければ点を含む Shot（Shot 中心 ± Shot の大きさの半分）。Direction が空欄なら、その Shot の Scan 方向を使う。分からない点は Scan 方向の効果を平均とする。</td></tr>
+<tr><td class="term">学習に無い Mark 番号</td><td>学習点に無い Mark 番号（新しい Mark）・空欄の点は、Mark 番号の効果を全 Mark の平均として推定する（効果コードは 0、加法カーネルは同じ水準の学習点が無いので Mark の項は効かない）。Mark 番号を使わない手法では、位置だけで推定する。</td></tr>
+<tr><td class="term">外挿の判定</td><td>学習点（X・Y のどちらかで学習に使った Mark）の凸包の外に 0.5 mm より離れた点を外挿とする。画面の上に件数と最大の距離を出し、表の「外挿」と図の × 印で示す。「範囲の外 [mm]」は凸包までの距離、Excel の「最も近い学習点」は最も近い学習点までの距離。</td></tr>
+<tr><td class="term">推定の条件</td><td>手法・質的変数・XY 1次を除く・学習データの異常値の除外は「2. 評価の設定」の今の設定のとおり。</td></tr>
+</table>
+<p class="note">外挿の点でも推定値は出します。Wafer の外周より外、学習した Shot から離れた点は、手法によって値が大きく違うことがあるので、複数の手法で比べてから使ってください。</p>
 
 <h2 id="overlay">Overlay 補正の式</h2>
 <p>推定値で補正量を求めたとき、実際の値で求めた補正と比べて Overlay 残差がどれだけ増えるかを評価します（「2. 評価の設定」の「Overlay 補正の評価」）。</p>
