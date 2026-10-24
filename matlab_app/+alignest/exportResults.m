@@ -63,6 +63,12 @@ if isfield(results, "additions")
     items = [items; repmat("追加した条件", numel(results.additions), 1)];
     values = [values; results.additions(:)];
 end
+if isfield(results.settings, "data") && alignest.valueSpec(results.settings.data).scalar
+    spec = alignest.valueSpec(results.settings.data);
+    items(end + 1) = "推定した値";
+    values(end + 1) = "1変数：列「" + spec.name + "」（単位 " + spec.unit + "）。指標の X と X・Y 合計がこの値の指標" + ...
+        "（Y 成分は無いので空欄）。";
+end
 values = [values; summary.messages(:); results.log(:)];
 items = [items; repmat("データの確認", numel(summary.messages), 1); repmat("計算の注意", numel(results.log), 1)];
 writetable(table(items, values, 'VariableNames', ["項目", "内容"]), filePath, 'Sheet', '説明');

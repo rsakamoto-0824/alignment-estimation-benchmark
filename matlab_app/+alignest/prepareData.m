@@ -2,6 +2,11 @@ function data = prepareData(raw, mapping, options)
 %PREPAREDATA 読み込んだ表を、Wafer（計測）ごとの Mark・Shot の配列にまとめる。
 %   Overlay 計測ルールの前処理に従う。
 %   - 解析座標は x = Xmm + markXmm、y = Ymm + markYmm（mm）。有効な点は半径 r < validRadiusMm（境界上は除外）。
+%   - options.coordinateMode = "absolute" なら、Xmm・Ymm の列は点の Wafer 上の絶対座標（x = Xmm、y = Ymm）。Shot 中心は、
+%     markXmm・markYmm があれば x − markXmm、無くて shotNo があれば同じ Wafer・shotNo の点の平均、どちらも無ければ
+%     点そのもの（点を1つずつ Shot として扱う。Shot 内の位置は 0、Mark 番号は 1、Scan 方向は付けない）。
+%   - options.valueColumn に列の名前を渡すと、その列（膜厚・線幅など）を1変数として推定する。値は marks.measX に入れ、
+%     Y 成分は使わない（marks.validY はすべて false）。measX・measY・StsX・StsY の列は使わない（alignest.valueSpec）。
 %   - X の解析には StsX = 0 の measX、Y の解析には StsY = 0 の measY だけを使う（未測定を0として扱わない）。
 %   - Wafer・DateTime・Xmm・Ymm・markXmm・markYmm が同じ行は重複とみなし、計測値を X・Y それぞれ平均する。
 %   - Radius の列があれば、Xmm・Ymm から計算した値と 0.001 mm より違う行の数を知らせる。
@@ -26,6 +31,8 @@ arguments
     options.invertDirection (1, 1) logical = false
     options.directionOverrideShots double = zeros(1, 0)
     options.directionOverrideValues double = zeros(1, 0)
+    options.coordinateMode (1, 1) string {mustBeMember(options.coordinateMode, ["shotMark", "absolute"])} = "shotMark"
+    options.valueColumn (1, 1) string = ""
 end
 overrideShots = options.directionOverrideShots(:);
 overrideValues = options.directionOverrideValues(:);
@@ -43,7 +50,17 @@ if ~any(options.directionRule == ruleNames)
         options.directionRule);
 end
 
-required = alignest.standardColumns();
+absolute = options.coordinateMode == "absolute";
+scalar = options.valueColumn ~= "";
+if scalar && ~any(string(raw.Properties.VariableNames) == options.valueColumn)
+    error('alignest:valueColumn', '推定する値の列「%s」がファイルにありません。「推定する値」で列を選び直してください。', ...
+        options.valueColumn);
+end
+if scalar && any(string(struct2cell(mapping)) == options.valueColumn)
+    error('alignest:valueColumn', ['推定する値の列「%s」が、標準の項目にも対応づけられています。' ...
+        '「列の対応」でその項目を「（なし）」にしてください。'], options.valueColumn);
+end
+required = alignest.standardColumns(options.coordinateMode, options.valueColumn);
 required = string({required([required.required]).name});
 missingColumns = required(arrayfun(@(name) ~isfield(mapping, name) || mapping.(name) == "", required));
 if ~isempty(missingColumns)
@@ -53,16 +70,30 @@ end
 column = @(name) columnValues(raw, mapping, name);
 Xmm = toNumeric(column("Xmm")) * scale.Xmm;
 Ymm = toNumeric(column("Ymm")) * scale.Ymm;
-markXmm = toNumeric(column("markXmm")) * scale.markXmm;
-markYmm = toNumeric(column("markYmm")) * scale.markYmm;
-measX = toNumeric(column("measX"));
-measY = toNumeric(column("measY"));
+hasMarkOffset = isMapped(mapping, "markXmm") && isMapped(mapping, "markYmm");
+markXmm = defaultNumeric(column("markXmm"), nRows, 0) * scale.markXmm;   % 絶対座標で無いときは 0（下で決める）
+markYmm = defaultNumeric(column("markYmm"), nRows, 0) * scale.markYmm;
+if absolute && ~hasMarkOffset
+    markXmm = zeros(nRows, 1);
+    markYmm = zeros(nRows, 1);
+end
+if scalar
+    measX = toNumeric(raw.(options.valueColumn));   % 1変数は X 成分として扱う
+    measY = nan(nRows, 1);
+else
+    measX = toNumeric(column("measX"));
+    measY = toNumeric(column("measY"));
+end
 operation = defaultText(column("Operation"), nRows, "");
 eqpId = defaultText(column("EqpId"), nRows, "");
 lotId = defaultText(column("LotID"), nRows, "");
-[attributeNames, attributes] = otherColumns(raw, mapping);
+otherMapping = mapping;
+otherMapping.valueColumn__ = options.valueColumn;   % 推定する値の列は質的変数の候補にしない
+[attributeNames, attributes] = otherColumns(raw, otherMapping);
 wafer = defaultText(column("Wafer"), nRows, "Wafer");
 dateTime = defaultText(column("DateTime"), nRows, "");
+% 評価の単位：Operation × EqpId × LotID × Wafer × DateTime
+unitKey = operation + char(31) + eqpId + char(31) + lotId + char(31) + wafer + char(31) + dateTime;
 shotNo = defaultNumeric(column("shotNo"), nRows);
 direction = defaultNumeric(column("Direction"), nRows);
 markNo = defaultNumeric(column("markNo"), nRows);
@@ -80,14 +111,18 @@ hasDirectionColumn = isMapped(mapping, "Direction");
 hasShotNo = isMapped(mapping, "shotNo");
 hasMarkNo = isMapped(mapping, "markNo");
 
-% ステータス：0 が有効、それ以外（−1 = 未測定など）は使わない
+% ステータス：0 が有効、それ以外（−1 = 未測定など）は使わない（1変数ではステータスの列を使わず、空・数でない値を無効にする）
 statusX = defaultNumeric(column("StsX"), nRows, 0);
 statusY = defaultNumeric(column("StsY"), nRows, 0);
+if scalar
+    statusX = zeros(nRows, 1);
+    statusY = zeros(nRows, 1);
+end
 validX = statusX == 0 & ~isnan(measX);
 validY = statusY == 0 & ~isnan(measY);
 % 元の入力行で判定する。重複の平均後にゼロになった値は除かない。
-zeroMeasurements = options.excludeZeroMeasurements & measX == 0 & measY == 0;
-unmeasuredRecords = options.excludeUnmeasuredRecords & (statusX == -1 | statusY == -1);
+zeroMeasurements = options.excludeZeroMeasurements & measX == 0 & (scalar | measY == 0);
+unmeasuredRecords = options.excludeUnmeasuredRecords & ~scalar & (statusX == -1 | statusY == -1);
 excludedRecords = zeroMeasurements | unmeasuredRecords;
 
 summary.nRowsRead = nRows;
@@ -101,9 +136,32 @@ if summary.nRadiusMismatch > 0
     messages(end + 1) = sprintf("Radius が sqrt(Xmm² + Ymm²) と 0.001 mm より違う行が %d 行あります（解析には計算値を使います）。", ...
         summary.nRadiusMismatch);
 end
-x = Xmm + markXmm;
-y = Ymm + markYmm;
+summary.coordinateMode = options.coordinateMode;
+summary.shotSource = "shotMark";
+if absolute
+    % 絶対座標：対応づけた Xmm・Ymm が点の座標。Shot 中心と Shot 内の位置は分かる範囲で決める（下の関数）
+    x = Xmm;
+    y = Ymm;
+    [Xmm, Ymm, markXmm, markYmm, summary.shotSource] = shotsFromAbsolute(x, y, markXmm, markYmm, hasMarkOffset, ...
+        shotNo, hasShotNo, unitKey, noCoordinate);
+    shotTexts = struct("offset", "Shot 中心 = 点の座標 − markXmm・markYmm。", ...
+        "shotNo", "Shot 中心は、同じ Wafer・shotNo の点の平均にしました（Shot 内の位置はそこからの差）。", ...
+        "point", "Shot の情報（shotNo・markXmm・markYmm）が無いので、点を1つずつ Shot として扱います" + ...
+        "（学習 Shot ＝ 学習に使う点。Mark 番号は 1、Scan 方向は付けません）。");
+    messages(end + 1) = "座標：Wafer 上の絶対座標（Xmm・Ymm の列）。" + string(shotTexts.(summary.shotSource));
+else
+    x = Xmm + markXmm;
+    y = Ymm + markYmm;
+end
 r = hypot(x, y);
+summary.valueColumn = options.valueColumn;
+if scalar
+    messages(end + 1) = "推定する値：列「" + options.valueColumn + "」（1変数）。measX・measY・StsX・StsY の列は使いません。";
+end
+directionOptions = options;
+if summary.shotSource == "point"
+    directionOptions.directionRule = "none";   % 点ごとの Shot には Scan 方向の並び（一筆書きなど）が無い
+end
 outside = r >= options.validRadiusMm & ~noCoordinate;
 summary.nOutsideRadius = nnz(outside);
 if summary.nOutsideRadius > 0
@@ -112,8 +170,6 @@ if summary.nOutsideRadius > 0
 end
 eligible = ~noCoordinate & ~outside;
 
-% 評価の単位：Operation × EqpId × LotID × Wafer × DateTime
-unitKey = operation + char(31) + eqpId + char(31) + lotId + char(31) + wafer + char(31) + dateTime;
 % Shot の行（上から）と列（左から）。半径・測定値・ステータスで端の行が消えても、残った行の番号を付け直さない。
 shotRow = nan(nRows, 1);
 shotColumn = nan(nRows, 1);
@@ -124,9 +180,9 @@ for key = unique(unitKey(~noCoordinate)).'
     columnCoordinates = round(Xmm(rows), SHOT_COORDINATE_DIGITS);
     [~, shotColumn(rows)] = ismember(columnCoordinates, unique(columnCoordinates));
 end
-[direction, directionAssigned] = assignDirection(direction, ~noCoordinate, options, shotNo, hasShotNo, shotRow, ...
+[direction, directionAssigned] = assignDirection(direction, ~noCoordinate, directionOptions, shotNo, hasShotNo, shotRow, ...
     shotColumn, unitKey);
-hasDirection = hasDirectionColumn || options.directionRule ~= "none" || ~isempty(overrideShots);
+hasDirection = hasDirectionColumn || directionOptions.directionRule ~= "none" || ~isempty(overrideShots);
 summary.nZeroMeasurementsExcluded = nnz(zeroMeasurements & eligible);
 summary.nUnmeasuredRecordsExcluded = nnz(unmeasuredRecords & eligible);
 summary.nRecordsExcluded = nnz(excludedRecords & eligible);
@@ -135,7 +191,9 @@ if options.excludeZeroMeasurements || options.excludeUnmeasuredRecords
         '測定値X・Yがともに0 %d 行、StsXまたはStsYが−1 %d 行。重なりを除く合計 %d 行を除きました。'], ...
         summary.nZeroMeasurementsExcluded, summary.nUnmeasuredRecordsExcluded, summary.nRecordsExcluded);
 end
-if options.excludeUnmeasuredRecords && (~isMapped(mapping, "StsX") || ~isMapped(mapping, "StsY"))
+if options.excludeUnmeasuredRecords && scalar
+    messages(end + 1) = "未測定行の選択除外：1変数では Sts の列を使わないので、空・数でない値だけを無効にしました。";
+elseif options.excludeUnmeasuredRecords && (~isMapped(mapping, "StsX") || ~isMapped(mapping, "StsY"))
     messages(end + 1) = "未測定行の選択除外：対応づけられていない Sts 列は判定できません。対応づけられた列だけで判定しました。";
 end
 keep = eligible & ~excludedRecords;
@@ -151,10 +209,10 @@ if hasDirection
     end
 end
 summary.nDirectionAssigned = nnz(directionAssigned & keep);
-summary.directionRule = options.directionRule;
+summary.directionRule = directionOptions.directionRule;
 summary.directionSource = directionSource(hasDirectionColumn, summary.nDirectionAssigned, ...
     nnz(~directionAssigned & keep & ~isnan(direction)));
-if options.directionRule ~= "none"
+if directionOptions.directionRule ~= "none"
     if summary.nDirectionAssigned > 0
         messages(end + 1) = sprintf("Scan 方向（Direction）が無い %d 行に、規則「%s」で 1・2 を付けました%s。", ...
             summary.nDirectionAssigned, ruleLabels(ruleNames == options.directionRule), ...
@@ -169,7 +227,12 @@ if hasMarkNo && any(isnan(markNo) & keep)
 end
 summary.nInvalidX = nnz(~validX & keep);
 summary.nInvalidY = nnz(~validY & keep);
-if summary.nInvalidX + summary.nInvalidY > 0
+if scalar
+    summary.nInvalidY = 0;
+    if summary.nInvalidX > 0
+        messages(end + 1) = sprintf("値が空・数でない点：%d 点。解析に使いません。", summary.nInvalidX);
+    end
+elseif summary.nInvalidX + summary.nInvalidY > 0
     messages(end + 1) = sprintf("未測定・無効の値（Sts ≠ 0 または空）：X %d 点、Y %d 点。解析に使いません。", ...
         summary.nInvalidX, summary.nInvalidY);
 end
@@ -178,7 +241,11 @@ if ~hasMarkNo
     markKey = round([markYmm, markXmm], COORDINATE_DIGITS);
     [~, ~, derived] = unique(markKey, 'rows');
     markNo = derived;
-    messages(end + 1) = "markNo の列が無いので、マーク座標（markXmm, markYmm）の組ごとに番号を付けました。";
+    if summary.shotSource == "point"
+        messages(end + 1) = "Shot 内の位置が無いので、Mark 番号はすべて 1 にしました（Mark 番号は質的変数に使われません）。";
+    else
+        messages(end + 1) = "markNo の列が無いので、マーク座標（markXmm, markYmm）の組ごとに番号を付けました。";
+    end
 end
 
 unitKey(~keep) = missing;
@@ -268,6 +335,10 @@ for u = 1:nUnits
     units(u).shots = shots;
     units(u).hasDirection = hasDirection && all(~isnan(marks.direction));
     [units(u).shotSizeMm, estimated] = alignest.shotSize(shots.Xmm, shots.Ymm, marks.markXmm, marks.markYmm);
+    if summary.shotSource == "point"
+        units(u).shotSizeMm = pointCellSize(marks.x, marks.y);   % 点の枠は隣の点と重ならない大きさ
+        estimated = true(1, 2);
+    end
     nShotSizeGuessed = nShotSizeGuessed + ~all(estimated);
     if hasShotNo && numel(unique(shots.shotNo)) < nShots
         messages(end + 1) = sprintf("%s：同じ shotNo が別の座標の Shot に付いています。手動の指定では最初の Shot を使います。", ...
@@ -329,6 +400,64 @@ data.directionRule = options.directionRule;
 data.directionOverrideShots = reshape(overrideShots, 1, []);
 data.directionOverrideValues = reshape(overrideValues, 1, []);
 data.invertDirection = options.invertDirection;
+data.coordinateMode = options.coordinateMode;
+data.valueColumn = options.valueColumn;
+end
+
+function sizeMm = pointCellSize(x, y)
+% 点を1つずつ Shot にしたときの枠の大きさ：最も近い点までの距離の中央値 × POINT_CELL_RATIO の正方形
+POINT_CELL_RATIO = 0.6;   % 隣の点の枠と重ならない大きさ
+MIN_SIZE_MM = 1;
+CHUNK = 2000;             % 距離を一度に計算する点の数（メモリを使いすぎないため）
+n = numel(x);
+nearest = inf(n, 1);
+for first = 1:CHUNK:n
+    rows = (first:min(first + CHUNK - 1, n)).';
+    distance = hypot(x(rows) - x(:).', y(rows) - y(:).');
+    distance(sub2ind(size(distance), (1:numel(rows)).', rows)) = Inf;   % 自分自身との距離は除く
+    nearest(rows) = min(distance, [], 2);
+end
+nearest = nearest(isfinite(nearest));
+side = MIN_SIZE_MM;
+if ~isempty(nearest)
+    side = max(POINT_CELL_RATIO * median(nearest), MIN_SIZE_MM);
+end
+sizeMm = [side, side];
+end
+
+function [centerX, centerY, offsetX, offsetY, source] = shotsFromAbsolute(x, y, markXmm, markYmm, hasMarkOffset, shotNo, ...
+    hasShotNo, unitKey, unusable)
+% 絶対座標の点から、Shot 中心と Shot 内の位置を決める。source："offset"（markXmm・markYmm から）・"shotNo"（同じ Wafer・
+% shotNo の点の平均）・"point"（点を1つずつ Shot にする）
+COORDINATE_DIGITS = 4;   % 同じ点とみなす座標の桁（prepareData の重複の判定と同じ 0.1 µm）
+if hasMarkOffset
+    centerX = x - markXmm;
+    centerY = y - markYmm;
+    offsetX = markXmm;
+    offsetY = markYmm;
+    source = "offset";
+    return
+end
+centerX = x;
+centerY = y;
+source = "point";
+if hasShotNo
+    usable = ~unusable & ~isnan(shotNo);   % shotNo が空の点は1点の Shot のまま
+    [~, ~, group] = unique(unitKey(usable) + char(31) + string(shotNo(usable)));
+    % 同じ座標の行（重複の計測）は1点として数える（重複で Shot 中心がずれないように）
+    pointX = x(usable);
+    pointY = y(usable);
+    [~, firstOfPoint] = unique([group, round([pointX, pointY], COORDINATE_DIGITS)], 'rows');
+    nGroups = max(group);
+    counts = accumarray(group(firstOfPoint), 1, [nGroups, 1]);
+    meanX = accumarray(group(firstOfPoint), pointX(firstOfPoint), [nGroups, 1]) ./ counts;
+    meanY = accumarray(group(firstOfPoint), pointY(firstOfPoint), [nGroups, 1]) ./ counts;
+    centerX(usable) = meanX(group);
+    centerY(usable) = meanY(group);
+    source = "shotNo";
+end
+offsetX = x - centerX;
+offsetY = y - centerY;
 end
 
 function [direction, assigned] = assignDirection(direction, usable, options, shotNo, hasShotNo, shotRow, shotColumn, unitKey)

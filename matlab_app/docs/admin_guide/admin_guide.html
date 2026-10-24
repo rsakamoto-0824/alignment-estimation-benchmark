@@ -180,7 +180,7 @@
         <table>
           <thead><tr><th>段階</th><th>すること</th><th>主な関数</th></tr></thead>
           <tbody>
-            <tr><td>読み込み</td><td>Excel・CSV を読み、列を標準の項目に対応づけ、座標の単位をそろえ、行を除き、Wafer（工程・装置・ロット・測定日時で区別）ごとにまとめる。Scan 方向が無ければ規則で付ける</td><td><code>readMeasurementFile</code>・<code>guessColumnMapping</code>・<code>checkCoordinateUnits</code>・<code>prepareData</code>・<code>directionRules</code></td></tr>
+            <tr><td>読み込み</td><td>Excel・CSV を読み、列を標準の項目に対応づけ、座標の単位をそろえ、行を除き、Wafer（工程・装置・ロット・測定日時で区別）ごとにまとめる。Scan 方向が無ければ規則で付ける。絶対座標だけのデータは Shot 中心を決め（shotNo の点の平均、または点を1つずつ Shot に）、1変数（膜厚など）は値を X 成分に入れて Y 成分を使わない</td><td><code>readMeasurementFile</code>・<code>guessColumnMapping</code>・<code>checkCoordinateUnits</code>・<code>prepareData</code>（<code>shotsFromAbsolute</code>・<code>pointCellSize</code>）・<code>standardColumns</code>（必須の項目）・<code>valueSpec</code>・<code>directionRules</code></td></tr>
             <tr><td>学習 Shot</td><td>学習 Shot 数（または計測率）ごとに、制約付き I 最適・D 最適・ランダム・手動（人が選んだ配置の Excel から読める）・ファイルの優先順・Mark 単位の I 最適で学習 Shot（Mark 単位なら学習 Mark）を選ぶ。選び方は複数選べて、学習パターンの名前の先頭に選び方が付く。同じ配置の Wafer は同じ選び方を使い回す</td><td><code>buildPlanSpecs</code>・<code>cachedTrainingPlan</code>・<code>planTrainingShots</code>・<code>constrainedIOptimal</code>・<code>exchangeDesign</code>（D 最適・Mark 単位の交換法）・<code>readLayoutPlans</code>・<code>trainingMarks</code>・<code>designCriteria</code></td></tr>
             <tr><td>推定</td><td>手法ごとに、学習 Shot の計測値から学習しなかった Shot の値を X・Y 別に推定する</td><td><code>buildMethodList</code>・<code>estimateWafer</code>・<code>+models</code> の関数</td></tr>
             <tr><td>評価・集計</td><td>評価点（学習しなかった Shot の有効な Mark）の RMSE・MAE・R² などと、Overlay 補正の残差の変化を求め、手法 × 学習パターンで集計する。評価済みの結果に手法・学習パターンを足す（済んだ組み合わせは計算しない）。行ごとの評価点の推定値を残し、評価点を半径・Shot の条件で絞って指標を計算し直す</td><td><code>runEvaluation</code>（<code>"extend"</code> で追加）・<code>extensionConflicts</code>・<code>computeMetrics</code>・<code>compactEstimate</code>・<code>filterResults</code>・<code>pointFilterMask</code>・<code>overlayCorrection</code>・<code>summarizeResults</code>・<code>pairedComparison</code></td></tr>
@@ -297,7 +297,7 @@
         <table>
           <thead><tr><th>項目</th><th>内容</th><th>主に使う関数</th></tr></thead>
           <tbody>
-            <tr><td><code>data</code></td><td>Wafer 半径・有効半径、座標の単位、行の除外、Scan 方向の規則と画面での変更</td><td><code>prepareData</code></td></tr>
+            <tr><td><code>data</code></td><td>Wafer 半径・有効半径、座標の単位、行の除外、Scan 方向の規則と画面での変更、座標の定義 <code>coordinateMode</code>（shotMark・absolute）、推定する値 <code>valueColumn</code>（空 = X・Y 成分、列の名前 = 1変数）と単位 <code>valueUnit</code></td><td><code>prepareData</code></td></tr>
             <tr><td><code>factors</code></td><td>質的変数（Scan 方向・Mark 番号・Shot 行の奇偶・その他の列）。<code>separateY</code> と <code>y</code> で Y 成分を別に選ぶ</td><td><code>factorChoice</code>・<code>factorColumnsUsed</code></td></tr>
             <tr><td><code>sampling</code></td><td>学習 Shot の選び方（<code>method</code> は並び：ioptimal・doptimal・random・manual・file・mark）・数（開始・終了・刻み、計測率）・必ず計測する Shot・制約（同心円の区切り <code>constraints.radialZoneEdgesMm</code> は Shot 中心の半径 [mm]、Mark 番号の割合 <code>constraints.markRatio</code>）・Mark 単位の 1 Shot あたりの Mark 数 <code>markPerShot</code>・乱数の種</td><td><code>buildPlanSpecs</code>・<code>planTrainingShots</code>・<code>zoneEdgesMm</code></td></tr>
             <tr><td><code>methods</code></td><td>比べる手法と選択肢（GPR のカーネル・質的変数の扱い、GAM の形状関数とガウス過程のカーネル など）。<code>options</code> に細かい数値</td><td><code>buildMethodList</code>・<code>estimateWafer</code></td></tr>
@@ -339,6 +339,7 @@
           <tbody>
             <tr><td><code>SECONDS_PER_RUN = 2</code></td><td><code>estimateRunSeconds</code></td><td>計算時間の目安の 1 条件（Wafer × 学習パターン × 手法）あたりの秒数</td></tr>
             <tr><td><code>MATERN_NU_FACTOR = 3</code></td><td><code>estimateRunSeconds</code></td><td>ν を指定した Matérn（GPR の matern・ardmatern、GAM の matern）の手法は 1 条件を何倍で見積もるか</td></tr>
+            <tr><td><code>POINT_CELL_RATIO = 0.6</code></td><td><code>prepareData</code>（<code>pointCellSize</code>）</td><td>絶対座標の点を1つずつ Shot にしたときの枠の大きさ（最も近い点までの距離の中央値に掛ける。隣の枠と重ならない）</td></tr>
             <tr><td><code>MAD_TO_SIGMA = 1.4826</code></td><td><code>trainingOutliers</code></td><td>異常値の判定を MAD にしたとき、MAD を σ と同じ大きさに直す係数</td></tr>
             <tr><td><code>MAX_ZERNIKE_ORDER = 6</code>・<code>WORST_PERCENT = 95</code></td><td>画面（定数）</td><td>Fringe Zernike の次数の上限（Z1〜Z49）、マップに出す「95%値」の百分位</td></tr>
             <tr><td><code>SECONDS_PER_SHOT_START = 0.01</code></td><td><code>exchangeSecondsGuide</code></td><td>交換法の時間の目安：初期配置 1 つ・学習 Shot 1 つあたりの秒数（候補 99 Shot の模擬データで測った値。<code>REFERENCE_CANDIDATES = 99</code> に対する候補 Shot 数の比で伸ばす）</td></tr>
@@ -383,6 +384,8 @@
             <tr><td>部署の標準の初期値を変える</td><td>評価の条件・比べる手法の初期値をそろえたい</td><td>exe を作り直さないなら既定の設定ファイル <code>alignment_estimation_defaults.json</code>（<code>siteDefaults</code>）。アプリの初期値そのものは <code>defaultSettings</code>・<code>recommendedMethods</code>（<code>docs/defaults_guide</code> の手順書）</td><td><code>TestLayoutDesignZernike</code>・<code>TestSpatialModels</code></td></tr>
             <tr><td>ヘルプの説明を直す</td><td>手法・カーネル・補正の式を足した</td><td><code>help/help.html</code>（exe には <code>buildStandaloneApp</code> の <code>additionalFiles</code> で入る）</td><td><code>TestLayoutDesignZernike</code>（主な用語・カーネルが載っていること）</td></tr>
             <tr><td>画面の色を直す</td><td>ダークモードで見えにくい部品がある</td><td><code>themePalette</code>（ライト・ダークの色）、<code>applyTheme</code>（部品の色の切り替え）。図の線・文字の色は各 <code>plot.*</code> の関数</td><td><code>TestAppWorkflow</code></td></tr>
+            <tr><td>1変数で使える手法・図を変える</td><td>膜厚・線幅などで RT モデル・Overlay 補正を外す決まりを見直す</td><td><code>activeMethods</code>（手法を外す）・<code>overlayChoice</code>（Overlay 補正を評価しない）・<code>estimateWafer</code>（計測値の無い成分を推定しない）・<code>metricNames</code>（画面の指標の名前）・画面の <code>resultSpec</code>・<code>setModeChoices</code>・<code>updateEnabled</code></td><td><code>TestAbsoluteScalar</code></td></tr>
+            <tr><td>絶対座標の Shot の決め方を変える</td><td>点の Shot 中心・枠の大きさを変えたい</td><td><code>prepareData</code> の <code>shotsFromAbsolute</code>・<code>pointCellSize</code>、必須の項目は <code>standardColumns</code></td><td><code>TestAbsoluteScalar</code>・<code>TestDataPreparation</code></td></tr>
             <tr><td>外挿の決め方を変える</td><td>外挿の知らせ方を厳しく・緩くしたい</td><td><code>predictTargets</code> の <code>EXTRAPOLATION_TOLERANCE_MM</code>（凸包からの距離）。判定の考え方そのもの（凸包）は <code>hullOf</code>・<code>distanceOutside</code></td><td><code>TestTargetPrediction</code></td></tr>
             <tr><td>未知の座標の表の列を足す</td><td>点に別の情報を持たせたい</td><td><code>targetTemplate</code>（列）・<code>readTargetPoints</code>（見出し）・画面の <code>TARGET_COLUMNS</code>・<code>currentTargets</code>・<code>targetCells</code>・<code>exportTargetEstimates</code></td><td><code>TestTargetPrediction</code></td></tr>
             <tr><td>MATLAB の版を上げる</td><td>会社の MATLAB の更新</td><td>直す場所は無いことが多い。テストと画面の確認、exe の作り直し（MATLAB Runtime も同じ版に）</td><td>全テスト</td></tr>
@@ -409,7 +412,7 @@
 runAllTests</code></pre>
       </div>
       <p>
-        最後に「成功 148 件、失敗 0 件、未完了 0 件」と出れば正常です（2026/10/24 時点の件数。テストを足すと増えます）。
+        最後に「成功 154 件、失敗 0 件、未完了 0 件」と出れば正常です（2026/10/25 時点の件数。テストを足すと増えます）。
         1つのファイルだけ確かめるときは <code>runtests('TestOverlay')</code> のようにファイル名を指定します。
         <code>TestPythonReference</code> は、Python 版の計算結果（<code>tests/reference/python_reference.json</code>）と照合するテストです。
         計算方法をわざと変えたときは、基準値を作り直すか、テストの許容誤差を見直します。

@@ -17,6 +17,10 @@ choice = struct("waferOrder", 0, "waferUseFormula", false, "waferTerms", [], "sh
 waferFormula = struct("dx", "", "dy", "");
 shotFormula = struct("dx", "", "dy", "");
 perShotFormula = struct("dx", "", "dy", "");
+if isfield(settings, "data") && alignest.valueSpec(settings.data).scalar
+    choice.description = "なし（1変数の推定では Overlay 補正の評価をしない）";   % 補正は X・Y の2成分が要る
+    return
+end
 if isfield(settings, "overlay")
     overlay = settings.overlay;
     if isfield(overlay, "waferUseFormula")

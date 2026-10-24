@@ -6,7 +6,10 @@ function waferMap(ax, points, values, options)
 %   options.scaleMmPerNm : 矢印の長さ [mm/nm]。矢印の色は長さ |v| [nm]（alignest.plot.magnitudeArrows）。
 %                          共分散楕円も描くときは、矢印を options.arrowColor の単色にする（色の目盛りは楕円の |r|）
 %   options.magnitudeLimit : 矢印の色の範囲の上限 [nm]（0 なら描く矢印の最大。並べる図をそろえるときに渡す）
-%   options.colorLimit   : 色の範囲 ±[nm]
+%   options.colorLimit   : 色の範囲 ±[nm]（0 を中心に青・白・赤）
+%   options.colorRange   : 色の範囲 [最小, 最大]。渡すと colorLimit の代わりにこの範囲を MATLAB の既定の色（parula）で描く
+%                          （膜厚など 0 を中心にしない1変数の値。alignest.valueSpec）
+%   options.colorTitle   : 色の目盛りの名前（既定は "X [nm]"・"Y [nm]"）
 %   options.markerShape  : 色で描くときの点の形（"o" = ●、"s" = ■）
 %   options.trainPoints  : 学習に使った Mark の座標（四角で描く）
 %   options.outlierPoints: 学習データから除いた異常値の Mark の座標（× で描く）
@@ -46,6 +49,8 @@ arguments
     options.covariance double = zeros(0, 3)
     options.ellipseSigma (1, 1) double {mustBeNonnegative} = 0
     options.showArrows (1, 1) logical = true
+    options.colorRange (1, 2) double = [NaN, NaN]
+    options.colorTitle (1, 1) string = ""
 end
 WAFER_EDGE_COLOR = [0.45, 0.45, 0.45];
 TRAIN_FACE_COLOR = [0.80, 0.80, 0.80];
@@ -112,10 +117,19 @@ else
     usable = isfinite(values(:, column));
     scatter(ax, points(usable, 1), points(usable, 2), options.markerSize, values(usable, column), 'filled', ...
         'Marker', options.markerShape, 'HandleVisibility', 'off');
-    colormap(ax, alignest.plot.divergingColormap());
-    caxis(ax, [-1, 1] * max(options.colorLimit, eps));
+    if all(isfinite(options.colorRange))
+        colormap(ax, parula(256));
+        clim(ax, options.colorRange + [0, eps(options.colorRange(2)) * (diff(options.colorRange) <= 0)]);
+    else
+        colormap(ax, alignest.plot.divergingColormap());
+        clim(ax, [-1, 1] * max(options.colorLimit, eps));
+    end
     bar = colorbar(ax);
     bar.Title.String = options.mode + " [nm]";
+    if options.colorTitle ~= ""
+        bar.Title.String = options.colorTitle;
+        bar.Title.Interpreter = 'none';   % 列の名前の _ を下付きにしない
+    end
 end
 hold(ax, 'off');
 axis(ax, 'equal');

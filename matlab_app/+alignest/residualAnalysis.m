@@ -19,6 +19,9 @@ for c = 1:size(combinations, 1)
     methodLabel = string(estimates.methodLabel(first(c)));
     for axisName = ["X", "Y"]
         residual = subset.("residual" + axisName);
+        if ~any(isfinite(residual))
+            continue   % 1変数の Y 成分など、推定していない成分
+        end
         result = alignest.stats.normalityTests(residual);
         [judgement, basis] = normalityJudgement(result, SIGNIFICANCE);
         normalityRows{end + 1, 1} = table(methodLabel, combinations(c, 1), combinations(c, 2), axisName, ...

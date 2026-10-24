@@ -202,6 +202,7 @@ classdef AlignmentEstimationApp < handle
                 c.sheet.Value = char(sheetName);
                 c.sheet.Enable = 'on';
             end
+            refreshValueColumns(app);
             fillMappingTable(app, alignest.guessColumnMapping(raw.Properties.VariableNames));
             fillUnitTable(app);
             c.mappingStatus.Text = sprintf(['%d 行・%d 列を読みました。「ファイルの列」の対応と、右の「座標の単位」を' ...
@@ -225,7 +226,8 @@ classdef AlignmentEstimationApp < handle
                 coordinateUnits=options.coordinateUnits, excludeZeroMeasurements=options.excludeZeroMeasurements, ...
                 excludeUnmeasuredRecords=options.excludeUnmeasuredRecords, directionRule=options.directionRule, ...
                 invertDirection=options.invertDirection, directionOverrideShots=options.directionOverrideShots, ...
-                directionOverrideValues=options.directionOverrideValues);
+                directionOverrideValues=options.directionOverrideValues, coordinateMode=options.coordinateMode, ...
+                valueColumn=options.valueColumn);
             app.AppliedMapping = mapping;
             app.Settings.data = mergeStruct(app.Settings.data, options);
             summary = app.Data.summary;
@@ -459,6 +461,11 @@ classdef AlignmentEstimationApp < handle
             c = app.Controls;
             overlay = [];
             if isempty(app.Data)
+                return
+            end
+            if alignest.valueSpec(app.Settings.data).scalar
+                showOverlayPanels(app, 0);
+                c.shotOverlayInfo.Value = {'Shot 重ね合わせは X・Y のベクトル場の図なので、1変数の推定では使いません。'};
                 return
             end
             if nargin >= 2
@@ -929,8 +936,19 @@ classdef AlignmentEstimationApp < handle
                 error('alignest:noEstimates', '評価点がありません（この組み合わせは推定できませんでした）。');
             end
             categories = scatterCategories(app, estimates, string(c.scatterColor.Value));
-            summary = alignest.plot.estimateScatter(c.scatterAxes(1), estimates.measX, estimates.estimateX, categories, "X");
-            summary(2) = alignest.plot.estimateScatter(c.scatterAxes(2), estimates.measY, estimates.estimateY, categories, "Y");
+            spec = resultSpec(app);
+            summary = alignest.plot.estimateScatter(c.scatterAxes(1), estimates.measX, estimates.estimateX, categories, ...
+                spec.labels(1), spec.unit);
+            if spec.scalar
+                c.scatterAxesGrid.ColumnWidth = {'1x', 0};   % 1変数は Y 成分が無い
+                cla(c.scatterAxes(2), 'reset');
+                c.scatterAxes(2).Visible = 'off';
+            else
+                c.scatterAxesGrid.ColumnWidth = {'1x', '1x'};
+                c.scatterAxes(2).Visible = 'on';
+                summary(2) = alignest.plot.estimateScatter(c.scatterAxes(2), estimates.measY, estimates.estimateY, ...
+                    categories, "Y");
+            end
             set(c.scatterAxes, 'FontSize', app.AXES_FONT_SIZE);
             c.scatterInfo.Text = sprintf(['%s｜%s｜Wafer %d 枚｜色：%s。破線は y = x、赤い線は回帰直線' ...
                 '（推定値 = a + b·実測値）、r は相関係数。'], app.Results.methods(selection.methodIndex).label, ...
@@ -1020,6 +1038,11 @@ classdef AlignmentEstimationApp < handle
                 "手法", strjoin(string({results.methods(selection.methodIndex).label}), "、"); ...
                 "学習パターンの列", strjoin(selection.groups, "、"); ...
                 "Wafer", strjoin(results.unitLabels(selection.unitIndex), "、")];
+            spec = resultSpec(app);
+            if spec.scalar
+                notes = [notes; "推定した値", "1変数：列「" + spec.name + "」（単位 " + spec.unit + "）。計測値・推定値・" + ...
+                    "残差は X の列（Y の列は空欄）"];
+            end
             if ~isempty(messages)
                 notes = [notes; [repmat("推定できなかった組み合わせ", numel(messages), 1), messages(:)]];
             end
@@ -1105,7 +1128,7 @@ classdef AlignmentEstimationApp < handle
             hold(ax, 'off');
             grid(ax, 'on');
             box(ax, 'on');
-            [names, labels] = alignest.metricNames(true, true);
+            [names, labels] = alignest.metricNames(true, true, resultSpec(app));
             xlabel(ax, axisLabel);
             ylabel(ax, labels(names == metric));
             title(ax, sprintf("選び方の比較：%s（Wafer の%s）", comparison.Properties.UserData.methodLabel, ...
@@ -1239,7 +1262,7 @@ classdef AlignmentEstimationApp < handle
                 c.targetMethod.Value = methodIndex;
             end
             targets = currentTargets(app);
-            methods = alignest.buildMethodList(app.Settings.methods);
+            methods = alignest.activeMethods(app.Settings);
             if isempty(methods)
                 error('alignest:noMethods', '手法がありません。「2. 評価の設定」で比べる手法を選んでください。');
             end
@@ -1281,7 +1304,7 @@ classdef AlignmentEstimationApp < handle
             notes = ["Wafer", strjoin(labels, "・"); "学習データ", run.trainingText; ...
                 "手法", run.method.label + "（" + run.method.id + "）"; "推定の条件", conditions; ...
                 "画面のメッセージ", strjoin(run.messages, " ")];
-            alignest.exportTargetEstimates(filePath, run.estimates, notes);
+            alignest.exportTargetEstimates(filePath, run.estimates, notes, alignest.valueSpec(app.Settings.data));
         end
 
         function captureTab(app, tabName, filePath)
@@ -1301,8 +1324,8 @@ classdef AlignmentEstimationApp < handle
         function buildDataTab(app)
             grid = uigridlayout(app.Tabs.data, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 12, 'RowSpacing', 12);
             filePanel = uipanel(grid, 'Title', '計測データのファイル');
-            fileGrid = uigridlayout(filePanel, [5, 4], 'ColumnWidth', {'fit', '1x', 260, 300}, ...
-                'RowHeight', {'fit', 'fit', 'fit', 'fit', 'fit'}, 'Padding', 10);
+            fileGrid = uigridlayout(filePanel, [6, 4], 'ColumnWidth', {'fit', '1x', 260, 300}, ...
+                'RowHeight', {'fit', 'fit', 'fit', 'fit', 'fit', 'fit'}, 'Padding', 10);
             help = uilabel(fileGrid, 'WordWrap', 'on', 'Text', ['Excel（.xlsx）または CSV。1行目に項目名、2行目からデータ。' ...
                 '項目名がアライメント計測テーブルの標準（Operation, EqpId, LotID, Wafer, DateTime, shotNo, Direction, Xmm, Ymm, ' ...
                 'Radius, markNo, markXmm, markYmm, measX, measY, StsX, StsY）なら自動で対応づけます。']);
@@ -1343,6 +1366,25 @@ classdef AlignmentEstimationApp < handle
             place(c.invertDirection, 5, 3);
             directionHelp = label(fileGrid, 'Direction の列に値がある行はそのまま使います。', 5, 4);
             directionHelp.FontColor = app.Palette.muted;
+            % 座標の定義（Shot 中心＋Shot 内の位置、または絶対座標だけ）と、推定する値（X・Y 成分、または1つの列）
+            label(fileGrid, '座標の定義', 6, 1);
+            c.coordinateMode = uidropdown(fileGrid, 'Items', {'Shot 中心＋Shot 内の位置（Xmm・Ymm ＋ markXmm・markYmm）', ...
+                'Wafer 上の絶対座標だけ（Xmm・Ymm が点の座標）'}, 'ItemsData', {'shotMark', 'absolute'}, ...
+                'ValueChangedFcn', onDataOption, 'Tooltip', ['絶対座標だけ：Xmm・Ymm の項目に点の Wafer 上の座標の列を' ...
+                '対応づけます。shotNo があれば同じ Shot の点の平均を Shot 中心に、markXmm・markYmm があれば' ...
+                '点の座標 − markXmm を Shot 中心にします。どちらも無ければ点を1つずつ Shot として扱います。']);
+            place(c.coordinateMode, 6, 2);
+            valueGrid = uigridlayout(fileGrid, [1, 4], 'ColumnWidth', {'fit', '1x', 'fit', 70}, 'Padding', 0);
+            place(valueGrid, 6, [3, 4]);
+            label(valueGrid, '推定する値', 1, 1);
+            c.valueColumn = uidropdown(valueGrid, 'Items', {'X・Y 成分（measX・measY）'}, 'ItemsData', {''}, ...
+                'ValueChangedFcn', onDataOption, 'Tooltip', ['膜厚・線幅など、ファイルの1つの列を1変数として推定するときは' ...
+                'その列を選びます（measX・measY は使いません。Overlay 補正の評価と RT モデルは使えません）。']);
+            place(c.valueColumn, 1, 2);
+            label(valueGrid, '単位', 1, 3);
+            c.valueUnit = uieditfield(valueGrid, 'text', 'Value', char(app.Settings.data.valueUnit), ...
+                'ValueChangedFcn', @(~, ~) app.onValueUnitChanged(), 'Tooltip', '1変数の単位（画面と Excel の表示だけ。換算はしません）');
+            place(c.valueUnit, 1, 4);
 
             c.dataTabs = uitabgroup(grid);
             c.mappingTab = uitab(c.dataTabs, 'Title', '列の対応・座標の単位');
@@ -1418,8 +1460,8 @@ classdef AlignmentEstimationApp < handle
             c.previewInfo = uilabel(previewControls, 'WordWrap', 'on', 'Text', '');
             place(c.previewInfo, 3, [1, 11]);
             c.previewPanel = uipanel(previewGrid, 'BorderType', 'none');
-            previewAxesGrid = uigridlayout(c.previewPanel, [1, 3], 'Padding', 0, 'ColumnSpacing', 8);
-            c.previewAxes = [uiaxes(previewAxesGrid), uiaxes(previewAxesGrid), uiaxes(previewAxesGrid)];
+            c.previewAxesGrid = uigridlayout(c.previewPanel, [1, 3], 'Padding', 0, 'ColumnSpacing', 8);
+            c.previewAxes = [uiaxes(c.previewAxesGrid), uiaxes(c.previewAxesGrid), uiaxes(c.previewAxesGrid)];
             set(c.previewAxes, 'Visible', 'off');  % 読み込むまでは空の枠を出さない
 
             c.layoutTab = uitab(c.dataTabs, 'Title', 'Shot レイアウト');
@@ -1509,7 +1551,9 @@ classdef AlignmentEstimationApp < handle
         end
 
         function fillMappingTable(app, mapping)
-            columns = alignest.standardColumns();
+            % 必須・任意と項目の意味は、座標の定義と推定する値で変わる（alignest.standardColumns）
+            columns = alignest.standardColumns(string(fieldOr(app.Settings.data, "coordinateMode", "shotMark")), ...
+                string(fieldOr(app.Settings.data, "valueColumn", "")));
             options = [app.NONE_LABEL, string(app.RawTable.Properties.VariableNames)];
             data = cell(numel(columns), 4);
             for k = 1:numel(columns)
@@ -1572,7 +1616,8 @@ classdef AlignmentEstimationApp < handle
                 "excludeUnmeasuredRecords", c.excludeUnmeasuredRecords.Value, ...
                 "directionRule", string(c.directionRule.Value), "invertDirection", c.invertDirection.Value, ...
                 "directionOverrideShots", app.Settings.data.directionOverrideShots, ...
-                "directionOverrideValues", app.Settings.data.directionOverrideValues));
+                "directionOverrideValues", app.Settings.data.directionOverrideValues, ...
+                "coordinateMode", string(c.coordinateMode.Value), "valueColumn", string(c.valueColumn.Value)));
         end
 
         function onMappingEdited(app, ~)
@@ -1628,7 +1673,39 @@ classdef AlignmentEstimationApp < handle
             app.Settings.data.directionRule = string(c.directionRule.Value);
             app.Settings.data.invertDirection = c.invertDirection.Value;
             c.invertDirection.Enable = onOff(app.Settings.data.directionRule ~= "none");
+            app.Settings.data.coordinateMode = string(c.coordinateMode.Value);
+            app.Settings.data.valueColumn = string(c.valueColumn.Value);
+            c.valueUnit.Enable = onOff(app.Settings.data.valueColumn ~= "");
+            if ~isempty(app.RawTable) && width(app.RawTable) > 0
+                fillMappingTable(app, currentMapping(app));   % 座標の定義・推定する値で必須の項目が変わる
+            end
             invalidatePreparedData(app);
+            updateEnabled(app);
+        end
+
+        function onValueUnitChanged(app)
+            % 1変数の単位（表示だけ）。読み込み直す必要はないので、計測値の図だけ描き直す
+            app.Settings.data.valueUnit = string(strtrim(app.Controls.valueUnit.Value));
+            if ~isempty(app.Data)
+                drawPreview(app);
+            end
+        end
+
+        function refreshValueColumns(app)
+            % 「推定する値」の選択肢：X・Y 成分と、ファイルの列（設定で選んである列がファイルに無くても残す）
+            c = app.Controls;
+            columns = strings(1, 0);
+            if ~isempty(app.RawTable)
+                columns = string(app.RawTable.Properties.VariableNames);
+            end
+            selected = string(fieldOr(app.Settings.data, "valueColumn", ""));
+            if selected ~= "" && ~any(columns == selected)
+                columns(end + 1) = selected;
+            end
+            c.valueColumn.Items = cellstr(["X・Y 成分（measX・measY）", "1変数：" + columns]);
+            c.valueColumn.ItemsData = cellstr(["", columns]);
+            c.valueColumn.Value = char(selected);
+            c.valueUnit.Enable = onOff(selected ~= "");
         end
 
         function mapping = currentMapping(app)
@@ -1695,6 +1772,22 @@ classdef AlignmentEstimationApp < handle
             ellipseSigma = c.previewEllipse.Value * option.isGroup;
             common = {'waferRadiusMm', radius, 'shotCenters', centers, 'shotSizeMm', sizeMm, 'showLegend', option.isGroup, ...
                 'covariance', covariance, 'ellipseSigma', ellipseSigma, 'shotDirections', directions, 'ringRadiiMm', rings};
+            spec = alignest.valueSpec(app.Settings.data);
+            if spec.scalar
+                % 1変数：値の色の図を1枚（色の範囲は値の最小〜最大）。X・Y のベクトル・楕円は描かない
+                c.previewAxesGrid.ColumnWidth = {'1x', 0, 0};
+                common{find(strcmp(common, 'ellipseSigma')) + 1} = 0;
+                alignest.plot.waferMap(c.previewAxes(1), points, values, common{:}, mode="X", ...
+                    colorRange=valueRange(values(:, 1)), colorTitle=spec.name + " [" + spec.unit + "]", ...
+                    markerSize=c.previewMarkerSize.Value, markerShape=c.previewMarkerShape.Value, ...
+                    titleText=ternary(option.isGroup, spec.name + " の平均", spec.name));
+                set(c.previewAxes(1), 'Visible', 'on', 'FontSize', app.AXES_FONT_SIZE);
+                arrayfun(@(ax) cla(ax, 'reset'), c.previewAxes(2:3));
+                set(c.previewAxes(2:3), 'Visible', 'off');
+                c.previewInfo.Text = sprintf('%s（1変数）を色で描いています（単位 %s）。', spec.name, spec.unit);
+                return
+            end
+            c.previewAxesGrid.ColumnWidth = {'1x', '1x', '1x'};
             % name=value の書き方は最後に置く決まりなので、共通の指定（common）を先に渡す
             alignest.plot.waferMap(c.previewAxes(1), points, values, common{:}, ...
                 scaleMmPerNm=alignest.plot.vectorScale(values), titleText=ternary(option.isGroup, "計測値の平均（ベクトル）", ...
@@ -1991,10 +2084,9 @@ classdef AlignmentEstimationApp < handle
             place(c.overlayPerShot, 41, 1);
             [c.overlayPerShotDx, c.overlayPerShotDy] = formulaFields(s, 42, 1, onChange, ['x・y は Shot 内の座標' ...
                 '（markXmm・markYmm、Shot 中心から）。係数は Shot ごとに求めます。' formulaHelp]);
-            overlayHelp = label(s, ['すべて「なし」なら評価しません。結果一覧の指標「OVL …」と、Wafer ごとのマップの' ...
-                '「Overlay 補正」で見られます。補正の式は「7. ヘルプ」にまとめています。'], [40, 42], 2);
-            overlayHelp.FontColor = app.Palette.muted;
-            overlayHelp.UserData = "muted";
+            c.overlayHelp = label(s, '', [40, 42], 2);
+            c.overlayHelp.FontColor = app.Palette.muted;
+            c.overlayHelp.UserData = "muted";
             c.overlayFormulaError = errorLabel(app, s, 43, [1, 2]);
 
             methodPanel = uipanel(grid, 'Title', '比べる手法');
@@ -2182,6 +2274,9 @@ classdef AlignmentEstimationApp < handle
             c.directionRule.Value = char(s.data.directionRule);
             c.invertDirection.Value = s.data.invertDirection;
             c.invertDirection.Enable = onOff(s.data.directionRule ~= "none");
+            c.coordinateMode.Value = char(fieldOr(s.data, "coordinateMode", "shotMark"));
+            c.valueUnit.Value = char(fieldOr(s.data, "valueUnit", "nm"));
+            refreshValueColumns(app);
             fillUnitTable(app);
             choice = alignest.factorChoice(s, "X");
             c.factorScan.Value = choice.scan;
@@ -2611,7 +2706,19 @@ classdef AlignmentEstimationApp < handle
             c.ordinaryFactors.Enable = onOff(c.ordinaryKriging.Value);
             c.universalFactors.Enable = onOff(c.universalKriging.Value);
             c.polynomialOrder.Enable = onOff(c.polynomial.Value);
-            c.rtOrders.Enable = onOff(c.rt.Value);
+            % 1変数の推定では、Overlay 補正の評価と RT モデル（どちらも X・Y の2成分が要る）を使わない
+            scalar = alignest.valueSpec(app.Settings.data).scalar;
+            set([c.overlayWafer, c.overlayShotCommon, c.overlayPerShot], 'Enable', onOff(~scalar));
+            if scalar
+                set([c.overlayWaferDx, c.overlayWaferDy, c.overlayShotDx, c.overlayShotDy, c.overlayPerShotDx, ...
+                    c.overlayPerShotDy], 'Enable', 'off');
+            end
+            c.rt.Enable = onOff(~scalar);
+            c.rtOrders.Enable = onOff(c.rt.Value && ~scalar);
+            c.overlayHelp.Text = char(ternary(scalar, "1変数の推定（「1. データの読み込み」の「推定する値」）では、" + ...
+                "Overlay 補正の評価と RT モデルは使いません（X・Y の2成分が要るため）。", ...
+                "すべて「なし」なら評価しません。結果一覧の指標「OVL …」と、Wafer ごとのマップの「Overlay 補正」で" + ...
+                "見られます。補正の式は「7. ヘルプ」にまとめています。"));
         end
 
         function refreshFactorColumns(app, selected, selectedY)
@@ -2884,11 +2991,14 @@ classdef AlignmentEstimationApp < handle
             if isempty(app.Distribution)
                 return
             end
+            spec = resultSpec(app);
+            setChoices(c.distributionAxis, spec.labels, cellstr(spec.components));   % 1変数は X 成分（値の名前）だけ
             part = app.Distribution.(string(c.distributionAxis.Value));
+            axisLabel = string(c.distributionAxis.Items{strcmp(c.distributionAxis.ItemsData, c.distributionAxis.Value)});
             alignest.plot.distributionHistograms(c.distributionAxes(1), part.samples(1:3), part.names(1:3), part.edges, ...
-                c.distributionAxis.Value + " の計測値：全面・学習・予測対象");
+                axisLabel + " の計測値：全面・学習・予測対象", spec.unit);
             alignest.plot.distributionHistograms(c.distributionAxes(2), part.samples([3, 4]), part.names([3, 4]), part.edges, ...
-                c.distributionAxis.Value + "：予測対象の実測値と推定値");
+                axisLabel + "：予測対象の実測値と推定値", spec.unit);
             set(c.distributionAxes, 'Visible', 'on', 'FontSize', app.AXES_FONT_SIZE);
             note = "";
             if isfield(app.Distribution, "note") && app.Distribution.note ~= ""
@@ -3281,8 +3391,8 @@ classdef AlignmentEstimationApp < handle
             c.exportEstimates = uibutton(analysisControls, 'Text', '推定値を Excel に書き出す…', ...
                 'ButtonPushedFcn', @(~, ~) app.onExportEstimates());
             place(c.exportEstimates, 2, 6);
-            histogramGrid = uigridlayout(analysisGrid, [1, 2], 'Padding', 0, 'ColumnSpacing', 12);
-            c.histogramAxes = [uiaxes(histogramGrid), uiaxes(histogramGrid)];
+            c.histogramGrid = uigridlayout(analysisGrid, [1, 2], 'Padding', 0, 'ColumnSpacing', 12);
+            c.histogramAxes = [uiaxes(c.histogramGrid), uiaxes(c.histogramGrid)];
             c.normalityTable = uitable(analysisGrid, 'RowName', {}, 'ColumnName', {'軸', '点数', '平均 [nm]', ...
                 '標準偏差 [nm]', '歪度', '尖度（過剰）', 'Shapiro–Wilk W', 'p 値', 'Anderson–Darling A²', 'p 値', ...
                 'Jarque–Bera', 'p 値', '判定（5%）'}, ...
@@ -3332,8 +3442,8 @@ classdef AlignmentEstimationApp < handle
             place(c.scatterColor, 2, 4);
             c.drawScatterButton = uibutton(scatterControls, 'Text', '描く', 'ButtonPushedFcn', @(~, ~) app.onDrawScatter());
             place(c.drawScatterButton, 2, 5);
-            scatterAxesGrid = uigridlayout(scatterGrid, [1, 2], 'Padding', 0, 'ColumnSpacing', 12);
-            c.scatterAxes = [uiaxes(scatterAxesGrid), uiaxes(scatterAxesGrid)];
+            c.scatterAxesGrid = uigridlayout(scatterGrid, [1, 2], 'Padding', 0, 'ColumnSpacing', 12);
+            c.scatterAxes = [uiaxes(c.scatterAxesGrid), uiaxes(c.scatterAxesGrid)];
             c.scatterInfo = uilabel(scatterGrid, 'WordWrap', 'on', 'Text', ['評価点（学習しなかった Shot の有効な Mark）の' ...
                 '実測値と推定値。破線は y = x、赤い線は回帰直線（推定値 = a + b·実測値）。r は相関係数。']);
             % 分布の比較：Wafer 全面・学習データ・予測対象の計測値と、予測対象の実測値と推定値
@@ -3352,7 +3462,7 @@ classdef AlignmentEstimationApp < handle
             place(c.distributionGroup, 2, 2);
             c.distributionWafer = uidropdown(distributionControls, 'Items', {'—'});
             place(c.distributionWafer, 2, 3);
-            c.distributionAxis = uidropdown(distributionControls, 'Items', {'X', 'Y'}, ...
+            c.distributionAxis = uidropdown(distributionControls, 'Items', {'X', 'Y'}, 'ItemsData', {'X', 'Y'}, ...
                 'ValueChangedFcn', @(~, ~) app.drawDistributionHistograms());
             place(c.distributionAxis, 2, 4);
             c.compareDistributionsButton = uibutton(distributionControls, 'Text', '比べる', ...
@@ -3528,7 +3638,7 @@ classdef AlignmentEstimationApp < handle
             labels = string({results.methods.label});
             ids = string({results.methods.id});
             [metricList, metricLabels] = alignest.metricNames(isfield(results, "timingRecorded") && results.timingRecorded, ...
-                isfield(results, "overlayEvaluated") && results.overlayEvaluated);
+                isfield(results, "overlayEvaluated") && results.overlayEvaluated, resultSpec(app));
             current = string(c.metric.Value);
             c.metric.Items = cellstr(metricLabels);
             c.metric.ItemsData = cellstr(metricList);
@@ -3748,7 +3858,7 @@ classdef AlignmentEstimationApp < handle
                 ax.XTickLabel = cellstr(summary.groups);
                 xlabel(ax, '学習パターン');
             end
-            [names, labels] = alignest.metricNames(true, true);
+            [names, labels] = alignest.metricNames(true, true, resultSpec(app));
             ylabel(ax, labels(names == metric));
             title(ax, "Wafer の" + statisticLabel(string(c.statistic.Value)) + errorBarCaption(string(c.chartErrorBars.Value)));
             grid(ax, 'on');
@@ -3765,7 +3875,7 @@ classdef AlignmentEstimationApp < handle
             statistic = string(c.statistic.Value);
             summary = alignest.summarizeResults(app.Results, metric, statistic);
             selected = cell2mat(c.chartMethods.Value);
-            [names, labels] = alignest.metricNames(true, true);
+            [names, labels] = alignest.metricNames(true, true, resultSpec(app));
             criteria = ["criterionI", "criterionD"];
             criteriaLabels = ["I 基準 tr(M^{-1})", "D 基準 det(M)^{-1/p}"];
             criteriaNames = ["I 基準", "D 基準"];
@@ -3942,8 +4052,17 @@ classdef AlignmentEstimationApp < handle
         function showAnalysis(app)
             c = app.Controls;
             estimates = app.Analysis.estimates;
-            alignest.plot.residualHistogram(c.histogramAxes(1), estimates.residualX, "X の残差");
-            alignest.plot.residualHistogram(c.histogramAxes(2), estimates.residualY, "Y の残差");
+            spec = resultSpec(app);
+            alignest.plot.residualHistogram(c.histogramAxes(1), estimates.residualX, spec.labels(1) + " の残差", spec.unit);
+            if spec.scalar
+                c.histogramGrid.ColumnWidth = {'1x', 0};   % 1変数は Y 成分が無い
+                cla(c.histogramAxes(2), 'reset');
+                c.histogramAxes(2).Visible = 'off';
+            else
+                c.histogramGrid.ColumnWidth = {'1x', '1x'};
+                c.histogramAxes(2).Visible = 'on';
+                alignest.plot.residualHistogram(c.histogramAxes(2), estimates.residualY, "Y の残差");
+            end
             set(c.histogramAxes, 'FontSize', app.AXES_FONT_SIZE);
             normality = app.Analysis.analysis.normality;
             rows = cell(height(normality), 13);
@@ -4173,6 +4292,13 @@ classdef AlignmentEstimationApp < handle
                 return
             end
             c = app.Controls;
+            spec = resultSpec(app);
+            setModeChoices(c.mapMode, spec);
+            if spec.scalar
+                setChoices(c.mapContent, "推定（計測値・推定値・残差）", {'estimate'});
+                set([c.mapEllipse, c.mapEllipseOnly], 'Enable', 'off');   % 楕円は X・Y の2成分が要る
+                c.mapEllipse.Value = 0;
+            end
             content = string(c.mapContent.Value);
             overlayContent = content == "overlay";
             names = ternary(overlayContent, ["実測値で補正した残差", "推定値で補正した残差", "推定による変化"], ...
@@ -4197,8 +4323,15 @@ classdef AlignmentEstimationApp < handle
                 return
             end
             [scale, limit, magnitudes] = mapScales(app, f.values, 1 + overlayContent, overlayContent);
+            ranges = repmat({[NaN, NaN]}, 1, 3);
+            limits = repmat(limit, 1, 3);
+            if spec.scalar
+                % 計測値と推定値は同じ値の範囲（最小〜最大）、残差は 0 を中心に自分の範囲
+                ranges(1:2) = {valueRange([f.values{1}(:, 1); f.values{2}(:, 1)])};
+                limits(3) = absoluteLimit(f.values{3}(:, 1));
+            end
             for k = 1:3
-                drawMapPanel(app, c.mapAxes(k), f, k, scale(k), limit, magnitudes(k), f.titles(k), true);
+                drawMapPanel(app, c.mapAxes(k), f, k, scale(k), limits(k), magnitudes(k), f.titles(k), true, ranges{k});
             end
             c.mapInfo.Text = f.info;
         end
@@ -4216,13 +4349,14 @@ classdef AlignmentEstimationApp < handle
             end
             content = string(c.mapContent.Value);
             valueIndex = c.mapCompareValue.Value;
+            spec = resultSpec(app);
             nPanels = min(numel(conditions), app.MAX_COMPARE_PANELS);
             fieldsList = cell(1, nPanels);
             lines = strings(nPanels, 1);
             for k = 1:nPanels
                 fieldsList{k} = mapFields(app, conditions(k).option, conditions(k).plan, conditions(k).method, content);
-                lines(k) = conditions(k).label + "：" + ternary(fieldsList{k}.ok, sprintf("RMSE（X・Y）%.3f nm", ...
-                    fieldsList{k}.rmse), fieldsList{k}.message);
+                lines(k) = conditions(k).label + "：" + ternary(fieldsList{k}.ok, sprintf("RMSE（%s）%.3f %s", ...
+                    spec.combinedLabel, fieldsList{k}.rmse, spec.unit), fieldsList{k}.message);
             end
             usable = cellfun(@(f) f.ok, fieldsList);
             if ~any(usable)
@@ -4233,6 +4367,10 @@ classdef AlignmentEstimationApp < handle
             stacked = cell2mat(cellfun(@(v) v{valueIndex}, values(:), 'UniformOutput', false));
             [scale, limit] = mapScales(app, {stacked, stacked, stacked}, 1, false);
             magnitude = max([0; hypot(stacked(:, 1), stacked(:, 2))], [], 'omitnan');
+            range = [NaN, NaN];
+            if spec.scalar && valueIndex < 3
+                range = valueRange(stacked(:, 1));   % 1変数の計測値・推定値は値の範囲（すべての図で共通）
+            end
             [nRows, nColumns] = tileShape(c.comparePanel, nPanels);
             layout = tiledlayout(c.comparePanel, nRows, nColumns, 'TileSpacing', 'compact', 'Padding', 'compact');
             axesList = gobjects(1, nPanels);
@@ -4245,8 +4383,9 @@ classdef AlignmentEstimationApp < handle
                     axis(ax, 'off');
                     continue
                 end
-                titleText = conditions(k).label + newline + f.titles(valueIndex) + sprintf("（RMSE %.3f nm）", f.rmse);
-                drawMapPanel(app, ax, f, valueIndex, scale(1), limit, magnitude, titleText, false);
+                titleText = conditions(k).label + newline + f.titles(valueIndex) + sprintf("（RMSE %.3f %s）", f.rmse, ...
+                    spec.unit);
+                drawMapPanel(app, ax, f, valueIndex, scale(1), limit, magnitude, titleText, false, range);
                 ax.FontSize = app.SMALL_AXES_FONT_SIZE;
                 if ~isempty(ax.Colorbar)
                     % 色の目盛りの名前は横に書く（並べた図では上に書くと題名と重なる）
@@ -4263,10 +4402,19 @@ classdef AlignmentEstimationApp < handle
             c.mapInfo.Text = header + "｜" + strjoin(lines, "　／　") + filterNote(app);
         end
 
-        function drawMapPanel(app, ax, f, k, scale, limit, magnitude, titleText, showLegend)
-            % マップの1枚（mapFields の k 番目の値）を描く。Shot の枠・Scan 方向の色・同心円の区切りは画面の選択に従う
+        function drawMapPanel(app, ax, f, k, scale, limit, magnitude, titleText, showLegend, colorRange)
+            % マップの1枚（mapFields の k 番目の値）を描く。Shot の枠・Scan 方向の色・同心円の区切りは画面の選択に従う。
+            % colorRange（省略可）：1変数の計測値・推定値の色の範囲 [最小, 最大]（alignest.plot.waferMap）
+            if nargin < 10
+                colorRange = [NaN, NaN];
+            end
             c = app.Controls;
             settings = app.Results.settings;
+            spec = resultSpec(app);
+            colorTitle = "";
+            if spec.scalar
+                colorTitle = spec.name + " [" + spec.unit + "]";
+            end
             centers = zeros(0, 2);
             sizeMm = [NaN, NaN];
             directions = zeros(0, 1);
@@ -4287,7 +4435,8 @@ classdef AlignmentEstimationApp < handle
                 waferRadiusMm=settings.data.waferRadiusMm, magnitudeLimit=magnitude, arrowColor=app.ARROW_COLORS(k, :), ...
                 markerSize=c.mapMarkerSize.Value, markerShape=c.mapMarkerShape.Value, shotCenters=centers, ...
                 shotSizeMm=sizeMm, shotDirections=directions, ringRadiiMm=rings, covariance=f.covariance{k}, ...
-                ellipseSigma=ellipseSigma, showArrows=~(c.mapEllipseOnly.Value && ellipseSigma > 0), showLegend=showLegend);
+                ellipseSigma=ellipseSigma, showArrows=~(c.mapEllipseOnly.Value && ellipseSigma > 0), showLegend=showLegend, ...
+                colorRange=colorRange, colorTitle=colorTitle);
             ax.FontSize = app.AXES_FONT_SIZE;
         end
 
@@ -4482,6 +4631,11 @@ classdef AlignmentEstimationApp < handle
                 f.rmse = row.RMSE_XY;
                 metricsText = sprintf("RMSE（X・Y）%.3f nm、X %.3f nm、Y %.3f nm｜R² %.3f｜MAE %.3f nm｜平均値に対する改善率 %.1f%%", ...
                     row.RMSE_XY, row.RMSE_X, row.RMSE_Y, row.R2_XY, row.MAE_XY, row.improveMeanPct_XY);
+                spec = alignest.valueSpec(settings.data);
+                if spec.scalar
+                    metricsText = sprintf("RMSE（%s）%.3f %s｜R² %.3f｜MAE %.3f %s｜平均値に対する改善率 %.1f%%", spec.name, ...
+                        row.RMSE_XY, spec.unit, row.R2_XY, row.MAE_XY, spec.unit, row.improveMeanPct_XY);
+                end
             end
             outlierText = "";
             evaluation = settings.evaluation;
@@ -4494,9 +4648,12 @@ classdef AlignmentEstimationApp < handle
             if ~isempty(plan.markIndex)
                 trainText = sprintf("学習 Mark %d（全 %d Shot で1点以上）", numel(plan.markIndex), plan.nShots);
             end
-            f.info = sprintf("%s｜%s｜%s｜%s｜評価点 X %d・Y %d%s｜%s", firstUnit.label, ...
-                plan.label, method.label, trainText, nnz(firstMask(firstOut.testIndex.X)), ...
-                nnz(firstMask(firstOut.testIndex.Y)), outlierText, metricsText);
+            testText = sprintf("評価点 X %d・Y %d", nnz(firstMask(firstOut.testIndex.X)), nnz(firstMask(firstOut.testIndex.Y)));
+            if alignest.valueSpec(settings.data).scalar
+                testText = sprintf("評価点 %d", nnz(firstMask(firstOut.testIndex.X)));
+            end
+            f.info = sprintf("%s｜%s｜%s｜%s｜%s%s｜%s", firstUnit.label, plan.label, method.label, trainText, testText, ...
+                outlierText, metricsText);
             f = addWorstValues(app, f, rowsOf(table_, option, planLabel, m));
             f.ok = true;
         end
@@ -4589,6 +4746,25 @@ classdef AlignmentEstimationApp < handle
             % マップの3枚目（残差・推定による変化）の点の大きさ |v| のワースト値と 95%値を題名に、X・Y 別の値と
             % （平均の図では）Wafer ごとの RMSE のワースト値・95%値を説明に足す（結果一覧の集計と同じ PERCENTILE.INC）
             values = f.values{3};
+            spec = resultSpec(app);
+            if spec.scalar
+                % 1変数：残差の絶対値のワースト値・95%値
+                magnitude = abs(values(:, 1));
+                worst = max(magnitude, [], 'omitnan');
+                if isempty(worst) || ~isfinite(worst)
+                    return
+                end
+                f.titles(3) = f.titles(3) + newline + sprintf("|残差| のワースト %.3f %s・95%%値 %.3f %s", worst, ...
+                    spec.unit, alignest.stats.percentile(magnitude, app.WORST_PERCENT), spec.unit);
+                f.info = f.info + sprintf("｜残差：ワースト値 %.3f %s、95%%値 %.3f %s", worst, spec.unit, ...
+                    alignest.stats.percentile(magnitude, app.WORST_PERCENT), spec.unit);
+                if f.isGroup && height(rows) > 0
+                    f.info = f.info + sprintf("｜Wafer ごとの RMSE：ワースト値 %.3f %s、95%%値 %.3f %s", ...
+                        max(rows.RMSE_XY, [], 'omitnan'), spec.unit, ...
+                        alignest.stats.percentile(rows.RMSE_XY, app.WORST_PERCENT), spec.unit);
+                end
+                return
+            end
             magnitude = hypot(values(:, 1), values(:, 2));
             worst = max(magnitude, [], 'omitnan');
             if isempty(worst) || ~isfinite(worst)
@@ -4785,7 +4961,8 @@ classdef AlignmentEstimationApp < handle
                 trainingData = [trainingData, cellstr(planLabels)];
             end
             setChoices(c.targetTraining, trainingItems, trainingData);
-            methods = alignest.buildMethodList(app.Settings.methods);
+            setModeChoices(c.targetMode, alignest.valueSpec(app.Settings.data));
+            methods = alignest.activeMethods(app.Settings);   % 1変数では RT モデルを除く
             if isempty(methods)
                 setChoices(c.targetMethod, "—（「2. 評価の設定」で手法を選んでください）", {1});
             else
@@ -4964,10 +5141,17 @@ classdef AlignmentEstimationApp < handle
             e = run.estimates;
             mark = strings(height(e), 1);
             mark(e.extrapolated) = "外挿";
-            c.targetResultTable.Data = table(e.wafer, e.name, round(e.x, 3), round(e.y, 3), e.markNo, e.shotNo, ...
+            spec = alignest.valueSpec(app.Settings.data);
+            shown = table(e.wafer, e.name, round(e.x, 3), round(e.y, 3), e.markNo, e.shotNo, ...
                 round(e.estimateX, 3), round(e.estimateY, 3), mark, round(e.outsideMm, 1), e.note, 'VariableNames', ...
                 ["Wafer", "名前", "x [mm]", "y [mm]", "markNo", "shotNo", "推定値 X [nm]", "推定値 Y [nm]", "外挿", ...
                 "範囲の外 [mm]", "メモ"]);
+            if spec.scalar
+                % 1変数：推定値は1列（値の名前と単位）
+                shown = removevars(shown, "推定値 Y [nm]");
+                shown.Properties.VariableNames{'推定値 X [nm]'} = char("推定値 " + spec.name + " [" + spec.unit + "]");
+            end
+            c.targetResultTable.Data = shown;
             removeStyle(c.targetResultTable);
             if any(e.extrapolated)
                 addStyle(c.targetResultTable, uistyle('BackgroundColor', app.Palette.warning), 'row', find(e.extrapolated));
@@ -4993,7 +5177,7 @@ classdef AlignmentEstimationApp < handle
             unit = app.Data.units(run.unitIndex(position));
             titleText = unit.label + " の推定値";   % 手法・学習データは上の欄に出ている（題名が長いと色の目盛りの名前と重なる）
             alignest.plot.targetMap(c.targetAxes, run.results{position}, unit, mode=string(c.targetMode.Value), ...
-                titleText=titleText, waferRadiusMm=app.Settings.data.waferRadiusMm);
+                titleText=titleText, waferRadiusMm=app.Settings.data.waferRadiusMm, spec=alignest.valueSpec(app.Settings.data));
             c.targetAxes.FontSize = app.AXES_FONT_SIZE;
         end
 
@@ -5010,6 +5194,15 @@ classdef AlignmentEstimationApp < handle
             set([c.targetExport, c.targetSaveFigure], 'Enable', 'off');
             c.targetMessage.Text = '左の表に推定する点を決めてから「推定する」を押してください。';
             c.targetMessage.FontColor = app.Palette.text;
+        end
+
+        function spec = resultSpec(app)
+            % 結果を表示するときの推定する値（評価した設定の data。結果が無ければ今の設定）
+            source = app.Settings.data;
+            if ~isempty(app.Results) && isfield(app.Results, 'settings') && isfield(app.Results.settings, 'data')
+                source = app.Results.settings.data;
+            end
+            spec = alignest.valueSpec(source);
         end
 
         % ================= 7. ヘルプ =================
@@ -5499,7 +5692,9 @@ options = struct("validRadiusMm", double(data.validRadiusMm), ...
     "excludeUnmeasuredRecords", logical(data.excludeUnmeasuredRecords), ...
     "directionRule", string(data.directionRule), "invertDirection", logical(data.invertDirection), ...
     "directionOverrideShots", reshape(double(fieldOr(data, "directionOverrideShots", zeros(1, 0))), 1, []), ...
-    "directionOverrideValues", reshape(double(fieldOr(data, "directionOverrideValues", zeros(1, 0))), 1, []));
+    "directionOverrideValues", reshape(double(fieldOr(data, "directionOverrideValues", zeros(1, 0))), 1, []), ...
+    "coordinateMode", string(fieldOr(data, "coordinateMode", "shotMark")), ...
+    "valueColumn", string(fieldOr(data, "valueColumn", "")));
 end
 
 function value = fieldOr(data, name, fallback)
@@ -5753,6 +5948,32 @@ for k = 1:numel(results)
     others = [others; results{k}.messages(2:end)]; %#ok<AGROW>
 end
 messages = [string(messages); unique(others, 'stable')];
+end
+
+function setModeChoices(dropdown, spec)
+% 図の表示（ベクトル・X・Y）の選択肢。1変数は色（値の名前）だけ
+if spec.scalar
+    setChoices(dropdown, spec.name + "（色）", {'X'});
+elseif ~isequal(dropdown.ItemsData, {'vector', 'X', 'Y'})
+    setChoices(dropdown, ["ベクトル（矢印）", "X（色）", "Y（色）"], {'vector', 'X', 'Y'});
+end
+end
+
+function range = valueRange(values)
+% 1変数の値を色で描く範囲 [最小, 最大]（値が無ければ NaN：0 を中心にした色の範囲になる）
+values = values(isfinite(values));
+range = [NaN, NaN];
+if ~isempty(values)
+    range = [min(values), max(values)];
+end
+end
+
+function limit = absoluteLimit(values)
+% 0 を中心にした色の範囲 ±limit（残差など）
+limit = max(abs(values(isfinite(values))), [], 'all');
+if isempty(limit) || limit <= 0
+    limit = 1;
+end
 end
 
 function text = onOffText(value)

@@ -1,8 +1,12 @@
-function summary = estimateScatter(ax, measured, estimated, groupValues, titleText)
+function summary = estimateScatter(ax, measured, estimated, groupValues, titleText, unit)
 %ESTIMATESCATTER 実測値（横軸）と推定値（縦軸）の散布図。y = x の線と回帰直線を引き、相関を題名に書く。
+%   unit（省略可）は軸の単位（既定 "nm"。1変数は alignest.valueSpec の単位）。
 %   groupValues は点ごとの色分けの水準（文字列。"" だけなら1色）。水準が多すぎるときは凡例を出さない。
 %   categorical で渡すと、その水準の順（例：内側 → 外周、第1象限 → 第4象限）で色と凡例を並べる。
 %   summary は alignest.scatterSummary の結果。
+if nargin < 6
+    unit = "nm";
+end
 MAX_LEGEND_ITEMS = 20;
 POINT_SIZE = 12;
 POINT_ALPHA = 0.55;
@@ -50,10 +54,10 @@ hold(ax, 'off');
 axis(ax, 'square');
 grid(ax, 'on');
 box(ax, 'on');
-xlabel(ax, '実測値 [nm]');
-ylabel(ax, '推定値 [nm]');
-title(ax, sprintf("%s：r = %.3f、r² = %.3f、傾き %.3f、RMSE %.3f nm（%d 点）", titleText, summary.r, summary.r2, ...
-    summary.slope, summary.rmse, summary.n), 'Interpreter', 'none');
+xlabel(ax, "実測値 [" + unit + "]");
+ylabel(ax, "推定値 [" + unit + "]");
+title(ax, sprintf("%s：r = %.3f、r² = %.3f、傾き %.3f、RMSE %.3f %s（%d 点）", titleText, summary.r, summary.r2, ...
+    summary.slope, summary.rmse, unit, summary.n), 'Interpreter', 'none');
 if numel(levels) <= MAX_LEGEND_ITEMS
     legend(ax, 'Location', 'southeast', 'Box', 'off', 'FontSize', 9, 'Interpreter', 'none');
 end

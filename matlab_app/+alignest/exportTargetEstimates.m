@@ -1,15 +1,17 @@
-function exportTargetEstimates(filePath, estimates, notes)
+function exportTargetEstimates(filePath, estimates, notes, spec)
 %EXPORTTARGETESTIMATES 未知の座標での推定値を Excel ファイル（.xlsx）に書き出す。
-%   alignest.exportTargetEstimates(filePath, estimates, notes)
+%   alignest.exportTargetEstimates(filePath, estimates, notes, spec)
 %   estimates：alignest.predictTargets の result.table に、Wafer の列（wafer）を足して縦に並べた表。
 %   notes：「説明」シートに足す行（[項目, 内容] の2列の文字列）。
 %   「推定値」シート：Wafer・名前・Xmm・Ymm・markXmm・markYmm・markNo・shotNo・Direction（読み込む表と同じ見出し
 %   なので、このシートを alignest.readTargetPoints でそのまま読める）・Wafer 上の x・y・推定値 X・Y [nm]・外挿・
 %   学習範囲の外 [mm]・最も近い学習点 [mm]・メモ。「説明」シート：作成日時・外挿の決め方・notes。
+%   spec（alignest.valueSpec、省略可）が1変数なら、推定値は1列（「推定値 <値の名前>[<単位>]」）。
 arguments
     filePath (1, 1) string
     estimates table
     notes (:, 2) string = strings(0, 2)
+    spec struct = alignest.valueSpec(struct())
 end
 [~, ~, extension] = fileparts(filePath);
 if ~strcmpi(extension, ".xlsx")
@@ -39,5 +41,9 @@ sheet = table(estimates.wafer, estimates.name, estimates.Xmm, estimates.Ymm, est
     estimates.estimateY, mark, estimates.outsideMm, estimates.nearestMm, estimates.note, 'VariableNames', ...
     ["Wafer", "名前", "Xmm", "Ymm", "markXmm", "markYmm", "markNo", "shotNo", "Direction", "x[mm]", "y[mm]", ...
     "推定値X[nm]", "推定値Y[nm]", "外挿", "学習範囲の外[mm]", "最も近い学習点[mm]", "メモ"]);
+if spec.scalar
+    sheet = removevars(sheet, "推定値Y[nm]");
+    sheet.Properties.VariableNames{'推定値X[nm]'} = char("推定値 " + spec.name + "[" + spec.unit + "]");
+end
 writetable(sheet, filePath, 'Sheet', '推定値');
 end

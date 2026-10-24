@@ -5,6 +5,7 @@ function targetMap(ax, result, unit, options)
 %   推定値を矢印（options.mode = "vector"）または X・Y の色で描き（alignest.plot.waferMap）、学習点（四角）、
 %   学習点の範囲（凸包、破線）、外挿の点（× 印）を重ねる。色だけで区別しないよう、外挿の点は形（×）と凡例でも示す。
 %   options.titleText：題名、options.waferRadiusMm：Wafer の半径 [mm]、options.markerSize：色で描く点の大きさ。
+%   options.spec：推定する値（alignest.valueSpec）。1変数なら色で描き、色の範囲は推定値の最小〜最大、目盛りは値の名前。
 arguments
     ax
     result struct
@@ -13,6 +14,7 @@ arguments
     options.titleText (1, 1) string = ""
     options.waferRadiusMm (1, 1) double = 150
     options.markerSize (1, 1) double {mustBePositive} = 30
+    options.spec struct = alignest.valueSpec(struct())
 end
 HULL_COLOR = [0.50, 0.50, 0.50];
 EXTRAPOLATED_COLOR = [0.85, 0.33, 0.10];
@@ -27,8 +29,19 @@ colorLimit = max(abs(values(isfinite(values(:, column)), column)), [], 'all');
 if isempty(colorLimit) || colorLimit <= 0
     colorLimit = 1;
 end
+colorRange = [NaN, NaN];
+colorTitle = "";
+if options.spec.scalar
+    options.mode = "X";   % 1変数は色で描く（矢印は X・Y の2成分が要る）
+    finite = values(isfinite(values(:, 1)), 1);
+    if ~isempty(finite)
+        colorRange = [min(finite), max(finite)];
+    end
+    colorTitle = options.spec.name + " [" + options.spec.unit + "]";
+end
 alignest.plot.waferMap(ax, points, values, mode=options.mode, scaleMmPerNm=alignest.plot.vectorScale(values), ...
-    colorLimit=colorLimit, trainPoints=result.trainXY, titleText=options.titleText, ...
+    colorLimit=colorLimit, colorRange=colorRange, colorTitle=colorTitle, trainPoints=result.trainXY, ...
+    titleText=options.titleText, ...
     waferRadiusMm=options.waferRadiusMm, markerSize=options.markerSize, showLegend=false, ...
     shotCenters=[unit.shots.Xmm(:), unit.shots.Ymm(:)], shotSizeMm=unit.shotSizeMm);
 hold(ax, 'on');
