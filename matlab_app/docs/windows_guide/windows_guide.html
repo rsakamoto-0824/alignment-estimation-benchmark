@@ -278,8 +278,9 @@ cd C:\work\matlab_app</code></pre>
             評価点の絞り込み・条件の追加・処理時間の内訳・半径の mm 指定（8件。条件を足した結果が最初からまとめて評価した結果と同じこと、
             すべての点を残す絞り込みで評価と同じ指標になることなど）、
             計測配置の選び方（D 最適・Mark 単位・人の選択の読み込み・選び方の比較）・Fringe Zernike・MAD・Slot の偶奇・Shot ごとの補正の式・時間の目安・既定の設定ファイル・ヘルプ（12件）、
-            未知の座標の推定（評価と同じ推定値になること・学習に無い Mark 番号・外挿の判定・点の読み込みと作り方・Excel の書き出し・画面の流れ、6件）です。
-            全 148 件（2026-10-24 時点）。
+            未知の座標の推定（評価と同じ推定値になること・学習に無い Mark 番号・外挿の判定・点の読み込みと作り方・Excel の書き出し・画面の流れ、6件）、
+            絶対座標だけのデータと膜厚などの1変数の推定（6件）です。
+            全 154 件（2026-10-25 時点）。
           </p>
         </div>
       </div>
@@ -445,9 +446,18 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
       <h3 class="sub-heading">8-1. データを読み込む（1. データの読み込み）</h3>
       <ol class="numbered-steps">
         <li><div><strong>「ファイルを選ぶ…」を押す</strong><p>Excel（.xlsx）または CSV を選びます。Excel に複数のシートがあれば、「シート」で選び直せます。</p></div></li>
+        <li><div><strong>（必要なとき）座標の定義と推定する値を選ぶ</strong><p>
+          「座標の定義」：アライメント計測テーブルのように Shot 中心（Xmm・Ymm）と Shot 内の位置（markXmm・markYmm）があるときは
+          「Shot 中心＋Shot 内の位置」（初期値）、膜厚の測定点のように Wafer 上の座標だけのときは「Wafer 上の絶対座標だけ」を選び、
+          Xmm・Ymm の行に点の座標の列を対応づけます（shotNo があれば同じ Shot の点の平均を Shot 中心に、無ければ点を1つずつ Shot として扱います）。
+          「推定する値」：X・Y 成分（measX・measY、初期値）か、膜厚・線幅などの1つの列（1変数）を選び、右の「単位」に表示する単位を書きます。
+          1変数では RT モデル・Overlay 補正の評価・矢印の図は使わず、図は値の色で描きます。
+          見本は <code>sample_data\sample_thickness.csv</code>（膜厚の模擬データ。「Wafer 上の絶対座標だけ」「1変数：Thickness_nm」で読み込む）です。
+        </p></div></li>
         <li><div><strong>列の対応を確かめる</strong><p>
           左の表の「ファイルの列」に、標準の項目にあたるファイルの列が入っていれば正しく対応づいています。
-          列名が違うときは、その欄を押して選び直します。必須の項目（Xmm・Ymm・markXmm・markYmm・measX・measY）は必ず選びます。
+          列名が違うときは、その欄を押して選び直します。「必須」の項目は必ず選びます（初期値では Xmm・Ymm・markXmm・markYmm・measX・measY。
+          絶対座標だけなら markXmm・markYmm、1変数なら measX・measY は任意になります）。
           工程名（Operation）と装置 ID（EqpId）は任意です。あれば、工程・装置が違う計測を別々に扱い、結果の Excel にも出ます。
         </p></div></li>
         <li><div><strong>座標の単位を確かめる</strong><p>

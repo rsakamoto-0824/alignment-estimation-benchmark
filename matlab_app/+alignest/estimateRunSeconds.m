@@ -17,7 +17,7 @@ seconds = 0;
 if isempty(units)
     return
 end
-methods = alignest.buildMethodList(settings.methods);
+methods = alignest.activeMethods(settings);
 specs = alignest.buildPlanSpecs(settings.sampling);
 usesNu = contains(string({methods.variant}), "_nu");
 detail.nMaternNuMethods = nnz(usesNu);

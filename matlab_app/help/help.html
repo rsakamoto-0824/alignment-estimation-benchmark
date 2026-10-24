@@ -61,6 +61,7 @@
   <a class="sub" href="#kernels-other">TPS・RBF・Kriging</a>
   <a href="#zernike">Fringe Zernike</a>
   <a href="#targets">未知の座標の推定・外挿</a>
+  <a href="#value-kinds">座標の定義・推定する値</a>
   <a href="#overlay">Overlay 補正の式</a>
   <a class="sub" href="#overlay-model">補正モデル</a>
   <a class="sub" href="#overlay-shot">Shot 内の式</a>
@@ -74,7 +75,7 @@
 
 <h2 id="flow">使い方の流れ</h2>
 <ol>
-  <li><strong>1. データの読み込み</strong>：計測ファイルを読み、列の対応・座標の単位・Scan 方向を確かめる。Wafer マップ・Shot レイアウト・Shot 重ね合わせで中身を見る。</li>
+  <li><strong>1. データの読み込み</strong>：計測ファイルを読み、座標の定義（Shot 中心＋Shot 内の位置／絶対座標だけ）と推定する値（X・Y 成分／膜厚・線幅などの1変数）を選び、列の対応・座標の単位・Scan 方向を確かめる。Wafer マップ・Shot レイアウト・Shot 重ね合わせで中身を見る。</li>
   <li><strong>2. 評価の設定</strong>：学習 Shot の選び方（I 最適・D 最適・ランダム・人の選択・優先順・Mark 単位）と数、制約、比べる手法、Overlay 補正のモデルを決める。</li>
   <li><strong>3. 実行</strong>：計測マップで学習に使う Shot（Mark）を確かめてから「評価を始める」。後から「条件を追加して評価」で手法・学習 Shot 数を足せる。</li>
   <li><strong>4. 結果一覧</strong>：表・グラフ・基準の手法との比較・計測配置の比較・誤差の分布（ANOVA・箱ひげ図）・散布図・分布の比較・処理時間の内訳。</li>
@@ -233,6 +234,15 @@ Fringe 番号は、Fringe の次数 k = (n + |m|)/2 の小さい順、同じ k �
 <tr><td class="term">推定の条件</td><td>手法・質的変数・XY 1次を除く・学習データの異常値の除外は「2. 評価の設定」の今の設定のとおり。</td></tr>
 </table>
 <p class="note">外挿の点でも推定値は出します。Wafer の外周より外、学習した Shot から離れた点は、手法によって値が大きく違うことがあるので、複数の手法で比べてから使ってください。</p>
+
+<h2 id="value-kinds">座標の定義・推定する値</h2>
+<table>
+<tr><th>項目</th><th>意味</th></tr>
+<tr><td class="term">Shot 中心＋Shot 内の位置</td><td>点の座標 x = Xmm + markXmm、y = Ymm + markYmm（アライメント計測テーブルの標準。初期値）。</td></tr>
+<tr><td class="term">絶対座標だけ</td><td>Xmm・Ymm の列が点の Wafer 上の座標。Shot 中心は、markXmm・markYmm があれば x − markXmm、無くて shotNo があれば同じ Shot の点の平均。どちらも無ければ点を1つずつ Shot として扱う（学習 Shot ＝ 学習に使う点、Mark 番号は 1、Scan 方向は付けない）。</td></tr>
+<tr><td class="term">X・Y 成分</td><td>measX・measY を推定する（初期値）。</td></tr>
+<tr><td class="term">1変数の推定</td><td>膜厚・線幅などファイルの1つの列を推定する。中では X 成分として扱い、Y 成分は使わない。X・Y 合計の指標はその値の指標と同じ。RT モデル・Overlay 補正の評価・矢印の図・共分散楕円・Shot 重ね合わせは使わない（X・Y の2成分が要るため）。図は値の色で描く。</td></tr>
+</table>
 
 <h2 id="overlay">Overlay 補正の式</h2>
 <p>推定値で補正量を求めたとき、実際の値で求めた補正と比べて Overlay 残差がどれだけ増えるかを評価します（「2. 評価の設定」の「Overlay 補正の評価」）。</p>

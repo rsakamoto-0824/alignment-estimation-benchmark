@@ -29,7 +29,7 @@ if nargin < 5
 end
 mode = string(mode);
 timer = tic;
-methods = alignest.buildMethodList(settings.methods);
+methods = alignest.activeMethods(settings);   % 1変数では RT モデルを除く
 if isempty(methods)
     error('alignest:noMethod', '比べる手法が選ばれていません。「2. 評価の設定」で手法を1つ以上選んでください。');
 end

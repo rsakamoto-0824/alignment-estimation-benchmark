@@ -2,7 +2,8 @@ function out = estimateWafer(unit, training, method, settings, testMask)
 %ESTIMATEWAFER 1つの Wafer（評価の単位）で、学習 Shot の計測値から評価 Shot の全 Mark を推定する。
 %   training は学習に使う Shot の番号（unit.shots の何番目か）、または学習パターン（alignest.planTrainingShots の結果。
 %   Mark 単位の計画なら計測する Mark だけが学習点、残りの Mark が評価点。alignest.trainingMarks）。
-%   X・Y は別々に当てはめる（RT モデルだけは X・Y を同時に当てはめる）。
+%   X・Y は別々に当てはめる（RT モデルだけは X・Y を同時に当てはめる）。計測値が1つも無い成分（1変数の Y 成分。
+%   alignest.valueSpec）は推定しない（学習点・評価点・推定値が空）。RT モデルは X・Y の両方が要る。
 %   学習点は学習 Shot の有効な Mark、評価点は学習しなかった Shot の有効な Mark（軸ごとに有効な点が違ってもよい）。
 %   settings.evaluation.removeLinear が true なら、学習点で XY 1次（[1, x, y]、軸ごと）を除いてから推定し、
 %   推定値に戻す（有効自由度は軸ごとに3を足す）。
@@ -29,20 +30,29 @@ if isfield(settings.evaluation, "excludeOutliers") && settings.evaluation.exclud
 end
 outlierSeconds = toc(outlierTimer);
 axisNames = ["X", "Y"];
-for axisName = axisNames
+active = false(1, 2);
+for k = 1:2
+    axisName = axisNames(k);
     valid = marks.("valid" + axisName);
+    active(k) = any(valid & isfinite(marks.("meas" + axisName)));   % 1変数では Y 成分に計測値が無い
+    if ~active(k)
+        valid = false(size(valid));
+    end
     trainIndex.(axisName) = find(inTrain & valid & ~outlier);
     testIndex.(axisName) = find(~inTrain & valid & testMask(:));
     measured.(axisName) = marks.("meas" + axisName)(trainIndex.(axisName));
+    if ~active(k)
+        continue
+    end
     if numel(trainIndex.(axisName)) < 3
         error('alignest:fewPoints', '%s の学習点が %d 点しかありません。学習 Shot を増やしてください。', ...
             axisName, numel(trainIndex.(axisName)));
     end
 end
 xyNorm = [marks.x, marks.y] / radius;
-linearPart = struct();
+linearPart = struct("X", zeros(0, 1), "Y", zeros(0, 1));
 if settings.evaluation.removeLinear
-    for axisName = axisNames
+    for axisName = axisNames(active)
         designTrain = [ones(numel(trainIndex.(axisName)), 1), xyNorm(trainIndex.(axisName), :)];
         designTest = [ones(numel(testIndex.(axisName)), 1), xyNorm(testIndex.(axisName), :)];
         coefficients = designTrain \ measured.(axisName);
@@ -61,7 +71,7 @@ modelTimer = tic;
 switch method.family
     case "XY"
         order = sscanf(char(method.variant), 'order%d');
-        for k = 1:2
+        for k = find(active)
             result = alignest.models.polynomialFitPredict(xyNorm(trainIndex.(axisNames(k)), :), ...
                 xyNorm(testIndex.(axisNames(k)), :), measured.(axisNames(k)), order);
             estimate.(axisNames(k)) = result.prediction;
@@ -69,13 +79,16 @@ switch method.family
         end
     case "FZ"
         order = sscanf(char(method.variant), 'order%d');
-        for k = 1:2
+        for k = find(active)
             result = alignest.models.zernikeFitPredict(xyNorm(trainIndex.(axisNames(k)), :), ...
                 xyNorm(testIndex.(axisNames(k)), :), measured.(axisNames(k)), order);
             estimate.(axisNames(k)) = result.prediction;
             out.edf(k) = result.edf;
         end
     case "RT"
+        if ~all(active)
+            error('alignest:rtNeedsXY', 'RT モデルは X・Y の2成分の計測値が要ります（1変数の推定には使えません）。');
+        end
         order = sscanf(char(method.variant), 'order%d');
         result = alignest.models.rtFitPredict(xyNorm(trainIndex.X, :), xyNorm(trainIndex.Y, :), ...
             xyNorm(testIndex.X, :), xyNorm(testIndex.Y, :), measured.X, measured.Y, order);
@@ -87,7 +100,7 @@ switch method.family
         if any(method.family == ["GPR", "TPS", "RBF", "OK", "UK"])
             features = alignest.basis.distanceFeatures(marks.x, marks.y, method.featureSet, radius);
         end
-        for k = 1:2
+        for k = find(active)
             train = trainIndex.(axisNames(k));
             test = testIndex.(axisNames(k));
             y = measured.(axisNames(k));
@@ -153,13 +166,16 @@ switch method.family
         end
 end
 modelSeconds = toc(modelTimer);
-for axisName = axisNames
+for axisName = axisNames(~active)
+    estimate.(axisName) = zeros(0, 1);   % 計測値の無い成分は推定しない
+end
+for axisName = axisNames(active)
     if settings.evaluation.removeLinear
         estimate.(axisName) = estimate.(axisName) + linearPart.(axisName);
     end
 end
 if settings.evaluation.removeLinear
-    out.edf = out.edf + 3;
+    out.edf(active) = out.edf(active) + 3;
 end
 out.estimate = estimate;
 out.testIndex = testIndex;

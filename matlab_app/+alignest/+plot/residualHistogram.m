@@ -1,5 +1,9 @@
-function residualHistogram(ax, residuals, titleText)
+function residualHistogram(ax, residuals, titleText, unit)
 %RESIDUALHISTOGRAM 残差のヒストグラム（確率密度）に、同じ平均・標準偏差の正規分布の曲線を重ねて描く。
+%   unit（省略可）は横軸の単位（既定 "nm"）。
+if nargin < 4
+    unit = "nm";
+end
 BAR_COLOR = [0.0, 0.36, 0.67];
 CURVE_COLOR = [0.80, 0.22, 0.17];
 CURVE_POINTS = 200;
@@ -21,7 +25,7 @@ if sigma > 0
         'DisplayName', sprintf('正規分布（平均 %.3f、標準偏差 %.3f）', mu, sigma));
 end
 hold(ax, 'off');
-xlabel(ax, '残差 [nm]（計測値 − 推定値）');
+xlabel(ax, "残差 [" + unit + "]（計測値 − 推定値）");
 ylabel(ax, '確率密度');
 title(ax, sprintf("%s（%d 点）", titleText, numel(values)), 'Interpreter', 'none');
 grid(ax, 'on');

@@ -28,7 +28,7 @@ DECK_NAME = "デフォルト設定の編集ガイド"
 DECK_TITLE = "デフォルト設定の編集ガイド（管理者向け）"
 CODE_FONT = "Courier New"
 DEFAULTS_FILE = "alignment_estimation_defaults.json"
-TEST_COUNT = 148   # runAllTests の件数（2026-10-24 時点。テストを足したら直す）
+TEST_COUNT = 154   # runAllTests の件数（2026-10-25 時点。テストを足したら直す）
 
 
 class Deck:
@@ -266,17 +266,17 @@ def build(output: Path, reference: Path):
     # 9. data・factors
     s = deck.body("03　設定の項目と初期値", "設定の項目①：data（データの読み込み）・factors（質的変数）")
     settings_table(s, [
-        ["data.waferRadiusMm", "150", "座標を割る Wafer 半径 [mm]（300 mm Wafer）", "（設定ファイルのみ）"],
-        ["data.validRadiusMm", "150", "この半径 [mm] 以上の点は除く", "1. 有効半径"],
+        ["data.waferRadiusMm・validRadiusMm", "150・150", "座標を割る Wafer 半径・この半径 [mm] 以上の点は除く", "1. 有効半径"],
         ["data.coordinateUnits", "すべて mm", "座標の列ごとの入力の単位（mm・um・nm・m）", "1. 座標の単位"],
-        ["data.excludeZeroMeasurements", "false", "measX・measY がともに 0 の行を除く", "1. 行の除外"],
-        ["data.excludeUnmeasuredRecords", "false", "StsX・StsY のどちらかが −1 の行を除く", "1. 行の除外"],
-        ["data.directionRule", "\"serpentine\"", "Direction が無い行に付ける Scan 方向（一筆書き）", "1. Scan 方向"],
-        ["data.invertDirection", "false", "付ける 1 と 2 を入れ替える", "1. Scan 方向"],
+        ["data.excludeZeroMeasurements・…Unmeasured…", "false・false", "測定値がともに 0・Sts が −1 の行を除く", "1. 行の除外"],
+        ["data.directionRule・invertDirection", "\"serpentine\"・false", "Direction が無い行に付ける Scan 方向（一筆書き）・1 と 2 の入れ替え",
+         "1. Scan 方向"],
+        ["data.coordinateMode", "\"shotMark\"", "座標の定義（shotMark：Shot 中心＋Shot 内、absolute：絶対座標だけ）", "1. 座標の定義"],
+        ["data.valueColumn・valueUnit", "\"\"・\"nm\"", "推定する値（空 = X・Y 成分、列の名前 = 膜厚などの1変数）と単位", "1. 推定する値"],
         ["factors.scan・mark・shotRowParity", "true・true・false", "質的変数（Scan 方向・Mark 番号・Shot 行の奇偶）", "2. 質的変数"],
         ["factors.columns", "[]（なし）", "質的変数に使うファイルのその他の列の名前", "2. その他の列"],
         ["factors.separateY ・ factors.y", "false", "Y 成分の質的変数を別に選ぶ（y に同じ形の項目）", "2. Y 成分は別に"]],
-        row_h=0.42)
+        widths=(3.75, 1.9, 4.78, 1.7), row_h=0.44)
     point_bar(s, 6.3, "Wafer 半径を変えるときは validRadiusMm・同心円の区切り・外周の半径（mm）も一緒に見直す",
               icon="!", icon_color=CORAL, h=0.55, size=13)
     notes(s, "data の項目は読み込みの条件。factors は推定に使う質的変数（GPR・GAM・Backfitting）。ANOVA は選ばなくても主な変数を調べる。")
@@ -435,7 +435,7 @@ def build(output: Path, reference: Path):
     # 17. 確かめ方
     s = deck.body("04　編集の例・注意・確かめ方", "確かめ方 ― テスト・画面・Excel")
     steps(s, 0.6, 1.5, 6.6, [
-        ("テストを全件流す（手順 C）", f"cd tests → runAllTests。「成功 {TEST_COUNT} 件、失敗 0 件、未完了 0 件」（2026-10-24 時点の件数）"),
+        ("テストを全件流す（手順 C）", f"cd tests → runAllTests。「成功 {TEST_COUNT} 件、失敗 0 件、未完了 0 件」（2026-10-25 時点の件数）"),
         ("画面で初期値を見る", "「初期設定に戻す」を押し、「2. 評価の設定」の欄が新しい値か確かめる"),
         ("設定ファイルを開いて見る", "「設定を保存…」で保存した JSON の値（名前・単位・並び）"),
         ("模擬データで評価する", "sample_data の模擬データで評価し、結果の Excel の「設定」シートを見る"),

@@ -12,6 +12,11 @@ settings.data.directionRule = "serpentine";  % Direction が無い行に Scan �
 settings.data.invertDirection = false;  % 規則で付ける 1 と 2 を入れ替える
 settings.data.directionOverrideShots = zeros(1, 0);   % 画面で Scan 方向を変えた shotNo（すべての Wafer に当てる）
 settings.data.directionOverrideValues = zeros(1, 0);  % その Scan 方向（1・2。shotNo と同じ順）
+settings.data.coordinateMode = "shotMark";  % 座標の定義：shotMark（Shot 中心 Xmm・Ymm ＋ Shot 内 markXmm・markYmm）・
+                                            % absolute（Xmm・Ymm が点の Wafer 上の絶対座標。Shot 内の座標は無くてもよい）
+settings.data.valueColumn = "";             % 推定する値：""（X・Y 成分 measX・measY）、または1変数にするファイルの列の名前
+                                            % （膜厚・線幅など。中では X 成分として扱い、Y 成分は使わない。alignest.valueSpec）
+settings.data.valueUnit = "nm";             % 1変数の単位（画面・Excel の表示だけに使う）
 % 質的変数（GPR・GAM・TPS／RBF／Kriging の Backfitting で使う）
 settings.factors.scan = true;           % Scan 方向（Direction）
 settings.factors.mark = true;           % Mark 番号（markNo）
