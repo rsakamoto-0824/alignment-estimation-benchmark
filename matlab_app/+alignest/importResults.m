@@ -27,7 +27,15 @@ end
 
 % 結果の表（Waferごと）：見出しを結果の表の列名に戻す。無い列（以前の版のファイルなど）は空・NaN にする
 [allNames, allHeaders] = alignest.resultColumnNames(true);
-[raw, fileHeaders] = alignest.readSheetTable(filePath, "Waferごと", allHeaders(ismember(allNames, TEXT_COLUMNS)));
+LEGACY_HEADERS = ["超パラメータ", "ハイパーパラメータ"];   % 以前の版の見出し → 今の見出し（1行に1組）
+[raw, fileHeaders] = alignest.readSheetTable(filePath, "Waferごと", ...
+    [allHeaders(ismember(allNames, TEXT_COLUMNS)), LEGACY_HEADERS(:, 1).']);
+for k = 1:size(LEGACY_HEADERS, 1)
+    if any(fileHeaders == LEGACY_HEADERS(k, 1)) && ~any(fileHeaders == LEGACY_HEADERS(k, 2))
+        raw = renamevars(raw, LEGACY_HEADERS(k, 1), LEGACY_HEADERS(k, 2));
+        fileHeaders(fileHeaders == LEGACY_HEADERS(k, 1)) = LEGACY_HEADERS(k, 2);
+    end
+end
 overlayNames = alignest.overlayMetricNames();
 overlayEvaluated = any(ismember(allHeaders(ismember(allNames, overlayNames)), fileHeaders));
 [names, headers] = alignest.resultColumnNames(overlayEvaluated);

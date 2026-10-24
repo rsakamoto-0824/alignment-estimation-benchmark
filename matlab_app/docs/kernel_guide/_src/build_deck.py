@@ -113,7 +113,7 @@ def build(output: Path, reference: Path, numbers: dict):
         text(s, 8.85, yy, 3.9, 0.32, f"{labels[key]}　{variance[key] / total * 100:.0f}%　（{variance[key]:.2f} nm²）",
              size=13, color=WHITE)
     notes(s, "アプリの GPR で「加法カーネル」「加法カーネル＋交互作用」を選んだときに、カーネルがどんな式になっているかを説明する資料。"
-             "右の図は、模擬データの1枚で推定した超パラメータから、1点の値の分散が各項にどれだけ割り振られたかを示す。")
+             "右の図は、模擬データの1枚で推定したハイパーパラメータから、1点の値の分散が各項にどれだけ割り振られたかを示す。")
 
     # 2. この資料で学ぶこと
     s = deck.body("", "この資料で学ぶこと")
@@ -126,7 +126,7 @@ def build(output: Path, reference: Path, numbers: dict):
               "p.6–10"),
              ("×", PURPLE, "交互作用", "「両方が同じなら τ²」の項。全ペアの入れ方、平均に入れる交互作用・混合との違い",
               "p.11–14"),
-             ("▶", GOLD, "計算例と使い方", "超パラメータの推定、模擬データでの数値例、アプリでの場所、使い分けと注意点",
+             ("▶", GOLD, "計算例と使い方", "ハイパーパラメータの推定、模擬データでの数値例、アプリでの場所、使い分けと注意点",
               "p.15–21")]
     for index, (glyph, color, heading, body, pages) in enumerate(cards):
         x = 0.6 + index * 3.11
@@ -179,7 +179,7 @@ def build(output: Path, reference: Path, numbers: dict):
         text(s, x + 0.3, 3.2, 3.24, 0.45, heading, size=18, color=color, bold=True)
         text(s, x + 0.2, 3.75, 3.44, 0.6, formula, size=20, color=INK, font="Times New Roman")
         text(s, x + 0.3, 4.4, 3.24, 1.0, note, size=13, color=BODY)
-    point_bar(s, 5.75, "予測：$ŷ_{*} = h_{*}^{T}β̂ + k_{*}^{T}K_{y}^{−1}(y − Hβ̂)$。超パラメータ（$ℓ$・$σ_{f}$・$τ$・$σ_{n}$）は"
+    point_bar(s, 5.75, "予測：$ŷ_{*} = h_{*}^{T}β̂ + k_{*}^{T}K_{y}^{−1}(y − Hβ̂)$。ハイパーパラメータ（$ℓ$・$σ_{f}$・$τ$・$σ_{n}$）は"
               "対数周辺尤度を最大にして選ぶ", icon="k", icon_color=TEAL, size=15)
     notes(s, "GPR（ガウス過程回帰）は、平均の部分・カーネル・ノイズで決まる。質的変数は、平均の部分に入れる方法と、カーネルに入れる方法がある。")
 
@@ -215,7 +215,7 @@ def build(output: Path, reference: Path, numbers: dict):
     point_bar(s, 5.85, "Shot 行の奇偶・その他の列を選ぶと、同じ形の項 $τ^{2}δ(…)$ が1つずつ加わる。ノイズは $K_{y} = K + σ_{n}^{2}I$",
               icon="+", icon_color=TEAL, size=15)
     notes(s, "加法カーネルは、空間のカーネルに、質的変数ごとの「水準が同じなら τ²」の項を足したもの。"
-             "τ は変数ごとに1つの超パラメータで、空間の長さスケールなどと一緒に推定する。")
+             "τ は変数ごとに1つのハイパーパラメータで、空間の長さスケールなどと一緒に推定する。")
 
     # 7. 行列で見る
     s = deck.body("02　加法カーネル", "行列で見る ― 「同じ水準なら 1」の行列を重ねる")
@@ -293,7 +293,7 @@ def build(output: Path, reference: Path, numbers: dict):
             ["点が少ない水準", "そのまま推定する（ばらつきやすい）", "0 の方へ縮めて推定する（縮小推定）"],
             ["効果が無いとき", "係数は小さくなるが、推定の誤差の分だけ残る", "$τ$ が下限まで小さくなり、項がほぼ消える"],
             ["学習点に無い水準", "効果 0（全水準の平均として扱う）", "効果 0（その項が効かない）"],
-            ["増えるもの", "平均の係数（水準の数に応じて）", "超パラメータ $τ$（変数ごとに1つ）"]]
+            ["増えるもの", "平均の係数（水準の数に応じて）", "ハイパーパラメータ $τ$（変数ごとに1つ）"]]
     table(s, 0.6, 1.55, [2.6, 4.75, 4.78], rows, size=13, row_h=0.58, bold_first=True)
     point_bar(s, 5.85, "混合（mixed）は、Mark 番号だけ変量効果（$τ_{m}^{2}δ$）、Scan 方向などは固定効果（効果コード）にする中間の形",
               icon="≈", icon_color=PURPLE, fill=PANEL, size=15)
@@ -397,10 +397,10 @@ def build(output: Path, reference: Path, numbers: dict):
     notes(s, "交互作用を平均の部分に入れる（basis_int）と、組み合わせごとの係数を固定効果として推定する。"
              "カーネルに入れる（additive_int・mixed_int）と、組み合わせごとのずれを変量効果として扱う。")
 
-    # 15. 超パラメータの推定
-    s = deck.body("04　計算例と使い方", "超パラメータの推定 ― τ も一緒に尤度で選ぶ")
+    # 15. ハイパーパラメータの推定
+    s = deck.body("04　計算例と使い方", "ハイパーパラメータの推定 ― τ も一緒に尤度で選ぶ")
     formula_bar(s, 1.55, "$−log L(θ) = ½(y − Hβ̂)^{T}K_{y}^{−1}(y − Hβ̂) + ½ log|K_{y}| + (n/2) log 2π$", size=23)
-    rows = [["超パラメータ", "初期値", "探す範囲"],
+    rows = [["ハイパーパラメータ", "初期値", "探す範囲"],
             ["長さスケール $ℓ$", "説明変数の標準偏差", "$10^{−3}$ 〜 $10^{3}$"],
             ["空間の大きさ $σ_{f}$", "$std(y)/√2$", "$10^{−3}$ 〜 $10^{3}$ × $std(y)$"],
             ["質的変数の $τ$（項ごと）", "$0.2 × std(y)$", "$10^{−4}$ 〜 $10$ × $std(y)$"],
@@ -410,13 +410,13 @@ def build(output: Path, reference: Path, numbers: dict):
     text(s, 10.05, 3.0, 2.6, 0.35, "探し方", size=13, color=INK, bold=True)
     text(s, 10.05, 3.4, 2.6, 2.05, ["対数の値 $θ$ = (log $ℓ$, log $σ_{f}$, log $τ_{1}$…, log $σ_{n}$) を、上下限つきの L-BFGS で動かす",
                                    "勾配：$∂K/∂ log τ_{k} = 2τ_{k}^{2}D_{k}$（$D_{k}$ は 0・1 の行列）"], size=12, color=BODY, space_after=5)
-    point_bar(s, 5.85, "β（平均）は一般化最小二乗で消去して、超パラメータだけを探す。$τ$ が下限（$10^{−4}$ × $std(y)$）に"
+    point_bar(s, 5.85, "β（平均）は一般化最小二乗で消去して、ハイパーパラメータだけを探す。$τ$ が下限（$10^{−4}$ × $std(y)$）に"
               "張り付いたら「その変数のずれは無い」と読める", icon="θ", icon_color=TEAL, size=14)
     notes(s, "τ は、空間の長さスケール・大きさ・ノイズと一緒に、対数周辺尤度を最大にして決める。"
              "アプリでは Toolbox を使わずに、上下限つきの L-BFGS（alignest.optim.minimizeBox）で解析的な勾配を使って探す。")
 
-    # 16. 計算例：推定した超パラメータ
-    s = deck.body("04　計算例と使い方", "計算例 ① ― 模擬データで推定した超パラメータ")
+    # 16. 計算例：推定したハイパーパラメータ
+    s = deck.body("04　計算例と使い方", "計算例 ① ― 模擬データで推定したハイパーパラメータ")
     text(s, 0.6, 1.5, 12.13, 0.45, f"模擬データ（同梱の sample_alignment.csv）{numbers['unit']}・{numbers['plan']}（学習 {xi['nTrain']} 点）・"
          "GPR matern52・説明変数 X,Y,半径", size=14, color=BODY)
     def column(item, axis):
@@ -428,7 +428,7 @@ def build(output: Path, reference: Path, numbers: dict):
     heads = ["長さスケール $ℓ$（半径で割った単位）", "空間の大きさ $σ_{f}$ [nm]", "Scan 方向 $τ_{s}$ [nm]", "Mark 番号 $τ_{m}$ [nm]",
              "Scan×Mark $τ_{sm}$ [nm]", "ノイズ $σ_{n}$ [nm]", "評価点の RMSE [nm]"]
     cols = [column(xa, "X"), column(xi, "X"), column(ya, "Y"), column(yi, "Y")]
-    rows = [["超パラメータ", "X：加法", "X：加法＋交互作用", "Y：加法", "Y：加法＋交互作用"]]
+    rows = [["ハイパーパラメータ", "X：加法", "X：加法＋交互作用", "Y：加法", "Y：加法＋交互作用"]]
     for r, head in enumerate(heads):
         rows.append([head] + [c[r] for c in cols])
     fills = [None] * len(rows)
@@ -444,7 +444,7 @@ def build(output: Path, reference: Path, numbers: dict):
              "X 成分では τ_sm が下限付近まで小さくなり、データに交互作用が無いことと合っている。"
              "Y 成分では τ_s・τ_m が小さくなり、τ_sm がずれを引き受けた。Scan 2 × Mark 4 の 8 通りの組み合わせごとのずれは、"
              "主効果の足し算も表せるので、どの項に割り振るかがデータだけでは決まりにくい（予測値はどちらでも近い）。"
-             "値は Excel の「Waferごと」の超パラメータ（tau_scan_X・tau_mark_X・tau_scan_mark_X など）と同じ。")
+             "値は Excel の「Waferごと」のハイパーパラメータ（tau_scan_X・tau_mark_X・tau_scan_mark_X など）と同じ。")
 
     # 17. 計算例：2点の共分散の内訳
     s = deck.body("04　計算例と使い方", "計算例 ② ― 2点の共分散は、どの項でつながるか")
@@ -462,7 +462,7 @@ def build(output: Path, reference: Path, numbers: dict):
           aligns=["l", "c", "c", "c", "c", "c", "c"])
     point_bar(s, 5.75, "同じ Mark 番号の点は、離れていても $τ_{m}^{2}$ でつながる。Scan 方向が同じなら さらに $τ_{s}^{2}$。"
               "空間の項だけでは、離れた点どうしは ほぼ つながらない", icon="2", icon_color=GOLD, fill=PANEL, h=1.0, size=15)
-    notes(s, "推定した超パラメータで、2点のカーネルの値（共分散）を項ごとに分けた。0 の欄は、その項の条件（同じ水準）を満たさないため。"
+    notes(s, "推定したハイパーパラメータで、2点のカーネルの値（共分散）を項ごとに分けた。0 の欄は、その項の条件（同じ水準）を満たさないため。"
              "自分自身との値は、各項の分散の和（ノイズを除く）。")
 
     # 18. 計算例：予測の内訳
@@ -508,7 +508,7 @@ def build(output: Path, reference: Path, numbers: dict):
               icon="3", icon_color=GOLD, fill=PANEL, h=1.15, size=14)
     notes(s, "推定値 = 平均 + 空間 + 質的変数の各項。質的変数の項は、その水準の学習点の α の和に τ² を掛けた値（変量効果の予測、BLUP）。"
              "同じ学習点で同時推定（固定効果）にしたときの効果の値と比べると、符号と並びは同じで、0 の方へ縮んでいる。"
-             "τ が小さい Scan 方向ほど強く縮む。固定効果の値は別のモデル（超パラメータも別に推定）なので、比はおおよその目安。")
+             "τ が小さい Scan 方向ほど強く縮む。固定効果の値は別のモデル（ハイパーパラメータも別に推定）なので、比はおおよその目安。")
 
     # 19. 計算例：手法の比較
     s = deck.body("04　計算例と使い方", "計算例 ④ ― 質的変数の扱い方で、推定誤差はどう変わるか")
@@ -547,14 +547,14 @@ def build(output: Path, reference: Path, numbers: dict):
     table(s, 0.6, 1.55, [2.7, 4.15, 5.28], rows, size=12, row_h=0.5, bold_first=True)
     cards = [("画面", "「2. 評価の設定」の GPR の「質的変数の扱い」で、加法カーネル・加法カーネル＋交互作用を選ぶ（複数選ぶと比べる）"),
              ("質的変数", "使う変数は「質的変数」で選ぶ（X 成分・Y 成分で別にもできる）。Shot 行の奇偶・その他の列も同じ形の項になる"),
-             ("Excel", "「Waferごと」の「超パラメータ」に tau_scan_X・tau_mark_X・tau_scan_mark_X（Y も）として出る")]
+             ("Excel", "「Waferごと」の「ハイパーパラメータ」に tau_scan_X・tau_mark_X・tau_scan_mark_X（Y も）として出る")]
     for index, (heading, body) in enumerate(cards):
         x = 0.6 + index * 4.145
         box(s, x, 5.3, 3.84, 1.4, fill=WHITE, line=LINE)
         text(s, x + 0.2, 5.38, 3.44, 0.35, heading, size=14, color=INK, bold=True)
         text(s, x + 0.2, 5.75, 3.44, 0.9, body, size=11.5, color=BODY)
     notes(s, "加法カーネルの項は gprModeSetup で 0・1 の行列として作り、gprKernel で τ² を掛けて空間のカーネルに足す。"
-             "推定した τ は Excel の超パラメータの欄で確かめられる。")
+             "推定した τ は Excel のハイパーパラメータの欄で確かめられる。")
 
     # 21. 使い分けと注意点
     s = deck.body("04　計算例と使い方", "使い分けと注意点")
@@ -572,7 +572,7 @@ def build(output: Path, reference: Path, numbers: dict):
         circle(s, x + 0.25, y + 0.25, 0.6, color, glyph, size=18, font="Times New Roman")
         text(s, x + 1.0, y + 0.25, 2.7, 0.6, heading, size=16, color=INK, bold=True, anchor="m")
         text(s, x + 0.25, y + 1.0, 3.34, 1.25, body, size=13, color=BODY)
-    notes(s, "加法カーネルは効かない変数を自動で弱められるが、超パラメータが増えるので計算時間は増える。"
+    notes(s, "加法カーネルは効かない変数を自動で弱められるが、ハイパーパラメータが増えるので計算時間は増える。"
              "同じ分け方の変数を2つ選ぶと、どちらの τ に割り振るかが決まらない（予測値は変わらない）。")
 
     # 22. まとめ
@@ -581,7 +581,7 @@ def build(output: Path, reference: Path, numbers: dict):
     points = [(CORAL, "加法カーネル = 空間のカーネル ＋ 変数ごとの $τ^{2}δ$（同じ水準なら $τ^{2}$）"),
               (TEAL, "水準ごとのずれを変量効果として扱う。ずれは予測され、情報が少ないと 0 へ縮む"),
               (PURPLE, "＋交互作用 = 全ペアの $τ_{fg}^{2}δ_{f}δ_{g}$（両方が同じなら $τ^{2}$）。3変数の積は入れない"),
-              (YELLOW, "$τ$ は空間の超パラメータと一緒に尤度で推定。主効果と交互作用でずれを分け合うことがあるので、$τ$ はまとめて読む")]
+              (YELLOW, "$τ$ は空間のハイパーパラメータと一緒に尤度で推定。主効果と交互作用でずれを分け合うことがあるので、$τ$ はまとめて読む")]
     for index, (color, body) in enumerate(points):
         y = 1.75 + index * 1.18
         circle(s, 0.8, y + 0.12, 0.55, color, str(index + 1), label_color=INK if color == YELLOW else WHITE, size=16)
@@ -599,7 +599,7 @@ def build(output: Path, reference: Path, numbers: dict):
         text(s, 8.75, y - 0.04, 3.73, 0.75, body, size=13.5, color=LIGHT2, anchor="m")
     text(s, 0.6, 7.08, 4.0, 0.25, DECK_NAME, size=9, color=LIGHT)
     text(s, 11.73, 7.08, 1.0, 0.25, str(deck.page), size=10, color=LIGHT, align="r")
-    notes(s, "加法カーネルと交互作用の要点。実データでは、交互作用の有無はデータ次第なので、アプリの結果一覧と超パラメータで確かめる。")
+    notes(s, "加法カーネルと交互作用の要点。実データでは、交互作用の有無はデータ次第なので、アプリの結果一覧とハイパーパラメータで確かめる。")
 
     # 23. 参考文献
     s = deck.body("", "参考文献")

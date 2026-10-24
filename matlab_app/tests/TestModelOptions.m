@@ -218,7 +218,7 @@ classdef TestModelOptions < matlab.unittest.TestCase
             testCase.verifyEqual(viaShapes.nFits, 1);
             testCase.verifyError(@() alignest.models.gamSetup(pick(train), pick(test), "XY", empty, emptyTest, nBasis, ...
                 shapes=struct("xy", "kriging")), 'alignest:gamShape');
-            % 推定の流れでも使え、選んだ長さスケールが超パラメータに残る
+            % 推定の流れでも使え、選んだ長さスケールがハイパーパラメータに残る
             settings = alignest.defaultSettings();
             settings.methods = alignest.recommendedMethods("none");
             settings.methods.gam.enabled = true;

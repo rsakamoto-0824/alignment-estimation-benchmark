@@ -2,7 +2,7 @@ classdef TestPythonReference < matlab.unittest.TestCase
     %TESTPYTHONREFERENCE Python 版（前回の評価に使った src/）と同じ計算結果になるかを確かめる。
     %   基準値は reference/make_python_reference.py が書き出した python_reference.json
     %   （模擬データ3枚、10 Shot・20 Shot の I 最適計画）。
-    %   - 超パラメータ・平滑化パラメータを固定した計算（決まった計算）：丸め誤差の範囲で一致
+    %   - ハイパーパラメータ・平滑化パラメータを固定した計算（決まった計算）：丸め誤差の範囲で一致
     %   - 最適化を含む計算：最適化の方法が違う（Python は SciPy の L-BFGS-B）ので、
     %     到達した目的関数の値が Python と同じかより良いこと、推定値の差が小さいことを確かめる
     %   説明変数 XYRT（方位角 T）はツールから削除したので、基準値のうち XYRT の組は照合しない。

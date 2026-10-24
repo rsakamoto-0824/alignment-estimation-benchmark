@@ -4,6 +4,8 @@ function methods = buildMethodList(config)
 %   OK_<バリオグラム>_<説明変数>（通常 Kriging）、UK_<バリオグラム>_<説明変数>（Universal Kriging）、
 %   GAM_<説明変数>、XY<次数>、RT<次数>、FringeZ_k<次数>（Fringe Zernike。Z1〜Z(k+1)²）。
 %   RBF_gaussian_<説明変数> を追加。TPS・RBF・OK・UK の Backfitting は既存 id に _backfit を付ける。
+%   RBFe_k<領域の数>_<説明変数>（RBFe（仮）：領域ごとの TPS をつなぐ形状関数の GAM。config.rbfe.regions の数ごと。
+%   Backfitting は _backfit）。
 %   GPR のカーネル matern・ardmatern は config.gpr.maternNu の ν ごとに matern_nu<ν>・ardmatern_nu<ν> にする。
 %   GAM の形状関数にガウス過程回帰の項があれば、id に _gp-<項>（例：GAM_XYR_gp-xy-r）を付ける。
 %   config.gam.shapes は項（xy・r）ごとに選んだ形状関数（spline・gp。1つ以上）で、その組み合わせをすべて並べる。
@@ -33,6 +35,15 @@ for featureSet = string(config.featureSets(:)).'
         for mode = spatialModes(config.rbf.factorModes)
             methods(end + 1) = spatialItem("RBF_gaussian_" + featureSet, "RBF", featureSet, "gaussian", mode, ...
                 "RBF Gaussian｜" + featureLabel); %#ok<AGROW>
+        end
+    end
+    if config.rbfe.enabled
+        for nRegions = rbfeRegions(config.rbfe.regions)
+            for mode = spatialModes(config.rbfe.factorModes)
+                methods(end + 1) = spatialItem(sprintf("RBFe_k%d_", nRegions) + featureSet, "RBFE", featureSet, ...
+                    sprintf("regions%d", nRegions), mode, sprintf("RBFe（仮）領域分割 TPS %d 領域｜", nRegions) + ...
+                    featureLabel); %#ok<AGROW>
+            end
         end
     end
     kinds = [config.kriging.ordinary, config.kriging.universal];
@@ -176,6 +187,15 @@ end
 idSuffix = "_gp-" + strjoin(terms(gp), "-");
 variant = "gp:" + strjoin(terms(gp), "+");
 labelSuffix = "｜ガウス過程：" + strjoin(termLabels(gp), "・");
+end
+
+function values = rbfeRegions(value)
+% RBFe の領域の数（ハイパーパラメータ）：1〜MAX_REGIONS の整数
+MAX_REGIONS = 25;
+values = unique(double(value(:))).';
+if isempty(values) || any(values < 1 | values > MAX_REGIONS | values ~= round(values))
+    error('alignest:rbfeRegions', 'RBFe の領域の数は 1〜%d の整数にしてください。', MAX_REGIONS);
+end
 end
 
 function modes = spatialModes(value)
