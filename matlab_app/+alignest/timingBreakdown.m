@@ -6,7 +6,7 @@ function breakdown = timingBreakdown(unit, spec, methods, settings, nRepeats)
 %     plan     学習パターンの作成（最適マップ：I 最適の交換法・ランダム・優先順。alignest.planTrainingShots）
 %     outliers 学習データの異常値の判定（異常値を除く設定のときだけ。alignest.trainingOutliers）
 %     prepare  推定の準備（学習点・評価点の選び出し、XY 1次を除く設定ならその当てはめ）
-%     fit      学習（モデルの当てはめ。超パラメータ・平滑化の強さの推定を含む）
+%     fit      学習（モデルの当てはめ。ハイパーパラメータ・平滑化の強さの推定を含む）
 %     predict  推論（評価点の推定）
 %     metrics  評価指標の計算（R²・RMSE・MAE・改善率）
 %     overlay  Overlay 補正の評価（評価するときだけ）

@@ -1,7 +1,7 @@
 """MATLAB 版の照合用に、Python 版（src/）の計算結果を JSON に書き出す。
 
 模擬データ（本計算と同じ設定・乱数）の Wafer 3枚と、10 Shot・20 Shot の計画を使い、
-- 超パラメータを固定したときの GPR の目的関数・勾配・推定値（決まった計算なので完全に一致するはず）
+- ハイパーパラメータを固定したときの GPR の目的関数・勾配・推定値（決まった計算なので完全に一致するはず）
 - 最適化まで含めた GPR の推定値と対数周辺尤度（最適化の方法が違うので近い値になるはず）
 - TPS・Kriging（経験バリオグラム、Python が当てはめた値での推定）・GAM（REML 基準、推定）・XY5・RT4/5・指標
 を書き出す。
@@ -129,7 +129,7 @@ def main() -> None:
         measured_train = [s.measured[train_mask] for s in samples]
         truth_test = [s.truth[~train_mask] for s in samples]
 
-        # 超パラメータを固定した GPR（wafer 0、X）
+        # ハイパーパラメータを固定した GPR（wafer 0、X）
         y = measured_train[0][:, 0]
         for kernel, feature_set, mode in FIXED_GPR_CASES:
             spec = context.specs[f"GPR_{kernel}_{feature_set}_{mode}"]

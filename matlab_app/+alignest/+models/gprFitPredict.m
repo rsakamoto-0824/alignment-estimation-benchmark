@@ -6,7 +6,7 @@ function result = gprFitPredict(trainFeatures, testFeatures, groups, y, kernelNa
 %     maxIterations         : 最適化の反復の上限（既定 300）
 %     backfitMaxIterations  : Backfitting の反復の上限（既定 20）
 %     backfitTolerance      : Backfitting の効果の変化の閾値 [nm]（既定 1e-3）
-%     fixedLogParams        : 超パラメータを固定する（動作確認用。空なら推定する）
+%     fixedLogParams        : ハイパーパラメータを固定する（動作確認用。空なら推定する）
 %   基底関数と質的変数のカーネル項の作り方は gprModeSetup。
 arguments
     trainFeatures double
@@ -53,7 +53,7 @@ optimizerConverged = true;
 lastNll = NaN;
 iteration = 0;
 for iteration = 1:options.backfitMaxIterations
-    % GPR の段：質的変数の効果を除いた残差で超パラメータを推定し直す（前回の値から開始）
+    % GPR の段：質的変数の効果を除いた残差でハイパーパラメータを推定し直す（前回の値から開始）
     if isempty(options.fixedLogParams)
         fit = alignest.models.gprFit(gp, y - centered * effects, onesTrain, logParams);
         if isempty(logParams)
@@ -67,7 +67,7 @@ for iteration = 1:options.backfitMaxIterations
     else
         paramsChange = 0;
     end
-    % 質的変数の段：超パラメータを固定した交互の当てはめの収束値（質的変数を基底に入れた一般化最小二乗の解）
+    % 質的変数の段：ハイパーパラメータを固定した交互の当てはめの収束値（質的変数を基底に入れた一般化最小二乗の解）
     joint = alignest.models.gprCondition(gp, logParams, y, jointTrain);
     newEffects = joint.beta(2:end);
     change = sqrt(mean((centered * (newEffects - effects)) .^ 2));

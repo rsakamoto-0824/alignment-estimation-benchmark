@@ -71,7 +71,7 @@ unseenMark = ~isnan(targets.markNo) & ~ismember(targets.markNo, unique(marks.mar
 
 % 質的変数を使う手法か（使わない手法では、Mark 番号・Scan 方向が分からなくても推定値は変わらない）
 usesFactors = method.family == "GAM" || ...
-    (any(method.family == ["GPR", "TPS", "RBF", "OK", "UK"]) && method.factorMode ~= "none");
+    (any(method.family == ["GPR", "TPS", "RBF", "RBFE", "OK", "UK"]) && method.factorMode ~= "none");
 choices = [alignest.factorChoice(settings, "X"), alignest.factorChoice(settings, "Y")];
 usesMark = usesFactors && any([choices.mark]);
 usesScan = usesFactors && any([choices.scan]) && unit.hasDirection;

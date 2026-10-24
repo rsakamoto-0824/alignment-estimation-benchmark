@@ -210,7 +210,7 @@
 │  ├─ +stats/    統計（正規性検定・ANOVA・パーセント点・JS ダイバージェンス）
 │  ├─ +plot/     図（Wafer マップ・共分散楕円・ヒストグラム・計測マップ・Scan 方向の枠・同心円の区切り・
 │  │             残差の箱ひげ図・処理時間の積み上げ横棒）
-│  └─ +optim/    上下限つきの最小化（GPR の超パラメータの推定。Toolbox 不要）
+│  └─ +optim/    上下限つきの最小化（GPR のハイパーパラメータの推定。Toolbox 不要）
 ├─ help/         「7. ヘルプ」の中身（help.html。exe にも入れる）
 ├─ tests/        自動テスト（runAllTests）と Python 版の基準値（reference/）
 ├─ sample_data/  模擬データ（sample_alignment.xlsx・.csv と作成スクリプト）
@@ -261,6 +261,7 @@
           <tbody>
             <tr><td>GPR（ガウス過程回帰）</td><td><code>gprSetup</code>・<code>gprFit</code>・<code>gprPredict</code>・<code>gprKernel</code></td><td><code>GPR_matern52_XYR_basis</code>（カーネル・説明変数・質的変数の扱い）</td></tr>
             <tr><td>TPS・RBF</td><td><code>tpsFitPredict</code>・<code>rbfFitPredict</code>・<code>spatialBackfit</code></td><td><code>TPS_XYR</code>、<code>RBF_gaussian_XYR_backfit</code></td></tr>
+            <tr><td>RBFe（仮）：領域分割 TPS の GAM</td><td><code>rbfeSetup</code>（領域の分け方・重み・領域ごとの TPS の前計算）・<code>rbfeFitPredict</code>（領域ごとの GCV とつなぎ合わせ）・<code>spatialBackfit</code></td><td><code>RBFe_k4_XYR_backfit</code>（領域の数・説明変数・質的変数の扱い）</td></tr>
             <tr><td>Kriging</td><td><code>krigingSetup</code>・<code>krigingFitPredict</code>・<code>krigingVariogram</code></td><td><code>OK_exponential_XYR</code>、<code>UK_spherical_XYR</code></td></tr>
             <tr><td>GAM</td><td><code>gamSetup</code>・<code>gamShapeFit</code>・<code>gamFitPredict</code>・<code>stationaryKernel</code></td><td><code>GAM_XYR</code>、<code>GAM_XYR_gp-xy</code>（ガウス過程 matern52）、<code>GAM_XYR_gp-xy_matern32</code></td></tr>
             <tr><td>多項式・RT モデル</td><td><code>polynomialFitPredict</code>・<code>rtFitPredict</code></td><td><code>XY5</code>、<code>RT5</code></td></tr>
@@ -341,6 +342,7 @@
             <tr><td><code>MATERN_NU_FACTOR = 3</code></td><td><code>estimateRunSeconds</code></td><td>ν を指定した Matérn（GPR の matern・ardmatern、GAM の matern）の手法は 1 条件を何倍で見積もるか</td></tr>
             <tr><td><code>POINT_CELL_RATIO = 0.6</code></td><td><code>prepareData</code>（<code>pointCellSize</code>）</td><td>絶対座標の点を1つずつ Shot にしたときの枠の大きさ（最も近い点までの距離の中央値に掛ける。隣の枠と重ならない）</td></tr>
             <tr><td><code>MAD_TO_SIGMA = 1.4826</code></td><td><code>trainingOutliers</code></td><td>異常値の判定を MAD にしたとき、MAD を σ と同じ大きさに直す係数</td></tr>
+            <tr><td><code>rbfeOverlap = 1.5</code>・<code>rbfeMinPoints = 10</code>・<code>MAX_RBFE_REGIONS = 25</code></td><td><code>recommendedMethods</code>（<code>methods.options</code>）・<code>buildMethodList</code>・画面</td><td>RBFe の領域の半径の倍率、領域ごとの学習点の最小数、領域の数の上限</td></tr>
             <tr><td><code>MAX_ZERNIKE_ORDER = 6</code>・<code>WORST_PERCENT = 95</code></td><td>画面（定数）</td><td>Fringe Zernike の次数の上限（Z1〜Z49）、マップに出す「95%値」の百分位</td></tr>
             <tr><td><code>SECONDS_PER_SHOT_START = 0.01</code></td><td><code>exchangeSecondsGuide</code></td><td>交換法の時間の目安：初期配置 1 つ・学習 Shot 1 つあたりの秒数（候補 99 Shot の模擬データで測った値。<code>REFERENCE_CANDIDATES = 99</code> に対する候補 Shot 数の比で伸ばす）</td></tr>
             <tr><td><code>MAX_MEASURE_PANELS = 6</code>・<code>MAX_COMPARE_PANELS = 6</code></td><td>画面（定数）</td><td>計測マップ・Wafer ごとのマップで並べる図の数の上限</td></tr>
@@ -412,7 +414,7 @@
 runAllTests</code></pre>
       </div>
       <p>
-        最後に「成功 154 件、失敗 0 件、未完了 0 件」と出れば正常です（2026/10/25 時点の件数。テストを足すと増えます）。
+        最後に「成功 160 件、失敗 0 件、未完了 0 件」と出れば正常です（2026/10/25 時点の件数。テストを足すと増えます）。
         1つのファイルだけ確かめるときは <code>runtests('TestOverlay')</code> のようにファイル名を指定します。
         <code>TestPythonReference</code> は、Python 版の計算結果（<code>tests/reference/python_reference.json</code>）と照合するテストです。
         計算方法をわざと変えたときは、基準値を作り直すか、テストの許容誤差を見直します。

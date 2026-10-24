@@ -93,7 +93,7 @@ for axisName = ["X", "Y"]
         out.(axisName + "_" + mode) = item;
     end
 end
-% アプリの推定（estimateWafer）と同じ超パラメータか（Excel の「超パラメータ」の名前も）
+% アプリの推定（estimateWafer）と同じハイパーパラメータか（Excel の「ハイパーパラメータ」の名前も）
 method = alignest.buildMethodList(settings.methods);
 method = method(string({method.factorMode}) == "additive_int");
 check = alignest.estimateWafer(unit, plan.shotIndex, method, settings);

@@ -149,6 +149,7 @@
 平均 m(z) は定数（質的変数を固定効果にするときは効果コードを加える）。カーネルの長さスケール ℓ・σ<sub>f</sub>・σ<sub>n</sub>・τ は、対数周辺尤度を最大にして求める。説明変数 z は (x, y) または (x, y, r)。</td></tr>
 <tr><td class="term">TPS（薄板スプライン）</td><td><div class="formula">f(z) = c<sub>0</sub> + c<sup>T</sup>z + Σ<sub>i</sub> w<sub>i</sub> φ(‖z − z<sub>i</sub>‖)、  φ(r) = r<sup>2</sup> log r</div>平滑化の強さ λ は一般化交差検証（GCV）で選ぶ。</td></tr>
 <tr><td class="term">RBF（ガウス型）</td><td><div class="formula">f(z) = c<sub>0</sub> + c<sup>T</sup>z + Σ<sub>i</sub> w<sub>i</sub> exp(−‖z − z<sub>i</sub>‖<sup>2</sup> / (2ℓ<sup>2</sup>))</div>ℓ は候補（0.05〜1.6）から、λ とともに GCV で選ぶ。</td></tr>
+<tr><td class="term">RBFe（仮）：領域分割 TPS の GAM</td><td><div class="formula">y = s(z) + 質的変数の効果 + ε、  s(x) = Σ<sub>k=1</sub><sup>K</sup> W<sub>k</sub>(x) f<sub>k</sub>(z)</div>学習点の位置を K 個（領域の数。ハイパーパラメータ）のまとまりに分け（k-means）、まとまりの中心 c<sub>k</sub> のまわりの円（半径 h<sub>k</sub> = 点の最大距離 × 1.5。隣と重なる）の学習点で TPS f<sub>k</sub> を当てはめる（λ は領域ごとに GCV）。重み W<sub>k</sub> = w<sub>k</sub> / Σ<sub>j</sub> w<sub>j</sub>、w<sub>k</sub>(x) = φ(‖x − c<sub>k</sub>‖ / h<sub>k</sub>)、φ(t) = (1 − t)<sup>4</sup>(4t + 1)（t &lt; 1）で、領域の境目でも滑らかにつながる（1 の分割）。質的変数は Backfitting で形状関数と交互に推定する（GAM）。K = 1 は TPS と同じ。学習点が少なくて領域ごとに 10 点取れないときは K を減らす。</td></tr>
 <tr><td class="term">Kriging（通常・Universal）</td><td>バリオグラム γ(d)（下の表）を経験バリオグラムに当てはめ、重み付きの線形予測をする。通常は平均（ドリフト）が定数、Universal はドリフトを説明変数の1次式 [1, z]（z = (x, y) または (x, y, r)）にし、ドリフトを除いた残差で経験バリオグラムを求める。</td></tr>
 <tr><td class="term">GAM（一般化加法モデル）</td><td><div class="formula">y = β<sub>0</sub> + s(x, y) [+ s(r)] + 質的変数の効果 + ε</div>形状関数 s はスプライン（3次 B スプライン＋2階差分の罰則、P-spline）かガウス過程回帰（節点での低ランク近似、下の「GAM のガウス過程」）。罰則の強さと長さスケールは REML で選ぶ。</td></tr>
 <tr><td class="term">XY 多項式</td><td><div class="formula">f(x, y) = Σ<sub>a + b ≤ N</sub> c<sub>ab</sub> x<sup>a</sup> y<sup>b</sup></div>最小二乗（特異値分解の擬似逆行列、相対の打ち切り 10<sup>−10</sup>）。</td></tr>
@@ -194,6 +195,7 @@
 <tr><th>手法</th><th>式</th></tr>
 <tr><td class="term">TPS</td><td><div class="formula">φ(r) = r<sup>2</sup> log r（r = ‖z − z′‖）</div></td></tr>
 <tr><td class="term">RBF（Gaussian）</td><td><div class="formula">φ(r) = exp(−r<sup>2</sup> / (2ℓ<sup>2</sup>))</div></td></tr>
+<tr><td class="term">RBFe（仮）のつなぎの重み</td><td><div class="formula">w(t) = (1 − t)<sup>4</sup>(4t + 1)（0 ≤ t &lt; 1）、0（t ≥ 1）、  t = ‖x − c<sub>k</sub>‖ / h<sub>k</sub></div>領域の中の関数は TPS（φ(r) = r<sup>2</sup> log r）。どの領域にも入らない点は、中心が最も近い領域の TPS を使う。</td></tr>
 <tr><td class="term">Kriging：linear</td><td><div class="formula">γ(d) = a·d + c<sub>0</sub></div></td></tr>
 <tr><td class="term">Kriging：power</td><td><div class="formula">γ(d) = a·d<sup>b</sup> + c<sub>0</sub>（0 &lt; b &lt; 2）</div></td></tr>
 <tr><td class="term">Kriging：gaussian</td><td><div class="formula">γ(d) = c·(1 − exp(−d<sup>2</sup> / (4a/7)<sup>2</sup>)) + c<sub>0</sub></div></td></tr>

@@ -1,5 +1,5 @@
 function fit = gprCondition(gp, logParams, y, basis)
-%GPRCONDITION 超パラメータを固定して β・K_y⁻¹(y − Hβ)・有効自由度を求める。
+%GPRCONDITION ハイパーパラメータを固定して β・K_y⁻¹(y − Hβ)・有効自由度を求める。
 %   有効自由度は学習点の当てはめ行列 S = I − σn² P のトレース（P = K_y⁻¹ − K_y⁻¹H(HᵀK_y⁻¹H)⁻¹HᵀK_y⁻¹）。
 %   数値の安定のため、K_y の対角に trace(K_y)/n の 1e-10 倍を足す（Python 版と同じ）。
 y = y(:);

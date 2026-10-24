@@ -32,6 +32,7 @@ classdef AlignmentEstimationApp < handle
         MAX_MATERN_NU = 50              % Matérn の ν の上限（alignest.models.maternNuCheck と同じ）
         FORMULA_CHOICE = -1             % Wafer 成分の選択肢「式を入力」の値（次数 0〜5 と区別する）
         MAX_ZERNIKE_ORDER = 6           % Fringe Zernike の次数の上限（Z1〜Z49）
+        MAX_RBFE_REGIONS = 25           % RBFe の領域の数の上限（alignest.buildMethodList と同じ）
         WORST_PERCENT = 95              % マップに出す「95%値」の百分位（結果一覧の集計と同じ）
         MAX_MEASURE_PANELS = 6          % 計測マップを並べる数の上限（Wafer × 学習パターン）
         MAX_COMPARE_PANELS = 6          % Wafer ごとのマップで並べて比べる条件の数の上限
@@ -2090,7 +2091,7 @@ classdef AlignmentEstimationApp < handle
             c.overlayFormulaError = errorLabel(app, s, 43, [1, 2]);
 
             methodPanel = uipanel(grid, 'Title', '比べる手法');
-            m = uigridlayout(methodPanel, [24, 4], 'RowHeight', repmat({'fit'}, 1, 24), 'ColumnWidth', {'1x', '1x', '1x', '1x'}, ...
+            m = uigridlayout(methodPanel, [27, 4], 'RowHeight', repmat({'fit'}, 1, 27), 'ColumnWidth', {'1x', '1x', '1x', '1x'}, ...
                 'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
             presetGrid = uigridlayout(m, [1, 3], 'Padding', 0, 'ColumnWidth', {'fit', 'fit', 'fit'});
             place(presetGrid, 1, [1, 4]);
@@ -2253,6 +2254,22 @@ classdef AlignmentEstimationApp < handle
             c.rtError = errorLabel(app, m, 22, [1, 4]);
             c.zernikeError = errorLabel(app, m, 23, [1, 4]);
             c.gamShapeError = errorLabel(app, m, 24, [1, 4]);
+            % RBFe（仮）：面内を領域に分け、領域ごとの TPS を重みでつなぐ形状関数の GAM。領域の数がハイパーパラメータ
+            c.rbfe = uicheckbox(m, 'Text', 'RBFe（仮）', 'ValueChangedFcn', onChange, 'Tooltip', ...
+                ['学習点の位置を領域の数のまとまりに分け（k-means）、領域ごとに TPS を当てはめ（λ は領域ごとに GCV）、' ...
+                '重なる所は滑らかな重みでつなぎ合わせます。右で選ぶ質的変数は Backfitting で足します（GAM）。' ...
+                '領域の数 1 は TPS と同じです。式は「7. ヘルプ」。']);
+            place(c.rbfe, 25, 1);
+            c.rbfeRegions = uieditfield(m, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ...
+                '領域の数（ハイパーパラメータ、1〜25 の整数）。空白で区切ると領域の数ごとに比べます（例：4 9）。');
+            place(c.rbfeRegions, 25, 2);
+            c.rbfeFactors = spatialFactorDropdown(m, onChange);
+            place(c.rbfeFactors, 25, [3, 4]);
+            rbfeHelp = label(m, ['↑ RBFe（仮）：面内を領域に分けた TPS をつなぐ GAM。欄は領域の数（ハイパーパラメータ。' ...
+                '空白区切りで複数）、右は質的変数の扱い。学習点が少ないときは自動で領域を減らします。'], 26, [1, 4]);
+            rbfeHelp.FontColor = app.Palette.muted;
+            rbfeHelp.UserData = "muted";
+            c.rbfeError = errorLabel(app, m, 27, [1, 4]);
 
             footer = uigridlayout(grid, [1, 4], 'ColumnWidth', {'fit', 'fit', 'fit', '1x'}, 'Padding', 0);
             place(footer, 2, [1, 2]);
@@ -2370,6 +2387,9 @@ classdef AlignmentEstimationApp < handle
             c.tps.Value = methods.tps.enabled;
             c.rbf.Value = methods.rbf.enabled;
             c.rbfFactors.Value = modeSelection(methods.rbf.factorModes);
+            c.rbfe.Value = methods.rbfe.enabled;
+            c.rbfeRegions.Value = char(strjoin(string(methods.rbfe.regions), " "));
+            c.rbfeFactors.Value = modeSelection(methods.rbfe.factorModes);
             c.tpsFactors.Value = modeSelection(methods.tps.factorModes);
             c.ordinaryFactors.Value = modeSelection(methods.kriging.ordinaryFactorModes);
             c.universalFactors.Value = modeSelection(methods.kriging.universalFactorModes);
@@ -2498,6 +2518,12 @@ classdef AlignmentEstimationApp < handle
             s.methods.tps.enabled = c.tps.Value;
             s.methods.rbf.enabled = c.rbf.Value;
             s.methods.rbf.factorModes = selectedModes(c.rbfFactors.Value);
+            s.methods.rbfe.enabled = c.rbfe.Value;
+            s.methods.rbfe.factorModes = selectedModes(c.rbfeFactors.Value);
+            [values, ok] = parseNumbers(c.rbfeRegions.Value);
+            if ok && ~isempty(values) && all(values >= 1 & values <= app.MAX_RBFE_REGIONS & values == round(values))
+                s.methods.rbfe.regions = unique(values);
+            end
             s.methods.tps.factorModes = selectedModes(c.tpsFactors.Value);
             s.methods.kriging.ordinaryFactorModes = selectedModes(c.ordinaryFactors.Value);
             s.methods.kriging.universalFactorModes = selectedModes(c.universalFactors.Value);
@@ -2618,6 +2644,15 @@ classdef AlignmentEstimationApp < handle
             end
             c.zernikeError.Text = text;
             messages = [messages; text(text ~= "")];
+            [values, ok] = parseNumbers(c.rbfeRegions.Value);
+            text = "";
+            if c.rbfe.Value && (~ok || isempty(values) || any(values < 1 | values > app.MAX_RBFE_REGIONS | ...
+                    values ~= round(values)))
+                text = sprintf("⚠ RBFe の領域の数は 1〜%d の整数を空白で区切って入れてください（例：4 9）。", ...
+                    app.MAX_RBFE_REGIONS);
+            end
+            c.rbfeError.Text = text;
+            messages = [messages; text(text ~= "")];
             [values, ok] = parseNumbers(c.markPerShot.Value);
             text = "";
             if any(method == "mark") && (~ok || isempty(values) || any(values < 1))
@@ -2703,6 +2738,7 @@ classdef AlignmentEstimationApp < handle
             set(c.variograms, 'Enable', onOff(c.ordinaryKriging.Value || c.universalKriging.Value));
             c.tpsFactors.Enable = onOff(c.tps.Value);
             c.rbfFactors.Enable = onOff(c.rbf.Value);
+            set([c.rbfeRegions, c.rbfeFactors], 'Enable', onOff(c.rbfe.Value));
             c.ordinaryFactors.Enable = onOff(c.ordinaryKriging.Value);
             c.universalFactors.Enable = onOff(c.universalKriging.Value);
             c.polynomialOrder.Enable = onOff(c.polynomial.Value);

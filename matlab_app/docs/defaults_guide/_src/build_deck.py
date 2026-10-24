@@ -28,7 +28,7 @@ DECK_NAME = "デフォルト設定の編集ガイド"
 DECK_TITLE = "デフォルト設定の編集ガイド（管理者向け）"
 CODE_FONT = "Courier New"
 DEFAULTS_FILE = "alignment_estimation_defaults.json"
-TEST_COUNT = 154   # runAllTests の件数（2026-10-25 時点。テストを足したら直す）
+TEST_COUNT = 160   # runAllTests の件数（2026-10-25 時点。テストを足したら直す）
 
 
 class Deck:
@@ -343,11 +343,12 @@ def build(output: Path, reference: Path):
         ["methods.gpr.factorModes", "none・basis・additive・mixed", "質的変数の扱い（8通りから）", "2. GPR"],
         ["methods.gpr.maternNu", "2", "matern・ardmatern の ν（複数なら ν ごと）", "2. ν"],
         ["methods.tps・rbf", "true ・ false", "TPS・RBF（factorModes：none・backfit）", "2. TPS・RBF"],
+        ["methods.rbfe", "false（4 領域）", "RBFe（仮）：領域分割 TPS の GAM（regions：領域の数）", "2. RBFe（仮）"],
         ["methods.kriging", "通常 true・Universal false", "Kriging（variograms：\"exponential\"）", "2. Kriging"],
         ["methods.gam", "true（スプライン）", "GAM（shapes・gpKernels・gpMaternNu）", "2. GAM"],
         ["methods.polynomial ・ rt", "true（5次）・true（K=5）", "XY 多項式の次数・RT モデルの次数", "2. 多項式・RT"],
         ["methods.zernike", "false（次数 4）", "Fringe Zernike（orders：次数 k。Z1〜Z(k+1)²）", "2. Fringe Zernike"]],
-        widths=(3.3, 2.55, 4.6, 1.68), row_h=0.44)
+        widths=(3.3, 2.55, 4.6, 1.68), row_h=0.4)
     point_bar(s, 6.2, "初期値は推奨の組み合わせ（9 手法）。変えるときは recommendedMethods.m の上の部分を直す"
               "（「すべて選ぶ」は \"all\" の部分）",
               icon="i", icon_color=BODY, h=0.6, size=13)
@@ -360,8 +361,9 @@ def build(output: Path, reference: Path):
             ["gprMaxIterations", "300"], ["backfitMaxIterations ・ backfitToleranceNm", "20 ・ 0.001"],
             ["krigingLags", "6"], ["tpsLog10Lambda ・ rbfLog10Lambda", "[−8 3 45]（最小・最大・点数）"],
             ["rbfLengthScales", "[0.05 0.1 0.2 0.4 0.8 1.6]"], ["gamBasisAxis ・ gamBasisRadius", "8 ・ 8"],
-            ["gamGpLengthScales", "[0.15 0.3 0.6]"], ["gamGpKnots ・ gamGpGridKnots", "10 ・ 7"]]
-    table(s, 0.6, 1.5, [3.75, 2.3], rows, size=11.5, header_size=12, row_h=0.43)
+            ["gamGpLengthScales", "[0.15 0.3 0.6]"], ["gamGpKnots ・ gamGpGridKnots", "10 ・ 7"],
+            ["rbfeOverlap ・ rbfeMinPoints", "1.5 ・ 10"]]
+    table(s, 0.6, 1.5, [3.75, 2.3], rows, size=11.5, header_size=12, row_h=0.4)
     rows = [["画面などの定数（ファイル）", "値"],
             ["FIGURE_SIZE（画面の大きさ）", "[1440 900]"], ["FONT_SIZE ・ AXES_FONT_SIZE", "16 ・ 13"],
             ["DEFAULT_MARKER_SIZE（色の点）", "30"], ["MAX_CURVES（グラフの線の数）", "8"],
@@ -369,7 +371,7 @@ def build(output: Path, reference: Path):
             ["SECONDS_PER_RUN ・ MATERN_NU_FACTOR", "2 秒 ・ 3 倍"],
             ["SECONDS_PER_SHOT_START（交換法）", "0.01 秒"], ["WORST_PERCENT（95%値）", "95"]]
     table(s, 6.85, 1.5, [3.98, 1.9], rows, size=11.5, header_size=12, row_h=0.43)
-    point_bar(s, 5.65, "options は Python 版と同じ値。変えると推定の結果が変わり、Python 版との照合テスト"
+    point_bar(s, 5.65, "options（rbfe… を除く）は Python 版と同じ値。変えると推定の結果が変わり、Python 版との照合テスト"
               "（TestPythonReference）が合わなくなる", icon="!", icon_color=CORAL, h=0.75, size=13)
     notes(s, "options は精度と時間の兼ね合いで決めた値。変えるときは模擬データで比べてから。画面の定数は AlignmentEstimationApp.m の先頭、"
              "時間の目安は estimateRunSeconds.m・exchangeSecondsGuide.m にある。")

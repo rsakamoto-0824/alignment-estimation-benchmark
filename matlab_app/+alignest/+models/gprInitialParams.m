@@ -1,5 +1,5 @@
 function [start, lower, upper] = gprInitialParams(gp, y)
-%GPRINITIALPARAMS 超パラメータ（対数）の初期値と探索範囲。
+%GPRINITIALPARAMS ハイパーパラメータ（対数）の初期値と探索範囲。
 %   初期値は fitrgp の既定と同じ考え方：ℓ = 説明変数の標準偏差（等方は平均）、σf = σn = std(y)/√2、α = 1。
 %   説明変数は Wafer 半径で割った無次元量、σ の範囲は学習データの標準偏差に対する倍率で決める。
 LENGTH_SCALE_BOUNDS = [1e-3, 1e3];
