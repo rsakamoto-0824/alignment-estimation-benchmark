@@ -73,7 +73,7 @@ end
 % 手法：設定から作った手法の並びに同じ識別子があれば、その中身（推定のしかた）を使う
 [methodIds, firstRow] = unique(table_.methodId, 'stable');
 try
-    known = alignest.buildMethodList(settings.methods);
+    known = alignest.activeMethods(settings);   % 質的変数を1つだけ使う手法も含める
 catch
     known = struct("id", {}, "family", {}, "featureSet", {}, "variant", {}, "factorMode", {}, "label", {});
 end

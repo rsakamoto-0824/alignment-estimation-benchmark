@@ -213,6 +213,23 @@ if isfield(summary, "directionSource")
 end
 end
 
+function text = markText(sampling)
+% Mark 単位の計画の決め方（各 Shot で必ず計測する数と、1 Shot あたりの数または計測率）
+text = "Shot を問わず選んだ";
+if ~isfield(sampling, "markRequirePerShot") || sampling.markRequirePerShot
+    minPerShot = 1;
+    if isfield(sampling, "markMinPerShot")
+        minPerShot = sampling.markMinPerShot;
+    end
+    text = sprintf("各 Shot で %d 点以上", minPerShot);
+end
+if isfield(sampling, "countBy") && sampling.countBy == "rate"
+    text = text + "、計測率で Mark の数を決めた";
+else
+    text = text + "、1 Shot あたり " + strjoin(string(sampling.markPerShot), "・") + " 点";
+end
+end
+
 function value = ternary(condition, whenTrue, whenFalse)
 if condition
     value = whenTrue;
@@ -236,9 +253,9 @@ for method = methods
         case "file"
             parts(end + 1) = sprintf("ファイルの優先順（%s、%d 行。優先度 1 = 必ず計測、0 = 計測しない）", ...
                 sampling.priorityFile, numel(sampling.priorityShots)); %#ok<AGROW>
-        case "mark"
-            parts(end + 1) = "Mark 単位の I 最適（全 Shot で1点以上、1 Shot あたり " + ...
-                strjoin(string(sampling.markPerShot), "・") + " 点）"; %#ok<AGROW>
+        case {"mark", "markd"}
+            parts(end + 1) = "Mark 単位の " + ternary(method == "markd", "D", "I") + " 最適（" + markText(sampling) + ...
+                "）"; %#ok<AGROW>
         otherwise
             parts(end + 1) = "手動・人の選択"; %#ok<AGROW>
     end
@@ -250,6 +267,9 @@ end
 if any(ismember(methods, ["ioptimal", "doptimal", "random", "file"])) && isfield(sampling, "countBy") && ...
         sampling.countBy == "rate"
     label = label + "。学習 Shot 数は計測率（Wafer の候補 Shot 数に対する割合）で決めた";
+end
+if any(ismember(methods, ["mark", "markd"])) && isfield(sampling, "countBy") && sampling.countBy == "rate"
+    label = label + "。Mark 単位の計画の Mark の数は計測率（候補の全 Mark の数に対する割合）で決めた";
 end
 if any(ismember(methods, ["ioptimal", "doptimal", "random"]))
     required = strings(0, 1);

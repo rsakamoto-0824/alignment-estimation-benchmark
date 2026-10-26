@@ -54,7 +54,8 @@ if height(analysis.normality) > 0
     normality = analysis.normality;
     normality.Properties.VariableNames = cellstr(["手法", "手法の識別子", "列", "軸", "点数", "平均[nm]", ...
         "標準偏差[nm]", "歪度", "尖度(過剰)", "Shapiro-Wilk W", "Shapiro-Wilk p値", "Anderson-Darling A2", ...
-        "Anderson-Darling p値", "Jarque-Bera", "Jarque-Bera p値", "判定に使った検定", "判定"]);
+        "Anderson-Darling p値", "Jarque-Bera", "Jarque-Bera p値", "判定に使った検定", "判定", ...
+        "Shapiro-Wilkを計算しなかった理由", "Anderson-Darlingを計算しなかった理由"]);
     writetable(normality, filePath, 'Sheet', '正規性検定');
 end
 if height(options.overlayPoints) > 0

@@ -98,9 +98,10 @@
 <tr><td class="term">制約</td><td>I 最適・D 最適・ランダムで、同心円（Shot 中心の半径 [mm] の区切り）・4象限・Scan 方向の区画ごとの Shot 数を、全体の割合 × 選ぶ数 ± 許容幅にそろえる。</td></tr>
 <tr><td class="term">必ず計測する Shot（拡張 I 最適計画）</td><td>指定した shotNo・最外周の Shot を先に学習に入れ、残りを最適計画で選ぶ。交換法は必ず計測する Shot を外さない。</td></tr>
 <tr><td class="term">最外周の Shot</td><td>上下左右のどこかに隣の Shot が無い Shot（Shot 中心の座標から数えた行・列で判断）。</td></tr>
-<tr><td class="term">Mark 単位の I 最適計画</td><td>全 Shot を1点以上計測し、計測する Mark を I 最適で選ぶ。計測する Mark の数 = 1 Shot あたりの Mark 数 × 候補 Shot 数。Mark 番号ごとの数は、全計測での割合 × 計測する数 ± 許容幅にそろえる（例：4 Mark なら各 25%）。評価点は計測しなかった Mark。</td></tr>
+<tr><td class="term">Mark 単位の I 最適・D 最適計画</td><td>計測する Mark を I 最適（D 最適）で選ぶ。計測する Mark の数 = 1 Shot あたりの Mark 数 × 候補 Shot 数、または計測率で決めるときは 計測率 × 候補の全 Mark の数（計測率の開始・終了・刻みでスイープ）。「Shot ごとに n 点の Mark 計測を必須にする」（初期値オン、n = 1）では各 Shot で n 点以上（Mark が少ない Shot はその全 Mark）を必ず計測し、オフでは Shot を問わず選ぶ。Mark 番号ごとの数は、全計測での割合 × 計測する数 ± 許容幅にそろえる（例：4 Mark なら各 25%）。評価点は計測しなかった Mark。</td></tr>
 <tr><td class="term">人の選択（手動）</td><td>人が決めた計測配置。Excel（shotNo と、パターンごとの 1 = 計測する・0 = しない の列。計測マップの Excel と同じ形）から読み込める。I 最適・D 最適と同じ評価の中で比べられる。</td></tr>
-<tr><td class="term">I 基準・D 基準・I 効率・D 効率</td><td>選んだ組の良さ（小さいほど良い計画）。全候補を計測すると I 基準 = 項数 p、D 基準 = 1。I 効率 = p / I 基準、D 効率 = 1 / D 基準（全計測に対する割合、1 に近いほど良い）。</td></tr>
+<tr><td class="term">I 基準・D 基準・I 効率・D 効率</td><td>選んだ組の良さ（小さいほど良い計画）。全候補を計測すると I 基準 = 項数 p、D 基準 = 1。I 効率 = p / I 基準、D 効率 = 1 / D 基準（全計測に対する割合、1 に近いほど良い）。「計測配置の比較」では D 効率・I 効率 [%] を横軸にできる。</td></tr>
+<tr><td class="term">エラーバー（計測配置の比較）</td><td>評価点ごとの Wafer の値のばらつき。標準偏差 s（Wafer 間）、95% 信頼区間 平均 ± 1.96 s/√n（正規近似）、Wafer の最小〜最大から選ぶ。</td></tr>
 </table>
 
 <h3 id="terms-metrics">評価の指標</h3>
@@ -120,21 +121,23 @@
 <table>
 <tr><th>用語</th><th>意味</th></tr>
 <tr><td class="term">質的変数</td><td>数ではなく区分を表す変数。Scan 方向（1・2）・Mark 番号・Shot 行の奇偶・ファイルのその他の列。X 成分と Y 成分で別に選べる。</td></tr>
-<tr><td class="term">Scan 方向</td><td>露光装置が Shot を走査する向き（Direction の列、または規則で付けた 1・2）。計測マップ・Wafer マップでは緑 ▲ = 1、紫 ▼ = 2。</td></tr>
+<tr><td class="term">Scan 方向</td><td>露光装置が Shot を走査する向き（Direction の列、または規則で付けた 1・2）。計測マップ・Wafer マップでは、既定は緑 ▲（上向き）= 1、紫 ▼（下向き）= 2。1・2 のどちらを上向きにするかと色は「2. 評価の設定」の「表示：Scan 方向」で変えられる。</td></tr>
 <tr><td class="term">Shot 行の奇偶</td><td>Shot 中心の Y 座標で上から数えた行が奇数か偶数か。</td></tr>
 <tr><td class="term">Slot の偶奇</td><td>Wafer ID のハイフンの後の整数（例：LOT123-05 → Slot 5 → 奇数）。平均の図・ANOVA・箱ひげ図・散布図で、偶数と奇数で傾向が違うかを見る。</td></tr>
 <tr><td class="term">効果コード（固定効果）</td><td>水準ごとのずれを平均の基底関数に入れ、ほかの係数と同時に推定する（GPR の「同時推定」）。</td></tr>
 <tr><td class="term">変量効果（加法カーネル）</td><td>水準ごとのずれを確率変数とみなし、カーネルに項 τ²δ を足す（下の「質的変数の項」）。ずれは 0 の方へ縮んで推定される。</td></tr>
 <tr><td class="term">交互作用</td><td>2つの質的変数の組み合わせごとのずれ（例：Scan 方向 × Mark 番号）。</td></tr>
-<tr><td class="term">Backfitting</td><td>空間の推定と質的変数の効果の推定を、交互に当てはめ直して収束させる方法。</td></tr>
+<tr><td class="term">Backfitting</td><td>空間の推定と質的変数の効果の推定を、交互に当てはめ直して収束させる方法（TPS・RBF・RBFe・Kriging・Fringe Zernike）。</td></tr>
+<tr><td class="term">質的変数を1つだけ使う手法</td><td>「チェックした質的変数を1つだけ使う手法も比べる」をオンにすると、質的変数を使う手法ごとに、チェックした変数を1つだけ使う手法を足す（名前の最後に「質的変数：Scan 方向だけ」など）。どの変数が効いているかを比べられる。</td></tr>
 </table>
 
 <h3 id="terms-stats">統計・図</h3>
 <table>
 <tr><th>用語</th><th>意味</th></tr>
-<tr><td class="term">正規性検定</td><td>残差が正規分布から外れているか。Shapiro–Wilk（5000 点以下）・Anderson–Darling・Jarque–Bera。p &lt; 0.05 なら外れていると判定。</td></tr>
+<tr><td class="term">正規性検定</td><td>残差が正規分布から外れているか。Shapiro–Wilk（3〜5000 点）・Anderson–Darling（8 点以上）・Jarque–Bera。p &lt; 0.05 なら外れていると判定。計算しなかったときは W・A² の欄に理由（例：「— 6000 点（5000 点超）」）を出す。点数は選んだ Wafer の評価点の合計なので、Wafer を1枚に絞ると計算できることがある。</td></tr>
 <tr><td class="term">ANOVA・η²</td><td>質的変数の水準で残差の平均が違うかの F 検定。η² は水準の違いで説明できる残差のばらつきの割合。「ほかの変数で調整」はほかの質的変数を入れた主効果モデル（Type II）。</td></tr>
-<tr><td class="term">箱ひげ図</td><td>箱は四分位範囲、中の線は中央値、ひげは箱から 1.5 × 四分位範囲まで、外の点は外れ値、◆ は平均。</td></tr>
+<tr><td class="term">箱ひげ図</td><td>箱は四分位範囲、中の線は中央値、ひげは箱から 1.5 × 四分位範囲まで、外の点は外れ値、◆ は平均。手法を複数選ぶと、水準ごとに手法を色分けして並べる。</td></tr>
+<tr><td class="term">Shot スタックマップ</td><td>全 Shot の Mark を Shot 内の座標（markXmm・markYmm）で1つの Shot に重ねた図。薄い矢印は Shot ごと、濃い矢印は Mark の位置ごとの平均。Scan 方向ごと・Shot 行の偶奇ごと・その組み合わせに分けて描ける。</td></tr>
 <tr><td class="term">JS ダイバージェンス</td><td>2つの分布の違い（0 = 同じ、1 = 重なりなし。底 2）。共通の区間のヒストグラムの割合 P・Q で、M = (P + Q)/2、JS = KL(P‖M)/2 + KL(Q‖M)/2。</td></tr>
 <tr><td class="term">共分散楕円</td><td>座標ごとの Wafer 間（Shot 間）の X・Y のばらつきと相関を表す楕円。色は相関係数の絶対値 |r|。</td></tr>
 <tr><td class="term">同心円の区切り線</td><td>同心円の制約の区切りの半径（Shot 中心の半径 [mm]）を橙の一点鎖線で描いたもの。</td></tr>
@@ -154,7 +157,7 @@
 <tr><td class="term">GAM（一般化加法モデル）</td><td><div class="formula">y = β<sub>0</sub> + s(x, y) [+ s(r)] + 質的変数の効果 + ε</div>形状関数 s はスプライン（3次 B スプライン＋2階差分の罰則、P-spline）かガウス過程回帰（節点での低ランク近似、下の「GAM のガウス過程」）。罰則の強さと長さスケールは REML で選ぶ。</td></tr>
 <tr><td class="term">XY 多項式</td><td><div class="formula">f(x, y) = Σ<sub>a + b ≤ N</sub> c<sub>ab</sub> x<sup>a</sup> y<sup>b</sup></div>最小二乗（特異値分解の擬似逆行列、相対の打ち切り 10<sup>−10</sup>）。</td></tr>
 <tr><td class="term">RT モデル（次数 K）</td><td>変位を半径方向 R と接線方向 T に分け、R = ρ·M(x, y)、T = ρ·Θ(x, y)。局所倍率 M・局所回転 Θ を Zernike 多項式（動径次数 n ≤ K）で展開し、並進2項・非対称倍率・直交度の4項を加える。X・Y を同時に当てはめる。</td></tr>
-<tr><td class="term">Fringe Zernike</td><td><div class="formula">f(ρ, θ) = Σ<sub>j = 1</sub><sup>(k+1)²</sup> c<sub>j</sub> Z<sub>j</sub>(ρ, θ)</div>次数 k の Fringe Zernike 多項式（下の「Fringe Zernike」）の最小二乗。X・Y は別々に当てはめる。</td></tr>
+<tr><td class="term">Fringe Zernike</td><td><div class="formula">f(ρ, θ) = Σ<sub>j = 1</sub><sup>(k+1)²</sup> c<sub>j</sub> Z<sub>j</sub>(ρ, θ) [+ 質的変数の効果]</div>次数 k の Fringe Zernike 多項式（下の「Fringe Zernike」）の最小二乗。X・Y は別々に当てはめる。質的変数を Backfitting で足すこともできる（Zernike の当てはめ行列 H = Z(Z<sup>T</sup>Z)<sup>+</sup>Z<sup>T</sup> を空間成分にして、効果と交互に推定する）。</td></tr>
 </table>
 
 <h2 id="kernels">カーネル（すべて）</h2>
@@ -233,7 +236,10 @@ Fringe 番号は、Fringe の次数 k = (n + |m|)/2 の小さい順、同じ k �
 <tr><td class="term">点の Shot・Scan 方向</td><td>shotNo があればその Shot、無ければ点を含む Shot（Shot 中心 ± Shot の大きさの半分）。Direction が空欄なら、その Shot の Scan 方向を使う。分からない点は Scan 方向の効果を平均とする。</td></tr>
 <tr><td class="term">学習に無い Mark 番号</td><td>学習点に無い Mark 番号（新しい Mark）・空欄の点は、Mark 番号の効果を全 Mark の平均として推定する（効果コードは 0、加法カーネルは同じ水準の学習点が無いので Mark の項は効かない）。Mark 番号を使わない手法では、位置だけで推定する。</td></tr>
 <tr><td class="term">外挿の判定</td><td>学習点（X・Y のどちらかで学習に使った Mark）の凸包の外に 0.5 mm より離れた点を外挿とする。画面の上に件数と最大の距離を出し、表の「外挿」と図の × 印で示す。「範囲の外 [mm]」は凸包までの距離、Excel の「最も近い学習点」は最も近い学習点までの距離。</td></tr>
+<tr><td class="term">Wafer の外の点</td><td>点の座標が 300 mm Wafer の外（半径 150 mm 以上。境界の上も外）なら推定の対象外とし、推定値を X・Y とも 0 にする。外挿には数えず、図には描かない。</td></tr>
+<tr><td class="term">一括の推定</td><td>Wafer と学習データは複数選べ、選んだ Wafer × 学習データの組み合わせごとにまとめて推定する。図と重ね合わせ補正は「図・補正に出す組み合わせ」で選んだ組み合わせを出す。</td></tr>
 <tr><td class="term">推定の条件</td><td>手法・質的変数・XY 1次を除く・学習データの異常値の除外は「2. 評価の設定」の今の設定のとおり。</td></tr>
+<tr><td class="term">重ね合わせ補正値</td><td>推定した後に、元の実測値（学習点）・学習しなかった Mark の推定値・未知の座標の推定値をまとめて、Overlay 補正のモデル（下の「補正モデル」）を X・Y 別に最小二乗で当てはめた係数と、補正後の残差 = 値 − 補正量。係数は mm の座標での値（nm/mm<sup>べき</sup>）。成分どうしで重なる項は前の成分（Wafer → Shot 共通 → Shot ごと）に含めて 0 にする（補正量は変わらない）。</td></tr>
 </table>
 <p class="note">外挿の点でも推定値は出します。Wafer の外周より外、学習した Shot から離れた点は、手法によって値が大きく違うことがあるので、複数の手法で比べてから使ってください。</p>
 

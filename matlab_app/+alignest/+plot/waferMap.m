@@ -21,6 +21,7 @@ function waferMap(ax, points, values, options)
 %   options.shotDirections: Shot ごとの Scan 方向（1・2、無ければ NaN。shotCenters と同じ数）。渡すと Shot の枠を
 %                          Scan 方向の色（と ▲・▼ の印）で描く（alignest.plot.scanFrames）。空なら灰色の枠
 %   options.ringRadiiMm  : 同心円の制約の区切りの半径 [mm]（alignest.zoneEdgesMm）。破線の円で描く（空なら描かない）
+%   options.scanStyle    : Scan 方向の枠の色と向き（alignest.plot.scanStyle。設定の「表示：Scan 方向」）
 %   options.covariance   : 点ごとの Wafer 間の共分散 [X の分散, Y の分散, X・Y の共分散]（nm²、点数 × 3）
 %   options.showArrows   : 矢印（ベクトル）を描くか（既定 true）。false なら楕円だけ（楕円の中心は矢印の先のまま）
 %   options.ellipseSigma : 共分散楕円の大きさ（σ の何倍か。0 なら描かない）。矢印の先を中心に、矢印と同じ倍率で描く。
@@ -49,6 +50,7 @@ arguments
     options.covariance double = zeros(0, 3)
     options.ellipseSigma (1, 1) double {mustBeNonnegative} = 0
     options.showArrows (1, 1) logical = true
+    options.scanStyle struct = alignest.plot.scanStyle()
     options.colorRange (1, 2) double = [NaN, NaN]
     options.colorTitle (1, 1) string = ""
 end
@@ -69,7 +71,7 @@ plot(ax, options.waferRadiusMm * cos(angle), options.waferRadiusMm * sin(angle),
 legendItems = gobjects(0);
 if ~isempty(options.shotDirections) && numel(options.shotDirections) == size(options.shotCenters, 1)
     legendItems = alignest.plot.scanFrames(ax, options.shotCenters, options.shotSizeMm, options.shotDirections, ...
-        SCAN_FRAME_INSET);
+        SCAN_FRAME_INSET, options.scanStyle);
 else
     alignest.plot.shotFrames(ax, options.shotCenters, options.shotSizeMm);
 end

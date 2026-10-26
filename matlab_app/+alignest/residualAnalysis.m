@@ -3,7 +3,8 @@ function analysis = residualAnalysis(estimates)
 %   analysis = alignest.residualAnalysis(estimates)
 %   手法 × 学習パターンの列 × 軸（X・Y）ごとに、表にある Wafer の評価点をまとめて扱う。
 %   analysis.normality：点数・平均・標準偏差・歪度・尖度（過剰）・Shapiro–Wilk・Anderson–Darling・Jarque–Bera と判定
-%     （判定は Shapiro–Wilk の p 値。5000 点を超えて計算できないときは Anderson–Darling の p 値）
+%     （判定は Shapiro–Wilk の p 値。5000 点を超えて計算できないときは Anderson–Darling の p 値）。
+%     swNote・adNote は Shapiro–Wilk・Anderson–Darling を計算しなかった理由（alignest.stats.normalityTests）
 %   analysis.anova    ：質的変数ごとの一元配置の F 検定と、ほかの質的変数で調整した F 検定（alignest.stats.anovaMainEffects）
 %     質的変数は Scan 方向・Mark 番号・Shot 行の奇偶・工程（Operation）・装置（EqpId）・ロット（LotID）と、
 %     質的変数に選んだファイルのその他の列（表の「質的変数:<列名>」）。値の無い変数は出さない。
@@ -26,9 +27,10 @@ for c = 1:size(combinations, 1)
         [judgement, basis] = normalityJudgement(result, SIGNIFICANCE);
         normalityRows{end + 1, 1} = table(methodLabel, combinations(c, 1), combinations(c, 2), axisName, ...
             result.n, result.mean, result.std, result.skewness, result.excessKurtosis, result.swW, result.swP, ...
-            result.adA2, result.adP, result.jb, result.jbP, basis, judgement, 'VariableNames', ["methodLabel", ...
-            "methodId", "group", "axis", "n", "mean", "std", "skewness", "excessKurtosis", "swW", "swP", "adA2", ...
-            "adP", "jb", "jbP", "basis", "judgement"]); %#ok<AGROW>
+            result.adA2, result.adP, result.jb, result.jbP, basis, judgement, string(result.swNote), ...
+            string(result.adNote), 'VariableNames', ["methodLabel", "methodId", "group", "axis", "n", "mean", "std", ...
+            "skewness", "excessKurtosis", "swW", "swP", "adA2", "adP", "jb", "jbP", "basis", "judgement", "swNote", ...
+            "adNote"]); %#ok<AGROW>
         anova = alignest.stats.anovaMainEffects(residual, alignest.residualFactors(subset));
         if height(anova) == 0
             continue

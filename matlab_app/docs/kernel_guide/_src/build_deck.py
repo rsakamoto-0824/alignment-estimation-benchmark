@@ -95,7 +95,7 @@ def build(output: Path, reference: Path, numbers: dict):
 
     # 1. 表紙
     s = deck.slide(dark=True)
-    text(s, 0.8, 0.9, 6.5, 0.4, "技術解説資料 ｜ 面内推定 検証ツール（GPR）", size=14, color=LIGHT)
+    text(s, 0.8, 0.9, 6.5, 0.4, "技術解説資料 ｜ 面内推定評価ツール（GPR）", size=14, color=LIGHT)
     text(s, 0.8, 1.9, 7.0, 1.0, "加法カーネルと交互作用", size=40, color=WHITE, bold=True)
     text(s, 0.8, 3.05, 6.6, 1.3, "GPR で質的変数（Scan 方向・Mark 番号）を\nどのようなカーネルで扱っているか", size=20,
          color=LIGHT2)

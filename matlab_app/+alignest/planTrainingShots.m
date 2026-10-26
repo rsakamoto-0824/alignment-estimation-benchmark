@@ -13,10 +13,14 @@ function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm)
 %   plan.requiredShotIndex は必ず計測した Shot（ファイルの優先順では優先度 1）。
 %   制約付き D 最適（doptimal）は、I 最適と同じ制約・必ず計測する Shot で、det(M) を大きくする組を選ぶ
 %   （alignest.exchangeDesign）。
-%   Mark 単位の I 最適（mark）：候補 Shot をすべて計測し（全 Shot で1点以上）、計測する Mark を I 最適で選ぶ。
-%   Mark の数 = round(spec.markPerShot × 候補 Shot 数)。sampling.constraints.markRatio が true（既定）なら、
+%   Mark 単位の I 最適（mark）・D 最適（markd）：計測する Mark を I 最適（D 最適）で選ぶ。
+%   Mark の数 = round(spec.markPerShot × 候補 Shot 数)、計測率で決めるときは round(spec.rate / 100 × 候補の全 Mark の数)。
+%   sampling.markRequirePerShot が true（既定）なら、各 Shot で markMinPerShot 点（既定 1。Mark の少ない Shot は
+%   その Shot の全 Mark）以上を必ず計測する（足りないときは Mark の数を増やし、plan.message に書く）。false なら
+%   Shot を問わず選ぶ（計測しない Shot もある）。sampling.constraints.markRatio が true（既定）なら、
 %   Mark 番号ごとの計測する数を、全計測（候補の全 Mark）での割合 × Mark の数 ± 許容幅にそろえる。
-%   plan.markIndex に計測する Mark（unit.marks の何番目か）を入れる（Shot 単位の選び方では空）。
+%   plan.markIndex に計測する Mark（unit.marks の何番目か）を入れる（Shot 単位の選び方では空）。plan.shotIndex は
+%   計測する Mark のある Shot。
 %   plan.nMarks は学習に使う Mark の数（その軸が有効な Mark。X・Y のどちらか）。
 %   選び方によらず、選んだ組の I 基準 tr(M⁻¹) と D 基準 det(M)^(−1/p)、全計測に対する I 効率・D 効率を求める
 %   （alignest.designCriteria。基準モデルの項数より学習点が少ないなど、求められないときは NaN）。
@@ -51,7 +55,7 @@ switch spec.type
         if isempty(plan.shotIndex)
             return
         end
-    case "mark"
+    case {"mark", "markd"}
         plan = markPlan(unit, spec, sampling, waferRadiusMm, candidates, plan);
         return
     case {"ioptimal", "doptimal", "random"}
@@ -117,13 +121,39 @@ plan.ok = true;
 end
 
 function plan = markPlan(unit, spec, sampling, waferRadiusMm, candidates, plan)
-% Mark 単位の I 最適：全候補 Shot で1点以上を計測し、Mark 番号の割合をそろえて、計測する Mark を交換法で選ぶ
+% Mark 単位の I 最適・D 最適：（各 Shot で n 点以上を計測し、）Mark 番号の割合をそろえて、計測する Mark を交換法で選ぶ
 marks = unit.marks;
 markCandidates = find(ismember(marks.shotIndex, candidates) & (marks.validX | marks.validY));
 [~, ~, groupOfMark] = unique(marks.shotIndex(markCandidates));
 nGroups = max(groupOfMark);
-nMarks = max(nGroups, round(spec.markPerShot * nGroups));
-plan.nShots = numel(candidates);
+criterion = "I";
+if spec.type == "markd"
+    criterion = "D";
+end
+if isfinite(plan.rate)
+    nMarks = max(1, round(plan.rate / 100 * numel(markCandidates)));
+    sizeText = sprintf("計測率 %g%% の Mark の数 %d", plan.rate, nMarks);
+else
+    nMarks = max(1, round(spec.markPerShot * nGroups));
+    sizeText = sprintf("1 Shot あたり %g 点の Mark の数 %d", spec.markPerShot, nMarks);
+end
+requirePerShot = ~isfield(sampling, "markRequirePerShot") || sampling.markRequirePerShot;
+minPerShot = 1;
+if isfield(sampling, "markMinPerShot") && ~isempty(sampling.markMinPerShot)
+    minPerShot = max(1, round(double(sampling.markMinPerShot)));
+end
+group = zeros(0, 1);
+if requirePerShot
+    % 各 Shot で n 点（Mark の少ない Shot はその Shot の全 Mark）。合わせた数に足りなければ Mark の数を増やす
+    perGroup = accumarray(groupOfMark, 1);
+    minimumTotal = sum(min(minPerShot, perGroup));
+    if nMarks < minimumTotal
+        plan.message = sprintf("%s では各 Shot %d 点を計測できないため、%d 点にしました。", sizeText, minPerShot, ...
+            minimumTotal);
+        nMarks = minimumTotal;
+    end
+    group = groupOfMark;
+end
 if nMarks >= numel(markCandidates)
     plan.message = sprintf("計測する Mark の数 %d が候補の Mark の数 %d 以上なので、評価する Mark が残りません。", ...
         nMarks, numel(markCandidates));
@@ -136,14 +166,15 @@ if ~isfield(sampling.constraints, "markRatio") || sampling.constraints.markRatio
 end
 stream = RandStream('mt19937ar', 'Seed', seedFor(sampling.seed, nMarks, spec.repeat));
 [selected, plan.criterion, plan.violation] = alignest.exchangeDesign(blocks, nMarks, labels, ...
-    sampling.constraints.slack, stream, sampling.exchangeStarts, sampling.exchangeMaxIterations, criterion="I", ...
-    group=groupOfMark, minPerGroup=1);
+    sampling.constraints.slack, stream, sampling.exchangeStarts, sampling.exchangeMaxIterations, criterion=criterion, ...
+    group=group, minPerGroup=minPerShot);
 if plan.violation > 0
-    plan.message = sprintf("Mark 番号ごとの数をそろえる制約を満たす組が見つからず、違反量 %d の組を使いました。", ...
-        plan.violation);
+    plan.message = strtrim(plan.message + sprintf(" Mark 番号ごとの数をそろえる制約を満たす組が見つからず、" + ...
+        "違反量 %d の組を使いました。", plan.violation));
 end
 plan.markIndex = sort(markCandidates(selected(:)));
-plan.shotIndex = sort(candidates(:));
+plan.shotIndex = unique(marks.shotIndex(plan.markIndex));   % 計測する Mark のある Shot（各 Shot で必ず計測するなら全候補）
+plan.nShots = numel(plan.shotIndex);
 plan.shotNos = unit.shots.shotNo(plan.shotIndex);
 plan.nMarks = numel(plan.markIndex);
 plan.ok = true;

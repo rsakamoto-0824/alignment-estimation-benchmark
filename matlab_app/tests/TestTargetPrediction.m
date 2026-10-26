@@ -72,18 +72,21 @@ classdef TestTargetPrediction < matlab.unittest.TestCase
         end
 
         function extrapolationIsFlagged(testCase)
-            % 学習点を囲む凸包の外（0.5 mm を超える）を外挿とし、外への距離を出す
+            % 学習点を囲む凸包の外（0.5 mm を超える）を外挿とし、外への距離を出す（学習は内側の Shot だけ。
+            % 300 mm Wafer の外の点は推定の対象外なので、Wafer の中の点で確かめる）
             unit = testCase.Data.units(1);
             method = testCase.Methods(string({testCase.Methods.id}) == "TPS_XYR");
             targets = alignest.targetTemplate(3);
             targets.name = ["中心"; "外"; "遠く"];
-            targets.Xmm = [0; 0; 300];
-            targets.Ymm = [0; 160; 0];
-            result = alignest.predictTargets(unit, 1:numel(unit.shots.shotNo), method, testCase.Settings, targets);
+            targets.Xmm = [0; 0; 130];
+            targets.Ymm = [0; 120; 0];
+            innerShots = find(unit.shots.radius < 60);
+            result = alignest.predictTargets(unit, innerShots, method, testCase.Settings, targets);
             testCase.verifyEqual(result.table.extrapolated, [false; true; true]);
             testCase.verifyEqual(result.table.outsideMm(1), 0);
-            radius = max(hypot(unit.marks.x(unit.marks.validX), unit.marks.y(unit.marks.validX)));
-            testCase.verifyGreaterThanOrEqual(result.table.outsideMm(3), 300 - radius - 1e-9, "凸包は学習点の円の内側");
+            trained = ismember(unit.marks.shotIndex, innerShots) & unit.marks.validX;
+            radius = max(hypot(unit.marks.x(trained), unit.marks.y(trained)));
+            testCase.verifyGreaterThanOrEqual(result.table.outsideMm(3), 130 - radius - 1e-9, "凸包は学習点の円の内側");
             testCase.verifyGreaterThanOrEqual(result.table.nearestMm, result.table.outsideMm - 1e-9, ...
                 "最も近い学習点は凸包より近くない");
             testCase.verifyTrue(all(isfinite([result.table.estimateX; result.table.estimateY])), "外挿でも推定値は出す");
@@ -171,8 +174,8 @@ classdef TestTargetPrediction < matlab.unittest.TestCase
             testCase.verifyEqual(run.estimates.Xmm(end), 5);
             testCase.verifyEqual(run.estimates.Ymm(end), 5, "全角の数字も読む");
             testCase.verifyEqual(nnz(run.estimates.extrapolated), 2, "外周の2点だけが外挿");
-            testCase.verifyTrue(contains(app.Controls.targetMessage.Text, "外挿"));
-            testCase.verifyTrue(contains(app.Controls.targetMessage.Text, "M5"));
+            testCase.verifyTrue(any(contains(app.Controls.targetMessage.Value, "外挿")));
+            testCase.verifyTrue(any(contains(app.Controls.targetMessage.Value, "M5")));
             testCase.verifyEqual(height(app.Controls.targetResultTable.Data), 24);
             testCase.verifyNotEmpty(findobj(app.Controls.targetAxes, 'DisplayName', '外挿の点（2 点）'));
             allWafers = app.estimateTargets(0, "all", 1);
@@ -192,7 +195,7 @@ classdef TestTargetPrediction < matlab.unittest.TestCase
             app.runEvaluationNow(false);
             label = app.Results.plans(1).label;
             planned = app.estimateTargets(1, label, 1);
-            testCase.verifyEqual(planned.trainingText, "学習パターン：" + label);
+            testCase.verifyEqual(planned.trainingTexts, "学習パターン：" + label);
             testCase.verifyGreaterThanOrEqual(nnz(planned.estimates.extrapolated), nnz(run.estimates.extrapolated), ...
                 "学習点が少ないほど範囲は狭い");
             % データを読み込み直すと推定値は消える

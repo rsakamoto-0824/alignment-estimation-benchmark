@@ -2,7 +2,8 @@ function methods = buildMethodList(config)
 %BUILDMETHODLIST 手法一覧。説明変数の組ごとに GPR → TPS → RBF → Kriging → GAM、最後に XY・RT。
 %   id の書き方は Python 版と同じ：GPR_<カーネル>_<説明変数>_<質的変数の扱い>、TPS_<説明変数>、
 %   OK_<バリオグラム>_<説明変数>（通常 Kriging）、UK_<バリオグラム>_<説明変数>（Universal Kriging）、
-%   GAM_<説明変数>、XY<次数>、RT<次数>、FringeZ_k<次数>（Fringe Zernike。Z1〜Z(k+1)²）。
+%   GAM_<説明変数>、XY<次数>、RT<次数>、FringeZ_k<次数>（Fringe Zernike。Z1〜Z(k+1)²。質的変数の Backfitting は
+%   _backfit）。
 %   RBF_gaussian_<説明変数> を追加。TPS・RBF・OK・UK の Backfitting は既存 id に _backfit を付ける。
 %   RBFe_k<領域の数>_<説明変数>（RBFe（仮）：領域ごとの TPS をつなぐ形状関数の GAM。config.rbfe.regions の数ごと。
 %   Backfitting は _backfit）。
@@ -90,8 +91,10 @@ end
 if config.zernike.enabled
     for order = unique(double(config.zernike.orders(:))).'
         alignest.basis.fringeZernikeModes(order);   % 次数を確かめる
-        methods(end + 1) = item(sprintf("FringeZ_k%d", order), "FZ", "-", sprintf("order%d", order), "none", ...
-            sprintf("Fringe Zernike Z1〜Z%d（次数 %d）", (order + 1)^2, order)); %#ok<AGROW>
+        for mode = spatialModes(config.zernike.factorModes)
+            methods(end + 1) = spatialItem(sprintf("FringeZ_k%d", order), "FZ", "-", sprintf("order%d", order), mode, ...
+                sprintf("Fringe Zernike Z1〜Z%d（次数 %d）", (order + 1)^2, order)); %#ok<AGROW>
+        end
     end
 end
 if config.rt.enabled

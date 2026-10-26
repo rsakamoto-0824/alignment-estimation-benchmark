@@ -17,6 +17,7 @@ function out = estimateWafer(unit, training, method, settings, testMask)
 %   out.timing は段階ごとの秒数（outliers：異常値の判定、model：モデルの当てはめと評価点の推定、
 %   prepare：それ以外の準備。合計が out.seconds）。
 timer = tic;
+settings = alignest.singleFactorSettings(settings, method);   % 質的変数を1つだけ使う手法なら、その変数だけにする
 marks = unit.marks;
 radius = settings.data.waferRadiusMm;
 if nargin < 5 || isempty(testMask)
@@ -78,10 +79,18 @@ switch method.family
             out.edf(k) = result.edf;
         end
     case "FZ"
+        % Fringe Zernike（質的変数の Backfitting も選べる。TPS などと同じ alignest.models.spatialBackfit）
         order = sscanf(char(method.variant), 'order%d');
         for k = find(active)
-            result = alignest.models.zernikeFitPredict(xyNorm(trainIndex.(axisNames(k)), :), ...
-                xyNorm(testIndex.(axisNames(k)), :), measured.(axisNames(k)), order);
+            train = trainIndex.(axisNames(k));
+            test = testIndex.(axisNames(k));
+            fitSpatial = @(values) alignest.models.zernikeFitPredict(xyNorm(train, :), xyNorm(test, :), values, order, ...
+                returnSmoother=method.factorMode == "backfit");
+            result = fitWithFactors(fitSpatial, unit, train, test, measured.(axisNames(k)), method, settings, axisNames(k));
+            if method.factorMode == "backfit"
+                out.converged = out.converged && result.backfitConverged;
+                out.extra.("backfitIterations_" + axisNames(k)) = result.nBackfitIterations;
+            end
             estimate.(axisNames(k)) = result.prediction;
             out.edf(k) = result.edf;
         end
