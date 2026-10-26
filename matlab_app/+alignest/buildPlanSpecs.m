@@ -8,16 +8,19 @@ function specs = buildPlanSpecs(sampling)
 %     "manual"（手動・人の選択）：manualPlans の1行が1パターン（shotNo を空白またはカンマで区切る）。
 %                「名前: 1 5 9」のように「:」の前に名前を書くと、その名前を学習パターンの名前にする
 %                （計測マップの Excel から読み込んだ人の選択。alignest.readLayoutPlans）
-%     "mark"（Mark 単位の I 最適）：全 Shot で1点以上を計測し、計測する Mark を選ぶ。markPerShot（1 Shot あたりの
-%                平均の Mark 数。1 なら全 Shot で1点）ごとに1つ（"Mark最適 1 点/Shot"）
+%     "mark"（Mark 単位の I 最適）・"markd"（Mark 単位の D 最適）：計測する Shot ではなく Mark を選ぶ（既定では全 Shot で
+%                1点以上。sampling.markRequirePerShot・markMinPerShot）。markPerShot（1 Shot あたりの平均の Mark 数）
+%                ごとに1つ（"Mark最適 1 点/Shot"・"MarkD最適 1 点/Shot"）
 %   sampling.countBy = "rate" なら、Shot 数の代わりに計測率 [%]（rateStart・rateEnd・rateStep）ごとに作る
 %   （"I最適 計測率 20%" のように。Shot 数は Wafer の候補 Shot 数から planTrainingShots で決める。nShots は NaN）。
+%   Mark 単位の計画も計測率ごとに作る（"Mark最適 計測率 20%"。計測する Mark の数 = 計測率 × 候補の全 Mark の数。
+%   markPerShot は使わない）。
 %   group は結果を集計するときの列（ランダムの繰り返しは同じ group にまとめる）。選び方が1つなら "20 Shot"、
 %   2つ以上なら選び方の名前を付けて "I最適 20 Shot"・"D最適 20 Shot" のようにする（手動・人の選択は名前）。
-%   選び方は、選んだ順によらず I 最適 → D 最適 → ランダム → 優先順 → 手動 → Mark 単位 の順に並べる。
-ORDER = ["ioptimal", "doptimal", "random", "file", "manual", "mark"];
+%   選び方は、選んだ順によらず I 最適 → D 最適 → ランダム → 優先順 → 手動 → Mark 単位（I・D）の順に並べる。
+ORDER = ["ioptimal", "doptimal", "random", "file", "manual", "mark", "markd"];
 PREFIX = struct("ioptimal", "I最適", "doptimal", "D最適", "random", "ランダム", "file", "優先順", "manual", "", ...
-    "mark", "Mark最適");
+    "mark", "Mark最適", "markd", "MarkD最適");
 methods = unique(reshape(string(sampling.method), 1, []), 'stable');
 unknown = methods(~ismember(methods, ORDER));
 if ~isempty(unknown)
@@ -52,13 +55,22 @@ for method = methods
             end
         case "manual"
             specs = [specs, manualSpecs(sampling)]; %#ok<AGROW>
-        case "mark"
+        case {"mark", "markd"}
+            if isfield(sampling, "countBy") && string(sampling.countBy) == "rate"
+                % 計測率ごと（計測する Mark の数 = 計測率 × 候補の全 Mark の数。planTrainingShots）
+                [~, sizeTexts, rates] = trainingSizes(sampling);
+                for k = 1:numel(rates)
+                    specs(end + 1) = spec(method, NaN, rates(k), 1, prefix + " " + sizeTexts(k), ...
+                        groupName(compare, prefix, sizeTexts(k)), [], NaN); %#ok<AGROW>
+                end
+                continue
+            end
             perShot = 1;
             if isfield(sampling, "markPerShot") && ~isempty(sampling.markPerShot)
                 perShot = unique(double(sampling.markPerShot(:)).');
             end
-            if any(~isfinite(perShot) | perShot < 1)
-                error('alignest:markPerShot', '1 Shot あたりの Mark 数は 1 以上の数にしてください（1 なら全 Shot で1点）。');
+            if any(~isfinite(perShot) | perShot <= 0)
+                error('alignest:markPerShot', '1 Shot あたりの Mark 数は 0 より大きい数にしてください（1 なら Shot 数と同じ数）。');
             end
             for value = perShot
                 sizeText = sprintf("%g 点/Shot", value);

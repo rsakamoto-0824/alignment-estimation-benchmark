@@ -38,8 +38,10 @@ classdef TestLayoutDesignZernike < matlab.unittest.TestCase
             sampling.method = "unknown";
             testCase.verifyError(@() alignest.buildPlanSpecs(sampling), 'alignest:samplingMethod');
             sampling.method = "mark";
-            sampling.markPerShot = 0.5;
+            sampling.markPerShot = 0;
             testCase.verifyError(@() alignest.buildPlanSpecs(sampling), 'alignest:markPerShot');
+            sampling.markPerShot = 0.5;   % 1 未満も使える（Shot ごとの必須の数に足りなければ planTrainingShots で増やす）
+            testCase.verifyEqual(alignest.buildPlanSpecs(sampling).label, "Mark最適 0.5 点/Shot");
         end
 
         function dOptimalImprovesTheDCriterion(testCase)
@@ -290,8 +292,9 @@ classdef TestLayoutDesignZernike < matlab.unittest.TestCase
             text = fileread(fullfile(testCase.Root, 'help', 'help.html'));
             for name = [alignest.models.gprKernelNames(), "matern（ν を指定）", "ardmatern（ν を指定）", ...
                     "linear", "power", "gaussian", "exponential", "spherical", "加法カーネル＋交互作用", "ASML", "Canon", ...
-                    "Nikon", "k1 + k3·x + k5·y", "Fringe Zernike", "MAD", "D 最適計画", "Mark 単位の I 最適計画", ...
-                    "凸包", "外挿の判定", "学習に無い Mark 番号", "RBFe（仮）", "1 の分割"]
+                    "Nikon", "k1 + k3·x + k5·y", "Fringe Zernike", "MAD", "D 最適計画", "Mark 単位の I 最適・D 最適計画", ...
+                    "凸包", "外挿の判定", "学習に無い Mark 番号", "RBFe（仮）", "1 の分割", "Shot スタックマップ", ...
+                    "重ね合わせ補正値", "Wafer の外の点", "質的変数を1つだけ使う手法", "エラーバー（計測配置の比較）"]
                 testCase.verifyTrue(contains(text, name), name + " の説明がヘルプにない");
             end
         end

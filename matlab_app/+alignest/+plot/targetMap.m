@@ -6,6 +6,7 @@ function targetMap(ax, result, unit, options)
 %   学習点の範囲（凸包、破線）、外挿の点（× 印）を重ねる。色だけで区別しないよう、外挿の点は形（×）と凡例でも示す。
 %   options.titleText：題名、options.waferRadiusMm：Wafer の半径 [mm]、options.markerSize：色で描く点の大きさ。
 %   options.spec：推定する値（alignest.valueSpec）。1変数なら色で描き、色の範囲は推定値の最小〜最大、目盛りは値の名前。
+%   Wafer の外の点（result.table.outsideWafer。推定の対象外で推定値は 0）は描かない。
 arguments
     ax
     result struct
@@ -22,6 +23,9 @@ LEGEND_FONT_SIZE = 9;
 MAX_LEGEND_COLUMNS = 2;
 MARGIN_MM = 8;   % 図の端の余白（alignest.plot.waferMap と同じ）
 estimates = result.table;
+if any(string(estimates.Properties.VariableNames) == "outsideWafer")
+    estimates = estimates(~estimates.outsideWafer, :);   % 推定の対象外（推定値 0）の点は描かない
+end
 points = [estimates.x, estimates.y];
 values = [estimates.estimateX, estimates.estimateY];
 column = 1 + (options.mode == "Y");

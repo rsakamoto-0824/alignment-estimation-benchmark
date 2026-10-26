@@ -1,6 +1,7 @@
-function handles = scanFrames(ax, centers, sizeMm, directions, insetRatio)
-%SCANFRAMES Shot の枠を Scan 方向の色で描き、枠の左上に方向の印（▲ = 1、▼ = 2）を付ける。
-%   handles = alignest.plot.scanFrames(ax, centers, sizeMm, directions, insetRatio)
+function handles = scanFrames(ax, centers, sizeMm, directions, insetRatio, style)
+%SCANFRAMES Shot の枠を Scan 方向の色で描き、枠の左上に方向の印（既定は ▲ = 1 上向き、▼ = 2 下向き）を付ける。
+%   handles = alignest.plot.scanFrames(ax, centers, sizeMm, directions, insetRatio, style)
+%   style（省略可）は色と向き（alignest.plot.scanStyle。設定の「表示：Scan 方向」）。
 %   centers は Shot 中心 [x, y]（mm）、sizeMm は [幅, 高さ]、directions は Shot ごとの Scan 方向（1・2。無ければ NaN）。
 %   insetRatio は枠を Shot の内側に縮める割合（0 なら Shot の外形。計測マップでは塗りの枠と重ならないように内側に描く）。
 %   handles は凡例に使う Scan 方向ごとの線（色と印を1つにした凡例。方向の無い Shot は灰色の細い枠）。
@@ -12,11 +13,14 @@ MARKER_POSITION = 0.62;   % 印を置く位置（Shot の半分の大きさに�
 if nargin < 5
     insetRatio = 0;
 end
+if nargin < 6
+    style = alignest.plot.scanStyle();
+end
 handles = gobjects(0);
 if isempty(centers) || any(~isfinite(sizeMm)) || any(sizeMm <= 0)
     return
 end
-[colors, markers] = alignest.plot.scanColors();
+[colors, markers] = alignest.plot.scanColors(style);
 directions = reshape(double(directions), [], 1);
 if numel(directions) ~= size(centers, 1)
     directions = nan(size(centers, 1), 1);
@@ -43,18 +47,10 @@ for level = 1:2
     handles(end + 1) = plot(ax, centers(select, 1) - MARKER_POSITION * half(1), ...
         centers(select, 2) + MARKER_POSITION * half(2), markers(level), 'LineStyle', 'none', 'Color', colors(level, :), ...
         'MarkerFaceColor', colors(level, :), 'MarkerSize', MARKER_SIZE, 'LineWidth', FRAME_LINE_WIDTH, ...
-        'DisplayName', sprintf('Scan %d（%s）', level, ternary(level == 1, '▲', '▼')), ...
-        'HitTest', 'off'); %#ok<AGROW>
+        'DisplayName', style.names(level), 'HitTest', 'off'); %#ok<AGROW>
 end
 if ~wasHeld
     hold(ax, 'off');
 end
 end
 
-function value = ternary(condition, whenTrue, whenFalse)
-if condition
-    value = whenTrue;
-else
-    value = whenFalse;
-end
-end

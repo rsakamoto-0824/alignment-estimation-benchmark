@@ -33,6 +33,7 @@ methods.rt.enabled = true;
 methods.rt.orders = 5;
 methods.zernike.enabled = false;   % Fringe Zernike 多項式の近似（次数 k：Z1〜Z(k+1)²。複数なら次数ごとに比べる）
 methods.zernike.orders = 4;
+methods.zernike.factorModes = "none";   % 質的変数：none（使わない）・backfit（Backfitting で効果を足す）、両方なら比べる
 % 手法の細かい設定（Python 版と同じ値）
 methods.options.gprMaxIterations = 300;
 methods.options.backfitMaxIterations = 20;
@@ -64,6 +65,7 @@ switch selection
         methods.rt.orders = [4, 5];
         methods.zernike.enabled = true;
         methods.zernike.orders = [3, 4, 5];
+        methods.zernike.factorModes = ["none", "backfit"];
         methods.rbfe.enabled = true;
         methods.rbfe.regions = [4, 9];
         methods.rbfe.factorModes = ["none", "backfit"];

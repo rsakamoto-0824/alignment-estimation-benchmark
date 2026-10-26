@@ -28,7 +28,7 @@ DECK_NAME = "デフォルト設定の編集ガイド"
 DECK_TITLE = "デフォルト設定の編集ガイド（管理者向け）"
 CODE_FONT = "Courier New"
 DEFAULTS_FILE = "alignment_estimation_defaults.json"
-TEST_COUNT = 160   # runAllTests の件数（2026-10-25 時点。テストを足したら直す）
+TEST_COUNT = 173   # runAllTests の件数（2026-10-26 時点。テストを足したら直す）
 
 
 class Deck:
@@ -83,7 +83,7 @@ def build(output: Path, reference: Path):
 
     # 1. 表紙
     s = deck.slide(dark=True)
-    text(s, 0.8, 0.9, 7.0, 0.4, "管理者向け手順書 ｜ アライメント計測値の面内推定 検証ツール（MATLAB）", size=14, color=LIGHT)
+    text(s, 0.8, 0.9, 7.0, 0.4, "管理者向け手順書 ｜ 面内推定評価ツール（MATLAB）", size=14, color=LIGHT)
     text(s, 0.8, 1.9, 7.2, 1.0, "デフォルト設定の編集ガイド", size=34, color=WHITE, bold=True)
     text(s, 0.8, 3.05, 6.8, 1.3, "評価の条件・比べる手法・画面の初期値を\nどこで、どう変えるか", size=20, color=LIGHT2)
     text(s, 0.8, 6.35, 6.8, 0.35, "2026年10月 ｜ MATLAB R2022b・matlab_app フォルダ", size=12, color=LIGHT)
@@ -97,7 +97,7 @@ def build(output: Path, reference: Path):
         circle(s, 8.5, y, 0.62, color, label, size=18)
         text(s, 9.3, y - 0.05, 3.3, 0.4, heading, size=15, color=WHITE, bold=True)
         text(s, 9.3, y + 0.38, 3.3, 0.9, body, size=12.5, color=LIGHT2)
-    notes(s, "管理者が、検証ツールの初期設定（評価の条件・比べる手法・画面の初期値）を変えるときの手順書。"
+    notes(s, "管理者が、面内推定評価ツールの初期設定（評価の条件・比べる手法・画面の初期値）を変えるときの手順書。"
              "3つの変え方（設定ファイルを配る・既定の設定ファイルを置く・コードの初期値を変える）と、項目ごとの初期値、注意点、確かめ方をまとめる。")
 
     # 2. この資料で分かること
@@ -274,9 +274,10 @@ def build(output: Path, reference: Path):
         ["data.coordinateMode", "\"shotMark\"", "座標の定義（shotMark：Shot 中心＋Shot 内、absolute：絶対座標だけ）", "1. 座標の定義"],
         ["data.valueColumn・valueUnit", "\"\"・\"nm\"", "推定する値（空 = X・Y 成分、列の名前 = 膜厚などの1変数）と単位", "1. 推定する値"],
         ["factors.scan・mark・shotRowParity", "true・true・false", "質的変数（Scan 方向・Mark 番号・Shot 行の奇偶）", "2. 質的変数"],
+        ["factors.evaluateSingles", "false", "チェックした質的変数を1つだけ使う手法も足して比べる", "2. 1つだけ使う"],
         ["factors.columns", "[]（なし）", "質的変数に使うファイルのその他の列の名前", "2. その他の列"],
         ["factors.separateY ・ factors.y", "false", "Y 成分の質的変数を別に選ぶ（y に同じ形の項目）", "2. Y 成分は別に"]],
-        widths=(3.75, 1.9, 4.78, 1.7), row_h=0.44)
+        widths=(3.75, 1.9, 4.78, 1.7), row_h=0.4)
     point_bar(s, 6.3, "Wafer 半径を変えるときは validRadiusMm・同心円の区切り・外周の半径（mm）も一緒に見直す",
               icon="!", icon_color=CORAL, h=0.55, size=13)
     notes(s, "data の項目は読み込みの条件。factors は推定に使う質的変数（GPR・GAM・Backfitting）。ANOVA は選ばなくても主な変数を調べる。")
@@ -284,17 +285,18 @@ def build(output: Path, reference: Path):
     # 10. sampling（選び方・数）
     s = deck.body("03　設定の項目と初期値", "設定の項目②：sampling（学習 Shot の選び方・数）")
     settings_table(s, [
-        ["sampling.method", "\"ioptimal\"", "選び方（複数で比べる）：ioptimal・doptimal・random・manual・file・mark", "2. 選び方"],
+        ["sampling.method", "\"ioptimal\"", "選び方（複数で比べる）：ioptimal・doptimal・random・manual・file・mark・markd", "2. 選び方"],
         ["sampling.nShotsStart・End・Step", "10・40・5", "学習 Shot 数の開始・終了・刻み", "2. Shot 数"],
         ["sampling.nShots", "[10 15 … 40]", "上から作った並び（計算に使う。開始〜刻みと合わせる）", "（自動）"],
         ["sampling.countBy", "\"shots\"", "Shot 数で決める（shots）か計測率で決める（rate）か", "2. 学習 Shot 数"],
         ["sampling.rateStart・End・Step", "10・40・10", "計測率 [%] の開始・終了・刻み（countBy = rate）", "2. 計測率"],
         ["sampling.randomRepeats ・ seed", "10 ・ 20261017", "ランダムの繰り返し回数・乱数の種", "2. ランダム"],
         ["sampling.manualPlans", "[]（なし）", "手動・人の選択（1行 =「名前: shotNo …」）", "2. 手動・人の選択"],
-        ["sampling.requiredShots", "[]（なし）", "必ず計測する shotNo（拡張 I 最適計画）", "2. 必ず計測"],
-        ["sampling.requireOuterShots", "false", "最外周の Shot をすべて必ず計測する", "2. 必ず計測"],
-        ["sampling.markPerShot", "1", "Mark 単位：1 Shot あたりの計測 Mark 数（1 = 全 Shot で1点）", "2. Mark 単位"]],
-        row_h=0.42)
+        ["sampling.requiredShots・requireOuterShots", "[]・false", "必ず計測する shotNo（拡張 I 最適計画）・最外周の Shot をすべて",
+         "2. 必ず計測"],
+        ["sampling.markPerShot", "1", "Mark 単位：1 Shot あたりの計測 Mark 数（countBy = rate なら計測率）", "2. Mark 単位"],
+        ["sampling.markRequirePerShot・markMinPerShot", "true・1", "Mark 単位：Shot ごとに n 点の計測を必須にする・n", "2. Mark 単位"]],
+        widths=(3.85, 1.6, 4.98, 1.7), row_h=0.42)
     point_bar(s, 6.3, "method を2つ以上にすると、結果一覧の「計測配置の比較」で選び方どうしを比べられる",
               icon="i", icon_color=BODY, h=0.55, size=13)
     notes(s, "学習 Shot 数は開始・終了・刻みと並び nShots の両方を持つ。コードで変えるときは shotCountList で並びも作る。")
@@ -317,7 +319,7 @@ def build(output: Path, reference: Path):
     notes(s, "constraints は sampling の中のグループ（sampling.constraints.〈項目〉）。同心円の区切りは mm の絶対値で、半径 150 mm の Wafer が前提。")
 
     # 12. evaluation・overlay
-    s = deck.body("03　設定の項目と初期値", "設定の項目④：evaluation（評価）・overlay（補正）")
+    s = deck.body("03　設定の項目と初期値", "設定の項目④：evaluation・overlay（補正）・display（表示）")
     settings_table(s, [
         ["evaluation.outerRadiusMm", "120", "外周とみなす Mark の半径 [mm]（外周の RMSE の境目）", "2. 外周の半径"],
         ["evaluation.removeLinear", "false", "XY 1次を除いてから推定する", "2. 評価"],
@@ -329,8 +331,10 @@ def build(output: Path, reference: Path):
         ["overlay.shotCommon", "\"linear\"", "Shot 共通成分（none・linear・asml・canon・nikon・formula）", "2. Shot 共通成分"],
         ["overlay.perShot", "\"none\"", "Shot ごとの成分（none・translation・linear・formula）", "2. Shot ごとの成分"],
         ["overlay.waferFormula・shotFormula・perShotFormula", "k1 + k3*x + k5*y\nk2 + k4*y + k6*x",
-         "式を入力するときの dx・dy の式", "2. dx・dy"]],
-        widths=(3.85, 1.95, 4.68, 1.65), row_h=0.44)
+         "式を入力するときの dx・dy の式", "2. dx・dy"],
+        ["display.scan1Up・scan1Color・scan2Color", "true・緑・紫", "表示：Scan 方向 1 を上向き（▲）にするか・1・2 の色（RGB 0〜1）",
+         "2. 表示"]],
+        widths=(3.85, 1.95, 4.68, 1.65), row_h=0.41)
     point_bar(s, 6.3, "Overlay 補正をすべて「なし」（waferOrder 0・shotCommon none・perShot none）にすると補正の評価をしない",
               icon="i", icon_color=BODY, h=0.55, size=13)
     notes(s, "補正の式の書き方と、すべての補正の式は「7. ヘルプ」にまとめている。")
@@ -347,7 +351,7 @@ def build(output: Path, reference: Path):
         ["methods.kriging", "通常 true・Universal false", "Kriging（variograms：\"exponential\"）", "2. Kriging"],
         ["methods.gam", "true（スプライン）", "GAM（shapes・gpKernels・gpMaternNu）", "2. GAM"],
         ["methods.polynomial ・ rt", "true（5次）・true（K=5）", "XY 多項式の次数・RT モデルの次数", "2. 多項式・RT"],
-        ["methods.zernike", "false（次数 4）", "Fringe Zernike（orders：次数 k。Z1〜Z(k+1)²）", "2. Fringe Zernike"]],
+        ["methods.zernike", "false（次数 4）", "Fringe Zernike（orders：次数 k。factorModes：none・backfit）", "2. Fringe Zernike"]],
         widths=(3.3, 2.55, 4.6, 1.68), row_h=0.4)
     point_bar(s, 6.2, "初期値は推奨の組み合わせ（9 手法）。変えるときは recommendedMethods.m の上の部分を直す"
               "（「すべて選ぶ」は \"all\" の部分）",
@@ -437,7 +441,7 @@ def build(output: Path, reference: Path):
     # 17. 確かめ方
     s = deck.body("04　編集の例・注意・確かめ方", "確かめ方 ― テスト・画面・Excel")
     steps(s, 0.6, 1.5, 6.6, [
-        ("テストを全件流す（手順 C）", f"cd tests → runAllTests。「成功 {TEST_COUNT} 件、失敗 0 件、未完了 0 件」（2026-10-25 時点の件数）"),
+        ("テストを全件流す（手順 C）", f"cd tests → runAllTests。「成功 {TEST_COUNT} 件、失敗 0 件、未完了 0 件」（2026-10-26 時点の件数）"),
         ("画面で初期値を見る", "「初期設定に戻す」を押し、「2. 評価の設定」の欄が新しい値か確かめる"),
         ("設定ファイルを開いて見る", "「設定を保存…」で保存した JSON の値（名前・単位・並び）"),
         ("模擬データで評価する", "sample_data の模擬データで評価し、結果の Excel の「設定」シートを見る"),
@@ -483,7 +487,7 @@ def build(output: Path, reference: Path):
 
     properties = deck.prs.core_properties
     properties.title = DECK_TITLE
-    properties.subject = "検証ツールの初期設定（評価の条件・比べる手法・画面の初期値）の変え方"
+    properties.subject = "面内推定評価ツールの初期設定（評価の条件・比べる手法・画面の初期値）の変え方"
     properties.author = "alignment-estimation-benchmark"
     properties.last_modified_by = "alignment-estimation-benchmark"
     temporary = output.with_name(output.stem + ".building.pptx")

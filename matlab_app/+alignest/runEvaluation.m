@@ -95,7 +95,9 @@ if ~isempty(previous) && isfield(previous, "resume") && ~isempty(previous.resume
     count = min(numel(previous.resume.warmedUp), numel(methods));
     warmedUp(1:count) = previous.resume.warmedUp(1:count);
 end
-done = previousRow.Count;  % 済んだ組み合わせの数（その分は計算しない）
+% 済んだ組み合わせの数（その分は計算しない）。Count は uint64 なので double にする（整数のままだと、進み具合の画面で
+% 残り時間の割り算が丸められて「残り 約 1 秒」のまま変わらなかった）
+done = double(previousRow.Count);
 cancelled = false;
 slot = 0;
 for u = 1:numel(units)
@@ -237,7 +239,7 @@ switch mode
         if ~isfield(previous, "resume") || isempty(previous.resume) || ~previous.cancelled
             error('alignest:resume', '続きから再開できる評価がありません。「評価を始める」で最初から計算してください。');
         end
-        if ~isequaln(runSettingsOf(previous), settings)
+        if ~alignest.sameRunSettings(runSettingsOf(previous), settings)
             error('alignest:resume', ['一時中断した後に評価の設定が変わったので、続きから再開できません。' ...
                 '設定を戻すか、「評価を始める」で最初から計算してください。']);
         end

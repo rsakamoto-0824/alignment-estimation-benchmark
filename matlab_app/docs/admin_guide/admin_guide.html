@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="アライメント計測値の面内推定 検証ツール（MATLAB アプリ）の管理者向け資料。アプリの構成と、保守で想定される作業・確認・困ったときの対処。">
+  <meta name="description" content="面内推定評価ツール（MATLAB アプリ）の管理者向け資料。アプリの構成と、保守で想定される作業・確認・困ったときの対処。">
   <title>検証ツール 管理者ガイド</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="procedure-guide.css">
@@ -44,7 +44,7 @@
   <aside id="sidebar" class="sidebar" aria-label="目次">
     <div class="sidebar-header">
       <p class="eyebrow">Internal Procedure</p>
-      <p class="sidebar-title">面内推定 検証ツール</p>
+      <p class="sidebar-title">面内推定評価ツール</p>
       <p class="sidebar-subtitle">管理者ガイド</p>
     </div>
     <nav>
@@ -70,9 +70,9 @@
     <header class="hero">
       <div class="hero-content">
         <p class="eyebrow">Administrator Guide · Internal Use</p>
-        <h1>面内推定 検証ツール<br><span>管理者ガイド（構成と保守）</span></h1>
+        <h1>面内推定評価ツール<br><span>管理者ガイド（構成と保守）</span></h1>
         <p class="hero-lead">
-          アライメント計測値の面内推定 検証ツール（MATLAB アプリ）を管理する人向けに、アプリの作りと、
+          面内推定評価ツール（MATLAB アプリ）を管理する人向けに、アプリの作りと、
           保守で起こりそうな作業の進め方・確かめ方・困ったときの対処をまとめます。
         </p>
         <div class="hero-badges" aria-label="文書情報">
@@ -181,10 +181,10 @@
           <thead><tr><th>段階</th><th>すること</th><th>主な関数</th></tr></thead>
           <tbody>
             <tr><td>読み込み</td><td>Excel・CSV を読み、列を標準の項目に対応づけ、座標の単位をそろえ、行を除き、Wafer（工程・装置・ロット・測定日時で区別）ごとにまとめる。Scan 方向が無ければ規則で付ける。絶対座標だけのデータは Shot 中心を決め（shotNo の点の平均、または点を1つずつ Shot に）、1変数（膜厚など）は値を X 成分に入れて Y 成分を使わない</td><td><code>readMeasurementFile</code>・<code>guessColumnMapping</code>・<code>checkCoordinateUnits</code>・<code>prepareData</code>（<code>shotsFromAbsolute</code>・<code>pointCellSize</code>）・<code>standardColumns</code>（必須の項目）・<code>valueSpec</code>・<code>directionRules</code></td></tr>
-            <tr><td>学習 Shot</td><td>学習 Shot 数（または計測率）ごとに、制約付き I 最適・D 最適・ランダム・手動（人が選んだ配置の Excel から読める）・ファイルの優先順・Mark 単位の I 最適で学習 Shot（Mark 単位なら学習 Mark）を選ぶ。選び方は複数選べて、学習パターンの名前の先頭に選び方が付く。同じ配置の Wafer は同じ選び方を使い回す</td><td><code>buildPlanSpecs</code>・<code>cachedTrainingPlan</code>・<code>planTrainingShots</code>・<code>constrainedIOptimal</code>・<code>exchangeDesign</code>（D 最適・Mark 単位の交換法）・<code>readLayoutPlans</code>・<code>trainingMarks</code>・<code>designCriteria</code></td></tr>
-            <tr><td>推定</td><td>手法ごとに、学習 Shot の計測値から学習しなかった Shot の値を X・Y 別に推定する</td><td><code>buildMethodList</code>・<code>estimateWafer</code>・<code>+models</code> の関数</td></tr>
+            <tr><td>学習 Shot</td><td>学習 Shot 数（または計測率）ごとに、制約付き I 最適・D 最適・ランダム・手動（人が選んだ配置の Excel から読める）・ファイルの優先順・Mark 単位の I 最適・D 最適（計測率でのスイープ、Shot ごとに n 点の必須はオプション）で学習 Shot（Mark 単位なら学習 Mark）を選ぶ。選び方は複数選べて、学習パターンの名前の先頭に選び方が付く。同じ配置の Wafer は同じ選び方を使い回す</td><td><code>buildPlanSpecs</code>・<code>cachedTrainingPlan</code>・<code>planTrainingShots</code>・<code>constrainedIOptimal</code>・<code>exchangeDesign</code>（D 最適・Mark 単位の交換法）・<code>readLayoutPlans</code>・<code>trainingMarks</code>・<code>designCriteria</code></td></tr>
+            <tr><td>推定</td><td>手法ごとに、学習 Shot の計測値から学習しなかった Shot の値を X・Y 別に推定する</td><td><code>buildMethodList</code>・<code>activeMethods</code>（質的変数を1つだけ使う手法を足す <code>singleFactorMethods</code>。推定では <code>singleFactorSettings</code>）・<code>estimateWafer</code>・<code>+models</code> の関数</td></tr>
             <tr><td>評価・集計</td><td>評価点（学習しなかった Shot の有効な Mark）の RMSE・MAE・R² などと、Overlay 補正の残差の変化を求め、手法 × 学習パターンで集計する。評価済みの結果に手法・学習パターンを足す（済んだ組み合わせは計算しない）。行ごとの評価点の推定値を残し、評価点を半径・Shot の条件で絞って指標を計算し直す</td><td><code>runEvaluation</code>（<code>"extend"</code> で追加）・<code>extensionConflicts</code>・<code>computeMetrics</code>・<code>compactEstimate</code>・<code>filterResults</code>・<code>pointFilterMask</code>・<code>overlayCorrection</code>・<code>summarizeResults</code>・<code>pairedComparison</code></td></tr>
-            <tr><td>未知の座標の推定</td><td>計測していない点を計測値の無い Mark として Wafer に足し、評価と同じ推定で値を求める。学習点の凸包の外を外挿として知らせる</td><td><code>predictTargets</code>・<code>estimateWafer</code></td></tr>
+            <tr><td>未知の座標の推定</td><td>計測していない点を計測値の無い Mark として Wafer に足し、評価と同じ推定で値を求める（Wafer × 学習データの組み合わせごとに一括）。学習点の凸包の外を外挿として知らせ、300 mm Wafer の外の点は推定せず 0 にする。推定した後に、実測値・推定値をまとめて重ね合わせ補正値（係数）を求める</td><td><code>predictTargets</code>・<code>estimateWafer</code>・<code>targetOverlayCorrection</code>（設計行列は <code>overlayDesign</code>）</td></tr>
             <tr><td>書き出し・読み込み</td><td>評価結果・推定値を Excel に書き出す。書き出した Excel を読み込んで、計測ファイルなしで表・グラフ・マップを描き直す</td><td><code>exportResults</code>・<code>exportEstimates</code>・<code>importResults</code>・<code>importEstimates</code></td></tr>
           </tbody>
         </table>
@@ -230,11 +230,11 @@
           <thead><tr><th>タブ</th><th>画面の関数（AlignmentEstimationApp.m）</th><th>主に呼ぶ計算の関数</th></tr></thead>
           <tbody>
             <tr><td>1. データの読み込み</td><td><code>buildDataTab</code>・<code>drawPreview</code>・<code>drawLayout</code>・<code>drawShotOverlay</code></td><td><code>readMeasurementFile</code>・<code>prepareData</code>・<code>groupOptions</code>・<code>averageFields</code>・<code>shotOverlay</code>・<code>plot.waferMap</code></td></tr>
-            <tr><td>2. 評価の設定</td><td><code>buildSettingsTab</code>・<code>settingsToControls</code>・<code>controlsToSettings</code>・<code>validateSettings</code>・<code>updateEnabled</code></td><td><code>defaultSettings</code>・<code>siteDefaults</code>（既定の設定ファイル）・<code>loadSettings</code>・<code>saveSettings</code>・<code>buildMethodList</code>・<code>estimateRunSeconds</code>・<code>readLayoutPlans</code>（画面の <code>loadLayoutPlans</code>）</td></tr>
+            <tr><td>2. 評価の設定</td><td><code>buildSettingsTab</code>・<code>settingsToControls</code>・<code>controlsToSettings</code>・<code>validateSettings</code>・<code>updateEnabled</code></td><td><code>defaultSettings</code>・<code>siteDefaults</code>（既定の設定ファイル）・<code>loadSettings</code>・<code>saveSettings</code>・<code>buildMethodList</code>・<code>activeMethods</code>・<code>estimateRunSeconds</code>・<code>readLayoutPlans</code>（画面の <code>loadLayoutPlans</code>）・<code>plot.scanStyle</code>（表示：Scan 方向の向きと色。画面の <code>scanStyle</code>・<code>onPickScanColor</code>）</td></tr>
             <tr><td>3. 実行</td><td><code>buildRunTab</code>・<code>evaluate</code>・<code>extendEvaluation</code>・<code>drawMeasurementMap</code>（並べる数は <code>tileShape</code>）</td><td><code>runEvaluation</code>・<code>cachedTrainingPlan</code>・<code>plot.measurementMap</code>・<code>plot.scanFrames</code>・<code>plot.zoneRings</code></td></tr>
-            <tr><td>4. 結果一覧</td><td><code>buildResultsTab</code>・<code>refreshResultControls</code>・<code>drawChart</code>・<code>analyzeResiduals</code>・<code>drawResidualBoxplot</code>・<code>drawScatter</code>・<code>compareDistributions</code>・<code>measureTiming</code>・<code>drawLayoutComparison</code>（計測配置の比較）・<code>applyResultFilter</code>（絞り込みの欄は <code>buildFilterControls</code>）</td><td><code>summarizeResults</code>・<code>pairedComparison</code>・<code>collectEstimates</code>・<code>residualAnalysis</code>・<code>residualFactors</code>・<code>plot.residualBoxplot</code>・<code>distributionComparison</code>・<code>timingBreakdown</code>・<code>plot.timingBars</code>・<code>layoutComparison</code>・<code>filterResults</code>・<code>exportResults</code>・<code>importResults</code>・<code>importEstimates</code></td></tr>
-            <tr><td>5. Wafer ごとのマップ</td><td><code>buildMapTab</code>・<code>drawMap</code>（1つの条件）・<code>drawComparison</code>（並べて比べる）・<code>mapFields</code>（図の値。<code>computedMapFields</code>・<code>importedMapFields</code>）・<code>drawMapPanel</code>・<code>addMapCondition</code></td><td><code>estimateWafer</code>・<code>averageFields</code>・<code>overlayProjector</code>・<code>overlayCorrection</code>・<code>unitPointFilter</code>・<code>plot.waferMap</code>（題名・説明のワースト値・95%値は画面の <code>addWorstValues</code>）</td></tr>
-            <tr><td>6. 未知の座標の推定</td><td><code>buildTargetTab</code>・<code>loadTargetPoints</code>・<code>addTargetPoints</code>・<code>currentTargets</code>（表 → 点）・<code>estimateTargets</code>・<code>showTargetRun</code>・<code>drawTargetMap</code>・<code>exportTargetsTo</code></td><td><code>readTargetPoints</code>・<code>targetTemplate</code>・<code>targetsAtShots</code>・<code>targetGrid</code>・<code>predictTargets</code>（中で <code>estimateWafer</code>）・<code>exportTargetEstimates</code>・<code>plot.targetMap</code></td></tr>
+            <tr><td>4. 結果一覧</td><td><code>buildResultsTab</code>・<code>refreshResultControls</code>・<code>drawChart</code>・<code>analyzeResiduals</code>・<code>drawResidualBoxplot</code>・<code>drawScatter</code>・<code>compareDistributions</code>・<code>measureTiming</code>・<code>drawLayoutComparison</code>（計測配置の比較。横軸は <code>layoutAxisValues</code>）・<code>applyResultFilter</code>（絞り込みの欄は <code>buildFilterControls</code>）</td><td><code>summarizeResults</code>・<code>pairedComparison</code>・<code>collectEstimates</code>・<code>residualAnalysis</code>（手法ごと。<code>stats.normalityTests</code> が計算しなかった理由を返す）・<code>residualFactors</code>・<code>plot.residualHistogram</code>・<code>plot.residualBoxplot</code>（手法の色分け）・<code>distributionComparison</code>・<code>timingBreakdown</code>・<code>plot.timingBars</code>・<code>layoutComparison</code>・<code>layoutErrorBars</code>・<code>filterResults</code>・<code>exportResults</code>・<code>importResults</code>・<code>importEstimates</code></td></tr>
+            <tr><td>5. Wafer ごとのマップ</td><td><code>buildMapTab</code>・<code>drawMap</code>（1つの条件）・<code>drawComparison</code>（並べて比べる）・<code>drawShotStack</code>（Shot スタックマップ。分け方は <code>stackGroups</code>）・<code>mapFields</code>（図の値。<code>computedMapFields</code>・<code>importedMapFields</code>）・<code>drawMapPanel</code>・<code>addMapCondition</code></td><td><code>estimateWafer</code>・<code>averageFields</code>・<code>overlayProjector</code>・<code>overlayCorrection</code>・<code>unitPointFilter</code>・<code>plot.waferMap</code>・<code>plot.shotStackMap</code>（題名・説明のワースト値・95%値は画面の <code>addWorstValues</code>）</td></tr>
+            <tr><td>6. 未知の座標の推定</td><td><code>buildTargetTab</code>・<code>loadTargetPoints</code>・<code>addTargetPoints</code>・<code>currentTargets</code>（表 → 点）・<code>estimateTargets</code>（Wafer × 学習データの一括）・<code>showTargetRun</code>・<code>showTargetCombination</code>・<code>drawTargetMap</code>・<code>computeTargetOverlay</code>・<code>showTargetOverlay</code>・<code>exportTargetsTo</code></td><td><code>readTargetPoints</code>・<code>targetTemplate</code>・<code>targetsAtShots</code>・<code>targetGrid</code>・<code>predictTargets</code>（中で <code>estimateWafer</code>）・<code>targetOverlayCorrection</code>・<code>exportTargetEstimates</code>・<code>plot.targetMap</code></td></tr>
             <tr><td>7. ヘルプ</td><td><code>buildHelpTab</code>（<code>help/help.html</code> を uihtml で表示）</td><td>—（説明は HTML に直接書く。手法・カーネル・補正の式を足したら、ここも足す）</td></tr>
             <tr><td>画面の色</td><td><code>setTheme</code>（メニュー「表示」、次に開いたときのために <code>PREF_GROUP</code> に保存）・<code>applyTheme</code>・<code>themePalette</code>（色の定義）</td><td>—（色は <code>Palette</code>（今の色の組）から取る）</td></tr>
           </tbody>
@@ -265,7 +265,8 @@
             <tr><td>Kriging</td><td><code>krigingSetup</code>・<code>krigingFitPredict</code>・<code>krigingVariogram</code></td><td><code>OK_exponential_XYR</code>、<code>UK_spherical_XYR</code></td></tr>
             <tr><td>GAM</td><td><code>gamSetup</code>・<code>gamShapeFit</code>・<code>gamFitPredict</code>・<code>stationaryKernel</code></td><td><code>GAM_XYR</code>、<code>GAM_XYR_gp-xy</code>（ガウス過程 matern52）、<code>GAM_XYR_gp-xy_matern32</code></td></tr>
             <tr><td>多項式・RT モデル</td><td><code>polynomialFitPredict</code>・<code>rtFitPredict</code></td><td><code>XY5</code>、<code>RT5</code></td></tr>
-            <tr><td>Fringe Zernike</td><td><code>zernikeFitPredict</code>（項の並びは <code>basis.fringeZernikeModes</code>）</td><td><code>FringeZ_k4</code>（次数 k：Z1〜Z(k+1)²）</td></tr>
+            <tr><td>Fringe Zernike</td><td><code>zernikeFitPredict</code>（項の並びは <code>basis.fringeZernikeModes</code>。Backfitting では当てはめ行列を返す）・<code>spatialBackfit</code></td><td><code>FringeZ_k4</code>（次数 k：Z1〜Z(k+1)²）、<code>FringeZ_k4_backfit</code></td></tr>
+            <tr><td>質的変数を1つだけ使う手法</td><td><code>singleFactorMethods</code>（手法を足す）・<code>singleFactorSettings</code>（その変数だけの設定にする）・<code>usesFactors</code></td><td><code>TPS_XYR_backfit_1f-scan</code>、<code>GPR_matern52_XYR_additive_1f-mark</code></td></tr>
           </tbody>
         </table>
       </div>
@@ -346,11 +347,11 @@
             <tr><td><code>MAX_ZERNIKE_ORDER = 6</code>・<code>WORST_PERCENT = 95</code></td><td>画面（定数）</td><td>Fringe Zernike の次数の上限（Z1〜Z49）、マップに出す「95%値」の百分位</td></tr>
             <tr><td><code>SECONDS_PER_SHOT_START = 0.01</code></td><td><code>exchangeSecondsGuide</code></td><td>交換法の時間の目安：初期配置 1 つ・学習 Shot 1 つあたりの秒数（候補 99 Shot の模擬データで測った値。<code>REFERENCE_CANDIDATES = 99</code> に対する候補 Shot 数の比で伸ばす）</td></tr>
             <tr><td><code>MAX_MEASURE_PANELS = 6</code>・<code>MAX_COMPARE_PANELS = 6</code></td><td>画面（定数）</td><td>計測マップ・Wafer ごとのマップで並べる図の数の上限</td></tr>
-            <tr><td><code>scanColors</code></td><td><code>plot.scanColors</code></td><td>Scan 方向 1・2 の色（緑・紫）と印（▲・▼）。計測マップ・Wafer マップの枠と Shot レイアウトの塗りで共通</td></tr>
+            <tr><td><code>DEFAULT_COLORS</code></td><td><code>plot.scanStyle</code>（<code>plot.scanColors</code> も同じ）</td><td>Scan 方向 1・2 の既定の色（緑・紫）。向き（▲ 上・▼ 下）と色は設定の <code>display</code> で変えられる。計測マップ・Wafer マップの枠と Shot レイアウトの塗り・Shot スタックマップの分け方で共通</td></tr>
             <tr><td><code>EXCEL_MAX_DATA_ROWS</code></td><td><code>exportEstimates</code>・画面</td><td>Excel の 1 シートに書ける行数（1,048,575 行）。推定値の書き出しはこれを超えると止める</td></tr>
             <tr><td><code>MAX_MATERN_NU = 50</code></td><td><code>models.maternNuCheck</code>・画面</td><td>Matérn の ν の上限</td></tr>
             <tr><td><code>MAX_WAFER_ORDER = 5</code></td><td><code>overlayChoice</code></td><td>Overlay 補正の Wafer 成分の多項式の最大次数</td></tr>
-            <tr><td><code>EXTRAPOLATION_TOLERANCE_MM = 0.5</code></td><td><code>predictTargets</code></td><td>学習点の凸包の外でも、この距離 [mm] 以内は範囲内とみなす（境界の上の点・座標の丸め）</td></tr>
+            <tr><td><code>EXTRAPOLATION_TOLERANCE_MM = 0.5</code>・<code>WAFER_RADIUS_MM = 150</code></td><td><code>predictTargets</code></td><td>学習点の凸包の外でも、この距離 [mm] 以内は範囲内とみなす（境界の上の点・座標の丸め）。300 mm Wafer の半径（これ以上の点は推定しない）</td></tr>
             <tr><td><code>MAX_POINTS = 20000</code>・<code>TARGET_GRID_PITCH_MM = 10</code>・<code>TARGET_GRID_RADIUS_MM = 140</code></td><td><code>targetGrid</code>・画面（定数）</td><td>「格子で置く」の点の数の上限と、間隔・半径の初期値 [mm]</td></tr>
             <tr><td><code>MAX_POWER = 9</code></td><td><code>parseCorrectionFormula</code></td><td>補正の式で使える x・y のべきの上限</td></tr>
             <tr><td><code>gamGpLengthScales</code></td><td><code>recommendedMethods</code>（<code>methods.options</code>）</td><td>GAM のガウス過程の長さスケールの候補（Wafer 半径で割った単位）</td></tr>
@@ -538,7 +539,7 @@ buildStandaloneApp(makeInstaller=true)</code></pre>
     </section>
 
     <footer class="page-footer">
-      <p>面内推定 検証ツール 管理者ガイド（構成と保守）</p>
+      <p>面内推定評価ツール 管理者ガイド（構成と保守）</p>
       <p>更新日: 2026/10/22 · 版: 1.0</p>
     </footer>
   </main>

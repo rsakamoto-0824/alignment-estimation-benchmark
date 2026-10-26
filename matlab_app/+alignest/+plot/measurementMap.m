@@ -7,7 +7,8 @@ function measurementMap(ax, unit, plan, waferRadiusMm, titleText, options)
 %   色だけで区別しないよう、必ず計測する Shot は太い枠、計測する Shot の shotNo は太字にする。
 %   Mark 単位の計画（plan.markIndex が空でない）では、Shot はすべて計測するので薄い塗りにし、計測する Mark を
 %   塗りつぶした ●、計測しない Mark（評価に使う）を白抜きの ○ で描く。
-%   options.showScan    ：Shot の内側に Scan 方向の色の枠と印（▲ = 1、▼ = 2）を描く（alignest.plot.scanFrames）
+%   options.showScan    ：Shot の内側に Scan 方向の色の枠と印（▲ 上向き・▼ 下向き）を描く（alignest.plot.scanFrames）
+%   options.scanStyle   ：Scan 方向の色と向き（alignest.plot.scanStyle。設定の「表示：Scan 方向」）
 %   options.ringRadiiMm ：同心円の制約の区切りの半径 [mm]（破線の円。空なら描かない）
 %   options.showLegend  ：凡例を出すか（並べて描くときは1枚だけに出す）
 %   options.legendLocation：凡例の位置（既定は図の右）
@@ -23,6 +24,7 @@ arguments
     options.showLegend (1, 1) logical = true
     options.legendLocation (1, 1) string = "eastoutside"
     options.allCategories (1, 1) logical = false
+    options.scanStyle struct = alignest.plot.scanStyle()
 end
 REQUIRED_COLOR = [0.96, 0.62, 0.25];
 SELECTED_COLOR = [0.42, 0.65, 0.90];
@@ -93,7 +95,7 @@ if options.showScan
         directions = shots.direction;
     end
     legendItems = [legendItems, alignest.plot.scanFrames(ax, [shots.Xmm, shots.Ymm], unit.shotSizeMm, directions, ...
-        SCAN_FRAME_INSET)];
+        SCAN_FRAME_INSET, options.scanStyle)];
 end
 rings = alignest.plot.zoneRings(ax, options.ringRadiiMm);
 legendItems = [legendItems, rings];

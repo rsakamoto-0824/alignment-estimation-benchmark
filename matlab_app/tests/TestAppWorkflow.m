@@ -993,7 +993,7 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyEqual(numel(plans), 4);
             testCase.verifyEqual(numel(app.Controls.measureAxes), 4);
             names = string(get(findobj(app.Controls.measureAxes(1), '-regexp', 'DisplayName', '.+'), 'DisplayName'));
-            testCase.verifyTrue(all(ismember(["Scan 1（▲）", "Scan 2（▼）", "同心円の区切り"], names)));
+            testCase.verifyTrue(all(ismember(["Scan 1（▲ 上）", "Scan 2（▼ 下）", "同心円の区切り"], names)));
             % 評価の後に、手法と学習 Shot 数を足して評価する（済んだ組み合わせは計算しない）
             testCase.verifyEqual(string(app.Controls.extendRun.Enable), "off");
             first = app.runEvaluationNow(false);
@@ -1059,7 +1059,7 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             app.Controls.mapRings.Value = true;
             app.showMap(1, "I最適 15 Shot", 1, "X", "estimate");
             names = string(get(findobj(app.Controls.mapAxes(1), '-regexp', 'DisplayName', '.+'), 'DisplayName'));
-            testCase.verifyTrue(all(ismember(["Scan 1（▲）", "Scan 2（▼）", "同心円の区切り"], names)));
+            testCase.verifyTrue(all(ismember(["Scan 1（▲ 上）", "Scan 2（▼ 下）", "同心円の区切り"], names)));
             app.addMapCondition(1, "I最適 15 Shot", 1);
             app.addMapCondition(2, "I最適 15 Shot", 1);
             group = find(string(app.Controls.mapWafer.Items) == "平均：全 Wafer（5 枚）");

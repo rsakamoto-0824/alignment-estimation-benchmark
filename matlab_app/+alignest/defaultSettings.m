@@ -22,6 +22,7 @@ settings.factors.scan = true;           % Scan 方向（Direction）
 settings.factors.mark = true;           % Mark 番号（markNo）
 settings.factors.shotRowParity = false; % Shot 配列の行（上から1行目）の奇数・偶数
 settings.factors.columns = strings(1, 0);  % ファイルのその他の列（標準の項目に対応づけなかった列）の名前
+settings.factors.evaluateSingles = false;  % true なら、チェックした質的変数を1つだけ使う手法も足して比べる（alignest.singleFactorMethods）
 settings.factors.separateY = false;      % true なら Y 成分は factors.y の質的変数を使う（false なら X と同じ）
 settings.factors.y.scan = true;
 settings.factors.y.mark = true;
@@ -31,7 +32,7 @@ settings.factors.y.columns = strings(1, 0);
 % 学習に使う Shot の選び方
 % 選び方（複数選ぶと、同じ評価の中で選び方どうしを比べる。alignest.buildPlanSpecs）：ioptimal（制約付き I 最適）／
 % doptimal（制約付き D 最適）／random（制約つきランダム）／manual（手動・人の選択）／file（ファイルの優先順）／
-% mark（Mark 単位の I 最適：全 Shot で1点以上）
+% mark（Mark 単位の I 最適）／markd（Mark 単位の D 最適）
 settings.sampling.method = "ioptimal";
 settings.sampling.nShotsStart = 10;     % 学習 Shot 数は 開始・終了・刻み で決める（I 最適・ランダム）
 settings.sampling.nShotsEnd = 40;
@@ -58,6 +59,9 @@ settings.sampling.constraints.scanDirection = true;
 settings.sampling.constraints.slack = 1;
 settings.sampling.constraints.markRatio = true;   % Mark 単位：Mark 番号ごとの計測する数を全計測の割合にそろえる
 settings.sampling.markPerShot = 1;      % Mark 単位：1 Shot あたりの平均の計測 Mark 数（1 = 全 Shot で1点。複数なら比べる）
+                                        % （countBy = "rate" なら、代わりに計測率 = 候補の全 Mark に対する割合で決める）
+settings.sampling.markRequirePerShot = true;   % Mark 単位：各 Shot で markMinPerShot 点以上を必ず計測する（false なら Shot を問わず選ぶ）
+settings.sampling.markMinPerShot = 1;          % Mark 単位：各 Shot で必ず計測する Mark の数 n（Mark の少ない Shot はその Shot の全 Mark）
 
 % 比べる手法
 settings.methods = alignest.recommendedMethods();
@@ -69,6 +73,11 @@ settings.evaluation.recordTiming = false;     % 条件（手法 × 学習パタ�
 settings.evaluation.excludeOutliers = false;  % 学習データの異常値（中心から outlierSigma × ばらつき を超えて離れた Mark）を除いて推定する
 settings.evaluation.outlierSigma = 3;         % 異常値とみなす倍数 n（正の値。ばらつきは Wafer・学習パターンごと）
 settings.evaluation.outlierMethod = "sigma";  % 異常値の判定：sigma（平均と σ）・mad（中央値と 1.4826 × MAD）
+
+% 表示（推定の結果は変えない。alignest.plot.scanStyle）
+settings.display.scan1Up = true;                   % Scan 方向 1 を上向き（▲）にする。false なら 1 が下向き（▼）・2 が上向き（▲）
+settings.display.scan1Color = [0.10, 0.58, 0.28];  % Scan 方向 1 の色（RGB 0〜1。既定は緑）
+settings.display.scan2Color = [0.58, 0.20, 0.70];  % Scan 方向 2 の色（既定は紫）
 
 % Overlay 補正の評価（推定誤差で Overlay 残差がどれだけ増えるか。alignest.overlayChoice）。すべて「なし」なら評価しない
 settings.overlay.waferOrder = 1;         % Wafer 成分：Shot 中心の座標の多項式の次数（0 = なし、1 = 並進・倍率・回転・直交度）

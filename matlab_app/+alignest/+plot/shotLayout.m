@@ -1,9 +1,13 @@
-function shotLayout(ax, unit, waferRadiusMm)
+function shotLayout(ax, unit, waferRadiusMm, style)
 %SHOTLAYOUT Wafer 上の Shot の並び（枠と shotNo）と、計測した Mark の位置を描く。
 %   Scan 方向があれば、Shot を Scan 方向で塗り分け、shotNo の下に「S1」「S2」と書く（色だけに頼らない）。
-%   unit は prepareData の評価の単位（shots・marks・shotSizeMm を使う）。
-SCAN_TINT = 0.25;   % Scan 方向 1・2 の塗りは、計測マップ・Wafer マップの枠の色（緑・紫）を薄めた色
-SCAN_COLORS = 1 - SCAN_TINT * (1 - alignest.plot.scanColors());
+%   unit は prepareData の評価の単位（shots・marks・shotSizeMm を使う）。style（省略可）は Scan 方向の色と向き
+%   （alignest.plot.scanStyle）。
+if nargin < 4
+    style = alignest.plot.scanStyle();
+end
+SCAN_TINT = 0.25;   % Scan 方向 1・2 の塗りは、計測マップ・Wafer マップの枠の色（既定は緑・紫）を薄めた色
+SCAN_COLORS = 1 - SCAN_TINT * (1 - alignest.plot.scanColors(style));
 NO_SCAN_COLOR = [0.93, 0.93, 0.93];
 EDGE_COLOR = [0.45, 0.45, 0.45];
 MARK_COLOR = [0.10, 0.10, 0.10];
@@ -19,7 +23,7 @@ plot(ax, waferRadiusMm * cos(angle), waferRadiusMm * sin(angle), '--', 'Color', 
 half = unit.shotSizeMm / 2;
 legendItems = gobjects(0);
 if unit.hasDirection
-    names = ["Scan 方向 1（S1）", "Scan 方向 2（S2）"];
+    names = "Scan 方向 " + (1:2) + "（S" + (1:2) + "・" + style.symbols + " " + style.words + "）";
     colors = SCAN_COLORS;
 else
     names = "Shot";

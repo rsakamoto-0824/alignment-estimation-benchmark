@@ -12,12 +12,15 @@ function result = predictTargets(unit, training, method, settings, targets)
 %   （効果コードは 0、加法カーネルは同じ水準の学習点が無い。alignest.basis.effectCoding・models.gprModeSetup）。
 %   外挿：学習点（X・Y のどちらかで学習に使った Mark）を囲む凸包の外に、EXTRAPOLATION_TOLERANCE_MM より
 %   離れた点。
+%   Wafer の外：Wafer 上の座標が 300 mm Wafer の外（半径 WAFER_RADIUS_MM 以上。境界の上も外）の点は推定の対象外
+%   とし、推定値を X・Y とも 0 にする（外挿にも数えない。図には描かない。alignest.plot.targetMap）。
 %   result.table：点ごとの name・Xmm・Ymm・markXmm・markYmm・x・y・markNo・shotNo・direction・estimateX・
 %   estimateY（[nm]）・extrapolated・outsideMm（凸包の外への距離、内側は 0）・nearestMm（最も近い学習点までの
-%   距離）・unseenMark（学習に無い Mark 番号）・note（点ごとの注意）。
-%   result.messages：画面に出す説明（外挿・学習に無い Mark 番号・Scan 方向が分からない点など）。
-%   result.nExtrapolated・nUnseenMark：その点の数、result.trainXY：学習点の座標、result.hull：凸包の頂点、
-%   result.toleranceMm：外挿とみなす距離、result.seconds：推定にかかった秒数。
+%   距離）・unseenMark（学習に無い Mark 番号）・outsideWafer（Wafer の外）・shotIndex（点を含む Shot が
+%   unit.shots の何番目か。分からなければ 0）・note（点ごとの注意）。
+%   result.messages：画面に出す説明（外挿・Wafer の外・学習に無い Mark 番号・Scan 方向が分からない点など）。
+%   result.nExtrapolated・nUnseenMark・nOutsideWafer：その点の数、result.trainXY：学習点の座標、result.hull：凸包の
+%   頂点、result.toleranceMm：外挿とみなす距離、result.seconds：推定にかかった秒数。
 arguments
     unit struct
     training
@@ -26,6 +29,7 @@ arguments
     targets table
 end
 EXTRAPOLATION_TOLERANCE_MM = 0.5;  % 凸包の外でも、この距離以内は範囲内とみなす（境界の上の点・座標の丸めの差）
+WAFER_RADIUS_MM = 150;             % 300 mm Wafer の半径。これ以上（境界の上も）の点は推定しない（推定値は 0）
 NEAREST_CHUNK = 2000;              % 最も近い学習点を探すとき一度に比べる点の数（メモリを使いすぎないため）
 AXIS_NAMES = ["X", "Y"];
 n = height(targets);
@@ -43,7 +47,13 @@ if any(bad)
         strjoin(targets.name(bad).', "・"));
 end
 
-% 点の Shot・Scan 方向を補い、計測値の無い Mark として足して推定する
+outsideWafer = hypot(x, y) >= WAFER_RADIUS_MM;
+if all(outsideWafer)
+    error('alignest:targetsOutsideWafer', ['すべての点が 300 mm Wafer の外（半径 %g mm 以上）にあるので推定できません。' ...
+        '座標（Xmm・Ymm・markXmm・markYmm）の単位と値を確かめてください。'], WAFER_RADIUS_MM);
+end
+
+% 点の Shot・Scan 方向を補い、計測値の無い Mark として足して推定する（Wafer の外の点は推定しない）
 [shotIndex, shotMissing] = locateShots(unit, targets, x, y);
 located = shotIndex > 0;
 direction = targets.direction;
@@ -51,14 +61,17 @@ fromShot = isnan(direction) & located;
 direction(fromShot) = shots.direction(shotIndex(fromShot));
 shotNo = targets.shotNo;
 shotNo(isnan(shotNo) & located) = shots.shotNo(shotIndex(isnan(shotNo) & located));
+inside = find(~outsideWafer);
 extended = unit;
-extended.marks = appendTargets(marks, targets, x, y, direction, shotIndex, shotNo, shots);
+extended.marks = appendTargets(marks, targets(inside, :), x(inside), y(inside), direction(inside), shotIndex(inside), ...
+    shotNo(inside), shots);
 timer = tic;
-out = alignest.estimateWafer(extended, training, method, settings, [false(nMarks, 1); true(n, 1)]);
+out = alignest.estimateWafer(extended, training, method, settings, [false(nMarks, 1); true(numel(inside), 1)]);
 estimate = nan(n, 2);
 for k = 1:2
-    estimate(out.testIndex.(AXIS_NAMES(k)) - nMarks, k) = out.estimate.(AXIS_NAMES(k));
+    estimate(inside(out.testIndex.(AXIS_NAMES(k)) - nMarks), k) = out.estimate.(AXIS_NAMES(k));
 end
+estimate(outsideWafer, :) = 0;   % 推定の対象外（X・Y とも 0 を返す）
 
 % 学習点の範囲（凸包）と比べて外挿を判定する
 trainRows = unique([out.trainIndex.X; out.trainIndex.Y]);
@@ -66,32 +79,42 @@ trainXY = [marks.x(trainRows), marks.y(trainRows)];
 hull = hullOf(trainXY);
 outsideMm = distanceOutside(hull, [x, y]);
 nearestMm = nearestDistance(trainXY, [x, y], NEAREST_CHUNK);
-extrapolated = outsideMm > EXTRAPOLATION_TOLERANCE_MM;
-unseenMark = ~isnan(targets.markNo) & ~ismember(targets.markNo, unique(marks.markNo(trainRows)));
+extrapolated = outsideMm > EXTRAPOLATION_TOLERANCE_MM & ~outsideWafer;
+unseenMark = ~isnan(targets.markNo) & ~ismember(targets.markNo, unique(marks.markNo(trainRows))) & ~outsideWafer;
+outsideMm(outsideWafer) = NaN;   % 推定しない点は、学習範囲との距離を出さない
+nearestMm(outsideWafer) = NaN;
 
 % 質的変数を使う手法か（使わない手法では、Mark 番号・Scan 方向が分からなくても推定値は変わらない）
-usesFactors = method.family == "GAM" || ...
-    (any(method.family == ["GPR", "TPS", "RBF", "RBFE", "OK", "UK"]) && method.factorMode ~= "none");
-choices = [alignest.factorChoice(settings, "X"), alignest.factorChoice(settings, "Y")];
+usesFactors = alignest.usesFactors(method);
+factorSettings = alignest.singleFactorSettings(settings, method);   % 質的変数を1つだけ使う手法なら、その変数だけ
+choices = [alignest.factorChoice(factorSettings, "X"), alignest.factorChoice(factorSettings, "Y")];
 usesMark = usesFactors && any([choices.mark]);
 usesScan = usesFactors && any([choices.scan]) && unit.hasDirection;
 usesRow = usesFactors && any([choices.row]);
 
+estimated = ~outsideWafer;
 notes = strings(n, 1);
+notes = addNote(notes, outsideWafer, sprintf("Wafer の外（半径 %g mm 以上。推定の対象外で、推定値は 0）", WAFER_RADIUS_MM));
 notes = addNote(notes, extrapolated, compose("外挿（学習範囲の外 %.1f mm）", outsideMm));
-notes = addNote(notes, hypot(x, y) >= settings.data.validRadiusMm, "有効半径の外");
+notes = addNote(notes, estimated & hypot(x, y) >= settings.data.validRadiusMm, "有効半径の外");
 notes = addNote(notes, unseenMark, "学習に無い Mark 番号" + ternary(usesMark, "（効果は平均）", ""));
-notes = addNote(notes, usesMark & isnan(targets.markNo), "Mark 番号が空欄（効果は平均）");
-notes = addNote(notes, shotMissing, "shotNo がこの Wafer に無い");
-notes = addNote(notes, usesScan & isnan(direction), "Scan 方向が不明（効果は平均）");
-notes = addNote(notes, usesRow & ~located, "Shot 行が不明（効果は平均）");
+notes = addNote(notes, estimated & usesMark & isnan(targets.markNo), "Mark 番号が空欄（効果は平均）");
+notes = addNote(notes, estimated & shotMissing, "shotNo がこの Wafer に無い");
+notes = addNote(notes, estimated & usesScan & isnan(direction), "Scan 方向が不明（効果は平均）");
+notes = addNote(notes, estimated & usesRow & ~located, "Shot 行が不明（効果は平均）");
 
 messages = strings(0, 1);
+nInside = numel(inside);
 if any(extrapolated)
     messages(end + 1, 1) = sprintf(['⚠ 外挿：%d / %d 点が学習点の範囲（学習点を囲む凸包）の外にあります（最大 %.1f mm 外）。' ...
-        '学習点から離れるほど推定値は信頼できません（表の「外挿」、図の × 印）。'], nnz(extrapolated), n, max(outsideMm));
+        '学習点から離れるほど推定値は信頼できません（表の「外挿」、図の × 印）。'], nnz(extrapolated), nInside, ...
+        max(outsideMm(extrapolated)));
 else
-    messages(end + 1, 1) = sprintf('外挿なし：%d 点すべてが学習点の範囲（学習点を囲む凸包）の中です。', n);
+    messages(end + 1, 1) = sprintf('外挿なし：推定した %d 点すべてが学習点の範囲（学習点を囲む凸包）の中です。', nInside);
+end
+if any(outsideWafer)
+    messages(end + 1, 1) = sprintf(['⚠ Wafer の外：%d 点が 300 mm Wafer の外（半径 %g mm 以上）にあるので、推定の対象外' ...
+        'にしました（推定値は X・Y とも 0。図には描きません）。'], nnz(outsideWafer), WAFER_RADIUS_MM);
 end
 if any(unseenMark)
     levels = unique(targets.markNo(unseenMark)).';
@@ -102,26 +125,28 @@ if any(unseenMark)
     messages(end + 1, 1) = sprintf("⚠ 学習データに無い Mark 番号：%s（%d 点）。", strjoin("M" + string(levels), "・"), ...
         nnz(unseenMark)) + tail;
 end
-if usesMark && any(isnan(targets.markNo))
+if usesMark && any(estimated & isnan(targets.markNo))
     messages(end + 1, 1) = sprintf('Mark 番号が空欄の点：%d 点（Mark 番号の効果は全 Mark の平均で推定します）。', ...
-        nnz(isnan(targets.markNo)));
+        nnz(estimated & isnan(targets.markNo)));
 end
-if any(shotMissing)
+if any(estimated & shotMissing)
     messages(end + 1, 1) = sprintf('⚠ この Wafer に無い shotNo：%s（その点は座標だけで推定します）。', ...
-        strjoin(string(unique(targets.shotNo(shotMissing)).'), "・"));
+        strjoin(string(unique(targets.shotNo(estimated & shotMissing)).'), "・"));
 end
-if usesScan && any(isnan(direction))
+if usesScan && any(estimated & isnan(direction))
     messages(end + 1, 1) = sprintf(['Scan 方向が分からない点：%d 点（Shot の外にあり Direction も空欄）。' ...
-        'Scan 方向の効果は平均で推定します。'], nnz(isnan(direction)));
+        'Scan 方向の効果は平均で推定します。'], nnz(estimated & isnan(direction)));
 end
 
 result.table = table(targets.name, targets.Xmm, targets.Ymm, targets.markXmm, targets.markYmm, x, y, targets.markNo, ...
-    shotNo, direction, estimate(:, 1), estimate(:, 2), extrapolated, outsideMm, nearestMm, unseenMark, notes, ...
-    'VariableNames', ["name", "Xmm", "Ymm", "markXmm", "markYmm", "x", "y", "markNo", "shotNo", "direction", ...
-    "estimateX", "estimateY", "extrapolated", "outsideMm", "nearestMm", "unseenMark", "note"]);
+    shotNo, direction, estimate(:, 1), estimate(:, 2), extrapolated, outsideMm, nearestMm, unseenMark, outsideWafer, ...
+    shotIndex, notes, 'VariableNames', ["name", "Xmm", "Ymm", "markXmm", "markYmm", "x", "y", "markNo", "shotNo", ...
+    "direction", "estimateX", "estimateY", "extrapolated", "outsideMm", "nearestMm", "unseenMark", "outsideWafer", ...
+    "shotIndex", "note"]);
 result.messages = messages;
 result.nExtrapolated = nnz(extrapolated);
 result.nUnseenMark = nnz(unseenMark);
+result.nOutsideWafer = nnz(outsideWafer);
 result.trainXY = trainXY;
 result.hull = hull;
 result.toleranceMm = EXTRAPOLATION_TOLERANCE_MM;

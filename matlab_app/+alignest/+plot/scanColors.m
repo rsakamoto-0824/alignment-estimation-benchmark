@@ -1,6 +1,10 @@
-function [colors, markers] = scanColors()
+function [colors, markers] = scanColors(style)
 %SCANCOLORS Scan 方向 1・2 を示す色（行ごと）と印（▲・▼）。計測マップと Wafer マップの Shot の枠で共通に使う。
-%   矢印の色（長さ）・X・Y の色（青〜赤）・計測マップの塗り（橙・青・白・灰）と区別できる緑と紫にする。
-colors = [0.10, 0.58, 0.28; 0.58, 0.20, 0.70];
-markers = ['^', 'v'];
+%   [colors, markers] = alignest.plot.scanColors()        % 既定（Scan 1 = 緑 ▲、Scan 2 = 紫 ▼）
+%   [colors, markers] = alignest.plot.scanColors(style)   % 設定の色・向き（alignest.plot.scanStyle）
+if nargin < 1
+    style = alignest.plot.scanStyle();
+end
+colors = style.colors;
+markers = style.markers;
 end
