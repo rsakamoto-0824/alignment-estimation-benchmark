@@ -16,6 +16,9 @@ classdef AlignmentEstimationApp < handle
         SMALL_AXES_FONT_SIZE = 10       % 図を並べるとき（計測マップ・マップの比較）の文字の大きさ
         FIGURE_SIZE = [1440, 900]          % 画面がこれより小さいときは画面に合わせて縮める
         SCREEN_MARGIN = 40
+        MIN_FIGURE_SIZE = [800, 600]       % 窓の大きさの下限（画面がこれより小さいときは画面の大きさ）
+        SCREEN_CHECK_SECONDS = 1           % 窓が別の画面（モニター）に移ったかを調べる間隔 [秒]
+        MIN_CONTENT_SIZE = [1200, 700]     % 窓がこれより小さいときは、中身をこの大きさに保ってスクロールで見る（欄が詰まって崩れないように）
         PRIMARY_COLOR = [0.0, 0.36, 0.67]
         ARROW_COLORS = [0.0, 0.33, 0.62; 0.0, 0.33, 0.62; 0.75, 0.25, 0.10]  % 楕円と重ねるときの矢印（計測値・推定値・残差）
         NONE_LABEL = "（なし）"
@@ -51,6 +54,7 @@ classdef AlignmentEstimationApp < handle
 
     properties (SetAccess = private)
         Figure
+        RootGrid        % タブを入れる一番外の枠（窓が MIN_CONTENT_SIZE より小さいときにスクロールする）
         TabGroup
         Tabs = struct()
         Controls = struct()
@@ -74,6 +78,9 @@ classdef AlignmentEstimationApp < handle
         Theme = "light"         % 画面の色：light（ライトモード）・dark（ダークモード）。setTheme で変える
         TargetRun = []          % 「6. 未知の座標の推定」で最後に推定した結果（estimateTargets）
         Interactions = []       % 「質的変数の交互作用」で最後に調べた結果（alignest.factorInteractions）
+        ScreenTimer = []        % 窓が別の画面（モニター）に移ったかを調べるタイマー（画面を出すときだけ）
+        CurrentMonitor = 0      % 窓の中心がある画面の番号（get(groot, 'MonitorPositions') の行）
+        ResponsiveColumns = struct("grid", {}, "column", {}, "width", {})  % 窓の幅に合わせて狭める欄（registerResponsiveColumn）
         TargetSelection = zeros(0, 1)  % 推定する点の表で選んでいる行（「選んだ行を削除」で使う）
     end
 
@@ -103,7 +110,8 @@ classdef AlignmentEstimationApp < handle
             app.MapCache = containers.Map('KeyType', 'char', 'ValueType', 'any');
             app.Figure = uifigure('Name', app.APP_TITLE, 'Position', figurePosition(app), ...
                 'Visible', matlab.lang.OnOffSwitchState(visible), 'CloseRequestFcn', @(~, ~) delete(app));
-            root = uigridlayout(app.Figure, [1, 1], 'Padding', 8);
+            root = uigridlayout(app.Figure, [1, 1], 'Padding', 8, 'Scrollable', 'on');
+            app.RootGrid = root;
             app.TabGroup = uitabgroup(root);
             app.Tabs.data = uitab(app.TabGroup, 'Title', '1. データの読み込み');
             app.Tabs.settings = uitab(app.TabGroup, 'Title', '2. 評価の設定');
@@ -126,6 +134,8 @@ classdef AlignmentEstimationApp < handle
                 'MenuSelectedFcn', @(~, ~) app.setTheme("light"));
             app.Controls.themeDark = uimenu(viewMenu, 'Text', 'ダークモード', ...
                 'MenuSelectedFcn', @(~, ~) app.setTheme("dark"));
+            uimenu(viewMenu, 'Text', '画面の大きさに合わせる', 'Separator', 'on', ...
+                'MenuSelectedFcn', @(~, ~) app.fitToScreen(true));
             uimenu(viewMenu, 'Text', 'ヘルプ（用語・補正の式・カーネル）を開く', 'Separator', 'on', ...
                 'MenuSelectedFcn', @(~, ~) set(app.TabGroup, 'SelectedTab', app.Tabs.help));
             set(findall(app.Figure, '-property', 'FontSize'), 'FontSize', app.FONT_SIZE);
@@ -154,6 +164,40 @@ classdef AlignmentEstimationApp < handle
                     setTheme(app, "dark");
                 end
             end
+            % 画面（モニター）の大きさ・解像度に合わせる：窓の幅に合わせて決まった幅の欄を狭め、別の画面に移したら
+            % 窓をその画面に収まる大きさにする（画面の大きさが違う画面の間で動かしても、つり合いが崩れないように）
+            app.Figure.AutoResizeChildren = 'off';   % 中は uigridlayout が合わせる（on のままだと SizeChangedFcn が動かない）
+            app.Figure.SizeChangedFcn = @(~, ~) app.applyResponsiveLayout();
+            applyResponsiveLayout(app);
+            app.CurrentMonitor = monitorIndexOf(app.Figure.Position);
+            if visible
+                app.ScreenTimer = timer('ExecutionMode', 'fixedSpacing', 'Period', app.SCREEN_CHECK_SECONDS, ...
+                    'BusyMode', 'drop', 'Name', 'AlignmentEstimationApp:screen', 'TimerFcn', @(~, ~) app.onScreenCheck());
+                start(app.ScreenTimer);
+            end
+        end
+
+        function fitToScreen(app, center)
+            %FITTOSCREEN 窓を、窓の中心がある画面（モニター）に合わせる（メニューの「表示」→「画面の大きさに合わせる」）。
+            %   大きさは FIGURE_SIZE を画面に収まるように縮めたもの（画面が大きければ FIGURE_SIZE に戻す）。窓は画面の
+            %   中に入れ、center が true（省略時）なら画面の中央に置く。決まった幅の欄も窓の幅に合わせる。
+            if nargin < 2
+                center = true;
+            end
+            [~, monitor] = monitorIndexOf(app.Figure.Position);
+            available = monitor(3:4) - 2 * app.SCREEN_MARGIN;
+            size_ = max(min(app.FIGURE_SIZE, available), min(app.MIN_FIGURE_SIZE, monitor(3:4)));
+            corner = app.Figure.Position(1:2);
+            if center
+                corner = monitor(1:2) + (monitor(3:4) - size_) / 2;
+            end
+            % 画面の外にはみ出さない（左下の角を、画面の中に収まる範囲に入れる）
+            lower = monitor(1:2);
+            upper = max(monitor(1:2) + monitor(3:4) - size_, lower);
+            corner = min(max(corner, lower), upper);
+            app.Figure.Position = [round(corner), round(size_)];
+            app.CurrentMonitor = monitorIndexOf(app.Figure.Position);
+            applyResponsiveLayout(app);
         end
 
         function setTheme(app, mode)
@@ -179,6 +223,10 @@ classdef AlignmentEstimationApp < handle
         end
 
         function delete(app)
+            if ~isempty(app.ScreenTimer) && isvalid(app.ScreenTimer)
+                stop(app.ScreenTimer);
+                delete(app.ScreenTimer);
+            end
             if ~isempty(app.Figure) && isvalid(app.Figure)
                 delete(app.Figure);
             end
@@ -1801,6 +1849,7 @@ classdef AlignmentEstimationApp < handle
 
             c.shotOverlayTab = uitab(c.dataTabs, 'Title', 'Shot 重ね合わせ');
             overlayGrid = uigridlayout(c.shotOverlayTab, [1, 2], 'ColumnWidth', {320, '1x'}, 'Padding', 8, 'ColumnSpacing', 12);
+            registerResponsiveColumn(app, overlayGrid, 1);
             overlayControls = uigridlayout(overlayGrid, [13, 1], 'RowHeight', {'fit', 110, 'fit', 'fit', 'fit', 'fit', ...
                 'fit', 'fit', 'fit', 'fit', 'fit', '1x', 0}, 'Padding', 0, 'RowSpacing', 4);
             onOverlay = @(~, ~) app.drawShotOverlay();
@@ -1842,6 +1891,7 @@ classdef AlignmentEstimationApp < handle
             % 左：条件と目安（縦に長いので、欄の中でスクロールできる）、中：主効果・交互作用の表、右：交互作用の図
             interactionGrid = uigridlayout(c.interactionTab, [1, 3], 'ColumnWidth', {300, '1.25x', '1x'}, 'Padding', 8, ...
                 'ColumnSpacing', 10);
+            registerResponsiveColumn(app, interactionGrid, 1);
             interactionControls = uigridlayout(interactionGrid, [14, 1], 'RowHeight', {'fit', 130, 'fit', 72, 'fit', 'fit', ...
                 'fit', 52, 'fit', 'fit', 'fit', 'fit', 0, 0}, 'Padding', [0, 0, 6, 0], 'RowSpacing', 4, 'Scrollable', 'on');
             label(interactionControls, '説明変数・カーネルの選び方の目安', 1, 1);
@@ -3829,8 +3879,11 @@ classdef AlignmentEstimationApp < handle
         % ================= 4. 結果一覧 =================
         function buildResultsTab(app)
             grid = uigridlayout(app.Tabs.results, [3, 1], 'RowHeight', {'fit', 'fit', '1x'}, 'Padding', 12, 'RowSpacing', 8);
-            controls = uigridlayout(grid, [3, 7], 'ColumnWidth', {260, 160, '1x', 'fit', 'fit', 'fit', 'fit'}, 'Padding', 0, ...
+            % ボタンは右に 2 × 2 でまとめる（横に並べると、狭い窓で基準の手法の欄が無くなり、見出しが縦に長く折り返すため）
+            controls = uigridlayout(grid, [3, 4], 'ColumnWidth', {260, 160, '1x', 'fit'}, 'Padding', 0, ...
                 'RowHeight', {'fit', 'fit', 0});
+            registerResponsiveColumn(app, controls, 1);
+            registerResponsiveColumn(app, controls, 2);
             label(controls, '指標', 1, 1);
             label(controls, '集計（Wafer 間）', 1, 2);
             label(controls, '基準の手法（「基準の手法との比較」で比べる相手）', 1, 3);
@@ -3847,27 +3900,31 @@ classdef AlignmentEstimationApp < handle
             place(c.statistic, 2, 2);
             c.reference = uidropdown(controls, 'Items', {'—'}, 'ValueChangedFcn', onChange);
             place(c.reference, 2, 3);
-            c.export = primaryButton(app, controls, '結果を Excel に書き出す…', @(~, ~) app.onExport());
-            place(c.export, 2, 4);
-            c.saveChart = uibutton(controls, 'Text', 'グラフを画像で保存…', 'ButtonPushedFcn', @(~, ~) app.onSaveChart());
-            place(c.saveChart, 2, 5);
+            buttons = uigridlayout(controls, [2, 2], 'ColumnWidth', {'fit', 'fit'}, 'RowHeight', {'fit', 'fit'}, ...
+                'Padding', 0, 'RowSpacing', 4);
+            buttons.Layout.Row = [1, 2];
+            buttons.Layout.Column = 4;
+            c.export = primaryButton(app, buttons, '結果を Excel に書き出す…', @(~, ~) app.onExport());
+            place(c.export, 1, 1);
+            c.saveChart = uibutton(buttons, 'Text', 'グラフを画像で保存…', 'ButtonPushedFcn', @(~, ~) app.onSaveChart());
+            place(c.saveChart, 1, 2);
             set([c.export, c.saveChart], 'Enable', 'off');
-            c.importResults = uibutton(controls, 'Text', '結果を読み込む…', 'ButtonPushedFcn', @(~, ~) app.onImportResults(), ...
+            c.importResults = uibutton(buttons, 'Text', '結果を読み込む…', 'ButtonPushedFcn', @(~, ~) app.onImportResults(), ...
                 'Tooltip', '「結果を Excel に書き出す」で書き出したファイルを読み込み、表・グラフ・基準の手法との比較を見ます。');
-            place(c.importResults, 2, 6);
-            c.importEstimates = uibutton(controls, 'Text', '推定値の Excel を読み込む…', 'Enable', 'off', ...
+            place(c.importResults, 2, 1);
+            c.importEstimates = uibutton(buttons, 'Text', '推定値の Excel を読み込む…', 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~, ~) app.onImportEstimates(), 'Tooltip', ['「推定値を Excel に書き出す」で書き出した' ...
                 'ファイルを読み込むと、Excel から読み込んだ結果でも Wafer マップ・推定値と誤差の分布・散布図・分布の比較を' ...
                 '描けます（書き出した範囲だけ）。先に「結果を読み込む…」で評価結果を読み込んでください。']);
-            place(c.importEstimates, 2, 7);
+            place(c.importEstimates, 2, 2);
             c.resultSource = uilabel(controls, 'WordWrap', 'on', 'Text', '');
             c.resultSource.Layout.Row = 3;
-            c.resultSource.Layout.Column = [1, 7];
+            c.resultSource.Layout.Column = [1, 4];
             c.resultControls = controls;
             c.filterResults = buildFilterControls(app, grid, "results");
 
             % 表・グラフ・比較・誤差の分布は、それぞれ画面の幅いっぱいに出す（手法の名前が切れないように）
-            c.resultTabs = uitabgroup(grid);
+            c.resultTabs = uitabgroup(grid, 'SelectionChangedFcn', @(~, event) app.onResultTabChanged(event));
             tableTab = uitab(c.resultTabs, 'Title', '表（手法 × 学習パターン）');
             tableGrid = uigridlayout(tableTab, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 8);
             c.tableNote = uilabel(tableGrid, 'WordWrap', 'on', ...
@@ -3876,6 +3933,7 @@ classdef AlignmentEstimationApp < handle
             c.summaryTable = uitable(tableGrid, 'RowName', {}, 'ColumnName', {'手法'});
             c.chartTab = uitab(c.resultTabs, 'Title', 'グラフ');
             chartGrid = uigridlayout(c.chartTab, [2, 2], 'RowHeight', {'fit', '1x'}, 'ColumnWidth', {'1x', 380}, 'Padding', 8);
+            registerResponsiveColumn(app, chartGrid, 2);
             chartControls = uigridlayout(chartGrid, [1, 5], 'ColumnWidth', {'fit', 380, 'fit', 190, 'fit'}, 'Padding', 0);
             place(chartControls, 1, 1);
             label(chartControls, '横軸', 1, 1);
@@ -3949,6 +4007,7 @@ classdef AlignmentEstimationApp < handle
                 'Padding', 8, 'RowSpacing', 8);
             analysisControls = uigridlayout(analysisGrid, [2, 6], 'ColumnWidth', {'1x', 150, 220, 'fit', 300, 'fit'}, ...
                 'RowHeight', {'fit', app.ANALYSIS_METHOD_LIST_HEIGHT}, 'Padding', 0);
+            arrayfun(@(column) registerResponsiveColumn(app, analysisControls, column), [2, 3, 5]);
             label(analysisControls, '手法（複数選ぶと並べて比べる）', 1, 1);
             label(analysisControls, '学習パターン（列）', 1, 2);
             label(analysisControls, 'Wafer', 1, 3);
@@ -4063,7 +4122,7 @@ classdef AlignmentEstimationApp < handle
                 'UserData', string(variableNote));
             % 分布の比較：Wafer 全面・学習データ・予測対象の計測値と、予測対象の実測値と推定値
             c.distributionTab = uitab(c.resultTabs, 'Title', '分布の比較');
-            distributionGrid = uigridlayout(c.distributionTab, [4, 1], 'RowHeight', {'fit', '1x', 300, 'fit'}, ...
+            distributionGrid = uigridlayout(c.distributionTab, [4, 1], 'RowHeight', {'fit', '1.5x', '1x', 'fit'}, ...
                 'Padding', 8, 'RowSpacing', 8);
             distributionControls = uigridlayout(distributionGrid, [2, 5], 'ColumnWidth', {'1x', 150, 220, 90, 'fit'}, ...
                 'RowHeight', {'fit', 'fit'}, 'Padding', 0);
@@ -4134,7 +4193,8 @@ classdef AlignmentEstimationApp < handle
         function f = buildFilterControls(app, parent, source)
             % 評価点の絞り込みの欄。「4. 結果一覧」と「5. Waferごとのマップ」に同じものを置き、どちらで変えても両方をそろえる
             f.grid = uigridlayout(parent, [2, 14], 'ColumnWidth', {'fit', 64, 'fit', 64, 'fit', 175, 110, 'fit', 80, 'fit', ...
-                160, 'fit', 'fit', '1x'}, 'RowHeight', {'fit', 'fit'}, 'Padding', 0, 'ColumnSpacing', 6, 'RowSpacing', 2);
+                160, 'fit', 'fit', '1x'}, 'RowHeight', {'fit', 'fit'}, 'Padding', 0, 'ColumnSpacing', 4, 'RowSpacing', 2);
+            arrayfun(@(column) registerResponsiveColumn(app, f.grid, column), [2, 4, 6, 7, 11]);
             filterTip = ['評価点（学習しなかった Shot の Mark）を、Mark の半径・Shot の条件で絞り込み、指標を計算し直して' ...
                 '表・グラフ・比較・マップを描き直します（推定はやり直しません）。'];
             title_ = label(f.grid, '評価点の絞り込み：半径 [mm]', 1, 1);
@@ -4688,6 +4748,7 @@ classdef AlignmentEstimationApp < handle
             spec = resultSpec(app);
             % 手法ごとの残差（手法が1つなら従来どおり棒と正規分布の曲線、複数なら輪郭を重ねる）
             [methodNames, ~, methodOfRow] = unique(string(estimates.methodLabel), 'stable');
+            c.histogramAxes(1).Visible = 'on';   % Y と同じく毎回表示にする（X の図だけ描き直されないことがないように）
             alignest.plot.residualHistogram(c.histogramAxes(1), splitByGroup(estimates.residualX, methodOfRow), ...
                 spec.labels(1) + " の残差", spec.unit, methodNames);
             if spec.scalar
@@ -4848,6 +4909,7 @@ classdef AlignmentEstimationApp < handle
                 'RowSpacing', 8);
             controls = uigridlayout(grid, [2, 11], 'ColumnWidth', {170, 140, '2x', '1x', 110, 110, 80, 70, 80, 'fit', 'fit'}, ...
                 'Padding', 0, 'RowHeight', {'fit', 'fit'});
+            arrayfun(@(column) registerResponsiveColumn(app, controls, column), [1, 2, 5, 6, 7, 9]);
             label(controls, 'Wafer・平均', 1, 1);
             label(controls, '学習パターン', 1, 2);
             label(controls, '手法', 1, 3);
@@ -4883,12 +4945,11 @@ classdef AlignmentEstimationApp < handle
             place(c.mapEllipse, 2, 9);
             c.mapShotFrames = uicheckbox(controls, 'Text', 'Shot の枠', 'Value', true, 'ValueChangedFcn', onChange);
             place(c.mapShotFrames, 2, 10);
-            c.mapEllipseOnly = ellipseOnlyCheckbox(controls, onChange);
-            place(c.mapEllipseOnly, 1, [10, 11]);
             c.saveMap = uibutton(controls, 'Text', '図を画像で保存…', 'ButtonPushedFcn', @(~, ~) app.onSaveMap());
             place(c.saveMap, 2, 11);
             % 図に重ねるもの：Scan 方向の色の Shot の枠・同心円の制約の区切り
-            extras = uigridlayout(grid, [1, 3], 'ColumnWidth', {'fit', 'fit', '1x'}, 'Padding', 0);
+            % 「ベクトルを描かない（楕円だけ）」もここに置く（上の行の右に置くと、手法・図の内容の欄が狭くなるため）
+            extras = uigridlayout(grid, [1, 4], 'ColumnWidth', {'fit', 'fit', 'fit', '1x'}, 'Padding', 0);
             c.mapScanFrames = uicheckbox(extras, 'Text', 'Shot の枠を Scan 方向で色分け（▲ 上・▼ 下の印つき）', ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['Shot の枠を Scan 方向の色で描き、枠の左上に ▲（上向き）・' ...
                 '▼（下向き）を付けます。Scan 方向が無い Shot は灰色の枠です。色と、Scan 方向 1・2 のどちらが上向きかは' ...
@@ -4896,10 +4957,12 @@ classdef AlignmentEstimationApp < handle
             c.mapRings = uicheckbox(extras, 'Text', '同心円の区切り（制約）を描く', 'ValueChangedFcn', onChange, ...
                 'Tooltip', ['評価で I 最適・ランダムの同心円の制約を使ったとき、区切りの半径（Shot 中心の半径 [mm]）を' ...
                 '橙の一点鎖線で描きます。']);
+            c.mapEllipseOnly = ellipseOnlyCheckbox(extras, onChange);
             c.mapExtrasInfo = uilabel(extras, 'Text', '', 'FontColor', app.Palette.muted);
             c.filterMap = buildFilterControls(app, grid, "map");
             % 図（1つの条件の3枚、または並べて比べる図）と、並べて比べる条件の一覧
             body = uigridlayout(grid, [1, 2], 'ColumnWidth', {'1x', 300}, 'Padding', 0, 'ColumnSpacing', 10);
+            registerResponsiveColumn(app, body, 2);
             c.mapPanel = uipanel(body, 'BorderType', 'none');
             c.mapStack = uigridlayout(c.mapPanel, [2, 1], 'RowHeight', {'1x', 0}, 'Padding', 0, 'RowSpacing', 0);
             axesGrid = uigridlayout(c.mapStack, [1, 3], 'Padding', 0, 'ColumnSpacing', 8);
@@ -5614,6 +5677,7 @@ classdef AlignmentEstimationApp < handle
             label(grid, ['学習データ（計測値）から、計測していない座標（新しい Mark の位置・Wafer 上の任意の点）の値を推定します。' ...
                 '左の表で点を決め（Excel・CSV から読み込むか、画面で入力・作成）、右で Wafer・学習データ・手法を選んで' ...
                 '「推定する」を押します。学習点の範囲の外（外挿）になる点は、右のメッセージと表・図で知らせます。'], 1, 1);
+            % 左の幅は狭めない（点を作るボタン・欄が横に並んでいて、狭めると右の方が隠れるため）
             body = uigridlayout(grid, [1, 2], 'ColumnWidth', {610, '1x'}, 'Padding', 0, 'ColumnSpacing', 14);
             left = uigridlayout(body, [6, 1], 'RowHeight', {'fit', 'fit', 'fit', '1x', 'fit', 'fit'}, ...
                 'Padding', 0, 'RowSpacing', 6);
@@ -6386,6 +6450,72 @@ classdef AlignmentEstimationApp < handle
             c.analysisNote.Text = c.analysisNote.UserData;
         end
 
+        function onResultTabChanged(app, event)
+            % 結果一覧の中のタブを開いたら、そのタブの図を描き直す（見えていないタブに描いた図は、開いたときに一部しか
+            % 描かれない・前の図のままになることがあるため）
+            c = app.Controls;
+            try
+                if ~isempty(app.Analysis) && event.NewValue == c.histogramGrid.Parent.Parent
+                    showAnalysis(app);
+                elseif ~isempty(app.Analysis) && event.NewValue == c.boxTab && c.boxFactor.Enable == "on"
+                    drawResidualBoxplot(app);
+                elseif ~isempty(app.Distribution) && event.NewValue == c.distributionTab
+                    drawDistributionHistograms(app);
+                end
+            catch
+                % 描き直せなくても、前に描いた図のままにする（表示を変えるだけなので止めない）
+            end
+        end
+
+        function onScreenCheck(app)
+            % タイマー：窓の中心が別の画面（モニター）に移ったら、その画面に合わせる（最大化・全画面のときはしない）
+            if ~isvalid(app) || isempty(app.Figure) || ~isvalid(app.Figure) || app.Figure.Visible == "off" || ...
+                    app.Figure.WindowState ~= "normal"
+                return
+            end
+            try
+                index = monitorIndexOf(app.Figure.Position);
+                if index ~= app.CurrentMonitor
+                    app.CurrentMonitor = index;
+                    fitToScreen(app, false);
+                end
+            catch
+                % タイマーの中のエラーでタイマーが止まらないように、この回は見送る（次の回に確かめ直す）
+            end
+        end
+
+        function registerResponsiveColumn(app, grid, column)
+            % 決まった幅（[px]）の欄を、窓の幅に合わせて狭める欄として覚える（今の幅を FIGURE_SIZE の幅のときの幅とする）
+            app.ResponsiveColumns(end + 1) = struct("grid", grid, "column", column, "width", grid.ColumnWidth{column});
+        end
+
+        function applyResponsiveLayout(app)
+            % 窓が FIGURE_SIZE より狭いときは、決まった幅の欄（左の条件・右の一覧など）を中身の幅の比で狭める
+            % （小さい画面に移しても、図や表の場所が決まった幅の欄に取られすぎないように）。窓が MIN_CONTENT_SIZE より
+            % 小さい向きは、中身をその大きさに保ってスクロールする（それより詰めると、幅を決めない欄が無くなり、
+            % 見出しが縦に長く折り返して図や表が隠れるため）
+            if isempty(app.Figure) || ~isvalid(app.Figure)
+                return
+            end
+            figureSize = app.Figure.Position(3:4);
+            contentSize = max(figureSize, app.MIN_CONTENT_SIZE);
+            padding = 2 * app.RootGrid.Padding(1);
+            sizes = {{'1x'}, {'1x'}};
+            for k = find(figureSize < app.MIN_CONTENT_SIZE)
+                sizes{k} = {app.MIN_CONTENT_SIZE(k) - padding};
+            end
+            set(app.RootGrid, 'ColumnWidth', sizes{1}, 'RowHeight', sizes{2});
+            scale = min(1, contentSize(1) / app.FIGURE_SIZE(1));
+            for item = app.ResponsiveColumns
+                if ~isvalid(item.grid)
+                    continue
+                end
+                widths = item.grid.ColumnWidth;
+                widths{item.column} = round(item.width * scale);
+                item.grid.ColumnWidth = widths;
+            end
+        end
+
         function position = figurePosition(app)
             % 画面の中央に、画面からはみ出さない大きさで置く
             screen = get(groot, 'ScreenSize');
@@ -6737,6 +6867,25 @@ switch choice
             note = "（この結果には効率が無いので、学習 Shot 数で描きました）";
         end
 end
+end
+
+function [index, monitor] = monitorIndexOf(position)
+% 窓（Position = [左, 下, 幅, 高さ]）の中心がある画面（モニター）の番号と位置 [左, 下, 幅, 高さ]。
+% どの画面にも入らないときは、中心に最も近い画面
+monitors = get(groot, 'MonitorPositions');
+if isempty(monitors)
+    monitors = get(groot, 'ScreenSize');
+end
+center = position(1:2) + position(3:4) / 2;
+inside = center(1) >= monitors(:, 1) & center(1) < monitors(:, 1) + monitors(:, 3) & ...
+    center(2) >= monitors(:, 2) & center(2) < monitors(:, 2) + monitors(:, 4);
+if any(inside)
+    index = find(inside, 1);
+else
+    centers = monitors(:, 1:2) + monitors(:, 3:4) / 2;
+    [~, index] = min(hypot(centers(:, 1) - center(1), centers(:, 2) - center(2)));
+end
+monitor = monitors(index, :);
 end
 
 function text = axisLabel(spec, axisNames)
