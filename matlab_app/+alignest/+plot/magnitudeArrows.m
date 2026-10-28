@@ -40,7 +40,8 @@ limit = options.magnitudeLimit;
 if limit <= 0
     limit = max(magnitude);
 end
-handle = patch(ax, 'Faces', faces, 'Vertices', vertices, 'FaceVertexCData', repelem(magnitude, 4), ...
+% 頂点ごとの色は縦の並び（矢印が1本のとき repelem(スカラー, 4) は横になるので、縦にそろえる）
+handle = patch(ax, 'Faces', faces, 'Vertices', vertices, 'FaceVertexCData', repelem(magnitude(:), 4, 1), ...
     'FaceColor', 'none', 'EdgeColor', 'flat', 'LineWidth', options.lineWidth);
 colormap(ax, magnitudeColormap());
 caxis(ax, [0, max(limit, eps)]);
