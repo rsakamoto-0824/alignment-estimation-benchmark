@@ -11,7 +11,8 @@ function exportTargetEstimates(filePath, estimates, notes, spec, overlay)
 %   spec（alignest.valueSpec、省略可）が1変数なら、推定値は1列（「推定値 <値の名前>[<単位>]」）。
 %   overlay（省略可）：重ね合わせ補正の結果。labels（組み合わせの名前）と results（組み合わせごとの
 %   alignest.targetOverlayCorrection の結果。計算していない組み合わせは空）。計算した組み合わせがあれば、
-%   「補正値」シート（係数）・「補正の残差」シート（点の種類ごとの |平均|+3σ）・「補正に使った点」シートを書く。
+%   「補正値」シート（係数）・「補正の残差」シート（点の種類ごとの |平均|+3σ）・「補正に使った点」シートを書き、
+%   「推定値」シートに未知の座標の点ごとの補正量・補正後の残差の列を足す（estimates.combination が組み合わせの番号）。
 arguments
     filePath (1, 1) string
     estimates table
@@ -61,8 +62,36 @@ if spec.scalar
     sheet = removevars(sheet, "推定値Y[nm]");
     sheet.Properties.VariableNames{'推定値X[nm]'} = char("推定値 " + spec.name + "[" + spec.unit + "]");
 end
+sheet = addCorrectionColumns(sheet, estimates, overlay);
 writetable(sheet, filePath, 'Sheet', '推定値');
 writeOverlay(filePath, overlay);
+end
+
+function sheet = addCorrectionColumns(sheet, estimates, overlay)
+% 重ね合わせ補正値を計算した組み合わせについて、未知の座標の点ごとの補正量・補正後の残差の列を足す
+% （estimates.combination が組み合わせの番号。Wafer の外の点と、計算していない組み合わせは空欄）
+if ~any(~cellfun(@isempty, overlay.results)) || ~any(string(estimates.Properties.VariableNames) == "combination")
+    return
+end
+n = height(estimates);
+[correctionX, correctionY, residualX, residualY] = deal(nan(n, 1));
+for k = 1:numel(overlay.results)
+    correction = overlay.results{k};
+    if isempty(correction)
+        continue
+    end
+    rows = find(estimates.combination == k & ~estimates.outsideWafer);
+    points = correction.points(correction.points.source == "推定値（未知の座標）", :);
+    if numel(rows) ~= height(points)
+        continue   % 推定し直した後の古い補正値（点の数が合わない）は書かない
+    end
+    correctionX(rows) = points.correctionX;
+    correctionY(rows) = points.correctionY;
+    residualX(rows) = points.residualX;
+    residualY(rows) = points.residualY;
+end
+sheet = [sheet, table(correctionX, correctionY, residualX, residualY, 'VariableNames', ["補正量X[nm]", "補正量Y[nm]", ...
+    "補正後の残差X[nm]", "補正後の残差Y[nm]"])];
 end
 
 function writeOverlay(filePath, overlay)

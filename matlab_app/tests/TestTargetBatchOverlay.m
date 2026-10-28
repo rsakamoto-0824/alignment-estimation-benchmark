@@ -1,6 +1,7 @@
 classdef TestTargetBatchOverlay < matlab.unittest.TestCase
     %TESTTARGETBATCHOVERLAY 未知の座標の推定：Wafer の外の点（推定値 0・図から除く）、Wafer × 学習データの一括推定、
-    %   推定した後の重ね合わせ補正値（補正モデルの当てはめ・係数・Excel の書き出し）を確かめる。
+    %   推定した後の重ね合わせ補正値（補正モデルの当てはめ・係数・Excel の書き出し）、補正残差のベクトル場、
+    %   「補正のモデル」の欄（「2. 評価の設定」の Overlay 補正と同じ設定）を確かめる。
 
     properties
         Data
@@ -171,6 +172,94 @@ classdef TestTargetBatchOverlay < matlab.unittest.TestCase
             testCase.verifyEqual(numel(unique(coefficients.("組み合わせ"))), 4);
             again = alignest.readTargetPoints(file);
             testCase.verifyEqual(height(again), height(run.estimates), "書き出した推定値をそのまま読める");
+        end
+
+        function correctionMapShowsResiduals(testCase)
+            % 補正後の残差のベクトル場：描いた点の |平均| + 3σ が補正の表（点の種類ごと）と同じ。点の種類で絞れる
+            unit = testCase.Data.units(1);
+            train = 1:3:numel(unit.shots.shotNo);
+            result = alignest.predictTargets(unit, train, testCase.Method, testCase.Settings, ...
+                alignest.targetsAtShots(unit, 2, -3, 9));
+            correction = alignest.targetOverlayCorrection(unit, train, testCase.Method, testCase.Settings, result.table);
+            figureHandle = figure('Visible', 'off');
+            closeFigure = onCleanup(@() close(figureHandle));
+            ax = axes(figureHandle);
+            summary = alignest.plot.correctionMap(ax, correction, unit);
+            row = correction.summary(correction.summary.axis == "X" & correction.summary.source == "全体", :);
+            testCase.verifyEqual(summary.meanPlus3SigmaX, row.residualMean3Sigma, 'AbsTol', 1e-9);
+            testCase.verifyEqual(summary.n, height(correction.points));
+            names = string(get(findobj(ax, '-regexp', 'DisplayName', '.+'), 'DisplayName'));
+            testCase.verifyTrue(any(names == "補正後の残差（矢印）"));
+            testCase.verifyTrue(any(startsWith(names, "未知の座標の点")));
+            testCase.verifyTrue(any(names == "実測値の点（学習点）"));
+            targets = alignest.plot.correctionMap(ax, correction, unit, value="correction", source="target", mode="Y");
+            testCase.verifyEqual(targets.n, nnz(~result.table.outsideWafer));
+            row = correction.summary(correction.summary.axis == "Y" & correction.summary.source == "推定値（未知の座標）", :);
+            testCase.verifyEqual(alignest.plot.correctionMap(ax, correction, unit, source="target").meanPlus3SigmaY, ...
+                row.residualMean3Sigma, 'AbsTol', 1e-9);
+        end
+
+        function singlePointAndShortMessages(testCase)
+            % 点が1つ（矢印が1本）でも描け、メッセージが1つだけの組み合わせを複数並べても止まらない
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.xlsx'));
+            app.applyMapping();
+            settings = app.Settings;
+            [settings.overlay.waferOrder, settings.overlay.shotCommon, settings.overlay.perShot] = deal(1, "none", "none");
+            app.setSettings(settings);
+            point = alignest.targetTemplate(1);
+            [point.Xmm, point.Ymm] = deal(10, 5);
+            app.setTargetPoints(point);
+            run = app.estimateTargets([1, 2], "all", 1);
+            testCase.verifyEqual(height(run.estimates), 2);
+            testCase.verifyEqual(numel(app.Controls.targetAxes.Title.String) > 0, true);
+            overlay = app.computeTargetOverlay();
+            testCase.verifyEqual(numel(overlay{1}.messages), 1, "重なる項が無いのでメッセージは1つ");
+            summary = app.drawTargetCorrectionMap("residual", "target", "vector");
+            testCase.verifyEqual(summary.n, 1);
+        end
+
+        function appCorrectionModelAndMap(testCase)
+            % 画面：「補正のモデル」で変えた式は「2. 評価の設定」と同じ設定（逆も同じ）。計算の後にモデルを変えると
+            % 計算し直すよう知らせる。「補正残差のマップ」に残差のベクトル場を描く
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.xlsx'));
+            app.applyMapping();
+            c = app.Controls;
+            testCase.verifyEqual(c.targetOverlayShotCommon.Value, c.overlayShotCommon.Value);
+            app.setTargetPoints(alignest.targetGrid(40, 140));
+            app.estimateTargets([1, 2], "all", 1);
+            testCase.verifyEmpty(app.drawTargetCorrectionMap(), "補正値を計算する前は描かない");
+            app.computeTargetOverlay();
+            summary = app.drawTargetCorrectionMap("residual", "all", "vector");
+            testCase.verifyGreaterThan(summary.n, 0);
+            testCase.verifyTrue(contains(c.targetResidualInfo.Text, "補正後の残差"));
+            testCase.verifyEqual(c.targetResidualSave.Enable, matlab.lang.OnOffSwitchState('on'));
+            % 「補正のモデル」で変える → 設定と「2. 評価の設定」の欄も変わる。補正値は前のモデルなので知らせる
+            c.targetOverlayPerShot.Value = 'translation';
+            c.targetOverlayPerShot.ValueChangedFcn([], []);
+            testCase.verifyEqual(app.Settings.overlay.perShot, "translation");
+            testCase.verifyEqual(c.overlayPerShot.Value, 'translation');
+            testCase.verifyTrue(startsWith(string(c.targetOverlayInfo.Text), "⚠ 補正モデルを変えました"));
+            testCase.verifyTrue(startsWith(string(c.targetResidualInfo.Text), "⚠ 補正モデルを変えました"));
+            % 式の誤りは両方の欄の下に出る。「2. 評価の設定」で変えると「補正のモデル」も変わる
+            c.targetOverlayShotCommon.Value = 'formula';
+            c.targetOverlayShotCommon.ValueChangedFcn([], []);
+            testCase.verifyEqual(c.targetOverlayShotDx.Enable, matlab.lang.OnOffSwitchState('on'));
+            c.targetOverlayShotDx.Value = 'k1 + (x)';
+            c.targetOverlayShotDx.ValueChangedFcn([], []);
+            testCase.verifyNotEmpty(c.targetOverlayError.Text);
+            testCase.verifyEqual(c.targetOverlayError.Text, c.overlayFormulaError.Text);
+            c.overlayShotCommon.Value = 'linear';
+            c.overlayShotCommon.ValueChangedFcn([], []);
+            testCase.verifyEqual(c.targetOverlayShotCommon.Value, 'linear');
+            testCase.verifyEqual(c.targetOverlayShotDx.Enable, matlab.lang.OnOffSwitchState('off'));
+            % 計算し直すと知らせは消え、新しいモデルの補正値になる
+            overlay = app.computeTargetOverlay();
+            testCase.verifyTrue(contains(overlay{1}.description, "並進"));
+            testCase.verifyFalse(startsWith(string(c.targetOverlayInfo.Text), "⚠"));
         end
     end
 end

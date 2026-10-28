@@ -45,7 +45,7 @@ for k = 1:nFactors
     if df2(k) > 0 && between + within > 0
         etaSquared(k) = between / (between + within);
         oneWayF(k) = ratio(between / df1(k), within / df2(k));
-        oneWayP(k) = upperTailF(oneWayF(k), df1(k), df2(k));
+        oneWayP(k) = alignest.stats.upperTailF(oneWayF(k), df1(k), df2(k));
     end
 end
 
@@ -65,11 +65,11 @@ if ~isempty(used)
         blocks{k} = double(dummies);
     end
     intercept = ones(numel(y), 1);
-    [rssFull, rankFull] = residualSumOfSquares([intercept, blocks{used}], y);
+    [rssFull, rankFull] = alignest.stats.residualSumOfSquares([intercept, blocks{used}], y);
     dfResidual = numel(y) - rankFull;
     for k = used.'
         others = setdiff(used, k);
-        [rssDrop, rankDrop] = residualSumOfSquares([intercept, blocks{others}], y);
+        [rssDrop, rankDrop] = alignest.stats.residualSumOfSquares([intercept, blocks{others}], y);
         adjustedDf(k) = rankFull - rankDrop;
         if adjustedDf(k) == 0
             note(k) = "ほかの質的変数と同じ分け方になるため、調整した検定はできません。";
@@ -77,7 +77,7 @@ if ~isempty(used)
         end
         if dfResidual > 0
             adjustedF(k) = ratio(max(rssDrop - rssFull, 0) / adjustedDf(k), rssFull / dfResidual);
-            adjustedP(k) = upperTailF(adjustedF(k), adjustedDf(k), dfResidual);
+            adjustedP(k) = alignest.stats.upperTailF(adjustedF(k), adjustedDf(k), dfResidual);
         end
     end
 end
@@ -94,31 +94,6 @@ elseif numerator > 0
 else
     value = NaN;
 end
-end
-
-function p = upperTailF(f, dfNumerator, dfDenominator)
-% F 分布の上側確率（正則化不完全ベータ関数で求める。Toolbox の fcdf を使わない）
-if isnan(f)
-    p = NaN;
-elseif isinf(f)
-    p = 0;
-else
-    p = betainc(dfDenominator / (dfDenominator + dfNumerator * f), dfDenominator / 2, dfNumerator / 2);
-end
-end
-
-function [rss, rankValue] = residualSumOfSquares(design, y)
-% 最小二乗の残差平方和と計画行列の階数（列の重なりは QR 分解の対角で判定する）
-[q, r, ~] = qr(design, 0);
-diagonal = abs(diag(r));
-if isempty(diagonal)
-    rankValue = 0;
-else
-    rankValue = nnz(diagonal > max(size(design)) * eps(max(diagonal)));
-end
-q = q(:, 1:rankValue);
-residual = y - q * (q.' * y);
-rss = sum(residual .^ 2);
 end
 
 function text = summarizeLevels(levelNames, means, counts)

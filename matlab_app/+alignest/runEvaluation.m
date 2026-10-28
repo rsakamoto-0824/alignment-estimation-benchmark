@@ -50,6 +50,13 @@ mergedSettings = settings;
 planCache = containers.Map('KeyType', 'char', 'ValueType', 'any');
 previousRow = containers.Map('KeyType', 'char', 'ValueType', 'double');   % 'Wafer番号|学習パターン|手法' → previous の行
 previousPlan = containers.Map('KeyType', 'char', 'ValueType', 'double');  % 'Wafer番号|学習パターン' → previous の学習パターン
+factorsChanged = false;
+if ~isempty(previous) && mode == "extend" && isfield(previous, "settings") && ...
+        ~sameFactors(previous.settings, settings)
+    % 質的変数を変えて条件を足す：足す手法に、使う質的変数の組を持たせる（評価済みの手法は前の組のまま）
+    factorsChanged = true;
+    methods = alignest.tagFactorSet(methods, settings);
+end
 if ~isempty(previous)
     requestedIds = string({methods.id});
     requestedLabels = string({specs.label});
@@ -76,6 +83,14 @@ if ~isempty(previous)
         additions(end + 1, 1) = sprintf("%s に追加：手法 %d（%s）・学習パターン %d（%s）", ...
             string(datetime('now', 'Format', 'yyyy/MM/dd HH:mm:ss')), numel(newMethods), listOrNone(newMethods), ...
             numel(newPlans), listOrNone(newPlans));
+        if factorsChanged
+            % 結果の設定の質的変数は最初に評価したときの組のまま（足した手法は id の "_fs-" の組を使う）
+            mergedSettings.factors = previous.settings.factors;
+            [~, newLabel] = alignest.factorSetKey(settings);
+            [~, baseLabel] = alignest.factorSetKey(previous.settings);
+            additions(end, 1) = additions(end) + sprintf("。質的変数を「%s」にして足した（名前の最後に「質的変数：%s」。" + ...
+                "それ以外の手法は「%s」）", newLabel, newLabel, baseLabel);
+        end
     elseif isfield(previous, "settings")
         mergedSettings = previous.settings;   % 続きから再開：前と同じ（追加した評価の続きなら、合わせた設定）
     end
@@ -410,3 +425,7 @@ row.hyperparameters = "";
 row.note = "";
 end
 
+function same = sameFactors(first, second)
+% 推定に使う質的変数の組が同じか（1つずつ使う手法を足すかどうか evaluateSingles は比べない）
+same = isequal(alignest.factorSetKey(first), alignest.factorSetKey(second));
+end
