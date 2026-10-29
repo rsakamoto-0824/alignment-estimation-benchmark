@@ -26,7 +26,8 @@ if outputFolder == ""
     outputFolder = fullfile(root, "build", "output", computer('arch'));
 end
 mainFile = fullfile(root, "runAlignmentEstimationApp.m");
-additionalFiles = {fullfile(root, "AlignmentEstimationApp.m"), fullfile(root, "+alignest"), fullfile(root, "help")};
+additionalFiles = {fullfile(root, "AlignmentEstimationApp.m"), fullfile(root, "+appui"), fullfile(root, "+alignest"), ...
+    fullfile(root, "help")};   % 画面はタブごとのファイル（+appui）に分けてある
 fprintf('作成を始めます：%s（数分かかります）\n', outputFolder);
 if ispc
     results = compiler.build.standaloneWindowsApplication(mainFile, 'ExecutableName', APP_NAME, ...

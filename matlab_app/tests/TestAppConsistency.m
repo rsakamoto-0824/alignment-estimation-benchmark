@@ -1,5 +1,5 @@
 classdef TestAppConsistency < matlab.unittest.TestCase
-    %TESTAPPCONSISTENCY アプリ全体の点検で直したところ：図の画像の保存（保存できないときの知らせ）、データを変えたときに
+    %TESTAPPCONSISTENCY アプリ全体の点検で直したところ：図の画像の保存・コピー（できないときの知らせ）、データを変えたときに
     %   前のデータの交互作用の結果を残さないこと、Wafer ごとのマップの上の欄の並び。
 
     properties
@@ -15,14 +15,23 @@ classdef TestAppConsistency < matlab.unittest.TestCase
 
     methods (Test)
         function savingFigureExplainsWhyItCannot(testCase)
-            % 画面を出していないとき・図の名前が違うときは、MATLAB を止めずにエラーで知らせる
-            % （画面を出したときの保存は、見えない画面では書き出せないので自動テストでは確かめない）
+            % 図の保存・コピー：画面を出していないとき・図の名前が違うときは、MATLAB を止めずにエラーで知らせる
+            % （画面を出したときの保存・コピーは、見えない画面では書き出せないので自動テストでは確かめない）。
+            % 「図をコピー」のボタンは保存のボタンの隣にあり、結果が無いうちは保存と同じく使えない
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
+            c = app.Controls;
             file = [tempname, '.png'];
             testCase.verifyError(@() app.saveFigureImage("chart", file), 'alignest:hiddenFigure');
             testCase.verifyError(@() app.saveFigureImage("noSuchFigure", file), 'alignest:figureName');
+            testCase.verifyError(@() app.copyFigureImage("map"), 'alignest:hiddenFigure');
             testCase.verifyFalse(isfile(file));
+            pairs = [c.saveMeasure, c.copyMeasure; c.saveChart, c.copyChart; c.saveMap, c.copyMap; ...
+                c.targetSaveFigure, c.targetCopyFigure; c.targetResidualSave, c.targetResidualCopy];
+            for k = 1:size(pairs, 1)
+                testCase.verifyEqual(pairs(k, 2).Parent, pairs(k, 1).Parent, "保存のボタンの隣");
+                testCase.verifyEqual(string(pairs(k, 2).Enable), string(pairs(k, 1).Enable), "保存と同じく使える・使えない");
+            end
         end
 
         function changingDataClearsInteractions(testCase)

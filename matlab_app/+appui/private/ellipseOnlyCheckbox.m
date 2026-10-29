@@ -1,0 +1,6 @@
+function control = ellipseOnlyCheckbox(parent, callback)
+% 共分散楕円を描くときに、矢印（ベクトル）を描かず楕円だけにする
+control = uicheckbox(parent, 'Text', 'ベクトルを描かない（楕円だけ）', 'Value', false, 'ValueChangedFcn', callback, ...
+    'Tooltip', ['共分散楕円を描くときに、矢印を消して楕円だけを描きます（楕円の中心は平均の矢印の先のまま）。' ...
+    '楕円を描かない図（Wafer ごとの図・「なし」）では矢印を描きます。']);
+end

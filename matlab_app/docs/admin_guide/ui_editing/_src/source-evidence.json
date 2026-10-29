@@ -1,10 +1,19 @@
 {
-  "date": "2026-10-27",
-  "commit": "a8eb43a6ccedf4d9fd78c08677fa1faac6dc44dd",
+  "date": "2026-10-29",
+  "baseCommit": "e03dcf427461ed16719e15ce96157d4ec5c2abe1",
+  "note": "作業中のソース（main に、画面をタブごとのファイルに分けた変更を加えたもの）から作成",
   "sourceSha256": {
-    "AlignmentEstimationApp.m": "db1c3c49573e82bbdedf43bcfbe0db13d4983a8c5f1d924ec4dddcee1442d01d",
+    "AlignmentEstimationApp.m": "99c57a8536ecbc49df6d980df8b900bc32532c3468e09e13df85edf0c8b3a20e",
+    "+appui/Core.m": "4577db5047021ac80f590b02b8d308ff33c88cdfc7b415971765396f48580b83",
+    "+appui/DataTab.m": "d4ef5907caed5392af20fd23136a4e4a894834f81a4d68f0f62d3870bb89be22",
+    "+appui/Display.m": "0cc83acc798abcc9804cd44ebfbb4f9ae9e6e273553000535ae2ab24400d3e5a",
+    "+appui/MapTab.m": "7886f70343c132b039350b392c4df30be2dfcf335f51fa5205c5cfcc65c7f45b",
+    "+appui/ResultsTab.m": "9607f3e139e13d2d062faf908541d26328758bd48d4cd32c7892b1958f7caf18",
+    "+appui/RunTab.m": "0dc994257cb9543e406350c684f2bfc9c43d9dfe29f055fdec6d04791e65a786",
+    "+appui/SettingsTab.m": "54d1a401e2ca146b645fdb803c6eb5f53d1611a1266f670731e9c986adf80f9c",
+    "+appui/TargetTab.m": "e50ac04a524bcd92b990829b715e47f6c7cd72ae531d96db42123114aa58c2b8",
     "runAlignmentEstimationApp.m": "9d2ec7185dad9d35674bebee5b0dd74e45a7d28defd458120e4e6e9cc286d1b6",
-    "build/buildStandaloneApp.m": "b52707a1869d23bca00fe5b373c666a4c22a7c4f4f6127b95c33622111cc11c7",
+    "build/buildStandaloneApp.m": "de66d9f5edd87910f97e15e372e5f133a81a339795ed2068ffde7f3508592908",
     "+alignest/defaultSettings.m": "04dc843807a7f5dc9a676222ae3108f64bc723947a7b87035236ead5ad81e251",
     "+alignest/loadSettings.m": "298e392b60349efa358db17ea6a9597b7f21aab34894d6170571e49e6bc178a3",
     "+alignest/siteDefaults.m": "073dbdcca8ab5741d0a0c4fde3b4a323bd19ae188325623b8f35b91a68c7f8b9",
@@ -12,16 +21,15 @@
     "tests/TestAppWorkflow.m": "d4145cdda2af0b8b40d90f073eb2afbd728aa000635233940308b675c2087942"
   },
   "imageSha256": {
-    "01_original.png": "c5fc339c403f49721b9937ba44f1cce23d3b0b100c8c0e117fa7f5b0a950bab1",
-    "02_settings.png": "e531998dd91e3c3477590bfa3d1d20dc3270c6fe5fff5bd245141170ac708c2e",
-    "03_target.png": "73db8283f8d8ad86b7b3d0a234ff0b12bb5a91bf73147e1e0b6412f6e3aadfed",
-    "04_dark.png": "09a93cbf6043751fda7c23219469f139a71f9b7b97ce8b03b2016f1fd187c58a",
-    "05_results.png": "ddc83d447e55a57c48ce4215536ce98bb81192927f0f3cbd7c6498a713f22679",
-    "06_run.png": "3d80ad4c0332d0203d48e47393f3ae1bbd7f6ec2324ff4e7a4dffd9b364baf94",
-    "07_after.png": "a281f0a700874230fc682c74c5db1c097ea41d08d650f815ce3babf52a91f4be",
-    "08_source_editor.jpg": "0ae27b396234160220a06709adbc1f8c8aff7550fbaa737d203fd2e0611be927"
+    "01_original.png": "52da08fc0bb52658738e0b66b13652d2cb0f982b6b1e60a712cfd6a3ca0a7800",
+    "02_settings.png": "4c829874e86871b735f5bd9a069002064848a1ca41805cfadcc7b38ff64a309a",
+    "03_target.png": "2639230151d4f2736b037a40d2ada59b81593e3e4fcde6ed2e2af35e4d111f55",
+    "04_dark.png": "29e7397bf983442218764b7b3498f113af8784a99cba2d2353ab4ca02a3cc9c3",
+    "05_results.png": "fea9e6f87cceb10b8ef9fe7c9830a1813c8933a085b3432a7b5e3c561bf146ae",
+    "06_run.png": "a251c3e866b0ba9ac12a7c38ad06e397625f9dd07b71963607bc1bcf49fd171e",
+    "07_after.png": "7194ab47762594147b2106e418e90845d44befa7b0b854a538edb53fd69e1080"
   },
-  "screenSource": "R2022b captureTab/exportapp; source-editor screenshot via CUA/CotEditor",
+  "screenSource": "R2022b captureTab/exportapp; source excerpts are quoted as text (no editor screenshot)",
   "exampleChanges": [
     "button Text",
     "fileGrid column widths",

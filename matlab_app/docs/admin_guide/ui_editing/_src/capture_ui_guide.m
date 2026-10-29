@@ -1,5 +1,6 @@
 function capture_ui_guide(mode)
 % 説明用コピーで画面を描画し、アプリの公開captureTab APIで保存する。
+% 画面はタブごとのファイル（+appui）。説明用コピーは prepare_example.py が作る（+appui/DataTab.m だけを変える）。
 here = fileparts(mfilename('fullpath'));
 guideRoot = fileparts(here);
 appRoot = fileparts(fileparts(fileparts(guideRoot)));
@@ -8,7 +9,11 @@ out = fullfile(guideRoot, 'images');
 cache = fullfile(repoRoot, '.cache', 'ui-editing-guide');
 if nargin == 0, mode = "original"; end
 if mode == "example"
-    addpath(appRoot);
+    % 説明用コピー（画面と計算のファイル一式）だけを使う。元のアプリのフォルダはパスから外す
+    % （同じ名前のクラス・パッケージ +appui が2か所にあると、どちらを使うかが分かりにくくなるため）
+    if ismember(appRoot, strsplit(path, pathsep))
+        rmpath(appRoot);
+    end
     addpath(fullfile(cache, 'example'), '-begin');
 else
     addpath(appRoot, '-begin');
