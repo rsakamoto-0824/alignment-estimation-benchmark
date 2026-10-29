@@ -238,6 +238,8 @@
             <tr><td>7. ヘルプ</td><td><code>buildHelpTab</code>（<code>help/help.html</code> を uihtml で表示）</td><td>—（説明は HTML に直接書く。手法・カーネル・補正の式を足したら、ここも足す）</td></tr>
             <tr><td>画面の大きさ</td><td><code>fitToScreen</code>（窓を画面に収める。メニュー「表示」→「画面の大きさに合わせる」）・<code>onScreenCheck</code>（タイマー <code>ScreenTimer</code> で、窓のある画面が変わったら合わせる）・<code>applyResponsiveLayout</code>（決まった幅の欄を中身の幅の比で狭める。対象の欄は <code>registerResponsiveColumn</code> で登録。窓が <code>MIN_CONTENT_SIZE</code> より小さいときは、一番外の枠 <code>RootGrid</code>（Scrollable）の幅・高さをその大きさに固定してスクロールにする）・<code>monitorIndexOf</code>（窓の中心のある画面）</td><td>—（画面の位置と大きさは <code>get(groot, 'MonitorPositions')</code>。窓の <code>AutoResizeChildren</code> を off にして <code>SizeChangedFcn</code> を使う）</td></tr>
             <tr><td>画面の色</td><td><code>setTheme</code>（メニュー「表示」、次に開いたときのために <code>PREF_GROUP</code> に保存）・<code>applyTheme</code>・<code>themePalette</code>（色の定義）</td><td>—（色は <code>Palette</code>（今の色の組）から取る）</td></tr>
+            <tr><td>文字の大きさ</td><td><code>setFontSize</code>（メニュー「表示」→「文字の大きさ」）・<code>applyFontSize</code>（欄・表の文字、表の列の幅、決まった大きさの行・列（起動時に <code>collectFixedSizes</code> で覚えた <code>FixedSizes</code>）、<code>applyResponsiveLayout</code> の欄の幅と中身の下限に <code>FontScale</code> を掛ける）・<code>refreshTabFonts</code>（見えていないタブの部品は表示が古いままのことがあるので、タブを開いたときに付け直す）・<code>styleAxes</code>（図を描く関数の最後に呼ぶ。軸の文字の大きさを決め、図の中の文字・色の目盛り・大きさを決めた凡例は <code>scaleFonts</code> で描いた関数の大きさを基準に変える）</td><td>—（図を描く関数は標準の大きさで描き、画面の <code>styleAxes</code> が倍率を掛ける。幅 [px] を決めるときは <code>scaledPixels</code>）</td></tr>
+            <tr><td>凡例の位置</td><td><code>setLegendLocation</code>（すべての図、または図ごと。メニュー「表示」→「凡例の位置」と、図の右クリックのメニュー <code>attachLegendMenu</code>）・<code>resetLegendOverrides</code>・<code>placeLegend</code>（「図ごとの既定」は描いた関数が決めた位置を凡例に覚えておく。並べた図はタイルの外側 <code>Layout.Tile</code>）・<code>legendKey</code>（図ごとの指定を覚える名前 = <code>Controls</code> の名前。並べた図は枠の名前）</td><td>—（図を描く関数は今までどおり凡例の位置を決めてよい。<code>styleAxes</code> が置き直す）</td></tr>
           </tbody>
         </table>
       </div>
@@ -359,6 +361,8 @@
             <tr><td><code>ARROW_COLORS</code></td><td>画面（定数）</td><td>共分散楕円と重ねるときの矢印の色（計測値・推定値・残差）</td></tr>
             <tr><td><code>FIGURE_SIZE = [1440, 900]</code>・<code>SCREEN_MARGIN = 40</code>・<code>MIN_FIGURE_SIZE = [800, 600]</code></td><td>画面（定数）</td><td>窓の大きさの上限（欄の決まった幅はこの幅で作る）、画面の端からの余白、画面に合わせるときの窓の大きさの下限（画面がこれより小さいときは画面の大きさ）</td></tr>
             <tr><td><code>SCREEN_CHECK_SECONDS = 1</code>・<code>MIN_CONTENT_SIZE = [1200, 700]</code></td><td>画面（定数）</td><td>窓のある画面を確かめる間隔 [秒]、中身の大きさの下限（窓がこれより小さいときはスクロールで見る。決まった幅の欄もこの幅の比までしか狭めない）。欄を足して詰まるときは、決まった幅の欄を <code>registerResponsiveColumn</code> で登録するか、この値を大きくする</td></tr>
+            <tr><td><code>FONT_SIZE = 16</code>・<code>FONT_SIZE_CHOICES = [12, 14, 16, 18, 20]</code>・<code>FONT_SIZE_LIMITS = [10, 24]</code></td><td>画面（定数）</td><td>画面の文字の標準の大きさ（ほかの文字の大きさ・決まった幅はこの大きさのときの値）、メニューの文字の大きさの選択肢、<code>setFontSize</code> で指定できる範囲 [pt]</td></tr>
+            <tr><td><code>LEGEND_CHOICES</code>・<code>LEGEND_LABELS</code>・<code>LEGEND_MAX_COLUMNS = 4</code></td><td>画面（定数）</td><td>凡例の位置の選択肢（MATLAB の <code>Location</code> の値と、メニューの名前。<code>"auto"</code> は図ごとの既定、<code>"none"</code> は出さない）、図の上・下に移したときの列の数の上限</td></tr>
           </tbody>
         </table>
       </div>

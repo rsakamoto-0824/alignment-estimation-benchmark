@@ -83,6 +83,7 @@
   <li><strong>6. 未知の座標の推定</strong>：計測していない座標（新しい Mark の位置・Wafer 上の任意の点）の推定値を求める。点は Excel・CSV から読むか、画面で入力・作成する。外挿の点は知らせる（<a href="#targets">下</a>）。</li>
 </ol>
 <p class="note">画面の色はメニューの「表示」でライトモード・ダークモードを選べます（次に開いたときも同じ色）。</p>
+<p class="note">「表示」→「文字の大きさ」で、画面・表・図・このヘルプの文字の大きさを変えられます（12〜20 pt。16 が標準）。「表示」→「凡例の位置」で、すべての図の凡例の位置を選べます。図を右クリックすると、その図だけの凡例の位置を選べます。どちらも次に開いたときも同じです。</p>
 <p class="note">窓を解像度の違う画面（サブディスプレイなど）へ動かすと、移った先の画面に収まる大きさに合わせます。「表示」→「画面の大きさに合わせる」で、今の画面の中央に合わせ直せます。</p>
 
 <h2 id="terms">用語</h2>
@@ -299,10 +300,12 @@ Fringe 番号は、Fringe の次数 k = (n + |m|)/2 の小さい順、同じ k �
 </main>
 </div>
 <script>
-  // MATLAB の uihtml から画面の色（light・dark）を受け取って切り替える
+  // MATLAB の uihtml から画面の色（light・dark）と文字の大きさの比（fontScale、1 が標準）を受け取って切り替える
   function applyTheme(data) {
     var theme = data && data.theme ? String(data.theme) : "light";
     document.body.classList.toggle("dark", theme === "dark");
+    var scale = data && Number(data.fontScale) > 0 ? Number(data.fontScale) : 1;
+    document.body.style.zoom = String(scale);
   }
   function setup(htmlComponent) {
     applyTheme(htmlComponent.Data);
