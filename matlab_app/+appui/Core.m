@@ -95,6 +95,8 @@ classdef (Abstract) Core < handle
         LegendMenus = struct()      % 図を右クリックしたときの凡例の位置のメニュー（図ごとに1つ）
         FixedSizes = struct("grid", {}, "property", {}, "index", {}, "size", {})  % 文字の大きさに合わせる決まった大きさ [px] の行・列
         FontVersion = 0         % 文字の大きさを変えた回数（見えていなかったタブを開いたときに、文字を付け直すかの目印）
+        HighOrderFile = []      % 「7. Shot高次補正」で読み込んだ Excel・CSV（data：alignest.readHighOrderFile の Wafer ごとのデータ、info）
+        HighOrderRun = []       % 「7. Shot高次補正」で最後に計算した結果（computeHighOrder。alignest.shotHighOrder の結果と入力）
     end
 
     properties (Dependent)
@@ -148,7 +150,8 @@ classdef (Abstract) Core < handle
             app.Tabs.results = uitab(app.TabGroup, 'Title', '4. 結果一覧');
             app.Tabs.map = uitab(app.TabGroup, 'Title', '5. Waferごとのマップ');
             app.Tabs.target = uitab(app.TabGroup, 'Title', '6. 未知の座標の推定');
-            app.Tabs.help = uitab(app.TabGroup, 'Title', '7. ヘルプ');
+            app.Tabs.highOrder = uitab(app.TabGroup, 'Title', '7. Shot高次補正');
+            app.Tabs.help = uitab(app.TabGroup, 'Title', '8. ヘルプ');
             app.TabGroup.SelectionChangedFcn = @(~, event) app.onTabChanged(event);
             buildDataTab(app);
             buildSettingsTab(app);
@@ -156,6 +159,7 @@ classdef (Abstract) Core < handle
             buildResultsTab(app);
             buildMapTab(app);
             buildTargetTab(app);
+            buildHighOrderTab(app);
             buildHelpTab(app);
             % 表示のメニュー：ライトモード・ダークモードの切り替え、文字の大きさ、凡例の位置と、ヘルプを開く
             viewMenu = uimenu(app.Figure, 'Text', '表示');
@@ -489,6 +493,8 @@ classdef (Abstract) Core < handle
                     items = c.targetAxes;
                 case "targetResidual"
                     items = c.targetResidualAxes;
+                case "highOrder"
+                    items = c.highOrderAxes;
                 otherwise
                     error('alignest:figureName', '保存する図の名前が違います: %s', figureName);
             end

@@ -89,4 +89,15 @@ settings.overlay.waferUseFormula = false;
 settings.overlay.waferFormula = struct("dx", "k1 + k3*x + k5*y", "dy", "k2 + k4*y + k6*x");
 settings.overlay.shotFormula = struct("dx", "k1 + k3*x + k5*y", "dy", "k2 + k4*y + k6*x");
 settings.overlay.perShotFormula = struct("dx", "k1 + k3*x + k5*y", "dy", "k2 + k4*y + k6*x");  % Shot ごとの成分の式（Shot 内の座標）
+
+% Shot 高次補正の評価（「7. Shot高次補正」のタブ。alignest.highOrderOptions。推定の評価には使わない）
+settings.highOrder.maker = "nikon";        % 補正の式：asml・canon・nikon（Overlay 計測ルールの Shot 高次補正の式）
+settings.highOrder.unit = "common";        % common（Wafer 内の Shot で共通の1組の k）・shot（Shot ごとに1組の k）
+settings.highOrder.waferOrder = 1;         % common のとき一緒に求める Wafer 成分（Shot 中心の座標の多項式の次数。0〜3、0 = なし）
+settings.highOrder.excludedTerms = zeros(1, 0);  % 使わない k の番号（「VIF で選ぶ」・画面で外した項。k1〜k6 は外さない）
+settings.highOrder.vifThreshold = 10;      % 「VIF で選ぶ」のしきい値（すべての項の VIF がこれより小さくなるまで高次項を外す）
+settings.highOrder.loss = "huber";         % 回帰の損失関数：ols（最小二乗）・huber（Huber）・lad（最小絶対偏差）
+settings.highOrder.huberTuning = 1.345;    % Huber の定数 c（正規分布の誤差で効率 95% になる値）
+settings.highOrder.l2 = true;              % 高次項（2次以上）だけに L2 正則化をかける
+settings.highOrder.lambda = 0.1;           % L2 正則化の強さ λ（列を平均0・標準偏差1にそろえた係数に対して）
 end

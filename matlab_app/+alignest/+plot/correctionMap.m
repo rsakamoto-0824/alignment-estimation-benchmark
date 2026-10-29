@@ -9,6 +9,8 @@ function summary = correctionMap(ax, correction, unit, options)
 %                   "estimated"（学習しなかった Mark の推定値だけ）
 %   options.titleText：題名の1行目（2行目に値の名前と |平均| + 3σ を足す。options.showStatistics = false なら
 %   1行目だけ）、options.waferRadiusMm：Wafer の半径 [mm]、options.legendLocation：凡例の位置（既定は図の下）。
+%   options.valueLabel：値の名前を変えるとき（例："1次だけで補正した残差"。既定は options.value の名前）、
+%   options.markMeasured：false なら実測値の点に四角を重ねない（すべての点が計測値のとき。「7. Shot高次補正」）。
 %   summary は描いた点の数 n と、X・Y の |平均| + 3σ [nm]（meanPlus3SigmaX・Y）、値の名前 valueLabel。
 arguments
     ax
@@ -22,6 +24,8 @@ arguments
     options.markerSize (1, 1) double {mustBePositive} = 30
     options.showStatistics (1, 1) logical = true
     options.legendLocation (1, 1) string = "southoutside"
+    options.valueLabel (1, 1) string = ""
+    options.markMeasured (1, 1) logical = true
 end
 VALUE_COLUMNS = struct("residual", ["residualX", "residualY"], "correction", ["correctionX", "correctionY"], ...
     "value", ["valueX", "valueY"]);
@@ -39,6 +43,9 @@ columns = VALUE_COLUMNS.(options.value);
 values = [points.(columns(1)), points.(columns(2))];
 xy = [points.x, points.y];
 valueLabel = VALUE_LABELS.(options.value);
+if options.valueLabel ~= ""
+    valueLabel = options.valueLabel;
+end
 summary = struct("n", height(points), "meanPlus3SigmaX", meanPlus3Sigma(values(:, 1)), ...
     "meanPlus3SigmaY", meanPlus3Sigma(values(:, 2)), "valueLabel", valueLabel);
 secondLine = sprintf("%s（%d 点）｜|平均|+3σ X %.3f・Y %.3f nm", valueLabel, summary.n, summary.meanPlus3SigmaX, ...
@@ -54,7 +61,7 @@ colorLimit = max(abs(values(isfinite(values(:, column)), column)), [], 'all');
 if isempty(colorLimit) || colorLimit <= 0
     colorLimit = 1;
 end
-measured = points.source == SOURCE_NAMES.measured;
+measured = points.source == SOURCE_NAMES.measured & options.markMeasured;
 alignest.plot.waferMap(ax, xy, values, mode=options.mode, scaleMmPerNm=alignest.plot.vectorScale(values), ...
     colorLimit=colorLimit, trainPoints=xy(measured, :), titleText=titleText, waferRadiusMm=options.waferRadiusMm, ...
     markerSize=options.markerSize, showLegend=false, shotCenters=[unit.shots.Xmm(:), unit.shots.Ymm(:)], ...

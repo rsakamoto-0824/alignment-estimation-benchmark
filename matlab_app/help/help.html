@@ -67,6 +67,11 @@
   <a class="sub" href="#overlay-shot">Shot 内の式</a>
   <a class="sub" href="#overlay-eval">評価のしかた</a>
   <a class="sub" href="#overlay-formula">式の書き方</a>
+  <a href="#high-order">Shot 高次補正の評価</a>
+  <a class="sub" href="#high-order-input">入力のデータ</a>
+  <a class="sub" href="#high-order-vif">k パラメータと VIF</a>
+  <a class="sub" href="#high-order-fit">回帰（ロバスト・L2）</a>
+  <a class="sub" href="#high-order-eval">評価のしかた</a>
 </nav>
 <main>
 <h1>ヘルプ：用語・補正の式・カーネル</h1>
@@ -81,6 +86,7 @@
   <li><strong>4. 結果一覧</strong>：表・グラフ・基準の手法との比較・計測配置の比較・誤差の分布（ANOVA・箱ひげ図）・散布図・分布の比較・処理時間の内訳。</li>
   <li><strong>5. Wafer ごとのマップ</strong>：計測値・推定値・残差（または Overlay 補正）を Wafer 上で見る。条件を並べて比べられる。</li>
   <li><strong>6. 未知の座標の推定</strong>：計測していない座標（新しい Mark の位置・Wafer 上の任意の点）の推定値を求める。点は Excel・CSV から読むか、画面で入力・作成する。外挿の点は知らせる（<a href="#targets">下</a>）。</li>
+  <li><strong>7. Shot高次補正</strong>：計測値・未知の座標の推定値・Excel の値で、Shot 高次補正（ASML・Canon・Nikon の式）の k パラメータを求め、1次だけの補正と比べて効果を評価する（<a href="#high-order">下</a>）。</li>
 </ol>
 <p class="note">画面の色はメニューの「表示」でライトモード・ダークモードを選べます（次に開いたときも同じ色）。</p>
 <p class="note">「表示」→「文字の大きさ」で、画面・表・図・このヘルプの文字の大きさを変えられます（12〜20 pt。16 が標準）。「表示」→「凡例の位置」で、すべての図の凡例の位置を選べます。図を右クリックすると、その図だけの凡例の位置を選べます。どちらも次に開いたときも同じです。</p>
@@ -275,7 +281,7 @@ Fringe 番号は、Fringe の次数 k = (n + |m|)/2 の小さい順、同じ k �
 </table>
 
 <h3 id="overlay-shot">Shot 内の高次の補正式（Overlay 計測ルール）</h3>
-<p>以前の設定ファイルで選べた装置メーカー別の式です（画面では「式を入力」で同じ式を書けます）。</p>
+<p>以前の設定ファイルで選べた装置メーカー別の式です（画面では「式を入力」で同じ式を書けます）。「7. Shot高次補正」では、この式の項（k パラメータ）から使う項を選んで求めます。</p>
 <table>
 <tr><th>式</th><th>dx</th><th>dy</th></tr>
 <tr><td class="term">ASML</td><td><div class="formula">k1 + k3·x + k5·y + k7·x² + k11·y² + k13·x³ + k19·y³</div></td><td><div class="formula">k2 + k4·y + k6·x + k8·y² + k10·x·y + k12·x² + k14·y³ + k16·x·y²</div></td></tr>
@@ -297,6 +303,46 @@ Fringe 番号は、Fringe の次数 k = (n + |m|)/2 の小さい順、同じ k �
   <li>べきは <code>x^2</code>・<code>x²</code>・<code>x³</code> と書けます（9 乗まで）。<code>xy</code> は <code>x*y</code> と同じ。全角の文字や「dx =」も読めます。</li>
   <li>かっこ、<code>2x</code> のような * の省略、<code>x1</code> のような書き方は使えません。</li>
 </ul>
+
+<h2 id="high-order">Shot 高次補正の評価（7. Shot高次補正）</h2>
+<p>Shot 内の座標の補正の式（<a href="#overlay-shot">上の ASML・Canon・Nikon の式</a>。項・係数番号・変数・符号は変えない）の係数（k パラメータ）を求め、補正した後の残差を、1次（k1〜k6）だけで補正した残差と比べます。</p>
+<table>
+<tr><th>補正の単位</th><th>式</th></tr>
+<tr><td class="term">Wafer 内で共通（Wafer 内の Shot で共通）</td><td><div class="formula">値(Mark) = Σ<sub>使う項</sub> k<sub>j</sub>·x<sup>m</sup>y<sup>n</sup> + Wafer 成分(Xc, Yc)</div>Wafer ごとに1組の k を、その Wafer のすべての点で求める。Wafer 成分は Shot 中心の座標 Xc・Yc [mm] の 1〜N 次の項（定数は k1・k2 に含める）。Wafer の倍率・回転が Shot の k に混ざらないように一緒に求める。</td></tr>
+<tr><td class="term">Shot ごと</td><td><div class="formula">値(Mark) = Σ<sub>使う項</sub> k<sub>j,Shot</sub>·x<sup>m</sup>y<sup>n</sup></div>Shot ごとに1組の k を、その Shot の点だけで求める（Wafer 成分は Shot ごとの k1・k2 に含まれる）。</td></tr>
+</table>
+<p>x・y は Shot 内の座標 [mm]（Shot 中心が原点）。dx の式は X の値、dy の式は Y の値に当てはめます。係数は mm の座標での値（定数 nm、1次 nm/mm = ppm、n 次 nm/mm<sup>n</sup>）。</p>
+
+<h3 id="high-order-input">入力のデータ</h3>
+<table>
+<tr><th>入力</th><th>使う点</th></tr>
+<tr><td class="term">1. データの読み込みの計測データ</td><td>面内推定の入力と同じ計測値（measX・measY。StsX・StsY が有効な値だけ）。</td></tr>
+<tr><td class="term">6. 未知の座標の推定の推定値</td><td>推定した点の値（Wafer × 学習データの組み合わせごと）。Shot は点を含む Shot、Shot 内の座標は「点 − Shot 中心」。Wafer の外の点・どの Shot にも入らない点は使わない。「実測値（学習に使った Mark）も使う」で、学習に使った Mark の計測値も足せる。</td></tr>
+<tr><td class="term">Excel・CSV</td><td>1行目が見出しの表。Xmm・Ymm（Shot 中心 [mm]）・markXmm・markYmm（Shot 内 [mm]）・measX・measY（[nm]。dx・dy、このアプリが書き出した「推定値X[nm]」「推定値Y[nm]」でもよい）が必須、Wafer・shotNo・StsX・StsY は任意。前処理は「1. データの読み込み」と同じ（半径 150 mm 未満、同じ点は平均）。</td></tr>
+</table>
+
+<h3 id="high-order-vif">k パラメータと VIF</h3>
+<div class="formula">VIF<sub>j</sub> = 1 / (1 − R<sub>j</sub><sup>2</sup>)　（R<sub>j</sub><sup>2</sup>：項 j を、ほかの項（定数を含む）で回帰したときの決定係数）</div>
+<p>VIF（分散拡大係数）は、ほかの項と似ている項ほど大きくなり、その係数が雑音で大きく振れることを表します（10 を超えると不安定の目安）。VIF は Shot 内の点の配置だけで決まり、値には依りません（選んだ Wafer のすべての点の Shot 内の座標で求める。∞ はその配置では決まらない項）。</p>
+<p>「VIF で選ぶ」：式のすべての項から始めて、VIF がしきい値以上の高次項があれば、その中で次数の最も高い項（同じ次数なら VIF の最も大きい項）を外し、VIF を求め直します。しきい値以上が1次の項だけなら、高次項の中で VIF の最も大きい項を外します。低い次数の項を残し（多項式の階層を保つ）、k1〜k6 は外しません。表の「使う」で項を1つずつ選ぶこともできます。</p>
+
+<h3 id="high-order-fit">回帰（ロバスト回帰・高次項だけの L2 正則化）</h3>
+<div class="formula">最小二乗：(1/2n) Σ r<sub>i</sub><sup>2</sup> + (λ/2) Σ<sub>2次以上</sub> θ<sub>j</sub><sup>2</sup>
+Huber   ：(1/n) Σ s<sup>2</sup> ρ<sub>c</sub>(r<sub>i</sub>/s) + (λ/2) Σ<sub>2次以上</sub> θ<sub>j</sub><sup>2</sup>　（重み w<sub>i</sub> = min(1, c·s/|r<sub>i</sub>|)）
+LAD     ：(1/n) Σ s|r<sub>i</sub>| + (λ/2) Σ<sub>2次以上</sub> θ<sub>j</sub><sup>2</sup>　（重み w<sub>i</sub> = s / max(|r<sub>i</sub>|, 0.1·s)）
+s = 1.4826 × MAD（残差の中央値からの絶対偏差の中央値）</div>
+<ul>
+  <li>項（列）を平均0・標準偏差1にそろえてから解きます（θ はそろえた係数）。L2 が項の単位・座標の桁によらず同じ強さで効くようにするためです。</li>
+  <li>L2 正則化は2次以上の項だけにかけ、k1〜k6（並進・倍率・回転）と Wafer 成分にはかけません。λ > 0 なら、点が少ない Shot でも高次項が決まります。</li>
+  <li>Huber・LAD は、残差の大きい点ほど重みを下げた重み付き最小二乗を、重みを変えながら解き直します（IRLS）。尺度 s は最初の20回だけ求め直して固定します。点の数が項の数以下の組では重みを使いません。</li>
+  <li>計算の方法は、過去のシミュレーション（high-order-correction-report の fit_batch）と同じです。λ = 0.1（7×11点）が過去の評価の標準で、点を減らすときは λ × √(77 / 点の数) が目安です。</li>
+</ul>
+
+<h3 id="high-order-eval">評価のしかた</h3>
+<div class="formula">高次補正の残差     = 値 − 補正量（使う項 + Wafer 成分）
+1次だけで補正した残差 = 値 − 補正量（k1〜k6 + Wafer 成分。同じ点・同じ損失関数）
+代表値             |平均| + 3σ（X・Y 別、σ は不偏標準偏差）、 改善 = 1次だけ − 高次補正</div>
+<p>どちらの補正もできた点で比べます。項がすべて決まらない組（点が足りない・点の配置で決まらない Shot・Wafer）は補正せず、表に数を出します。「マップ」の「Shot を重ねる」では、全 Shot の点を Shot 内の座標で1つの Shot に重ね、補正で取り切れずに残った Shot 内の形を見られます。</p>
 </main>
 </div>
 <script>

@@ -17,6 +17,7 @@ classdef (Abstract) DataTab < appui.Core
             app.Data = [];
             clearResults(app);
             clearDataMaps(app);
+            highOrderInputChanged(app, "data");
             c = app.Controls;
             % 長いパスは切れて読めないので、ファイル名だけを出し、フォルダはマウスを重ねたときに出す
             [~, name, extension] = fileparts(app.FilePath);
@@ -768,6 +769,7 @@ classdef (Abstract) DataTab < appui.Core
             app.Data = [];
             clearResults(app);
             clearTargetRun(app);
+            highOrderInputChanged(app, "data");
             app.Controls.summary.Value = {''};
             clearDataMaps(app);
             refreshFactorColumns(app);
