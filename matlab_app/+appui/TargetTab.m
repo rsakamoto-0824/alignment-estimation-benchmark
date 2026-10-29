@@ -125,6 +125,7 @@ classdef (Abstract) TargetTab < appui.Core
                 "messages", targetMessages(results, estimates, labels), "stale", false, "overlay", {cell(1, nCombinations)}, ...
                 "overlayModel", []);
             showTargetRun(app);
+            highOrderInputChanged(app, "target");   % 前の推定値で求めた Shot 高次補正は消す
             run = app.TargetRun;
         end
 
@@ -352,7 +353,7 @@ classdef (Abstract) TargetTab < appui.Core
                 'Padding', 6, 'RowSpacing', 4);
             modelNote = label(modelGrid, ['重ね合わせ補正値を求める補正モデル（Wafer 成分 + Shot 共通成分 + Shot ごとの成分）。' ...
                 '「2. 評価の設定」の Overlay 補正と同じ設定です（どちらで変えても同じ。評価の Overlay 補正の評価にも使う）。' ...
-                '式の書き方は「7. ヘルプ」。'], 1, [1, 3]);
+                '式の書き方は「8. ヘルプ」。'], 1, [1, 3]);
             modelNote.FontColor = app.Palette.muted;
             modelNote.UserData = "muted";
             label(modelGrid, 'Wafer 成分', 2, 1);
@@ -434,9 +435,12 @@ classdef (Abstract) TargetTab < appui.Core
         end
 
         function onTabChanged(app, event)
-            % 「6. 未知の座標の推定」を開いたら、選択肢（Wafer・学習データ・手法）を今のデータ・結果・設定に合わせる
+            % 「6. 未知の座標の推定」を開いたら、選択肢（Wafer・学習データ・手法）を今のデータ・結果・設定に合わせる。
+            % 「7. Shot高次補正」を開いたら、入力のデータの一覧を今のデータ・推定値に合わせる
             if event.NewValue == app.Tabs.target
                 refreshTargetChoices(app);
+            elseif event.NewValue == app.Tabs.highOrder
+                refreshHighOrderChoices(app);
             end
         end
 
@@ -784,6 +788,7 @@ classdef (Abstract) TargetTab < appui.Core
 
         function clearTargetRun(app)
             app.TargetRun = [];
+            highOrderInputChanged(app, "target");
             c = app.Controls;
             if ~isfield(c, 'targetResultTable')
                 return

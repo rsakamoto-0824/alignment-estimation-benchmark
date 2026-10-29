@@ -81,14 +81,15 @@ parts.append(section('workflow', '''
 <div class="workflow"><div class="workflow-step"><span>1</span><strong>退避</strong><small>変更前を保存</small></div><div class="workflow-arrow">→</div><div class="workflow-step"><span>2</span><strong>特定</strong><small>タブと関数を対応</small></div><div class="workflow-arrow">→</div><div class="workflow-step"><span>3</span><strong>編集</strong><small>1種類ずつ変更</small></div><div class="workflow-arrow">→</div><div class="workflow-step"><span>4</span><strong>確認</strong><small>再起動と小規模評価</small></div><div class="workflow-arrow">→</div><div class="workflow-step"><span>5</span><strong>配布</strong><small>Windows版を再作成</small></div></div>
 <h3>画面のどこを直すか</h3>
 '''+table(['画面・目的','開くファイル','検索する関数・名前','主な役割'],[
-('ウィンドウ名・タブ名・メニュー','+appui/Core.m','APP_TITLE / function startApp','起動時のタイトル、7つのタブ、メニュー「表示」を作る。'),
+('ウィンドウ名・タブ名・メニュー','+appui/Core.m','APP_TITLE / function startApp','起動時のタイトル、8つのタブ、メニュー「表示」を作る。'),
 ('1. データの読み込み','+appui/DataTab.m','function buildDataTab','ファイル、列対応、座標単位、入力プレビュー。'),
 ('2. 評価の設定','+appui/SettingsTab.m','function buildSettingsTab','選び方、計測数、質的変数、手法、補正条件。'),
 ('3. 実行','+appui/RunTab.m','function buildRunTab','開始・再開・条件追加、計測マップ、ログ。'),
 ('4. 結果一覧','+appui/ResultsTab.m','function buildResultsTab','表、グラフ、分析・比較タブ。表示更新はrefreshResults等。'),
 ('5. Waferごとのマップ','+appui/MapTab.m','function buildMapTab','選択欄と描画用の領域。描画内容はdrawMap等。'),
 ('6. 未知の座標の推定','+appui/TargetTab.m','function buildTargetTab','入力表、条件、推定・補正・書き出しボタン。'),
-('7. ヘルプ・表示の設定','+appui/Display.m','function buildHelpTab / setTheme / setFontSize','help/help.htmlの表示、画面の色・文字の大きさ・凡例の位置。'),
+('7. Shot高次補正','+appui/HighOrderTab.m','function buildHighOrderTab','入力のデータ、補正の式・回帰の欄、使う項とVIFの表、結果（評価・補正値・マップ）のタブ。'),
+('8. ヘルプ・表示の設定','+appui/Display.m','function buildHelpTab / setTheme / setFontSize','help/help.htmlの表示、画面の色・文字の大きさ・凡例の位置。'),
 ('画面と設定を相互に渡す','+appui/SettingsTab.m','settingsToControls / controlsToSettings','設定→画面、画面→設定。片側だけ直すと値が戻る・反映されない。'),
 ('いくつかのタブで使う小さな関数','+appui/private/','label / place / onOff など','部品を作る・置く、値を文字にする。1つの関数が1つのファイル。'),
 ('計算そのもの','+alignest 以下','—','データ整理、手法、評価、書き出し。見た目だけなら通常ここを直さない。'),
@@ -205,7 +206,7 @@ app = AlignmentEstimationApp();''') +
 figure('05_results.png','保存・再起動後に確認する結果一覧の例','同梱の合成CSV、手動10 Shot、XY1次多項式での小規模評価を今回実行しました。これは見た目と起動経路の確認用で、推定手法の性能比較ではありません。')+
 '''<div class="checklist-grid"><article><h3>表示・操作</h3><label><input type="checkbox">タイトル・タブ・ボタンの文字が意図どおり</label><label><input type="checkbox">文字切れ、重なり、不要な空欄がない</label><label><input type="checkbox">全タブを開け、必要なスクロールができる</label><label><input type="checkbox">クリック・キャンセル・入力エラーが動く</label><label><input type="checkbox">ライト・ダークで文字・表・図が読める</label></article><article><h3>設定・計算</h3><label><input type="checkbox">変更した入力値が設定と計算へ渡る</label><label><input type="checkbox">JSONへ保存し、読み直して値が残る</label><label><input type="checkbox">古い設定ファイルでも起動できる</label><label><input type="checkbox">サンプルの小規模評価と書き出しが動く</label><label><input type="checkbox">見た目だけなら変更前後の評価値が一致</label></article></div>
 <h3>既存の画面フローテストを実行する場合</h3><p>次はアプリの操作経路をまとめて検証する既存テストです。全件の再実行には時間がかかるため、まず小規模確認を済ませ、機能や設定へ関わる修正後に使用します。今回の資料作成では全テストの再実行はしていません。</p>'''+code("results = runtests(fullfile('tests','TestAppWorkflow.m'));\nassert(all([results.Passed]), '画面フローテストに失敗があります');") +
-note('今回実施した確認の範囲', '元の最新版で7タブを生成し、合成CSVの小規模評価と画面描画を確認。説明用コピーではボタン名・グリッド7行・追加注意文の存在をassertで確認しています。Windowsのexe作成と実行はこのMacでは実施していません。')))
+note('今回実施した確認の範囲', '元の最新版で8タブを生成し、合成CSVの小規模評価と画面描画を確認。説明用コピーではボタン名・グリッド7行・追加注意文の存在をassertで確認しています。Windowsのexe作成と実行はこのMacでは実施していません。')))
 
 parts.append(section('release', '''<h3>MATLABで直接使う利用者へ配る場合</h3><p>変更したソースと必要なパッケージ（<code>+appui</code>・<code>+alignest</code>）を配布し、起動元が新しいコピーになっているか <code>which AlignmentEstimationApp -all</code> で確認します。ソースファイルだけ置き換えたまま、古い画面を開き続けないでください。</p>
 <h3>Windowsのexeを使う利用者へ配る場合</h3>'''+steps([

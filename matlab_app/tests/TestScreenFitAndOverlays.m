@@ -67,7 +67,7 @@ classdef TestScreenFitAndOverlays < matlab.unittest.TestCase
             % 画面に合わせる：窓は画面（モニター）の中に収まり、決まった幅の欄は中身の幅の比で狭める
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
-            testCase.verifyEqual(numel(app.ResponsiveColumns), 25, "絞り込みの欄は結果一覧とマップの2か所");
+            testCase.verifyEqual(numel(app.ResponsiveColumns), 26, "絞り込みの欄は結果一覧とマップの2か所。「7. Shot高次補正」の左の欄も");
             app.Figure.Position = [-5000, -5000, 9000, 8000];
             app.fitToScreen(false);
             monitors = get(groot, 'MonitorPositions');

@@ -11,7 +11,7 @@ classdef (Abstract) SettingsTab < appui.Core
             settings = alignest.upgradeRadiusSettings(settings);
             settings.methods = alignest.completeMethodSettings(settings.methods);
             defaults = alignest.defaultSettings();
-            for group = ["data", "factors", "sampling", "evaluation", "overlay", "display"]
+            for group = ["data", "factors", "sampling", "evaluation", "overlay", "display", "highOrder"]
                 if ~isfield(settings, group)
                     settings.(group) = defaults.(group);
                 end
@@ -439,7 +439,7 @@ classdef (Abstract) SettingsTab < appui.Core
             place(c.rtOrders, 20, 2);
             c.zernike = uicheckbox(m, 'Text', 'Fringe Zernike', 'ValueChangedFcn', onChange, ...
                 'Tooltip', ['Fringe Zernike 多項式（Z1〜Z(k+1)²）の最小二乗。k = 3：Z1〜Z16、4：Z1〜Z25、5：Z1〜Z36。' ...
-                '空白で区切ると次数ごとに比べます。式は「7. ヘルプ」。']);
+                '空白で区切ると次数ごとに比べます。式は「8. ヘルプ」。']);
             place(c.zernike, 21, 1);
             c.zernikeOrders = uieditfield(m, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ...
                 '次数 k（空白区切りで複数）。Z1〜Z(k+1)² を使う（k = 4 で Z25 まで）。');
@@ -455,7 +455,7 @@ classdef (Abstract) SettingsTab < appui.Core
             c.rbfe = uicheckbox(m, 'Text', 'RBFe（仮）', 'ValueChangedFcn', onChange, 'Tooltip', ...
                 ['学習点の位置を領域の数のまとまりに分け（k-means）、領域ごとに TPS を当てはめ（λ は領域ごとに GCV）、' ...
                 '重なる所は滑らかな重みでつなぎ合わせます。右で選ぶ質的変数は Backfitting で足します（GAM）。' ...
-                '領域の数 1 は TPS と同じです。式は「7. ヘルプ」。']);
+                '領域の数 1 は TPS と同じです。式は「8. ヘルプ」。']);
             place(c.rbfe, 25, 1);
             c.rbfeRegions = uieditfield(m, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ...
                 '領域の数（ハイパーパラメータ、1〜25 の整数）。空白で区切ると領域の数ごとに比べます（例：4 9）。');
@@ -614,6 +614,7 @@ classdef (Abstract) SettingsTab < appui.Core
             c.zernikeOrders.Value = char(strjoin(string(methods.zernike.orders), " "));
             validateSettings(app);
             updateEnabled(app);
+            highOrderSettingsToControls(app);   % 「7. Shot高次補正」の欄（設定ファイルの highOrder）
         end
 
         function controlsToSettings(app)
@@ -987,7 +988,7 @@ classdef (Abstract) SettingsTab < appui.Core
             c.overlayHelp.Text = char(ternary(scalar, "1変数の推定（「1. データの読み込み」の「推定する値」）では、" + ...
                 "Overlay 補正の評価と RT モデルは使いません（X・Y の2成分が要るため）。", ...
                 "すべて「なし」なら評価しません。結果一覧の指標「OVL …」と、Wafer ごとのマップの「Overlay 補正」で" + ...
-                "見られます。補正の式は「7. ヘルプ」にまとめています。「6. 未知の座標の推定」の「補正のモデル」でも変えられます。"));
+                "見られます。補正の式は「8. ヘルプ」にまとめています。「6. 未知の座標の推定」の「補正のモデル」でも変えられます。"));
             syncTargetOverlayControls(app);   % 「6. 未知の座標の推定」の「補正のモデル」も同じ値にする
         end
 

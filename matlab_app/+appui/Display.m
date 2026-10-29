@@ -1,5 +1,5 @@
 classdef (Abstract) Display < appui.Core
-    %DISPLAY 「7. ヘルプ」タブと表示の設定：画面の色（ライト・ダーク）、文字の大きさ、凡例の位置、画面（モニター）の大きさに合わせる窓。
+    %DISPLAY 「8. ヘルプ」タブと表示の設定：画面の色（ライト・ダーク）、文字の大きさ、凡例の位置、画面（モニター）の大きさに合わせる窓。
     %   AlignmentEstimationApp（画面の本体）の一部。画面の部品は Controls、データ・結果は Core のプロパティに持つ。
     %   ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
 
@@ -112,7 +112,8 @@ classdef (Abstract) Display < appui.Core
         function saveFigureImage(app, figureName, filePath)
             %SAVEFIGUREIMAGE 画面の図を PNG に保存する（「図を画像で保存…」のボタンと同じ）。figureName：
             %   "measure"（3. 実行の計測マップ）・"chart"（4. 結果一覧のグラフ）・"map"（5. Waferごとのマップ）・
-            %   "target"（6. 未知の座標の図）・"targetResidual"（6. の補正残差の図）。凡例・色の目盛りも入れる。
+            %   "target"（6. 未知の座標の図）・"targetResidual"（6. の補正残差の図）・"highOrder"（7. Shot高次補正の
+            %   マップ）。凡例・色の目盛りも入れる。
             %   図が2つ以上（グラフの I 基準・D 基準、マップの計測値・推定値・残差）なら横に並べて1枚にする。
             %   画面の部品（uigridlayout）を含む枠は exportgraphics で書き出せない（白紙になり保存に失敗する）ので、
             %   図（axes）・並べた図（tiledlayout）ごとに書き出してつなぐ。描いた図が無ければエラー。
@@ -148,7 +149,7 @@ classdef (Abstract) Display < appui.Core
     end
 
     methods (Access = {?appui.Core})
-        % ================= 7. ヘルプ =================
+        % ================= 8. ヘルプ =================
         function buildHelpTab(app)
             % 用語・推定の手法・カーネル・Overlay 補正の式の説明（help/help.html。exe にも入れる）を出す
             grid = uigridlayout(app.Tabs.help, [1, 1], 'Padding', 0);
@@ -217,6 +218,10 @@ classdef (Abstract) Display < appui.Core
             if ~isempty(app.TargetRun)
                 showTargetRun(app);   % 外挿の行の色・メッセージの色を新しい色の組にする
             end
+            refreshHighOrderTerms(app);   % VIF の大きい行・使わない行の色
+            if ~isempty(app.HighOrderRun)
+                showHighOrderRun(app);
+            end
         end
 
         function data = helpData(app)
@@ -248,7 +253,8 @@ classdef (Abstract) Display < appui.Core
         function tables = fontTables(app)
             % 列の多い表（TABLE_FONT_SIZE の文字で出す表）
             tables = [app.Controls.unitTable, app.Controls.normalityTable, app.Controls.anovaTable, ...
-                app.Controls.targetTable, app.Controls.targetResultTable];
+                app.Controls.targetTable, app.Controls.targetResultTable, app.Controls.highOrderTermTable, ...
+                app.Controls.highOrderSummaryTable, app.Controls.highOrderCoefficientTable];
         end
 
         function pixels = scaledPixels(app, pixels)
