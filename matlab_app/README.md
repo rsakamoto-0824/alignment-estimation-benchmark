@@ -6,6 +6,7 @@ Excel の計測データを読み込み、画面で比べ方を決めて実行�
 
 - **Windows での使い方・exe の作り方の手順書（HTML）**：[docs/windows_guide/windows_guide.html](docs/windows_guide/windows_guide.html)（ブラウザで開く。画像・CSS が同じフォルダにあるので、フォルダごと扱う）
 - **管理者向けの資料（アプリの構成と保守、HTML）**：[docs/admin_guide/admin_guide.html](docs/admin_guide/admin_guide.html)（フォルダの中身・処理の流れ・設定と Excel の列・保守で想定される作業と直す場所・テストと exe の作り直し・困ったとき）
+- **管理者向けの画面編集手順書（HTML、13章・画像8枚）**：[docs/admin_guide/ui_editing/ui-editing-guide.html](docs/admin_guide/ui_editing/ui-editing-guide.html)（文字・配置・説明行・設定・コールバックの編集、再起動確認、Windows版の再作成。画像を内包した単独HTML）
 - **管理者向けの手順書（デフォルト設定の編集、PowerPoint）**：[docs/defaults_guide/デフォルト設定の編集ガイド.pptx](docs/defaults_guide/デフォルト設定の編集ガイド.pptx)（評価の条件・比べる手法・画面の初期値を、設定ファイルを配る・既定の設定ファイルを置く・コードを直す のどれで変えるかと、項目ごとの初期値。下の「既定の設定ファイル」）
 - **GPR の加法カーネルと交互作用の解説（PowerPoint）**：[docs/kernel_guide/加法カーネルと交互作用の解説.pptx](docs/kernel_guide/加法カーネルと交互作用の解説.pptx)
 - **画面の中のヘルプ**：「7. ヘルプ」タブに、主な専門用語・すべてのカーネルの式・Overlay 補正の式をまとめています。

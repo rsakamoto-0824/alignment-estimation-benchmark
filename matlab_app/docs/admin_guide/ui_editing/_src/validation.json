@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-27",
+  "htmlBytes": 2821978,
+  "sha256": "ddd96c2ca381dbae60d07e62c6886aada4a9e21b7cda263c21c24e635f2708c4",
+  "checks": {
+    "uniqueIds": true,
+    "validAnchors": true,
+    "eightImages": true,
+    "noRemoteRuntime": true,
+    "sourceMatchesHEAD": true,
+    "noOldWidth": true
+  },
+  "desktopViewport": [
+    1440,
+    1000
+  ],
+  "nativeScreenshotFormatsVerified": true,
+  "smallEvaluationRows": 5,
+  "smallEvaluationErrors": 0,
+  "exampleAssertionsPassed": true,
+  "pcNavigationAndImageZoomVerified": true,
+  "copyButtonSuccessStateVerified": true,
+  "browserConsoleErrors": 0,
+  "windowsBuildExecuted": false,
+  "fullTestSuiteExecuted": false,
+  "warnings": [
+    "MATLAB emitted CoreText system-font substitution notes; rendered images inspected."
+  ],
+  "imageZoomEscVerified": true,
+  "troubleshootingAccordionVerified": true,
+  "backToTopVerified": true,
+  "viewportReset": true
+}
