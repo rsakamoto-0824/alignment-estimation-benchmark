@@ -235,7 +235,7 @@ def build(output: Path, reference: Path):
     text(s, 8.2, 1.65, 4.3, 0.4, "直すファイル", size=15, color=PURPLE, bold=True)
     files = [("defaultSettings.m", "data・factors・sampling・evaluation・overlay の初期値"),
              ("recommendedMethods.m", "推奨の組み合わせ・すべて・なし と手法の細かい設定（options）"),
-             ("AlignmentEstimationApp.m", "画面の定数（先頭の properties (Constant)）"),
+             ("+appui/Core.m", "画面の定数（先頭の properties (Constant)）"),
              ("estimateRunSeconds.m", "時間の目安（1条件の秒数）"),
              ("exchangeSecondsGuide.m", "交換法の時間の目安")]
     for index, (name, body) in enumerate(files):
@@ -253,7 +253,7 @@ def build(output: Path, reference: Path):
              "外周とみなす半径 120 mm"],
             ["+alignest/recommendedMethods.m", "比べる手法（推奨の組み合わせ・すべて・なし）と手法の細かい設定 options",
              "GPR matern52 × 質的変数4通り"],
-            ["AlignmentEstimationApp.m（先頭）", "画面の大きさ・文字の大きさ・並べる図の数・色", "FONT_SIZE = 16"],
+            ["+appui/Core.m（先頭）", "画面の大きさ・文字の大きさ・並べる図の数・色", "FONT_SIZE = 16"],
             ["+alignest/estimateRunSeconds.m", "時間の目安（1条件 2 秒、ν を指定した Matérn は 3 倍）", "SECONDS_PER_RUN = 2"],
             ["+alignest/exchangeSecondsGuide.m", "交換法の時間の目安（初期配置1つ × 学習 Shot 1つ）", "0.01 秒"],
             ["+alignest/siteDefaults.m", "既定の設定ファイル（手順 B）を読む", DEFAULTS_FILE],
@@ -377,7 +377,7 @@ def build(output: Path, reference: Path):
     table(s, 6.85, 1.5, [3.98, 1.9], rows, size=11.5, header_size=12, row_h=0.43)
     point_bar(s, 5.65, "options（rbfe… を除く）は Python 版と同じ値。変えると推定の結果が変わり、Python 版との照合テスト"
               "（TestPythonReference）が合わなくなる", icon="!", icon_color=CORAL, h=0.75, size=13)
-    notes(s, "options は精度と時間の兼ね合いで決めた値。変えるときは模擬データで比べてから。画面の定数は AlignmentEstimationApp.m の先頭、"
+    notes(s, "options は精度と時間の兼ね合いで決めた値。変えるときは模擬データで比べてから。画面の定数は +appui/Core.m の先頭（画面はタブごとのファイルに分けてあり、定数は共通の Core.m にまとめてある）、"
              "時間の目安は estimateRunSeconds.m・exchangeSecondsGuide.m にある。")
 
     # 15. 編集の例

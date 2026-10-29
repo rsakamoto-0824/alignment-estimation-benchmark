@@ -1,33 +1,27 @@
 {
-  "date": "2026-10-27",
-  "htmlBytes": 2821978,
-  "sha256": "ddd96c2ca381dbae60d07e62c6886aada4a9e21b7cda263c21c24e635f2708c4",
+  "date": "2026-10-29",
+  "htmlBytes": 2144010,
+  "sha256": "f201c7ebb936405259a6e6263ed424418abc4f6eac3a9a93ee83da9d92f80c2b",
   "checks": {
     "uniqueIds": true,
     "validAnchors": true,
-    "eightImages": true,
+    "sevenImages": true,
+    "imagesEmbeddedAndDecodable": true,
     "noRemoteRuntime": true,
-    "sourceMatchesHEAD": true,
-    "noOldWidth": true
+    "sourceExcerptsFoundBySearch": true,
+    "noOldSourceReferences": true
   },
-  "desktopViewport": [
-    1440,
-    1000
-  ],
-  "nativeScreenshotFormatsVerified": true,
   "smallEvaluationRows": 5,
   "smallEvaluationErrors": 0,
   "exampleAssertionsPassed": true,
-  "pcNavigationAndImageZoomVerified": true,
-  "copyButtonSuccessStateVerified": true,
-  "browserConsoleErrors": 0,
+  "imageZoomVerified": true,
+  "browserCheckedFile": "procedure-guide.html（同じ内容で画像を別ファイルにした版。単独HTMLはスクリプトで画像・リンクを確認）",
+  "fullTestSuiteExecuted": true,
+  "fullTestSuiteResult": "189件成功・失敗0（画面をタブごとのファイルに分けた後）",
+  "backupInsidePackageChecked": "+appui に .m のコピーを置いても起動はできるが、そのファイルは「クラス名とファイル名が一致しなければなりません」になり checkcode が MCFIL を出すことを確認",
   "windowsBuildExecuted": false,
-  "fullTestSuiteExecuted": false,
+  "windowsEditorCaptured": false,
   "warnings": [
     "MATLAB emitted CoreText system-font substitution notes; rendered images inspected."
-  ],
-  "imageZoomEscVerified": true,
-  "troubleshootingAccordionVerified": true,
-  "backToTopVerified": true,
-  "viewportReset": true
+  ]
 }

@@ -3,7 +3,7 @@
 `デフォルト設定の編集ガイド.pptx` は、面内推定評価ツールの初期設定（評価の条件・比べる手法・画面の初期値）を管理者が変えるときの 18 ページの手順書です（2026年10月）。
 
 - 構成：設定の仕組み（初期値 → 既定の設定ファイル → 画面 → 設定ファイル → Excel の「設定」シート）→ 3つの変え方と手順（A 設定ファイルを配る、B 既定の設定ファイル `alignment_estimation_defaults.json` を置く、C コードの初期値を変える）→ 設定の項目と初期値の一覧 → 編集の例・注意・確かめ方・まとめ。
-- 初期値の表は `+alignest/defaultSettings.m`・`+alignest/recommendedMethods.m`・`AlignmentEstimationApp.m` の定数に合わせています。初期値を変えたときは `_src/build_deck.py` の表も直して作り直してください。
+- 初期値の表は `+alignest/defaultSettings.m`・`+alignest/recommendedMethods.m`・`+appui/Core.m`（画面の定数）に合わせています。初期値を変えたときは `_src/build_deck.py` の表も直して作り直してください。
 - 見た目は「技術レポートPowerPoint」テンプレート（参照デッキ）のスライドマスター・テーマ・色・文字の大きさ・配置に合わせています。各ページにノートがあります。
 
 ## 作り直す場合
