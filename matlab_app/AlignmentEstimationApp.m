@@ -10,10 +10,17 @@ classdef AlignmentEstimationApp < handle
 
     properties (Constant, Access = private)
         APP_TITLE = "面内推定評価ツール"
-        PREF_GROUP = "AlignmentEstimationApp"   % 画面の色（ライト・ダーク）を次に開いたときも使うための保存先（getpref）
-        FONT_SIZE = 16
+        PREF_GROUP = "AlignmentEstimationApp"   % 表示の設定（画面の色・文字の大きさ・凡例の位置）を次に開いたときも使うための保存先（getpref）
+        FONT_SIZE = 16                  % 画面の文字の標準の大きさ。下の文字の大きさ・決まった幅 [px] は、この大きさのときの値
+        FONT_SIZE_CHOICES = [12, 14, 16, 18, 20]   % 「表示」→「文字の大きさ」の選択肢 [pt]
+        FONT_SIZE_LIMITS = [10, 24]     % setFontSize で指定できる文字の大きさの範囲 [pt]
         AXES_FONT_SIZE = 13
         SMALL_AXES_FONT_SIZE = 10       % 図を並べるとき（計測マップ・マップの比較）の文字の大きさ
+        LEGEND_CHOICES = ["auto", "northeast", "northwest", "southeast", "southwest", "best", ...
+            "eastoutside", "westoutside", "northoutside", "southoutside", "none"]   % 凡例の位置（"auto" は図ごとの既定）
+        LEGEND_LABELS = ["図ごとの既定", "図の中・右上", "図の中・左上", "図の中・右下", "図の中・左下", ...
+            "図の中・線や点と重なりにくい所", "図の外・右", "図の外・左", "図の外・上", "図の外・下", "出さない"]
+        LEGEND_MAX_COLUMNS = 4          % 凡例を図の上・下に移したときの列の数の上限
         FIGURE_SIZE = [1440, 900]          % 画面がこれより小さいときは画面に合わせて縮める
         SCREEN_MARGIN = 40
         MIN_FIGURE_SIZE = [800, 600]       % 窓の大きさの下限（画面がこれより小さいときは画面の大きさ）
@@ -82,15 +89,26 @@ classdef AlignmentEstimationApp < handle
         CurrentMonitor = 0      % 窓の中心がある画面の番号（get(groot, 'MonitorPositions') の行）
         ResponsiveColumns = struct("grid", {}, "column", {}, "width", {})  % 窓の幅に合わせて狭める欄（registerResponsiveColumn）
         TargetSelection = zeros(0, 1)  % 推定する点の表で選んでいる行（「選んだ行を削除」で使う）
+        FontSize = 16           % 画面の文字の大きさ [pt]。setFontSize で変える（FONT_SIZE との比を図・表・決まった幅の欄にも掛ける）
+        LegendLocation = "auto" % すべての図の凡例の位置（LEGEND_CHOICES の1つ）。setLegendLocation で変える
+        LegendOverrides = struct()  % 図ごとに選んだ凡例の位置（名前は図の Controls の名前。setLegendLocation の第3引数）
+        LegendMenus = struct()      % 図を右クリックしたときの凡例の位置のメニュー（図ごとに1つ）
+        FixedSizes = struct("grid", {}, "property", {}, "index", {}, "size", {})  % 文字の大きさに合わせる決まった大きさ [px] の行・列
+        FontVersion = 0         % 文字の大きさを変えた回数（見えていなかったタブを開いたときに、文字を付け直すかの目印）
     end
 
     properties (Dependent)
         Palette                 % 今の画面の色の組（themePalette。文字・背景・エラー・表の最良の色など）
+        FontScale               % 文字の大きさの比（FontSize / FONT_SIZE）
     end
 
     methods
         function palette = get.Palette(app)
             palette = themePalette(app.Theme);
+        end
+
+        function scale = get.FontScale(app)
+            scale = app.FontSize / app.FONT_SIZE;
         end
 
         function app = AlignmentEstimationApp(visible)
@@ -128,20 +146,44 @@ classdef AlignmentEstimationApp < handle
             buildMapTab(app);
             buildTargetTab(app);
             buildHelpTab(app);
-            % 表示のメニュー：ライトモード・ダークモードの切り替えと、ヘルプを開く
+            % 表示のメニュー：ライトモード・ダークモードの切り替え、文字の大きさ、凡例の位置と、ヘルプを開く
             viewMenu = uimenu(app.Figure, 'Text', '表示');
             app.Controls.themeLight = uimenu(viewMenu, 'Text', 'ライトモード', 'Checked', 'on', ...
                 'MenuSelectedFcn', @(~, ~) app.setTheme("light"));
             app.Controls.themeDark = uimenu(viewMenu, 'Text', 'ダークモード', ...
                 'MenuSelectedFcn', @(~, ~) app.setTheme("dark"));
+            fontMenu = uimenu(viewMenu, 'Text', '文字の大きさ', 'Separator', 'on');
+            app.Controls.fontSizeItems = gobjects(1, 0);
+            for size_ = app.FONT_SIZE_CHOICES
+                label = sprintf('%d pt', size_);
+                if size_ == app.FONT_SIZE
+                    label = [label, '（標準）']; %#ok<AGROW>
+                end
+                app.Controls.fontSizeItems(end + 1) = uimenu(fontMenu, 'Text', label, 'UserData', size_, ...
+                    'Checked', onOff(size_ == app.FONT_SIZE), 'MenuSelectedFcn', @(~, ~) app.setFontSize(size_));
+            end
+            legendMenu = uimenu(viewMenu, 'Text', '凡例の位置');
+            app.Controls.legendItems = gobjects(1, 0);
+            for k = 1:numel(app.LEGEND_CHOICES)
+                choice = app.LEGEND_CHOICES(k);
+                app.Controls.legendItems(end + 1) = uimenu(legendMenu, 'Text', app.LEGEND_LABELS(k), 'UserData', choice, ...
+                    'Checked', onOff(choice == app.LegendLocation), 'MenuSelectedFcn', @(~, ~) app.setLegendLocation(choice));
+            end
+            uimenu(legendMenu, 'Text', '図ごとに選んだ位置をすべて戻す', 'Separator', 'on', ...
+                'MenuSelectedFcn', @(~, ~) app.resetLegendOverrides());
+            uimenu(legendMenu, 'Text', '（図を右クリックすると、その図だけの位置を選べます）', 'Enable', 'off');
             uimenu(viewMenu, 'Text', '画面の大きさに合わせる', 'Separator', 'on', ...
                 'MenuSelectedFcn', @(~, ~) app.fitToScreen(true));
             uimenu(viewMenu, 'Text', 'ヘルプ（用語・補正の式・カーネル）を開く', 'Separator', 'on', ...
                 'MenuSelectedFcn', @(~, ~) set(app.TabGroup, 'SelectedTab', app.Tabs.help));
             set(findall(app.Figure, '-property', 'FontSize'), 'FontSize', app.FONT_SIZE);
             set(findall(app.Figure, 'Type', 'axes'), 'FontSize', app.AXES_FONT_SIZE);
-            set([app.Controls.unitTable, app.Controls.normalityTable, app.Controls.anovaTable, app.Controls.targetTable, ...
-                app.Controls.targetResultTable], 'FontSize', app.TABLE_FONT_SIZE);
+            set(fontTables(app), 'FontSize', app.TABLE_FONT_SIZE);
+            collectFixedSizes(app);
+            % 見えていないタブの部品は、文字の大きさを変えても表示が古いままのことがあるので、タブを開いたときに付け直す
+            for tabGroup = reshape(findall(app.Figure, 'Type', 'uitabgroup'), 1, [])
+                addlistener(tabGroup, 'SelectedTab', 'PostSet', @(~, event) app.refreshTabFonts(event.AffectedObject.SelectedTab));
+            end
             settingsToControls(app);
             refreshRunSummary(app);
             if app.DefaultsSource ~= ""
@@ -154,15 +196,22 @@ classdef AlignmentEstimationApp < handle
                 end
             end
             if visible
-                % 前回選んだ画面の色を使う（自動テストなど画面を出さないときはライトモードのまま）
-                try
-                    saved = string(getpref(app.PREF_GROUP, 'theme', 'light'));
-                catch
-                    saved = "light";
-                end
-                if saved == "dark"
+                % 前回選んだ表示の設定を使う（自動テストなど画面を出さないときは標準のまま）。読めない値は使わない
+                if string(loadPreference(app, 'theme', 'light')) == "dark"
                     setTheme(app, "dark");
                 end
+                savedSize = loadPreference(app, 'fontSize', app.FONT_SIZE);
+                if isnumeric(savedSize) && isscalar(savedSize) && savedSize ~= app.FONT_SIZE && ...
+                        savedSize >= app.FONT_SIZE_LIMITS(1) && savedSize <= app.FONT_SIZE_LIMITS(2)
+                    setFontSize(app, savedSize);
+                end
+                savedLocation = string(loadPreference(app, 'legendLocation', 'auto'));
+                if isscalar(savedLocation) && any(savedLocation == app.LEGEND_CHOICES)
+                    app.LegendLocation = savedLocation;
+                end
+                app.LegendOverrides = validLegendOverrides(loadPreference(app, 'legendOverrides', struct()), ...
+                    app.LEGEND_CHOICES);
+                markLegendItems(app);
             end
             % 画面（モニター）の大きさ・解像度に合わせる：窓の幅に合わせて決まった幅の欄を狭め、別の画面に移したら
             % 窓をその画面に収まる大きさにする（画面の大きさが違う画面の間で動かしても、つり合いが崩れないように）
@@ -213,13 +262,73 @@ classdef AlignmentEstimationApp < handle
             applyTheme(app, previous, themePalette(mode));
             app.Controls.themeLight.Checked = onOff(mode == "light");
             app.Controls.themeDark.Checked = onOff(mode == "dark");
-            if app.Figure.Visible == "on"
-                try
-                    setpref(app.PREF_GROUP, 'theme', char(mode));
-                catch
-                    % 保存できなくても、今の画面の色は変わっている
-                end
+            savePreference(app, 'theme', char(mode));
+        end
+
+        function setFontSize(app, size)
+            %SETFONTSIZE 画面の文字の大きさを size [pt] にする（メニューの「表示」→「文字の大きさ」と同じ。16 が標準）。
+            %   画面の欄・表の文字と、描いた図の文字（軸・題名・凡例・図の中の文字・色の目盛り）を同じ比で変え、
+            %   これから描く図にも使う。決まった幅・高さの欄（左の条件の欄・一覧の高さなど）と表の列の幅も同じ比で変える
+            %   （大きな文字が欄からはみ出さないように）。画面を出しているときは、次に開いたときも同じ大きさにする（setpref）。
+            if ~(isnumeric(size) && isscalar(size) && isfinite(size) && size >= app.FONT_SIZE_LIMITS(1) && ...
+                    size <= app.FONT_SIZE_LIMITS(2))
+                error('alignest:fontSize', '文字の大きさは %d〜%d [pt] の数で指定します。', app.FONT_SIZE_LIMITS(1), ...
+                    app.FONT_SIZE_LIMITS(2));
             end
+            previousScale = app.FontScale;
+            app.FontSize = double(size);
+            applyFontSize(app, previousScale);
+            for item = app.Controls.fontSizeItems
+                item.Checked = onOff(item.UserData == app.FontSize);
+            end
+            savePreference(app, 'fontSize', app.FontSize);
+        end
+
+        function setLegendLocation(app, location, target)
+            %SETLEGENDLOCATION 図の凡例の位置を location にする（LEGEND_CHOICES の1つ。"auto" は図ごとの既定、
+            %   "none" は凡例を出さない）。target を省略すると、すべての図（メニューの「表示」→「凡例の位置」）。
+            %   target に図（axes）か図の名前（Controls の名前。並べた図は枠の名前）を渡すと、その図だけ（図を右クリック
+            %   したときのメニュー）。location = "inherit" で、その図の指定をやめて、すべての図の設定に従う。
+            %   描いてある図はすぐに置き直し、これから描く図にも使う。画面を出しているときは、次に開いたときも同じにする。
+            location = string(location);
+            if nargin < 3
+                if ~(isscalar(location) && any(location == app.LEGEND_CHOICES))
+                    error('alignest:legendLocation', '凡例の位置は %s のどれかです: %s', ...
+                        join(app.LEGEND_CHOICES, "・"), join(location, "・"));
+                end
+                app.LegendLocation = location;
+                markLegendItems(app);
+                savePreference(app, 'legendLocation', char(location));
+            else
+                if isstring(target) || ischar(target)
+                    key = string(target);
+                else
+                    key = legendKey(app, legendOwner(target));
+                end
+                if ~(isscalar(key) && isvarname(key))
+                    error('alignest:legendLocation', '凡例の位置を変える図が見つかりません。');
+                end
+                if ~(isscalar(location) && any(location == [app.LEGEND_CHOICES, "inherit"]))
+                    error('alignest:legendLocation', '図ごとの凡例の位置は %s のどれかです: %s', ...
+                        join([app.LEGEND_CHOICES, "inherit"], "・"), join(location, "・"));
+                end
+                if location == "inherit"
+                    if isfield(app.LegendOverrides, key)
+                        app.LegendOverrides = rmfield(app.LegendOverrides, key);
+                    end
+                else
+                    app.LegendOverrides.(key) = location;
+                end
+                savePreference(app, 'legendOverrides', app.LegendOverrides);
+            end
+            placeAllLegends(app);
+        end
+
+        function resetLegendOverrides(app)
+            %RESETLEGENDOVERRIDES 図ごとに選んだ凡例の位置をすべてやめて、すべての図の設定に従う
+            app.LegendOverrides = struct();
+            savePreference(app, 'legendOverrides', app.LegendOverrides);
+            placeAllLegends(app);
         end
 
         function delete(app)
@@ -596,7 +705,7 @@ classdef AlignmentEstimationApp < handle
                     titleText=titleText, magnitudeLimit=magnitudeLimit, ...
                     showArrows=~(c.shotOverlayEllipseOnly.Value && c.shotOverlayEllipse.Value > 0));
                 c.shotOverlayAxes(k).Visible = 'on';
-                c.shotOverlayAxes(k).FontSize = app.AXES_FONT_SIZE;
+                styleAxes(app, c.shotOverlayAxes(k), app.AXES_FONT_SIZE);
                 lines = [lines; heading; overlayLines(part)]; %#ok<AGROW>
                 overlay = [overlay, part]; %#ok<AGROW>
             end
@@ -666,7 +775,6 @@ classdef AlignmentEstimationApp < handle
                 alignest.plot.measurementMap(ax, unit, plan, app.Settings.data.waferRadiusMm, ...
                     unit.label + "｜" + plan.label, showScan=c.measureScan.Value, ringRadiiMm=rings, ...
                     showLegend=nPanels == 1, allCategories=k == 1 && nPanels > 1, scanStyle=scanStyle(app));
-                ax.FontSize = ternary(nPanels > 1, app.SMALL_AXES_FONT_SIZE, app.AXES_FONT_SIZE);
                 axesList(k) = ax;
                 plans(end + 1, 1) = orderfields(plan, alignest.planTemplate()); %#ok<AGROW>
                 lines = [lines; measurementLines(app, unit, plan)]; %#ok<AGROW>
@@ -681,6 +789,7 @@ classdef AlignmentEstimationApp < handle
                 shown = legend(axesList(1), items, cellstr(names), 'Box', 'off', 'FontSize', app.SMALL_AXES_FONT_SIZE);
                 shown.Layout.Tile = 'east';
             end
+            styleAxes(app, axesList, ternary(nPanels > 1, app.SMALL_AXES_FONT_SIZE, app.AXES_FONT_SIZE));
             app.Controls.measureAxes = axesList;
             if size(pairs, 1) > nPanels
                 lines = [sprintf("選んだ %d 通りのうち、はじめの %d 通りを描きました（Wafer・学習パターンを減らしてください）。", ...
@@ -792,6 +901,13 @@ classdef AlignmentEstimationApp < handle
                 drawLayout(app);
             end
             app.Controls.dataTabs.SelectedTab = selectedTab;
+        end
+
+        function onLayoutClicked(app, event)
+            % Shot レイアウトの図のクリック：左クリックだけ Scan 方向を入れ替える（右クリックは凡例の位置のメニュー）
+            if event.Button == 1
+                onLayoutShotClicked(app, event.IntersectionPoint);
+            end
         end
 
         function onLayoutShotClicked(app, point)
@@ -931,7 +1047,8 @@ classdef AlignmentEstimationApp < handle
                     app.Analysis.estimates.("residual" + axisNames(k)), titleText, methodLabels);
                 summary(k) = struct("axis", axisNames(k), "levels", part); %#ok<AGROW>
             end
-            set(c.boxAxes, 'Visible', 'on', 'FontSize', app.AXES_FONT_SIZE);
+            set(c.boxAxes, 'Visible', 'on');
+            styleAxes(app, c.boxAxes, app.AXES_FONT_SIZE);
             results = app.Results;
             selection = app.Analysis.selection;
             c.boxInfo.Text = sprintf("%s｜%s｜Wafer %d 枚｜判定（5%%）：%s", methodScopeText(results, selection), ...
@@ -983,7 +1100,8 @@ classdef AlignmentEstimationApp < handle
                 c.timingRepeats.Value);
             app.Timing = breakdown;
             alignest.plot.timingBars(c.timingAxes(1), c.timingAxes(2), breakdown);
-            set(c.timingAxes, 'Visible', 'on', 'FontSize', app.AXES_FONT_SIZE);
+            set(c.timingAxes, 'Visible', 'on');
+            styleAxes(app, c.timingAxes, app.AXES_FONT_SIZE);
             values = breakdown.table{:, cellstr(breakdown.stages)};
             rows = cell(height(breakdown.table), numel(breakdown.stages) + 2);
             for m = 1:height(breakdown.table)
@@ -996,7 +1114,8 @@ classdef AlignmentEstimationApp < handle
             end
             c.timingTable.Data = rows;
             c.timingTable.ColumnName = cellstr(["手法", "合計 [秒]", breakdown.labels + " [秒]"]);
-            c.timingTable.ColumnWidth = [{app.METHOD_COLUMN_WIDTH, 90}, repmat({'auto'}, 1, numel(breakdown.stages))];
+            c.timingTable.ColumnWidth = [{scaledPixels(app, app.METHOD_COLUMN_WIDTH), scaledPixels(app, 90)}, ...
+                repmat({'auto'}, 1, numel(breakdown.stages))];
             c.timingInfo.Text = sprintf("%s｜%s｜学習点 X %d・Y %d、評価点 X %d・Y %d｜", unit.label, spec(1).label, ...
                 breakdown.nTrain, breakdown.nTest) + c.timingInfo.UserData;
         end
@@ -1036,7 +1155,7 @@ classdef AlignmentEstimationApp < handle
                 summary(2) = alignest.plot.estimateScatter(c.scatterAxes(2), estimates.measY, estimates.estimateY, ...
                     categories, "Y");
             end
-            set(c.scatterAxes, 'FontSize', app.AXES_FONT_SIZE);
+            styleAxes(app, c.scatterAxes, app.AXES_FONT_SIZE);
             c.scatterInfo.Text = sprintf(['%s｜%s｜Wafer %d 枚｜色：%s。破線は y = x、赤い線は回帰直線' ...
                 '（推定値 = a + b·実測値）、r は相関係数。'], app.Results.methods(selection.methodIndex).label, ...
                 selection.groups, numel(unitIndex), string(c.scatterColor.Items{strcmp(c.scatterColor.ItemsData, ...
@@ -1092,7 +1211,7 @@ classdef AlignmentEstimationApp < handle
                     variableLabel, "Y の残差");
             end
             c.residualVariableAxes(1).Visible = 'on';
-            set(c.residualVariableAxes, 'FontSize', app.AXES_FONT_SIZE);
+            styleAxes(app, c.residualVariableAxes, app.AXES_FONT_SIZE);
             % すべての説明変数と残差の相関（値の無い説明変数は「—」）
             rows = cell(numel(keys), 6);
             [rX, pX, rY, pY, counts] = deal(nan(numel(keys), 1));
@@ -1305,7 +1424,7 @@ classdef AlignmentEstimationApp < handle
             if ~isempty(ax.Children)
                 legend(ax, 'Location', 'best', 'Box', 'off', 'FontSize', 10);
             end
-            ax.FontSize = app.AXES_FONT_SIZE;
+            styleAxes(app, ax, app.AXES_FONT_SIZE);
             rows = cell(height(comparison), 10);
             for k = 1:height(comparison)
                 rows(k, :) = {char(comparison.typeLabel(k)), char(comparison.group(k)), numberText(comparison.nShots(k), '%.1f'), ...
@@ -1640,7 +1759,7 @@ classdef AlignmentEstimationApp < handle
                 mode=string(c.targetResidualMode.Value), titleText=unit.label, showStatistics=false, ...
                 legendLocation="eastoutside", ...
                 waferRadiusMm=app.Settings.data.waferRadiusMm);
-            c.targetResidualAxes.FontSize = app.AXES_FONT_SIZE;
+            styleAxes(app, c.targetResidualAxes, app.AXES_FONT_SIZE);
             c.targetResidualSave.Enable = 'on';
             info = run.labels(position) + "｜" + summary.valueLabel + sprintf("：%d 点、|平均|+3σ X %.3f nm・Y %.3f nm", ...
                 summary.n, summary.meanPlus3SigmaX, summary.meanPlus3SigmaY) + "（四角は実測値の点、◇ は未知の座標の点）";
@@ -1959,7 +2078,7 @@ classdef AlignmentEstimationApp < handle
             cells = analysis.cells(analysis.cells.axis == axisName, :);
             alignest.plot.interactionPlot(c.interactionAxes, cells, names(1), names(2), titleText, spec.unit);
             c.interactionAxes.Visible = 'on';
-            c.interactionAxes.FontSize = app.AXES_FONT_SIZE;
+            styleAxes(app, c.interactionAxes, app.AXES_FONT_SIZE);
         end
 
         function onAnalyzeInteractions(app)
@@ -2224,7 +2343,8 @@ classdef AlignmentEstimationApp < handle
                     colorRange=valueRange(values(:, 1)), colorTitle=spec.name + " [" + spec.unit + "]", ...
                     markerSize=c.previewMarkerSize.Value, markerShape=c.previewMarkerShape.Value, ...
                     titleText=ternary(option.isGroup, spec.name + " の平均", spec.name));
-                set(c.previewAxes(1), 'Visible', 'on', 'FontSize', app.AXES_FONT_SIZE);
+                set(c.previewAxes(1), 'Visible', 'on');
+                styleAxes(app, c.previewAxes(1), app.AXES_FONT_SIZE);
                 arrayfun(@(ax) cla(ax, 'reset'), c.previewAxes(2:3));
                 set(c.previewAxes(2:3), 'Visible', 'off');
                 c.previewInfo.Text = sprintf('%s（1変数）を色で描いています（単位 %s）。', spec.name, spec.unit);
@@ -2239,7 +2359,8 @@ classdef AlignmentEstimationApp < handle
                 markerSize=c.previewMarkerSize.Value, markerShape=c.previewMarkerShape.Value, titleText="X 成分（色）");
             alignest.plot.waferMap(c.previewAxes(3), points, values, common{:}, mode="Y", colorLimit=limit, ...
                 markerSize=c.previewMarkerSize.Value, markerShape=c.previewMarkerShape.Value, titleText="Y 成分（色）");
-            set(c.previewAxes, 'Visible', 'on', 'FontSize', app.AXES_FONT_SIZE);
+            set(c.previewAxes, 'Visible', 'on');
+            styleAxes(app, c.previewAxes, app.AXES_FONT_SIZE);
             % 楕円と重ねる矢印は単色（色の目盛りは楕円の |r|）、楕円が無ければ矢印の色は長さ
             arrowText = ternary(ellipseSigma > 0, "矢印は単色（右の目盛りは楕円の |r|）", "矢印の色は長さ |v|");
             extras = "";
@@ -2296,12 +2417,13 @@ classdef AlignmentEstimationApp < handle
             unit = app.Data.units(c.layoutWafer.Value);
             alignest.plot.shotLayout(c.layoutAxes(1), unit, app.Settings.data.waferRadiusMm, scanStyle(app));
             alignest.plot.markLayout(c.layoutAxes(2), unit);
-            set(c.layoutAxes, 'Visible', 'on', 'FontSize', app.AXES_FONT_SIZE);
+            set(c.layoutAxes, 'Visible', 'on');
+            styleAxes(app, c.layoutAxes, app.AXES_FONT_SIZE);
             % Shot をクリックして Scan 方向を入れ替える（図の中の線・文字はクリックを図に通す）
             ax = c.layoutAxes(1);
             disableDefaultInteractivity(ax);
             set(ax.Children, 'HitTest', 'off');
-            ax.ButtonDownFcn = @(~, event) app.onLayoutShotClicked(event.IntersectionPoint);
+            ax.ButtonDownFcn = @(~, event) app.onLayoutClicked(event);
             changed = numel(app.Settings.data.directionOverrideShots);
             c.resetScanDirections.Enable = onOff(changed > 0);
             c.scanEditInfo.Text = "左の図の Shot をクリックすると、その shotNo の Scan 方向を 1 ↔ 2 で入れ替えます" + ...
@@ -3612,7 +3734,8 @@ classdef AlignmentEstimationApp < handle
                 axisLabel + " の計測値：全面・学習・予測対象", spec.unit);
             alignest.plot.distributionHistograms(c.distributionAxes(2), part.samples([3, 4]), part.names([3, 4]), part.edges, ...
                 axisLabel + "：予測対象の実測値と推定値", spec.unit);
-            set(c.distributionAxes, 'Visible', 'on', 'FontSize', app.AXES_FONT_SIZE);
+            set(c.distributionAxes, 'Visible', 'on');
+            styleAxes(app, c.distributionAxes, app.AXES_FONT_SIZE);
             note = "";
             if isfield(app.Distribution, "note") && app.Distribution.note ~= ""
                 note = "⚠ " + app.Distribution.note + "｜";
@@ -4480,7 +4603,8 @@ classdef AlignmentEstimationApp < handle
             end
             c.summaryTable.Data = data;
             c.summaryTable.ColumnName = cellstr(["手法", summary.groups]);
-            c.summaryTable.ColumnWidth = [{app.METHOD_COLUMN_WIDTH}, repmat({app.VALUE_COLUMN_WIDTH}, 1, numel(summary.groups))];
+            c.summaryTable.ColumnWidth = [{scaledPixels(app, app.METHOD_COLUMN_WIDTH)}, ...
+                repmat({scaledPixels(app, app.VALUE_COLUMN_WIDTH)}, 1, numel(summary.groups))];
             comparison = alignest.pairedComparison(app.Results, string(c.reference.Value), metric);
             unitText = ternary(comparison.Properties.UserData.lowerIsBetter, "%", "");
             rows = cell(height(comparison), 6);
@@ -4495,7 +4619,7 @@ classdef AlignmentEstimationApp < handle
             c.comparisonTable.Data = rows;
             c.comparisonTable.ColumnName = {'手法', '列', ...
                 char("基準との差（" + ternary(unitText == "%", "割合", "差") + "）"), '95% 区間', '基準より良かった割合', 'Wafer 数'};
-            c.comparisonTable.ColumnWidth = {app.METHOD_COLUMN_WIDTH, 120, 200, 230, 210, 100};
+            c.comparisonTable.ColumnWidth = num2cell(scaledPixels(app, [app.METHOD_COLUMN_WIDTH, 120, 200, 230, 210, 100]));
             c.comparisonNote.Text = sprintf(['基準の手法：%s。同じ Wafer・同じ学習パターンどうしで比べた差の平均（%s）、' ...
                 'その 95%% 区間、基準より良かった Wafer の割合。'], comparison.Properties.UserData.referenceLabel, ...
                 ternary(unitText == "%", "誤差の差の割合。負なら基準より良い", "差。正なら基準より良い"));
@@ -4554,7 +4678,7 @@ classdef AlignmentEstimationApp < handle
             if ~isempty(selected)
                 legend(ax, 'Location', 'southoutside', 'NumColumns', 1, 'Interpreter', 'none', 'FontSize', 10, 'Box', 'off');
             end
-            ax.FontSize = app.AXES_FONT_SIZE;
+            styleAxes(app, ax, app.AXES_FONT_SIZE);
         end
 
         function drawCriteriaChart(app)
@@ -4612,13 +4736,13 @@ classdef AlignmentEstimationApp < handle
                 title(ax, sprintf("%s と推定誤差（Wafer の%s%s）", criteriaNames(a), statisticLabel(statistic), ...
                     errorBarCaption(string(c.chartErrorBars.Value))));
                 grid(ax, 'on');
-                ax.FontSize = app.AXES_FONT_SIZE;
                 ax.Visible = 'on';
             end
             if ~isempty(selected)
                 legend(c.chartAxes, 'Location', 'southoutside', 'NumColumns', 1, 'Interpreter', 'none', 'FontSize', 10, ...
                     'Box', 'off');
             end
+            styleAxes(app, axesList, app.AXES_FONT_SIZE);
         end
 
         function onExport(app)
@@ -4761,7 +4885,7 @@ classdef AlignmentEstimationApp < handle
                 alignest.plot.residualHistogram(c.histogramAxes(2), splitByGroup(estimates.residualY, methodOfRow), ...
                     "Y の残差", "nm", methodNames);
             end
-            set(c.histogramAxes, 'FontSize', app.AXES_FONT_SIZE);
+            styleAxes(app, c.histogramAxes, app.AXES_FONT_SIZE);
             normality = app.Analysis.analysis.normality;
             rows = cell(height(normality), 14);
             for k = 1:height(normality)
@@ -5111,14 +5235,15 @@ classdef AlignmentEstimationApp < handle
                 axesList(k) = ax;
                 f = fieldsList{k};
                 if ~f.ok
-                    title(ax, conditions(k).label + newline + "（描けません）", 'Interpreter', 'none', 'FontSize', 10);
+                    title(ax, conditions(k).label + newline + "（描けません）", 'Interpreter', 'none');
                     axis(ax, 'off');
+                    styleAxes(app, ax, app.SMALL_AXES_FONT_SIZE);
                     continue
                 end
                 titleText = conditions(k).label + newline + f.titles(valueIndex) + sprintf("（RMSE %.3f %s）", f.rmse, ...
                     spec.unit);
                 drawMapPanel(app, ax, f, valueIndex, scale(1), limit, magnitude, titleText, false, range);
-                ax.FontSize = app.SMALL_AXES_FONT_SIZE;
+                styleAxes(app, ax, app.SMALL_AXES_FONT_SIZE);
                 if ~isempty(ax.Colorbar)
                     % 色の目盛りの名前は横に書く（並べた図では上に書くと題名と重なる）
                     ax.Colorbar.Label.String = ax.Colorbar.Title.String;
@@ -5213,7 +5338,7 @@ classdef AlignmentEstimationApp < handle
                         shotSizeMm=f.sizeMm, scaleMmPerNm=scale, colorLimit=panelLimit, colorRange=range, ...
                         colorTitle=colorTitle, titleText=titleText, markerSize=c.mapMarkerSize.Value, ...
                         showLegend=g == 1 && v == 1);
-                    ax.FontSize = ternary(nGroups * nValues > 1, app.SMALL_AXES_FONT_SIZE, app.AXES_FONT_SIZE);
+                    styleAxes(app, ax, ternary(nGroups * nValues > 1, app.SMALL_AXES_FONT_SIZE, app.AXES_FONT_SIZE));
                 end
             end
             app.Controls.compareAxes = axesList;
@@ -5265,7 +5390,7 @@ classdef AlignmentEstimationApp < handle
                 shotSizeMm=sizeMm, shotDirections=directions, ringRadiiMm=rings, covariance=f.covariance{k}, scanStyle=scanStyle(app), ...
                 ellipseSigma=ellipseSigma, showArrows=~(c.mapEllipseOnly.Value && ellipseSigma > 0), showLegend=showLegend, ...
                 colorRange=colorRange, colorTitle=colorTitle);
-            ax.FontSize = app.AXES_FONT_SIZE;
+            styleAxes(app, ax, app.AXES_FONT_SIZE);
         end
 
         function [scale, limit, magnitudes] = mapScales(app, values, referenceIndex, separateThird)
@@ -6133,7 +6258,7 @@ classdef AlignmentEstimationApp < handle
             end
             alignest.plot.targetMap(c.targetAxes, run.results{position}, unit, mode=string(c.targetMode.Value), ...
                 titleText=titleText, waferRadiusMm=app.Settings.data.waferRadiusMm, spec=alignest.valueSpec(app.Settings.data));
-            c.targetAxes.FontSize = app.AXES_FONT_SIZE;
+            styleAxes(app, c.targetAxes, app.AXES_FONT_SIZE);
         end
 
         function note = targetOverlayForExport(app)
@@ -6278,7 +6403,7 @@ classdef AlignmentEstimationApp < handle
             % 用語・推定の手法・カーネル・Overlay 補正の式の説明（help/help.html。exe にも入れる）を出す
             grid = uigridlayout(app.Tabs.help, [1, 1], 'Padding', 0);
             helpFile = fullfile(fileparts(mfilename('fullpath')), 'help', 'help.html');
-            c.helpView = uihtml(grid, 'HTMLSource', helpFile, 'Data', struct("theme", app.Theme));
+            c.helpView = uihtml(grid, 'HTMLSource', helpFile, 'Data', helpData(app));
             if ~isfile(helpFile)
                 c.helpView.HTMLSource = ['<p style="font-family:sans-serif">ヘルプのファイルが見つかりません：', ...
                     char(helpFile), '</p>'];
@@ -6330,7 +6455,7 @@ classdef AlignmentEstimationApp < handle
                     case 'axes'
                         themeAxes(object, old, new);
                     case 'uihtml'
-                        object.Data = struct("theme", app.Theme);
+                        object.Data = helpData(app);
                 end
             end
             % 色に依存する表の印（座標の単位の警告・各列の最良）を付け直す
@@ -6340,6 +6465,332 @@ classdef AlignmentEstimationApp < handle
             end
             if ~isempty(app.TargetRun)
                 showTargetRun(app);   % 外挿の行の色・メッセージの色を新しい色の組にする
+            end
+        end
+
+        function data = helpData(app)
+            % ヘルプ（uihtml）に渡す表示の設定：画面の色と文字の大きさの比
+            data = struct("theme", app.Theme, "fontScale", app.FontScale);
+        end
+
+        % ================= 表示の設定（文字の大きさ・凡例の位置） =================
+        function value = loadPreference(app, name, fallback)
+            % 前回保存した表示の設定（getpref）。読めないときは fallback
+            try
+                value = getpref(app.PREF_GROUP, name, fallback);
+            catch
+                value = fallback;
+            end
+        end
+
+        function savePreference(app, name, value)
+            % 表示の設定を、次に開いたときも使えるように保存する（画面を出しているときだけ。自動テストでは保存しない）
+            if app.Figure.Visible == "on"
+                try
+                    setpref(app.PREF_GROUP, name, value);
+                catch
+                    % 保存できなくても、今の画面の表示は変わっている
+                end
+            end
+        end
+
+        function tables = fontTables(app)
+            % 列の多い表（TABLE_FONT_SIZE の文字で出す表）
+            tables = [app.Controls.unitTable, app.Controls.normalityTable, app.Controls.anovaTable, ...
+                app.Controls.targetTable, app.Controls.targetResultTable];
+        end
+
+        function pixels = scaledPixels(app, pixels)
+            % 標準の文字の大きさのときの幅・高さ [px] を、今の文字の大きさに合わせる
+            pixels = round(pixels * app.FontScale);
+        end
+
+        function applyFontSize(app, previousScale)
+            % 画面の欄・表・図の文字と、決まった大きさの欄・表の列の幅を、今の文字の大きさ（FontScale）にする
+            set(fontComponents(app.Figure), 'FontSize', scaledPixels(app, app.FONT_SIZE));
+            set(fontTables(app), 'FontSize', scaledPixels(app, app.TABLE_FONT_SIZE));
+            % 今見えているタブは付け直し済み。ほかのタブは開いたときに付け直す（refreshTabFonts）
+            app.FontVersion = app.FontVersion + 1;
+            markShownTabs(app, app.TabGroup.SelectedTab);
+            % 表の列の幅（描いたときに今の文字の大きさで決めた幅）は、前の大きさとの比で変える
+            for table_ = reshape(findall(app.Figure, 'Type', 'uitable'), 1, [])
+                widths = table_.ColumnWidth;
+                if iscell(widths)
+                    fixed = cellfun(@(width) isnumeric(width) && width > 0, widths);
+                    widths(fixed) = cellfun(@(width) round(width * app.FontScale / previousScale), widths(fixed), ...
+                        'UniformOutput', false);
+                    table_.ColumnWidth = widths;
+                end
+            end
+            for item = app.FixedSizes
+                if ~isvalid(item.grid)
+                    continue
+                end
+                sizes = item.grid.(item.property);
+                % 隠している行・列（0）や、後から 'fit' などに変えた行・列はそのままにする
+                if item.index <= numel(sizes) && isnumeric(sizes{item.index}) && sizes{item.index} > 0
+                    sizes{item.index} = scaledPixels(app, item.size);
+                    item.grid.(item.property) = sizes;
+                end
+            end
+            applyResponsiveLayout(app);
+            styleAxes(app, findall(app.Figure, 'Type', 'axes'));
+            app.Controls.helpView.Data = helpData(app);
+        end
+
+        function refreshTabFonts(app, tab)
+            % 開いたタブの部品の文字の大きさを付け直す（見えていないときに変えた大きさが、ボタン・選ぶ欄などに出ないことが
+            % あるため。同じ値を入れ直しても描き直されないので、一度別の値にしてから戻す）。文字の大きさを変えてから
+            % まだ付け直していないタブだけ
+            if ~isa(tab, 'matlab.ui.container.Tab') || ~isvalid(tab) || ...
+                    (isappdata(tab, 'AlignFontVersion') && getappdata(tab, 'AlignFontVersion') == app.FontVersion) || ...
+                    (~isappdata(tab, 'AlignFontVersion') && app.FontVersion == 0)
+                return
+            end
+            components = fontComponents(tab);
+            if ~isempty(components)
+                sizes = get(components, {'FontSize'});
+                set(components, 'FontSize', 1);
+                set(components, {'FontSize'}, sizes);
+            end
+            markShownTabs(app, tab);
+        end
+
+        function markShownTabs(app, tab)
+            % tab と、その中で今見えているタブ（入れ子のタブで選んでいるもの）に、文字を付け直した印を付ける
+            setappdata(tab, 'AlignFontVersion', app.FontVersion);
+            for tabGroup = reshape(findall(tab, 'Type', 'uitabgroup'), 1, [])
+                shown = true;
+                ancestor = tabGroup.Parent;
+                while shown && ancestor ~= tab
+                    if isa(ancestor, 'matlab.ui.container.Tab')
+                        shown = ancestor.Parent.SelectedTab == ancestor;
+                    end
+                    ancestor = ancestor.Parent;
+                end
+                if shown && ~isempty(tabGroup.SelectedTab)
+                    setappdata(tabGroup.SelectedTab, 'AlignFontVersion', app.FontVersion);
+                end
+            end
+        end
+
+        function collectFixedSizes(app)
+            % 決まった大きさ [px] の行・列（一覧の高さ・入力欄の幅など）を、標準の文字の大きさのときの大きさとして覚える
+            % （文字の大きさを変えたときに同じ比で変えるため。窓の幅に合わせる欄は applyResponsiveLayout が受け持つ）
+            for grid = reshape(findall(app.Figure, 'Type', 'uigridlayout'), 1, [])
+                if grid == app.RootGrid
+                    continue
+                end
+                for property = ["RowHeight", "ColumnWidth"]
+                    sizes = grid.(property);
+                    for k = 1:numel(sizes)
+                        responsive = property == "ColumnWidth" && ...
+                            any(arrayfun(@(item) item.grid == grid && item.column == k, app.ResponsiveColumns));
+                        if isnumeric(sizes{k}) && sizes{k} > 0 && ~responsive
+                            app.FixedSizes(end + 1) = struct("grid", grid, "property", property, "index", k, ...
+                                "size", sizes{k});
+                        end
+                    end
+                end
+            end
+        end
+
+        function styleAxes(app, axesList, baseSize)
+            %STYLEAXES 描いた図に表示の設定（文字の大きさ・凡例の位置）を当てる。図を描く関数の最後に呼ぶ。
+            %   baseSize：標準の文字の大きさのときの軸の文字の大きさ（省略すると前に決めた大きさ。無ければ AXES_FONT_SIZE）。
+            %   図の中の文字・色の目盛り・大きさを決めた凡例は、描いた関数が決めた大きさを基準に同じ比で変える
+            %   （題名・軸の名前・大きさを決めていない凡例は、軸の文字の大きさに合わせて変わる）。
+            %   図を右クリックすると、その図だけの凡例の位置を選べるようにする。
+            for ax = reshape(axesList, 1, [])
+                if ~isvalid(ax)
+                    continue
+                end
+                if nargin >= 3
+                    setappdata(ax, 'AlignAxesFontSize', baseSize);
+                end
+                base = app.AXES_FONT_SIZE;
+                if isappdata(ax, 'AlignAxesFontSize')
+                    base = getappdata(ax, 'AlignAxesFontSize');
+                end
+                ax.FontSize = base * app.FontScale;
+                labels = [ax.Title, ax.Subtitle, ax.XLabel, ax.YLabel, ax.ZLabel];
+                texts = findall(ax, 'Type', 'text');
+                texts = texts(~arrayfun(@(text_) any(text_ == labels), texts));
+                parts = [reshape(texts, 1, []), ax.Colorbar];
+                if ~isempty(ax.Legend) && isvalid(ax.Legend) && ax.Legend.FontSizeMode == "manual"
+                    parts = [parts, ax.Legend]; %#ok<AGROW>
+                end
+                scaleFonts(app, parts);
+                placeLegend(app, ax);
+                attachLegendMenu(app, ax);
+            end
+        end
+
+        function scaleFonts(app, objects)
+            % 文字の大きさを、描いた関数が決めた大きさ（基準）× 文字の大きさの比にする。基準は図の部品に覚えておく
+            % （描き直して大きさが付け直されたら、その大きさを基準にし直す。何度呼んでも同じ大きさになる）
+            for object = objects
+                if ~isvalid(object)
+                    continue
+                end
+                record = [object.FontSize, NaN];   % [基準, 付けた大きさ]
+                if isappdata(object, 'AlignFontBase')
+                    saved = getappdata(object, 'AlignFontBase');
+                    if abs(object.FontSize - saved(2)) < 1e-9
+                        record = saved;
+                    end
+                end
+                record(2) = record(1) * app.FontScale;
+                object.FontSize = record(2);
+                setappdata(object, 'AlignFontBase', record);
+            end
+        end
+
+        function placeAllLegends(app)
+            % 描いてあるすべての図の凡例を、今の設定の位置に置き直す
+            for ax = reshape(findall(app.Figure, 'Type', 'axes'), 1, [])
+                placeLegend(app, ax);
+            end
+        end
+
+        function placeLegend(app, ax)
+            % 図の凡例を、選んだ位置（その図の指定、無ければすべての図の設定）に置く。「図ごとの既定」は描いた関数が
+            % 決めた位置・並べ方（描き直したら覚え直す）。図の上・下に置くときは横に、それ以外は縦に並べる
+            legend_ = ax.Legend;
+            if isempty(legend_) || ~isvalid(legend_)
+                return
+            end
+            % 並べた図（tiledlayout）の凡例は、置いた直後の位置を読み直すと古い値のことがあるので、置いた位置を覚えて使う
+            % （並べた図は描くたびに作り直すので、描き直されたかを確かめなくてよい）
+            tiled = isa(legend_.Parent, 'matlab.graphics.layout.TiledChartLayout');
+            current = legendPlace(legend_);
+            record = struct("place", current, "orientation", string(legend_.Orientation), ...
+                "columns", legend_.NumColumns, "applied", "");
+            if isappdata(legend_, 'AlignLegendDefault')
+                saved = getappdata(legend_, 'AlignLegendDefault');
+                if tiled || saved.applied == current
+                    record = saved;
+                end
+            end
+            choice = app.LegendLocation;
+            key = legendKey(app, legendOwner(ax));
+            if key ~= "" && isfield(app.LegendOverrides, key)
+                choice = app.LegendOverrides.(key);
+            end
+            target = record.place;
+            if ~any(choice == ["auto", "none"])
+                target = choice;
+            end
+            if startsWith(target, "tile:")
+                % 並べた図の外側（図を並べたときの既定）。タイルの番号のときは数にする
+                tile = extractAfter(target, "tile:");
+                if ~isnan(str2double(tile))
+                    tile = str2double(tile);
+                end
+                legend_.Location = 'layout';
+                legend_.Layout.Tile = tile;
+            elseif tiled && endsWith(target, "outside")
+                legend_.Location = 'layout';
+                legend_.Layout.Tile = extractBefore(target, "outside");
+            else
+                legend_.Location = target;
+            end
+            if isWideLegend(target) == isWideLegend(record.place)
+                legend_.Orientation = record.orientation;
+                legend_.NumColumns = record.columns;
+            elseif isWideLegend(target)
+                legend_.Orientation = 'vertical';
+                legend_.NumColumns = min(numel(legend_.String), app.LEGEND_MAX_COLUMNS);
+            else
+                legend_.Orientation = 'vertical';
+                legend_.NumColumns = 1;
+            end
+            legend_.Visible = onOff(choice ~= "none");
+            record.applied = legendPlace(legend_);
+            if tiled
+                record.applied = target;
+            end
+            setappdata(legend_, 'AlignLegendDefault', record);
+        end
+
+        function key = legendKey(app, owner)
+            % 凡例の位置を図ごとに覚えるための図の名前（Controls の名前。いくつか並ぶ図は「名前_番号」）。無ければ ""
+            key = "";
+            if isempty(owner) || ~isvalid(owner)
+                return
+            end
+            if isappdata(owner, 'AlignLegendKey')
+                key = getappdata(owner, 'AlignLegendKey');
+                return
+            end
+            names = fieldnames(app.Controls);
+            ownerClass = class(owner);
+            for k = 1:numel(names)
+                value = app.Controls.(names{k});
+                if ~isa(value, ownerClass) || isempty(value)
+                    continue
+                end
+                index = find(value == owner, 1);
+                if ~isempty(index)
+                    key = string(names{k});
+                    if numel(value) > 1
+                        key = key + "_" + index;
+                    end
+                    setappdata(owner, 'AlignLegendKey', key);
+                    return
+                end
+            end
+        end
+
+        function attachLegendMenu(app, ax)
+            % 図（と凡例）を右クリックしたときに、その図だけの凡例の位置を選ぶメニューを出す（メニューは図ごとに1つ。
+            % 凡例の無い図には付けない。並べた図は、凡例が1つでもあれば、どの図からも選べる）
+            legends = ax.Legend;
+            if isa(ax.Parent, 'matlab.graphics.layout.TiledChartLayout')
+                legends = findobj(ax.Parent.Children, 'flat', 'Type', 'legend');
+            end
+            if isempty(legends)
+                return
+            end
+            key = legendKey(app, legendOwner(ax));
+            if key == ""
+                return
+            end
+            if ~isfield(app.LegendMenus, key) || ~isvalid(app.LegendMenus.(key))
+                menu = uicontextmenu(app.Figure, 'ContextMenuOpeningFcn', @(source, ~) app.markLegendMenu(source, key));
+                uimenu(menu, 'Text', 'この図の凡例の位置：', 'Enable', 'off');
+                uimenu(menu, 'Text', 'すべての図の設定に従う', 'UserData', "inherit", ...
+                    'MenuSelectedFcn', @(~, ~) app.setLegendLocation("inherit", key));
+                for k = 1:numel(app.LEGEND_CHOICES)
+                    choice = app.LEGEND_CHOICES(k);
+                    uimenu(menu, 'Text', app.LEGEND_LABELS(k), 'UserData', choice, 'Separator', onOff(k == 1), ...
+                        'MenuSelectedFcn', @(~, ~) app.setLegendLocation(choice, key));
+                end
+                app.LegendMenus.(key) = menu;
+            end
+            ax.ContextMenu = app.LegendMenus.(key);
+            if ~isempty(ax.Legend) && isvalid(ax.Legend)
+                ax.Legend.ContextMenu = app.LegendMenus.(key);
+            end
+        end
+
+        function markLegendMenu(app, menu, key)
+            % 右クリックのメニューに、その図の今の指定の印を付ける
+            choice = "inherit";
+            if isfield(app.LegendOverrides, key)
+                choice = app.LegendOverrides.(key);
+            end
+            for item = reshape(menu.Children, 1, [])
+                if ~isempty(item.UserData)
+                    item.Checked = onOff(item.UserData == choice);
+                end
+            end
+        end
+
+        function markLegendItems(app)
+            % 「表示」→「凡例の位置」のメニューに、今の設定の印を付ける
+            for item = app.Controls.legendItems
+                item.Checked = onOff(item.UserData == app.LegendLocation);
             end
         end
 
@@ -6493,19 +6944,21 @@ classdef AlignmentEstimationApp < handle
             % 窓が FIGURE_SIZE より狭いときは、決まった幅の欄（左の条件・右の一覧など）を中身の幅の比で狭める
             % （小さい画面に移しても、図や表の場所が決まった幅の欄に取られすぎないように）。窓が MIN_CONTENT_SIZE より
             % 小さい向きは、中身をその大きさに保ってスクロールする（それより詰めると、幅を決めない欄が無くなり、
-            % 見出しが縦に長く折り返して図や表が隠れるため）
+            % 見出しが縦に長く折り返して図や表が隠れるため）。文字の大きさを変えたときは、決まった幅の欄と中身の最小の
+            % 大きさにも文字の大きさの比を掛ける（大きな文字が欄からはみ出さないように）
             if isempty(app.Figure) || ~isvalid(app.Figure)
                 return
             end
             figureSize = app.Figure.Position(3:4);
-            contentSize = max(figureSize, app.MIN_CONTENT_SIZE);
+            minContentSize = scaledPixels(app, app.MIN_CONTENT_SIZE);
+            contentSize = max(figureSize, minContentSize);
             padding = 2 * app.RootGrid.Padding(1);
             sizes = {{'1x'}, {'1x'}};
-            for k = find(figureSize < app.MIN_CONTENT_SIZE)
-                sizes{k} = {app.MIN_CONTENT_SIZE(k) - padding};
+            for k = find(figureSize < minContentSize)
+                sizes{k} = {minContentSize(k) - padding};
             end
             set(app.RootGrid, 'ColumnWidth', sizes{1}, 'RowHeight', sizes{2});
-            scale = min(1, contentSize(1) / app.FIGURE_SIZE(1));
+            scale = min(1, contentSize(1) / app.FIGURE_SIZE(1)) * app.FontScale;
             for item = app.ResponsiveColumns
                 if ~isvalid(item.grid)
                     continue
@@ -6886,6 +7339,55 @@ else
     [~, index] = min(hypot(centers(:, 1) - center(1), centers(:, 2) - center(2)));
 end
 monitor = monitors(index, :);
+end
+
+function components = fontComponents(parent)
+% parent の中の画面の部品（欄・ボタン・表など。種類が ui で始まるもの）のうち、文字の大きさを持つもの（図の部品は除く）
+components = findall(parent, '-property', 'FontSize');
+if ~isempty(components)
+    components = components(startsWith(string(get(components, {'Type'})), "ui"));
+end
+end
+
+function owner = legendOwner(ax)
+% 凡例の位置を図ごとに覚えるときの持ち主：ふつうは図（axes）。tiledlayout で並べた図は、並べる枠（描くたびに
+% 図が作り直されても、同じ指定を使えるように）
+owner = ax;
+if isa(ax.Parent, 'matlab.graphics.layout.TiledChartLayout')
+    owner = ax.Parent.Parent;
+end
+end
+
+function place = legendPlace(legend_)
+% 凡例の今の位置（Location）。tiledlayout の外側に置いた凡例は "tile:" + タイルの名前（east など）
+% （タイルに置いた直後は Location が前の値のまま（自動）のことがあるので、位置を指定していなければタイルとみなす）
+place = string(legend_.Location);
+if isa(legend_.Parent, 'matlab.graphics.layout.TiledChartLayout') && ...
+        (place == "layout" || legend_.LocationMode == "auto")
+    tile = legend_.Layout.Tile;
+    if ~isempty(tile) && ~isequal(tile, 0)
+        place = "tile:" + string(tile);
+    end
+end
+end
+
+function wide = isWideLegend(place)
+% 図の上・下に置く凡例（横に並べる）か
+wide = any(place == ["northoutside", "southoutside", "tile:north", "tile:south"]);
+end
+
+function overrides = validLegendOverrides(saved, choices)
+% 保存してあった図ごとの凡例の位置のうち、使えるものだけ（名前・位置が正しいもの）
+overrides = struct();
+if ~isstruct(saved) || ~isscalar(saved)
+    return
+end
+for name = reshape(string(fieldnames(saved)), 1, [])
+    value = saved.(name);
+    if (ischar(value) || isstring(value)) && isscalar(string(value)) && any(string(value) == choices)
+        overrides.(name) = string(value);
+    end
+end
 end
 
 function text = axisLabel(spec, axisNames)
