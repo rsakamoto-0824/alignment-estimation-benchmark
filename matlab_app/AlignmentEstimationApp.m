@@ -48,6 +48,8 @@ classdef AlignmentEstimationApp < handle
         MAX_ZERNIKE_ORDER = 6           % Fringe Zernike の次数の上限（Z1〜Z49）
         MAX_RBFE_REGIONS = 25           % RBFe の領域の数の上限（alignest.buildMethodList と同じ）
         WORST_PERCENT = 95              % マップに出す「95%値」の百分位（結果一覧の集計と同じ）
+        IMAGE_RESOLUTION = 150          % 「図を画像で保存…」の解像度 [dpi]
+        IMAGE_GAP_PIXELS = 20           % 図を横に並べて1枚の画像にするときの間 [px]
         MAX_MEASURE_PANELS = 6          % 計測マップを並べる数の上限（Wafer × 学習パターン）
         MAX_COMPARE_PANELS = 6          % Wafer ごとのマップで並べて比べる条件の数の上限
         TIMING_REPEAT_LIMITS = [1, 10]  % 処理時間の内訳を測る回数の範囲
@@ -1788,6 +1790,33 @@ classdef AlignmentEstimationApp < handle
             alignest.exportTargetEstimates(filePath, run.estimates, notes, alignest.valueSpec(app.Settings.data), overlay);
         end
 
+        function saveFigureImage(app, figureName, filePath)
+            %SAVEFIGUREIMAGE 画面の図を PNG に保存する（「図を画像で保存…」のボタンと同じ）。figureName：
+            %   "measure"（3. 実行の計測マップ）・"chart"（4. 結果一覧のグラフ）・"map"（5. Waferごとのマップ）・
+            %   "target"（6. 未知の座標の図）・"targetResidual"（6. の補正残差の図）。凡例・色の目盛りも入れる。
+            %   図が2つ以上（グラフの I 基準・D 基準、マップの計測値・推定値・残差）なら横に並べて1枚にする。
+            %   画面の部品（uigridlayout）を含む枠は exportgraphics で書き出せない（白紙になり保存に失敗する）ので、
+            %   図（axes）・並べた図（tiledlayout）ごとに書き出してつなぐ。描いた図が無ければエラー。
+            %   画面を出していないときもエラー（見えない画面の図を書き出すと MATLAB が止まることがあるため）。
+            items = figureItems(app, string(figureName));
+            if app.Figure.Visible == "off"
+                error('alignest:hiddenFigure', '図の画像は、画面を出しているときに保存できます。');
+            end
+            drawnow;   % 並べ方を変えた直後は、図の大きさが決まってから書き出す（大きさ 0 の図は書き出せない）
+            items = items(arrayfun(@(item) isvalid(item) && item.Visible == "on" && ~isempty(item.Children), items));
+            if isempty(items)
+                error('alignest:noFigure', '保存する図がありません。先に図を描いてください。');
+            end
+            images = cell(1, numel(items));
+            for k = 1:numel(items)
+                file = [tempname, '.png'];
+                exportgraphics(items(k), file, 'Resolution', app.IMAGE_RESOLUTION);
+                images{k} = imread(file);
+                delete(file);
+            end
+            imwrite(joinImages(images, app.IMAGE_GAP_PIXELS), filePath);
+        end
+
         function captureTab(app, tabName, filePath)
             %CAPTURETAB タブを表示して画面の画像を保存する（説明資料・動作確認用）。
             % 画面の配置が描き終わるまで少し待ってから保存する（すぐ保存すると古い配置の絵になることがある）
@@ -2468,6 +2497,17 @@ classdef AlignmentEstimationApp < handle
             c.previewInfo.Text = '';
             c.layoutInfo.Text = '';
             c.shotOverlayInfo.Value = {''};
+            % 質的変数の交互作用も、前のデータの結果を残さない（読み込み直すと調べ直す）
+            app.Interactions = [];
+            c.interactionMainTable.Data = {};
+            c.interactionTable.Data = {};
+            removeStyle(c.interactionTable);
+            c.interactionAdvice.Value = {'データを読み込むと、質的変数の効果と交互作用を調べて、ここに目安を出します。'};
+            c.interactionAdvice.FontColor = app.Palette.text;
+            setChoices(c.interactionPair, "—", {''});
+            cla(c.interactionAxes, 'reset');
+            c.interactionAxes.Visible = 'off';
+            set([c.interactionRun, c.interactionPair, c.interactionAxis], 'Enable', 'off');
             if isfield(c, 'measurePanel')
                 clearMeasurePanel(app);
             end
@@ -3749,16 +3789,7 @@ classdef AlignmentEstimationApp < handle
         end
 
         function onSaveMeasurementMap(app)
-            [fileName, folder] = uiputfile({'*.png', 'PNG 画像 (*.png)'}, '計測マップを保存', 'measurement_map.png');
-            figure(app.Figure);
-            if isequal(fileName, 0)
-                return
-            end
-            target = fullfile(folder, fileName);
-            if runWithAlert(app, @() exportgraphics(app.Controls.measurePanel, target, 'Resolution', 150), ...
-                    "計測マップを保存できませんでした", "保存先のフォルダを変えてもう一度試してください。")
-                uialert(app.Figure, sprintf('計測マップを保存しました：%s', target), '保存しました', 'Icon', 'success');
-            end
+            saveFigureWithDialog(app, "measure", 'measurement_map.png');
         end
 
         function onExportMeasurementMap(app)
@@ -4780,18 +4811,8 @@ classdef AlignmentEstimationApp < handle
         end
 
         function onSaveChart(app)
-            [fileName, folder] = uiputfile({'*.png', 'PNG 画像 (*.png)'}, 'グラフを保存', 'metric_by_plan.png');
-            figure(app.Figure);
-            if isequal(fileName, 0)
-                return
-            end
-            target = fullfile(folder, fileName);
-            app.Controls.resultTabs.SelectedTab = app.Controls.chartTab;
-            drawnow;
-            if runWithAlert(app, @() exportgraphics(app.Controls.chartPanel, target, 'Resolution', 150), ...
-                    "グラフを保存できませんでした", "保存先のフォルダを変えてもう一度試してください。")
-                uialert(app.Figure, sprintf('保存しました：%s', target), '保存しました', 'Icon', 'success');
-            end
+            app.Controls.resultTabs.SelectedTab = app.Controls.chartTab;   % 保存するグラフを見せる
+            saveFigureWithDialog(app, "chart", 'metric_by_plan.png');
         end
 
         function selection = analysisSelection(app)
@@ -5031,7 +5052,8 @@ classdef AlignmentEstimationApp < handle
         function buildMapTab(app)
             grid = uigridlayout(app.Tabs.map, [5, 1], 'RowHeight', {'fit', 'fit', 'fit', '1x', 'fit'}, 'Padding', 12, ...
                 'RowSpacing', 8);
-            controls = uigridlayout(grid, [2, 11], 'ColumnWidth', {170, 140, '2x', '1x', 110, 110, 80, 70, 80, 'fit', 'fit'}, ...
+            % 「Shot の枠」は下の行、「図を画像で保存…」は右の列に置く（この行に置くと、狭い窓で手法・図の内容の欄が詰まるため）
+            controls = uigridlayout(grid, [2, 9], 'ColumnWidth', {170, 140, '2x', '1x', 110, 110, 80, 70, 80}, ...
                 'Padding', 0, 'RowHeight', {'fit', 'fit'});
             arrayfun(@(column) registerResponsiveColumn(app, controls, column), [1, 2, 5, 6, 7, 9]);
             label(controls, 'Wafer・平均', 1, 1);
@@ -5067,13 +5089,10 @@ classdef AlignmentEstimationApp < handle
             place(c.mapMarkerShape, 2, 8);
             c.mapEllipse = ellipseDropdown(controls, onChange);
             place(c.mapEllipse, 2, 9);
-            c.mapShotFrames = uicheckbox(controls, 'Text', 'Shot の枠', 'Value', true, 'ValueChangedFcn', onChange);
-            place(c.mapShotFrames, 2, 10);
-            c.saveMap = uibutton(controls, 'Text', '図を画像で保存…', 'ButtonPushedFcn', @(~, ~) app.onSaveMap());
-            place(c.saveMap, 2, 11);
-            % 図に重ねるもの：Scan 方向の色の Shot の枠・同心円の制約の区切り
-            % 「ベクトルを描かない（楕円だけ）」もここに置く（上の行の右に置くと、手法・図の内容の欄が狭くなるため）
-            extras = uigridlayout(grid, [1, 4], 'ColumnWidth', {'fit', 'fit', 'fit', '1x'}, 'Padding', 0);
+            % 図に重ねるもの：Shot の枠・Scan 方向の色の Shot の枠・同心円の制約の区切りと、「ベクトルを描かない（楕円だけ）」
+            % （上の行の右に置くと、手法・図の内容の欄が狭くなるため）
+            extras = uigridlayout(grid, [1, 5], 'ColumnWidth', {'fit', 'fit', 'fit', 'fit', '1x'}, 'Padding', 0);
+            c.mapShotFrames = uicheckbox(extras, 'Text', 'Shot の枠', 'Value', true, 'ValueChangedFcn', onChange);
             c.mapScanFrames = uicheckbox(extras, 'Text', 'Shot の枠を Scan 方向で色分け（▲ 上・▼ 下の印つき）', ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['Shot の枠を Scan 方向の色で描き、枠の左上に ▲（上向き）・' ...
                 '▼（下向き）を付けます。Scan 方向が無い Shot は灰色の枠です。色と、Scan 方向 1・2 のどちらが上向きかは' ...
@@ -5093,8 +5112,8 @@ classdef AlignmentEstimationApp < handle
             c.mapAxes = [uiaxes(axesGrid), uiaxes(axesGrid), uiaxes(axesGrid)];
             c.comparePanel = uipanel(c.mapStack, 'BorderType', 'none');
             c.compareAxes = gobjects(1, 0);
-            side = uigridlayout(body, [12, 1], 'RowHeight', {'fit', 'fit', 'fit', 'fit', 'fit', 'fit', 'fit', 'fit', '1x', ...
-                'fit', 'fit', 'fit'}, 'Padding', 0, 'RowSpacing', 4);
+            side = uigridlayout(body, [13, 1], 'RowHeight', {'fit', 'fit', 'fit', 'fit', 'fit', 'fit', 'fit', 'fit', '1x', ...
+                'fit', 'fit', 'fit', 'fit'}, 'Padding', 0, 'RowSpacing', 4);
             label(side, '並べ方', 1, 1);
             c.mapView = uidropdown(side, 'Items', {'1つの条件（計測値・推定値・残差）', '一覧の条件を並べて比べる', ...
                 'Shot スタックマップ（全 Shot を重ねる）'}, 'ItemsData', {'single', 'compare', 'stack'}, ...
@@ -5130,6 +5149,9 @@ classdef AlignmentEstimationApp < handle
             c.mapClearConditions = uibutton(side, 'Text', '一覧を空にする', ...
                 'ButtonPushedFcn', @(~, ~) app.removeMapConditions(1:numel(app.MapConditions)));
             place(c.mapClearConditions, 12, 1);
+            % 図の保存は右の列の一番下（上の欄の行に置くと、狭い窓で欄が詰まる・はみ出すため）
+            c.saveMap = uibutton(side, 'Text', '図を画像で保存…', 'ButtonPushedFcn', @(~, ~) app.onSaveMap());
+            place(c.saveMap, 13, 1);
             set([c.mapWafer, c.mapPlan, c.mapMethod, c.mapContent, c.mapMode, c.mapScale, c.mapMarkerSize, ...
                 c.mapMarkerShape, c.mapEllipse, c.mapEllipseOnly, c.mapShotFrames, c.saveMap, c.mapScanFrames, c.mapRings, ...
                 c.mapView, c.mapCompareValue, c.mapConditions, c.mapAddCondition, c.mapRemoveCondition, ...
@@ -5783,16 +5805,7 @@ classdef AlignmentEstimationApp < handle
         end
 
         function onSaveMap(app)
-            [fileName, folder] = uiputfile({'*.png', 'PNG 画像 (*.png)'}, '図を保存', 'wafer_map.png');
-            figure(app.Figure);
-            if isequal(fileName, 0)
-                return
-            end
-            target = fullfile(folder, fileName);
-            if runWithAlert(app, @() exportgraphics(app.Controls.mapPanel, target, 'Resolution', 150), ...
-                    "図を保存できませんでした", "保存先のフォルダを変えてもう一度試してください。")
-                uialert(app.Figure, sprintf('保存しました：%s', target), '保存しました', 'Icon', 'success');
-            end
+            saveFigureWithDialog(app, "map", 'wafer_map.png');
         end
 
         % ================= 6. 未知の座標の推定 =================
@@ -6172,16 +6185,7 @@ classdef AlignmentEstimationApp < handle
         end
 
         function onSaveTargetFigure(app)
-            [fileName, folder] = uiputfile({'*.png', 'PNG 画像 (*.png)'}, '図を保存', 'target_map.png');
-            figure(app.Figure);
-            if isequal(fileName, 0)
-                return
-            end
-            target = fullfile(folder, fileName);
-            if runWithAlert(app, @() exportgraphics(app.Controls.targetPanel, target, 'Resolution', 150), ...
-                    "図を保存できませんでした", "保存先のフォルダを変えてもう一度試してください。")
-                uialert(app.Figure, sprintf('保存しました：%s', target), '保存しました', 'Icon', 'success');
-            end
+            saveFigureWithDialog(app, "target", 'target_map.png');
         end
 
         function [plan, text] = targetTraining(app, unitIndex, training)
@@ -6323,16 +6327,7 @@ classdef AlignmentEstimationApp < handle
         end
 
         function onSaveTargetResidualFigure(app)
-            [fileName, folder] = uiputfile({'*.png', 'PNG 画像 (*.png)'}, '図を保存', 'target_correction_map.png');
-            figure(app.Figure);
-            if isequal(fileName, 0)
-                return
-            end
-            target = fullfile(folder, fileName);
-            if runWithAlert(app, @() exportgraphics(app.Controls.targetResidualPanel, target, 'Resolution', 150), ...
-                    "図を保存できませんでした", "保存先のフォルダを変えてもう一度試してください。")
-                uialert(app.Figure, sprintf('保存しました：%s', target), '保存しました', 'Icon', 'success');
-            end
+            saveFigureWithDialog(app, "targetResidual", 'target_correction_map.png');
         end
 
         function showTargetOverlay(app)
@@ -6995,6 +6990,43 @@ classdef AlignmentEstimationApp < handle
             place(item, row, column);
         end
 
+        function items = figureItems(app, figureName)
+            % 保存する図（saveFigureImage）：axes か、並べた図の tiledlayout
+            c = app.Controls;
+            switch figureName
+                case "measure"
+                    items = findobj(c.measurePanel.Children, 'flat', 'Type', 'tiledlayout');
+                case "chart"
+                    items = [c.chartAxes, c.chartAxes2];
+                case "map"
+                    if string(c.mapView.Value) == "single"
+                        items = c.mapAxes;
+                    else
+                        items = findobj(c.comparePanel.Children, 'flat', 'Type', 'tiledlayout');   % 並べて比べる・スタック
+                    end
+                case "target"
+                    items = c.targetAxes;
+                case "targetResidual"
+                    items = c.targetResidualAxes;
+                otherwise
+                    error('alignest:figureName', '保存する図の名前が違います: %s', figureName);
+            end
+        end
+
+        function saveFigureWithDialog(app, figureName, defaultName)
+            % 「図を画像で保存…」のボタン：保存先を選んで saveFigureImage で保存する
+            [fileName, folder] = uiputfile({'*.png', 'PNG 画像 (*.png)'}, '図を保存', defaultName);
+            figure(app.Figure);
+            if isequal(fileName, 0)
+                return
+            end
+            target = fullfile(folder, fileName);
+            if runWithAlert(app, @() app.saveFigureImage(figureName, target), "図を保存できませんでした", ...
+                    "図を描いてから、もう一度試してください。描いてあるときは、保存先のフォルダを変えてください。")
+                uialert(app.Figure, sprintf('保存しました：%s', target), '保存しました', 'Icon', 'success');
+            end
+        end
+
         function ok = runWithAlert(app, action, titleText, nextStep)
             % 失敗したら「何が起きたか・なぜか・次にどうするか」を出す
             ok = false;
@@ -7339,6 +7371,24 @@ else
     [~, index] = min(hypot(centers(:, 1) - center(1), centers(:, 2) - center(2)));
 end
 monitor = monitors(index, :);
+end
+
+function joined = joinImages(images, gap)
+% 画像（高さ × 幅 × 3）を横に並べて1枚にする。高さは一番高い画像に合わせ、足りない所と間は1枚目の左上の色で埋める
+height = max(cellfun(@(image) size(image, 1), images));
+background = images{1}(1, 1, :);
+parts = cell(1, 0);
+for k = 1:numel(images)
+    image = images{k};
+    if size(image, 3) == 1
+        image = repmat(image, 1, 1, 3);
+    end
+    parts{end + 1} = [image; repmat(background, height - size(image, 1), size(image, 2))]; %#ok<AGROW>
+    if k < numel(images)
+        parts{end + 1} = repmat(background, height, gap); %#ok<AGROW>
+    end
+end
+joined = [parts{:}];
 end
 
 function components = fontComponents(parent)
