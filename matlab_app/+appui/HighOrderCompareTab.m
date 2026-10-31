@@ -1,6 +1,7 @@
 classdef (Abstract) HighOrderCompareTab < appui.Core
-    %HIGHORDERCOMPARETAB 「7. Shot高次補正」の比べる部分：補正の比較（条件をまとめて計算する。くくり・λ のスイープ・保存した
-    %   項の組み合わせ）、Wafer の比較（k パラメータ・残差を Wafer ごとに並べる）、項の組み合わせの保存と呼び出し。
+    %HIGHORDERCOMPARETAB 「7. Shot高次補正」の比べる部分：補正の比較（条件をまとめて計算する。くくり・λ のスイープ・回帰・
+    %   保存した項の組み合わせ）、2つの条件を並べる（基準を左に、改善・悪化した Shot を示す）、Wafer の比較（k パラメータ・
+    %   残差を Wafer ごとに並べる）、項の組み合わせの保存と呼び出し。
     %   入力のデータ・補正の計算・マップは HighOrderTab.m。AlignmentEstimationApp（画面の本体）の一部で、ほかのタブの関数も
     %   同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
 
@@ -8,7 +9,8 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
         function conditions = addHighOrderConditions(app, kind, values)
             %ADDHIGHORDERCONDITIONS 「補正の比較」の条件を足す（今の補正の式・使う項・くくり・回帰の設定をもとにする）。
             %   kind："current"（今の設定のまま1つ）・"units"（くくりを Wafer 内で共通・Scan 方向ごと・行の偶奇ごと・Shot ごとに
-            %   変えた4つ）・"lambda"（values の λ ごと。L2 正則化をかける）・"termSet"（values の名前の保存した項の組み合わせ）。
+            %   変えた4つ）・"loss"（回帰を最小二乗・Huber・LAD に変えた3つ）・"lambda"（values の λ ごと。L2 正則化をかける）・
+            %   "termSet"（values の名前の保存した項の組み合わせ）。
             %   足した後の条件の一覧を返す。
             if nargin < 3
                 values = [];
@@ -27,6 +29,15 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
                         variant = base;
                         variant.unit = names(k);
                         added(end + 1) = condition("くくり：" + labels(k) + "｜" + makerLabel(options), variant); %#ok<AGROW>
+                    end
+                case "loss"
+                    names = ["ols", "huber", "lad"];
+                    labels = ["最小二乗", "Huber", "LAD"];
+                    for k = 1:numel(names)
+                        variant = base;
+                        variant.loss = names(k);
+                        added(end + 1) = condition("回帰：" + labels(k) + "｜" + makerLabel(options) + "・" + ...
+                            unitLabel(options), variant); %#ok<AGROW>
                     end
                 case "lambda"
                     lambdas = reshape(double(values), 1, []);
@@ -101,10 +112,10 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             drawnow;
             restore = onCleanup(@() set(app.Figure, 'Pointer', 'arrow'));
             wafers = highOrderWafers(app);
-            comparison = alignest.compareHighOrderConditions(wafers, app.Settings, app.HighOrderConditions);
+            [comparison, results] = alignest.compareHighOrderConditions(wafers, app.Settings, app.HighOrderConditions);
             app.HighOrderComparison = struct("table", comparison, "conditions", app.HighOrderConditions, ...
                 "source", string(c.highOrderSource.Value), "selection", {c.highOrderWafer.Value}, ...
-                "measured", c.highOrderMeasured.Value);
+                "measured", c.highOrderMeasured.Value, "results", {results}, "wafers", wafers);
             c.highOrderOutputs.SelectedTab = c.highOrderCompareTab;
             showHighOrderComparison(app);
         end
@@ -125,6 +136,12 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             lines = string(app.Settings.highOrder.termSets(:));
             lines = lines(current.name ~= name);
             app.Settings.highOrder.termSets = [lines; line];
+            if options.outerMaker ~= "none" && options.outerName == name
+                % 外周の式にしている組み合わせを保存し直した：外周の式も新しい項にする
+                app.Settings.highOrder.outerMaker = options.maker;
+                app.Settings.highOrder.outerExcludedTerms = excludedFor(options.maker, terms.k(terms.used));
+                markHighOrderStale(app);
+            end
             savePreference(app, 'highOrderTermSets', cellstr(app.Settings.highOrder.termSets));
             refreshHighOrderTermSets(app, name);
             sets = termSetTable(app.Settings.highOrder.termSets).name;
@@ -215,9 +232,9 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
                     ylabel(ax, '係数（nm/mm^次数）');
                     info = '係数は mm の座標での値（定数 nm、1次 nm/mm、n 次 nm/mm^n）。';
                 end
-                if run.result.options.unit ~= "common"
-                    info = [info, ' 1つの Wafer に k の組が複数あるとき（Shot ごと・Scan 方向ごと・行の偶奇ごと）は、組の平均と' ...
-                        '標準偏差（ひげ）です。'];
+                if run.result.options.unit ~= "common" || run.result.options.outerMaker ~= "none"
+                    info = [info, ' 1つの Wafer に k の組が複数あるとき（Shot ごと・Scan 方向ごと・行の偶奇ごと・内周と' ...
+                        '外周）は、組の平均と標準偏差（ひげ）です。'];
                 end
                 title(ax, sprintf("Wafer ごとの k パラメータ（%s）", axisName), 'Interpreter', 'none');
                 legend(ax, 'Location', 'northoutside', 'NumColumns', min(numel(labels), 4), 'Box', 'off', 'Interpreter', 'none');
@@ -226,6 +243,133 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             grid(ax, 'on');
             box(ax, 'on');
             styleAxes(app, ax, app.AXES_FONT_SIZE);
+        end
+        function shots = drawHighOrderPair(app, reference, other, waferIndex, axisName, statistic, toleranceNm)
+            %DRAWHIGHORDERPAIR 「2つの条件を並べる」：「補正の比較」で計算した2つの条件の、選んだ Wafer の高次補正の残差を
+            %   左右に並べる（左が基準）。Shot ごとの残差の値（alignest.compareHighOrderShots）が基準より小さくなった Shot（改善）と
+            %   大きくなった Shot（悪化）を右の図の Shot の枠で示し、ロバスト回帰で重みを下げた点（外れ値とみなした点）に丸を
+            %   付ける。「Shot ごとの表」には、その Wafer の Shot ごとの値を、改善の大きい順に出す。
+            %   reference・other：条件の番号（「補正の比較」の一覧の番号）、waferIndex：Wafer の番号、axisName："xy"（X・Y の
+            %   大きさ）・"X"・"Y"、statistic："median"（|残差| の中央値）・"rms"・"max"、toleranceNm：同じとみなす差 [nm]。
+            %   省略すると画面の選択。shots はすべての Wafer の Shot ごとの比較の表（比べられなければ空の表）。
+            IMPROVED_COLOR = [0.0, 0.45, 0.74];
+            WORSENED_COLOR = [0.85, 0.33, 0.10];
+            FRAME_WIDTH = 2;
+            c = app.Controls;
+            if nargin >= 2
+                c.highOrderPairReference.Value = reference;
+            end
+            if nargin >= 3
+                c.highOrderPairOther.Value = other;
+            end
+            if nargin >= 4
+                c.highOrderPairWafer.Value = waferIndex;
+            end
+            if nargin >= 5
+                c.highOrderPairAxis.Value = char(axisName);
+            end
+            if nargin >= 6
+                c.highOrderPairStatistic.Value = char(statistic);
+            end
+            if nargin >= 7
+                c.highOrderPairTolerance.Value = toleranceNm;
+            end
+            shots = table();
+            axesList = [c.highOrderPairAxes, c.highOrderPairAxes2];
+            for ax = axesList
+                cla(ax, 'reset');
+                legend(ax, 'off');
+                colorbar(ax, 'off');
+            end
+            c.highOrderPairTable.Data = table();
+            removeStyle(c.highOrderPairTable);
+            set([c.highOrderPairSave, c.highOrderPairCopy], 'Enable', 'off');
+            c.highOrderPairInfo.FontColor = app.Palette.text;
+            comparison = app.HighOrderComparison;
+            if isempty(comparison) || ~isfield(comparison, 'results') || numel(comparison.results) < 2
+                c.highOrderPairInfo.Text = ['「補正の比較」で条件を2つ以上足して「すべて計算して比べる」を押すと、2つの条件の' ...
+                    '残差を並べます（左が基準）。'];
+                return
+            end
+            first = c.highOrderPairReference.Value;
+            second = c.highOrderPairOther.Value;
+            if first == second
+                c.highOrderPairInfo.Text = '基準（左）と比べる条件（右）に、違う条件を選んでください。';
+                return
+            end
+            failed = [first, second];
+            failed = failed(cellfun(@isempty, comparison.results(failed)));
+            if ~isempty(failed)
+                c.highOrderPairInfo.Text = char(sprintf("条件 %d は計算できませんでした（「補正の比較」の表のメモ）。", ...
+                    failed(1)));
+                return
+            end
+            referenceResult = comparison.results{first};
+            otherResult = comparison.results{second};
+            axisName = string(c.highOrderPairAxis.Value);
+            statistic = string(c.highOrderPairStatistic.Value);
+            tolerance = c.highOrderPairTolerance.Value;
+            shots = alignest.compareHighOrderShots(referenceResult.points, otherResult.points, axis=axisName, ...
+                statistic=statistic, toleranceNm=tolerance);
+            position = min(max(c.highOrderPairWafer.Value, 1), numel(comparison.wafers));
+            wafer = comparison.wafers(position);
+            waferLabel = string(wafer.label);
+            mine = shots(shots.wafer == waferLabel, :);
+            parts = {referenceResult.points(referenceResult.points.wafer == waferLabel, :), ...
+                otherResult.points(otherResult.points.wafer == waferLabel, :)};
+            values = cellfun(@(points) [points.residualX, points.residualY], parts, 'UniformOutput', false);
+            mode = ternary(axisName == "xy", "vector", axisName);
+            together = vertcat(values{:});
+            column = 1 + (mode == "Y");
+            scale = alignest.plot.vectorScale(together);
+            colorLimit = max([abs(together(isfinite(together(:, column)), column)); eps]);
+            magnitudeLimit = max([hypot(together(:, 1), together(:, 2)); 0], [], 'omitnan');
+            titles = [sprintf("基準：条件 %d", first), sprintf("比べる条件：条件 %d", second)];
+            for k = 1:2
+                ax = axesList(k);
+                drawHighOrderPanel(app, ax, parts{k}, wafer, values{k}, "高次補正の残差", mode, false, titles(k), scale, ...
+                    colorLimit, magnitudeLimit, comparison.source == "target", false);
+                % 凡例は出さない（左右の図の大きさをそろえるため。枠と丸の意味・数は図の下の説明に出す）
+                hold(ax, 'on');
+                if k == 2
+                    sizeMm = wafer.unit.shotSizeMm;
+                    better = alignest.plot.shotFrames(ax, [mine.Xc(mine.verdict == "改善"), mine.Yc(mine.verdict == "改善")], ...
+                        sizeMm, IMPROVED_COLOR);
+                    worse = alignest.plot.shotFrames(ax, [mine.Xc(mine.verdict == "悪化"), mine.Yc(mine.verdict == "悪化")], ...
+                        sizeMm, WORSENED_COLOR);
+                    set(better, 'LineWidth', FRAME_WIDTH);
+                    set(worse, 'LineWidth', FRAME_WIDTH, 'LineStyle', '--');
+                end
+                down = downweightedPoints(parts{k}, axisName);
+                if any(down)
+                    plot(ax, parts{k}.x(down), parts{k}.y(down), 'o', 'MarkerSize', 6, 'LineWidth', 1, 'Color', ...
+                        app.Palette.text, 'LineStyle', 'none', 'HandleVisibility', 'off');
+                end
+                hold(ax, 'off');
+            end
+            styleAxes(app, axesList, app.AXES_FONT_SIZE);
+            set([c.highOrderPairSave, c.highOrderPairCopy], 'Enable', 'on');
+            % Shot ごとの表（改善の大きい順）
+            [~, order] = sort(mine.difference, 'descend');
+            mine = mine(order, :);
+            c.highOrderPairTable.Data = table(mine.shotNo, mine.zone, round(mine.reference, 3), round(mine.other, 3), ...
+                round(mine.difference, 3), mine.verdict, mine.nCompared, mine.downweightedReference, ...
+                mine.downweightedOther, 'VariableNames', ["shotNo", "範囲", "基準 [nm]", "比べる条件 [nm]", ...
+                "差（基準 − 比べる）[nm]", "判定", "比べた点", "重みを下げた点（基準）", "重みを下げた点（比べる）"]);
+            verdictColumn = 6;
+            for verdictName = ["改善", "悪化"]
+                rows = find(mine.verdict == verdictName);
+                if ~isempty(rows)
+                    color = ternary(verdictName == "改善", app.Palette.accent, app.Palette.error);
+                    addStyle(c.highOrderPairTable, uistyle('FontColor', color, 'FontWeight', 'bold'), 'cell', ...
+                        [rows, repmat(verdictColumn, numel(rows), 1)]);
+                end
+            end
+            c.highOrderPairInfo.Text = char(pairDescription(first, second, axisName, statistic, tolerance, waferLabel, ...
+                mine, shots) + staleComparisonText(app));
+            if staleComparisonText(app) ~= ""
+                c.highOrderPairInfo.FontColor = app.Palette.error;
+            end
         end
     end
 
@@ -251,7 +395,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             place(c.highOrderConditionRemove, 1, 4);
             c.highOrderCompare = primaryButton(app, buttons, 'すべて計算して比べる', @(~, ~) app.onCompareHighOrder());
             place(c.highOrderCompare, 1, 5);
-            sweep = uigridlayout(controls, [1, 3], 'ColumnWidth', {'fit', '1x', 'fit'}, 'Padding', 0);
+            sweep = uigridlayout(controls, [1, 4], 'ColumnWidth', {'fit', '1x', 'fit', 'fit'}, 'Padding', 0);
             label(sweep, 'λ（空白で区切る）', 1, 1);
             c.highOrderSweepLambda = uieditfield(sweep, 'text', 'Value', '0 0.01 0.1 1', 'Tooltip', ...
                 'L2 正則化の強さ λ を空白で区切って入れます（0 は L2 なし）。');
@@ -260,6 +404,10 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
                 @(~, ~) app.onAddHighOrderConditions("lambda"), 'Tooltip', ['今の設定で、λ だけを左の値に変えた条件を' ...
                 '足します（高次項だけの L2 正則化。λ ごとの残差を比べられます）。']);
             place(c.highOrderSweepButton, 1, 3);
+            c.highOrderLossButton = uibutton(sweep, 'Text', '3つの回帰を足す', 'ButtonPushedFcn', ...
+                @(~, ~) app.onAddHighOrderConditions("loss"), 'Tooltip', ['今の設定で、回帰だけを最小二乗・Huber・LAD に' ...
+                '変えた3つの条件を足します（「2つの条件を並べる」で、ロバスト回帰が最小二乗よりよかった Shot が分かります）。']);
+            place(c.highOrderLossButton, 1, 4);
             sets = uigridlayout(controls, [1, 3], 'ColumnWidth', {'fit', '1x', 'fit'}, 'Padding', 0);
             label(sets, '保存した組み合わせ', 1, 1);
             c.highOrderCompareTermSet = uidropdown(sets, 'Items', {'（保存した組み合わせはありません）'}, ...
@@ -270,7 +418,9 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
                 '保存した項の組み合わせを、今のくくり・回帰の設定で条件として足します。']);
             place(c.highOrderCompareTermSetAdd, 1, 3);
             c.highOrderConditionList = uilistbox(grid, 'Items', {'（条件はまだありません）'}, 'ItemsData', {0}, ...
-                'Multiselect', 'on', 'Value', {}, 'Tooltip', '比べる条件（Ctrl・Shift で複数選んで消せます）。');
+                'Multiselect', 'on', 'Value', {}, 'ValueChangedFcn', @(~, ~) app.onHighOrderConditionsSelected(), ...
+                'Tooltip', ['比べる条件（Ctrl・Shift で複数選んで消せます。比べた後に2つ選ぶと、「2つの条件を並べる」の' ...
+                '基準（番号の小さい方）と比べる条件になります）。']);
             place(c.highOrderConditionList, 2, 1);
             % 結果：表と図（中のタブで切り替える。狭い画面でも図の高さを取れるように）
             results = uitabgroup(grid, 'SelectionChangedFcn', @(~, ~) app.drawHighOrderComparisonChart());
@@ -278,14 +428,15 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             c.highOrderCompareResults = results;
             c.highOrderCompareTableTab = uitab(results, 'Title', '表');
             c.highOrderCompareTable = uitable(uigridlayout(c.highOrderCompareTableTab, [1, 1], 'Padding', 4), ...
-                'RowName', {}, 'Data', table(), 'ColumnWidth', {170, 40, 90, 90, 90, 90, 90, 60, 60, 60, 70, 'auto'});
+                'RowName', {}, 'Data', table(), 'ColumnWidth', {170, 40, 90, 90, 90, 90, 90, 90, 90, 60, 60, 60, 70, 'auto'});
             c.highOrderCompareChartTab = uitab(results, 'Title', '図');
             chartGrid = uigridlayout(c.highOrderCompareChartTab, [2, 3], 'RowHeight', {'fit', '1x'}, 'ColumnWidth', ...
                 {'fit', 260, '1x'}, 'Padding', 4, 'RowSpacing', 2);
             label(chartGrid, '図の値', 1, 1);
             c.highOrderCompareMetric = uidropdown(chartGrid, 'Items', {'高次補正の |平均|+3σ', ...
-                '高次補正の |残差| 95% 点', '高次補正の |残差| 中央値'}, 'ItemsData', {'highOrder', 'highOrderP95', ...
-                'highOrderMedian'}, 'ValueChangedFcn', @(~, ~) app.drawHighOrderComparisonChart());
+                '高次補正の |残差| 95% 点', '高次補正の |残差| 中央値', '内周の Shot の |平均|+3σ', ...
+                '外周の Shot の |平均|+3σ'}, 'ItemsData', {'highOrder', 'highOrderP95', 'highOrderMedian', ...
+                'highOrderInner', 'highOrderOuter'}, 'ValueChangedFcn', @(~, ~) app.drawHighOrderComparisonChart());
             place(c.highOrderCompareMetric, 1, 2);
             c.highOrderComparePanel = uipanel(chartGrid, 'BorderType', 'none');
             place(c.highOrderComparePanel, 2, [1, 3]);
@@ -293,6 +444,132 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             c.highOrderCompareInfo = uilabel(grid, 'WordWrap', 'on', 'Text', '');
             place(c.highOrderCompareInfo, 4, 1);
             app.Controls = mergeStruct(app.Controls, c);
+        end
+
+        function buildHighOrderPairTab(app, outputs)
+            % 「2つの条件を並べる」のタブ：基準（左）と比べる条件（右）・Wafer・値・Shot の値・同じとみなす差、図と Shot ごとの表
+            c = struct();
+            tab = uitab(outputs, 'Title', '2つの条件を並べる');
+            c.highOrderPairTab = tab;
+            grid = uigridlayout(tab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 6, 'RowSpacing', 4);
+            controls = uigridlayout(grid, [3, 1], 'RowHeight', {'fit', 'fit', 'fit'}, 'Padding', 0, 'RowSpacing', 4);
+            onDraw = @(~, ~) app.drawHighOrderPair();
+            conditions = uigridlayout(controls, [1, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1x'}, 'Padding', 0);
+            label(conditions, '基準（左）', 1, 1);
+            c.highOrderPairReference = uidropdown(conditions, 'Items', {'—'}, 'ItemsData', {1}, 'Enable', 'off', ...
+                'ValueChangedFcn', onDraw, 'Tooltip', '比べる元の条件（例：最小二乗）。左の図に描きます。');
+            place(c.highOrderPairReference, 1, 2);
+            label(conditions, '比べる条件（右）', 1, 3);
+            c.highOrderPairOther = uidropdown(conditions, 'Items', {'—'}, 'ItemsData', {1}, 'Enable', 'off', ...
+                'ValueChangedFcn', onDraw, 'Tooltip', ['基準と比べる条件（例：Huber）。右の図に描き、基準より残差が' ...
+                '小さくなった Shot（改善）・大きくなった Shot（悪化）の枠を付けます。']);
+            place(c.highOrderPairOther, 1, 4);
+            choices = uigridlayout(controls, [1, 6], 'ColumnWidth', {'fit', '1.2x', 'fit', '1x', 'fit', '1x'}, 'Padding', 0);
+            label(choices, 'Wafer', 1, 1);
+            c.highOrderPairWafer = uidropdown(choices, 'Items', {'—'}, 'ItemsData', {1}, 'Enable', 'off', ...
+                'ValueChangedFcn', onDraw);
+            place(c.highOrderPairWafer, 1, 2);
+            label(choices, '値', 1, 3);
+            c.highOrderPairAxis = uidropdown(choices, 'Items', {'X・Y の大きさ', 'X', 'Y'}, 'ItemsData', {'xy', 'X', 'Y'}, ...
+                'ValueChangedFcn', onDraw, 'Tooltip', ['X・Y の大きさ：残差の大きさ √(X² + Y²) で比べ、矢印で描きます。' ...
+                'X・Y：その軸の残差の大きさで比べ、色で描きます。']);
+            place(c.highOrderPairAxis, 1, 4);
+            label(choices, 'Shot の値', 1, 5);
+            c.highOrderPairStatistic = uidropdown(choices, 'Items', {'|残差| 中央値', '残差の RMS', '|残差| の最大'}, ...
+                'ItemsData', {'median', 'rms', 'max'}, 'ValueChangedFcn', onDraw, 'Tooltip', ['Shot の良し悪しを決める値。' ...
+                '中央値：外れ値の点1つに引っ張られないので、ロバスト回帰が外れ値でない点をよく合わせたかが分かります。' ...
+                'RMS：外れ値の点の残差も大きく効きます（最小二乗が有利になりやすい）。']);
+            place(c.highOrderPairStatistic, 1, 6);
+            actions = uigridlayout(controls, [1, 5], 'ColumnWidth', {'fit', 70, '1x', 'fit', 'fit'}, 'Padding', 0);
+            label(actions, '同じとみなす差 [nm]', 1, 1);
+            c.highOrderPairTolerance = uieditfield(actions, 'numeric', 'Limits', [0, Inf], 'Value', 0.1, ...
+                'ValueChangedFcn', onDraw, 'Tooltip', 'Shot の値の差がこの値以下の Shot は「同じ」（改善でも悪化でもない）にします。');
+            place(c.highOrderPairTolerance, 1, 2);
+            c.highOrderPairSave = uibutton(actions, 'Text', '図を画像で保存…', 'Enable', 'off', 'ButtonPushedFcn', ...
+                @(~, ~) app.saveFigureWithDialog("highOrderPair", 'shot_high_order_pair.png'));
+            place(c.highOrderPairSave, 1, 4);
+            c.highOrderPairCopy = uibutton(actions, 'Text', '図をコピー', 'Enable', 'off', 'Tooltip', app.COPY_TOOLTIP, ...
+                'ButtonPushedFcn', @(source, ~) app.onCopyFigure("highOrderPair", source));
+            place(c.highOrderPairCopy, 1, 5);
+            views = uitabgroup(grid);
+            place(views, 2, 1);
+            mapTab = uitab(views, 'Title', '図');
+            panel = uipanel(uigridlayout(mapTab, [1, 1], 'Padding', 0), 'BorderType', 'none');
+            pairGrid = uigridlayout(panel, [1, 2], 'ColumnWidth', {'1x', '1x'}, 'Padding', 0, 'ColumnSpacing', 6);
+            c.highOrderPairAxes = uiaxes(pairGrid);
+            c.highOrderPairAxes2 = uiaxes(pairGrid);
+            tableTab = uitab(views, 'Title', 'Shot ごとの表');
+            c.highOrderPairTable = uitable(uigridlayout(tableTab, [1, 1], 'Padding', 4), 'RowName', {}, 'Data', table(), ...
+                'ColumnWidth', {60, 50, 90, 110, 140, 50, 70, 130, 130});
+            c.highOrderPairInfo = uilabel(grid, 'WordWrap', 'on', 'Text', '');
+            place(c.highOrderPairInfo, 3, 1);
+            app.Controls = mergeStruct(app.Controls, c);
+        end
+
+        function refreshHighOrderPairChoices(app)
+            % 「2つの条件を並べる」の条件と Wafer の選択肢（比べた条件・入力。前に選んでいた番号が残っていれば、そのまま選ぶ）
+            c = app.Controls;
+            if ~isfield(c, 'highOrderPairReference')
+                return
+            end
+            comparison = app.HighOrderComparison;
+            lists = [c.highOrderPairReference, c.highOrderPairOther, c.highOrderPairWafer];
+            if isempty(comparison) || ~isfield(comparison, 'results')
+                for list = lists
+                    setChoices(list, "—", {1});
+                end
+                set(lists, 'Enable', 'off');
+                return
+            end
+            labels = string({comparison.conditions.label});
+            previous = [c.highOrderPairReference.Value, c.highOrderPairOther.Value];
+            names = compose("%d. ", (1:numel(labels)).') + labels(:);
+            setChoices(c.highOrderPairReference, names, num2cell(1:numel(labels)));
+            setChoices(c.highOrderPairOther, names, num2cell(1:numel(labels)));
+            if all(previous <= numel(labels)) && previous(1) ~= previous(2)
+                c.highOrderPairReference.Value = previous(1);
+                c.highOrderPairOther.Value = previous(2);
+            else
+                c.highOrderPairReference.Value = 1;
+                c.highOrderPairOther.Value = min(2, numel(labels));
+            end
+            waferLabels = string({comparison.wafers.label});
+            setChoices(c.highOrderPairWafer, waferLabels, num2cell(1:numel(waferLabels)));
+            set(lists, 'Enable', onOff(numel(labels) >= 2));
+        end
+
+        function onHighOrderConditionsSelected(app)
+            % 比べた後に条件を2つ選んだら、番号の小さい方を基準（左）にして並べる（条件を変えた後は前の結果の番号と違うので使わない）
+            c = app.Controls;
+            selected = sort(cell2mat(c.highOrderConditionList.Value));
+            if numel(selected) ~= 2 || isempty(app.HighOrderComparison) || ~isfield(app.HighOrderComparison, 'results') || ...
+                    ~isequaln(app.HighOrderComparison.conditions, app.HighOrderConditions)
+                return
+            end
+            drawHighOrderPair(app, selected(1), selected(2));
+        end
+
+        function pair = highOrderPairForExport(app)
+            % 書き出す「Shot ごとの比較」（2つの条件を並べているとき。並べていなければ []）
+            pair = [];
+            c = app.Controls;
+            comparison = app.HighOrderComparison;
+            if isempty(comparison) || ~isfield(comparison, 'results') || numel(comparison.results) < 2
+                return
+            end
+            first = c.highOrderPairReference.Value;
+            second = c.highOrderPairOther.Value;
+            if first == second || any(cellfun(@isempty, comparison.results([first, second])))
+                return
+            end
+            axisName = string(c.highOrderPairAxis.Value);
+            statistic = string(c.highOrderPairStatistic.Value);
+            tolerance = c.highOrderPairTolerance.Value;
+            shots = alignest.compareHighOrderShots(comparison.results{first}.points, comparison.results{second}.points, ...
+                axis=axisName, statistic=statistic, toleranceNm=tolerance);
+            labels = string({comparison.conditions.label});
+            pair = struct("shots", shots, "description", sprintf("基準：条件 %d「%s」、比べる条件：条件 %d「%s」。%s", ...
+                first, labels(first), second, labels(second), statisticText(axisName, statistic, tolerance)));
         end
 
         function buildHighOrderWaferTab(app, outputs)
@@ -374,6 +651,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             end
             set([c.highOrderTermSetList, c.highOrderTermSetApply, c.highOrderTermSetDelete, c.highOrderCompareTermSet, ...
                 c.highOrderCompareTermSetAdd], 'Enable', onOff(has));
+            refreshHighOrderOuterChoices(app);   % 外周の式にも保存した組み合わせを出す
         end
 
         function refreshHighOrderConditions(app)
@@ -408,17 +686,22 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             end
             comparison = app.HighOrderComparison;
             removeStyle(c.highOrderCompareTable);
+            refreshHighOrderPairChoices(app);
+            refreshHighOrderHistogramChoices(app);
+            drawShownHighOrderAnalysis(app);   % 比べた条件の残差を重ねているとき
             if isempty(comparison) || isempty(comparison.table)
                 c.highOrderCompareTable.Data = table();
                 c.highOrderCompareInfo.Text = '';
                 drawHighOrderComparisonChart(app);
+                drawShownHighOrderPair(app);
                 return
             end
             t = comparison.table;
             c.highOrderCompareTable.Data = table(t.label, t.axis, round(t.highOrder, 3), round(t.highOrderP95, 3), ...
-                round(t.highOrderMedian, 3), round(t.linear, 3), round(t.before, 3), t.nTerms, t.kSets, t.skipped, ...
-                t.nCorrected, t.note, 'VariableNames', ["条件", "軸", "高次補正 |平均|+3σ [nm]", "|残差| 95% 点 [nm]", ...
-                "|残差| 中央値 [nm]", "Shot ごとの1次 [nm]", "補正前 [nm]", "項の数", "k の組の数", "補正しなかった組", ...
+                round(t.highOrderMedian, 3), round(t.highOrderInner, 3), round(t.highOrderOuter, 3), round(t.linear, 3), ...
+                round(t.before, 3), t.nTerms, t.kSets, t.skipped, t.nCorrected, t.note, 'VariableNames', ["条件", "軸", ...
+                "高次補正 |平均|+3σ [nm]", "|残差| 95% 点 [nm]", "|残差| 中央値 [nm]", "内周 |平均|+3σ [nm]", ...
+                "外周 |平均|+3σ [nm]", "Shot ごとの1次 [nm]", "補正前 [nm]", "項の数", "k の組の数", "補正しなかった組", ...
                 "比べた点", "メモ"]);
             for axisName = ["X", "Y"]
                 rows = find(t.axis == axisName & isfinite(t.highOrder));
@@ -437,6 +720,16 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
                 c.highOrderCompareInfo.FontColor = app.Palette.error;
             end
             drawHighOrderComparisonChart(app);
+            drawShownHighOrderPair(app);
+        end
+
+        function drawShownHighOrderPair(app)
+            % 「2つの条件を並べる」を開いているときだけ描き直す（2つのマップを描くので、設定を変えるたびには描かない。
+            % 閉じているときは、開いたときに描く：onHighOrderOutputChanged）
+            c = app.Controls;
+            if isfield(c, 'highOrderPairTab') && c.highOrderOutputs.SelectedTab == c.highOrderPairTab
+                drawHighOrderPair(app);
+            end
         end
 
         function drawHighOrderComparisonChart(app)
@@ -557,50 +850,23 @@ end
 end
 
 function text = makerLabel(options)
+% 補正の式の名前（外周の式を分けるときは「Nikon＋外周 ASML」など）
 names = ["asml", "canon", "nikon", "custom"];
 labels = ["ASML", "Canon", "Nikon", "カスタム"];
 text = labels(names == options.maker);
+if options.outerMaker ~= "none"
+    outer = labels(names == options.outerMaker);
+    if options.outerName ~= ""
+        outer = "「" + options.outerName + "」";
+    end
+    text = text + "＋外周 " + outer;
+end
 end
 
 function text = unitLabel(options)
 names = ["common", "scan", "row", "shot"];
 labels = ["Wafer 内で共通", "Scan 方向ごと", "行の偶奇ごと", "Shot ごと"];
 text = labels(names == options.unit);
-end
-
-function sets = termSetTable(lines)
-% 保存した項の組み合わせ（"名前|式|k の番号 …"）を表にする（読めない行は使わない）
-lines = string(lines(:));
-lines = lines(strlength(strtrim(lines)) > 0);
-names = strings(0, 1);
-makers = strings(0, 1);
-terms = cell(0, 1);
-for k = 1:numel(lines)
-    parts = split(lines(k), "|");
-    if numel(parts) ~= 3 || ~any(parts(2) == ["asml", "canon", "nikon", "custom"])
-        continue
-    end
-    numbers = str2double(split(strtrim(parts(3))));
-    if any(~isfinite(numbers))
-        continue
-    end
-    names(end + 1, 1) = strtrim(parts(1)); %#ok<AGROW>
-    makers(end + 1, 1) = parts(2); %#ok<AGROW>
-    terms{end + 1, 1} = reshape(numbers, 1, []); %#ok<AGROW>
-end
-makerNames = ["asml", "canon", "nikon", "custom"];
-makerLabels = ["ASML", "Canon", "Nikon", "カスタム"];
-[~, position] = ismember(makers, makerNames);
-labels = strings(size(makers));
-labels(position > 0) = makerLabels(position(position > 0));
-sets = struct("name", names, "maker", makers, "terms", {terms}, "makerLabel", labels, ...
-    "count", cellfun(@numel, terms));
-end
-
-function excluded = excludedFor(maker, used)
-% 使う項の k の番号から、使わない項（excludedTerms）を求める（k1〜k6 は外さない）
-terms = alignest.highOrderTerms(maker);
-excluded = reshape(terms.k(~terms.protected & ~ismember(terms.k, used)), 1, []);
 end
 
 function data = residualByWafer(points, labels, axisName, statistic)
@@ -656,6 +922,8 @@ function [data, termNames] = coefficientsByWafer(run, labels, axisName, view)
 coefficients = run.result.coefficients;
 coefficients = coefficients(coefficients.axis == axisName & coefficients.component == "Shot 高次補正", :);
 terms = run.result.terms(run.result.terms.axis == axisName & run.result.terms.used, :);
+[~, first] = unique(terms.k);   % 外周の式を分けたときは、内周・外周の項をまとめる（組の平均）
+terms = terms(first, :);
 termNames = "k" + string(terms.k) + "（" + terms.term + "）";
 values = nan(numel(labels), height(terms));
 spread = zeros(numel(labels), height(terms));
@@ -685,4 +953,45 @@ for t = 1:height(terms)
     names(2 * t) = termNames(t) + "の標準偏差";
 end
 data = [table(labels, 'VariableNames', "Wafer"), table(columns{:}, 'VariableNames', names)];
+end
+
+function down = downweightedPoints(points, axisName)
+% ロバスト回帰で重みを下げた点（外れ値とみなした点。X・Y の大きさのときは、どちらかの軸で下げた点）
+WEIGHT_TOLERANCE = 1e-6;   % alignest.shotHighOrder と同じ
+switch axisName
+    case "xy"
+        weight = min(points.weightX, points.weightY);
+    case "X"
+        weight = points.weightX;
+    otherwise
+        weight = points.weightY;
+end
+down = weight < 1 - WEIGHT_TOLERANCE;
+end
+
+function text = statisticText(axisName, statistic, tolerance)
+% 2つの条件の Shot の比べ方の説明
+axisNames = struct("xy", "X・Y の大きさ", "X", "X", "Y", "Y");
+statisticNames = struct("median", "|残差| の中央値", "rms", "残差の RMS", "max", "|残差| の最大");
+text = sprintf("Shot ごとに %sの%sで比べました（差が %g nm 以下は同じ）。", ...
+    axisNames.(axisName), statisticNames.(statistic), tolerance);
+end
+
+function text = pairDescription(first, second, axisName, statistic, tolerance, waferLabel, mine, shots)
+% 「2つの条件を並べる」の図の下の説明：比べ方と、改善・悪化した Shot の数（Wafer・外周内周・すべての Wafer）。条件の名前は
+% 上の選択にあるので、番号だけにする（狭い画面でも図の高さを取れるように）
+count = @(table_, verdict) nnz(table_.verdict == verdict);
+outer = mine(mine.zone == "外周", :);
+inner = mine(mine.zone == "内周", :);
+text = sprintf("左：条件 %d、右：条件 %d。", first, second) + statisticText(axisName, statistic, tolerance) + ...
+    "右の図の Shot の枠：青の実線 = 改善、橙の破線 = 悪化。○ = ロバスト回帰で重みを下げた点。" + ...
+    sprintf("%s：改善 %d・悪化 %d・同じ %d Shot（外周 %d / %d、内周 %d / %d）。", waferLabel, count(mine, "改善"), ...
+    count(mine, "悪化"), count(mine, "同じ"), count(outer, "改善"), count(outer, "悪化"), count(inner, "改善"), ...
+    count(inner, "悪化")) + sprintf("すべての Wafer：改善 %d・悪化 %d・同じ %d Shot。", count(shots, "改善"), ...
+    count(shots, "悪化"), count(shots, "同じ"));
+improved = shots(shots.verdict == "改善", :);
+if any(shots.downweightedOther > 0)
+    text = text + sprintf("改善した Shot のうち、右の条件で重みを下げた点がある Shot：%d / %d。", ...
+        nnz(improved.downweightedOther > 0), height(improved));
+end
 end

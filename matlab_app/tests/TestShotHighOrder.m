@@ -211,7 +211,9 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             k3 = perShot.coefficients(perShot.coefficients.k == 3, :);
             testCase.verifyEqual(k3.value - 0.01 * k3.shotNo, repmat(truth.dx(2), height(k3), 1), 'AbsTol', 1e-8);
             testCase.verifyLessThan(max(abs(perShot.points.residualX)), 1e-6);
-            testCase.verifyEqual(numel(unique(perShot.coefficients.shotNo)), size(testCase.Grid.centers, 1));
+            shotRows = perShot.coefficients(perShot.coefficients.component == "Shot 高次補正", :);
+            testCase.verifyEqual(numel(unique(shotRows.shotNo)), size(testCase.Grid.centers, 1));
+            testCase.verifyTrue(any(perShot.coefficients.component == "Wafer 成分"), "Wafer 成分は先に求めて引く");
         end
 
         function scanAndRowGroupsRecoverTheirOwnK(testCase)
@@ -397,7 +399,9 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             testCase.verifyEqual(options.maker, "nikon");
             testCase.verifyTrue(contains(options.description, "Nikon の式（dx 12 / 12 項・dy 15 / 15 項）"));
             settings.highOrder.unit = "shot";
-            testCase.verifyEqual(alignest.highOrderOptions(settings).waferOrder, 0, "Shot ごとのときは Wafer 成分を使わない");
+            options = alignest.highOrderOptions(settings);
+            testCase.verifyEqual(options.waferOrder, 1, "Shot ごとでも Wafer 成分を使う（先に求めて引く）");
+            testCase.verifyTrue(contains(options.description, "Wafer 成分 1 次を先に求めて引く"));
             for unit = ["scan", "row"]
                 settings.highOrder.unit = unit;
                 options = alignest.highOrderOptions(settings);
@@ -406,7 +410,7 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             end
             settings.highOrder.unit = "shot";
             bad = {"maker", "x", 'alignest:highOrderModel'; "unit", "lot", 'alignest:highOrderUnit'; ...
-                "waferOrder", 4, 'alignest:highOrderWafer'; "vifThreshold", 1, 'alignest:highOrderVif'; ...
+                "waferOrder", 6, 'alignest:highOrderWafer'; "vifThreshold", 1, 'alignest:highOrderVif'; ...
                 "loss", "l1", 'alignest:highOrderLoss'; "huberTuning", 0, 'alignest:highOrderHuber'; ...
                 "lambda", -1, 'alignest:highOrderLambda'; "excludedTerms", 0.5, 'alignest:highOrderTerms'};
             for k = 1:size(bad, 1)
@@ -561,7 +565,8 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             app.exportHighOrderTo(file);
             sheets = string(sheetnames(file));
             delete(file);
-            testCase.verifyEqual(sheets.', ["説明", "補正の評価", "補正値", "項とVIF", "点ごとの値"]);
+            testCase.verifyEqual(sheets.', ["説明", "補正の評価", "補正値", "項とVIF", "残差の成分", "残差の成分の項", ...
+                "点ごとの値"]);
             % 未知の座標の推定値（Wafer の外の点は使わない）と、学習に使った Mark の実測値
             app.addTargetPoints("shots", 6, 8, NaN);
             app.addTargetPoints("shots", -6, -8, NaN);

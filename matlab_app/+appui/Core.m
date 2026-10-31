@@ -98,7 +98,7 @@ classdef (Abstract) Core < handle
                                 %  data：選んだ列で整理した Wafer ごとのデータ（alignest.prepareHighOrderData。まだなら []）、mapping）
         HighOrderRun = []       % 「7. Shot高次補正」で最後に計算した結果（computeHighOrder。alignest.shotHighOrder の結果と入力）
         HighOrderConditions = struct("label", {}, "highOrder", {})  % 「7. Shot高次補正」の補正の比較の条件（名前と settings.highOrder）
-        HighOrderComparison = []  % 「7. Shot高次補正」の補正の比較の結果（compareHighOrderConditionsNow。表と、比べた条件・入力）
+        HighOrderComparison = []  % 「7. Shot高次補正」の補正の比較の結果（compareHighOrderConditionsNow。表・条件ごとの結果と、比べた条件・入力）
     end
 
     properties (Dependent)
@@ -518,6 +518,12 @@ classdef (Abstract) Core < handle
                     items = c.targetResidualAxes;
                 case "highOrder"
                     items = [c.highOrderAxes, c.highOrderAxes2, c.highOrderAxes3];   % 並べたときは3つ（使わない図は中身が無い）
+                case "highOrderPair"
+                    items = [c.highOrderPairAxes, c.highOrderPairAxes2];   % 基準（左）と比べる条件（右）
+                case "highOrderHistogram"
+                    items = c.highOrderHistogramAxes;
+                case "highOrderDecomposition"
+                    items = c.highOrderDecompositionAxes;
                 otherwise
                     error('alignest:figureName', '保存する図の名前が違います: %s', figureName);
             end
