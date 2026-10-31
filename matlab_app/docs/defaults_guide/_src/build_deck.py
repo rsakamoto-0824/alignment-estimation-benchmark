@@ -28,7 +28,7 @@ DECK_NAME = "デフォルト設定の編集ガイド"
 DECK_TITLE = "デフォルト設定の編集ガイド（管理者向け）"
 CODE_FONT = "Courier New"
 DEFAULTS_FILE = "alignment_estimation_defaults.json"
-TEST_COUNT = 205   # runAllTests の件数（2026-10-31 時点。テストを足したら直す）
+TEST_COUNT = 209   # runAllTests の件数（2026-10-31 時点。テストを足したら直す）
 
 
 class Deck:
@@ -369,14 +369,15 @@ def build(output: Path, reference: Path):
         ["highOrder.outerMaker ・ outerName", "\"none\" ・ \"\"", "外周の式（none：分けない）・選んだ組み合わせの名前", "7. 外周の式"],
         ["highOrder.vifThreshold", "10", "「VIF で選ぶ」のしきい値（よく使う値は 5〜10）", "7. VIF のしきい値"],
         ["highOrder.loss ・ huberTuning", "\"huber\" ・ 1.345", "損失関数（ols・huber・lad）・Huber の定数 c", "7. 回帰・Huber"],
-        ["highOrder.l2 ・ lambda", "true ・ 0.1", "高次項（2次以上）だけに L2 正則化をかけるか・強さ λ", "7. L2・λ"],
+        ["highOrder.regularization ・ penaltyOrders ・ lambda", "\"l2\" ・ [2〜6] ・ 0.1", "正則化（none・l2・l1）・かける次数（1〜6）・強さ λ", "7. 正則化・λ"],
         ["highOrder.termSets", "[]（なし）", "保存した項の組み合わせ（1行 = \"名前|式|k の番号 …\"）", "7. 組み合わせ"]],
         widths=(3.3, 2.2, 4.95, 1.68), row_h=0.36)
-    point_bar(s, 6.12, "λ はそろえた係数に対する値（1 Shot 7×11 点の標準 0.1。点を減らすときは λ × √(77 / 点の数)）。"
+    point_bar(s, 6.12, "λ はそろえた係数に対する値（L2 は 1 Shot 7×11 点の標準 0.1。点を減らすときは λ × √(77 / 点の数)）。"
               "highOrder は評価の結果を変えない（「続きから再開」の比較にも使わない）",
               icon="i", icon_color=BODY, h=0.7, size=12)
     notes(s, "「7. Shot高次補正」のタブの初期値。excludedTerms は「VIF で選ぶ」・表の「使う」・点の数による項の絞り込みで変わり、"
              "「設定を保存…」の JSON にも入る。termSets は画面の「保存」で増え、MATLAB の設定（getpref）にも残る。"
+             "以前の設定ファイルの l2（true・false）は、regularization の l2・none として読む。"
              "unit・λ・回帰・保存した組み合わせは「補正の比較」でまとめて並べて比べられる。outerMaker を none 以外にすると、"
              "外周の Shot だけその式で補正する（保存した組み合わせを選ぶと、その使わない項 outerExcludedTerms と名前 outerName も入る）。"
              "既定の設定ファイルにも書ける。"

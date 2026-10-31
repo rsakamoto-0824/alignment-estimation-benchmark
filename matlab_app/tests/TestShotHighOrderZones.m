@@ -335,8 +335,8 @@ classdef TestShotHighOrderZones < matlab.unittest.TestCase
             app.exportHighOrderTo(file);
             sheets = string(sheetnames(file));
             delete(file);
-            testCase.verifyEqual(sheets.', ["説明", "補正の評価", "補正の比較", "Shotごとの比較", "補正値", "項とVIF", ...
-                "残差の成分", "残差の成分の項", "点ごとの値"]);
+            testCase.verifyEqual(sheets.', ["説明", "補正の評価", "補正の比較", "Shotごとの比較", "補正値", ...
+                "Shotごとの補正値", "項とVIF", "残差の成分", "残差の成分の項", "点ごとの値"]);
             % 設定ファイル：外周の設定が残り、読むと欄も変わる。組み合わせを消しても外周の式の設定は残す
             settingsFile = [tempname, '.json'];
             alignest.saveSettings(app.Settings, settingsFile);

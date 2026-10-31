@@ -90,7 +90,7 @@ parts.append(section('workflow', '''
 ('6. 未知の座標の推定','+appui/TargetTab.m','function buildTargetTab','入力表、条件、推定・補正・書き出しボタン。'),
 ('7. Shot高次補正','+appui/HighOrderTab.m','function buildHighOrderTab','入力のデータ、補正の式・くくり・回帰の欄、結果（Excel・CSVの列・使う項とVIF・評価・補正値・マップ）のタブ。'),
 ('7. Shot高次補正の比較','+appui/HighOrderCompareTab.m','function buildHighOrderCompareTab / buildHighOrderPairTab / buildHighOrderWaferTab','補正の比較（条件の一覧・λのスイープ・3つの回帰）、2つの条件を並べる、Waferの比較、項の組み合わせの保存の欄。'),
-('7. Shot高次補正の残差の分析','+appui/HighOrderAnalysisTab.m','function buildHighOrderHistogramTab / buildHighOrderDecompositionTab','ヒストグラム（重ねる値・軸・Wafer・範囲）と残差の成分分解（分析の項・Shot成分の項）の欄。'),
+('7. Shot高次補正の残差の分析と書き出し','+appui/HighOrderAnalysisTab.m','function buildHighOrderHistogramTab / buildHighOrderDecompositionTab / buildHighOrderOutputTab','ヒストグラム（重ねる値・軸・Wafer・範囲）、残差の成分分解（分析の項・Shot成分の項）、書き出し（書き出すもの・値・書き出すボタンと表）の欄。'),
 ('8. ヘルプ・表示の設定','+appui/Display.m','function buildHelpTab / setTheme / setFontSize','help/help.htmlの表示、画面の色・文字の大きさ・凡例の位置。'),
 ('画面と設定を相互に渡す','+appui/SettingsTab.m','settingsToControls / controlsToSettings','設定→画面、画面→設定。片側だけ直すと値が戻る・反映されない。'),
 ('いくつかのタブで使う小さな関数','+appui/private/','label / place / onOff など','部品を作る・置く、値を文字にする。1つの関数が1つのファイル。'),

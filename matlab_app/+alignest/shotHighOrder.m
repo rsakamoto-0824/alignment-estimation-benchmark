@@ -18,10 +18,10 @@ function result = shotHighOrder(wafers, settings)
 %   分けるときは、k の組を内周・外周で別にし（くくりの組ごとに、内周は options.maker、外周は outerMaker の式）、Wafer 成分は
 %   両方で共通にする。補正の評価は、分けなくても内周・外周ごとにも出す（result.regionSummary）。
 %   Wafer 成分（Shot 中心の座標 Xc・Yc の 1〜waferOrder 次の項。定数は k1・k2 に含める）：Shot ごとのほかは、Wafer で共通の
-%   1組として k と一緒に求める（L2 はかけない）。Shot ごとのときは、Shot ごとの k1・k2 が Wafer 成分を含むので、先に Wafer 内で
+%   1組として k と一緒に求める（正則化はかけない）。Shot ごとのときは、Shot ごとの k1・k2 が Wafer 成分を含むので、先に Wafer 内で
 %   共通の k と一緒に求めて引き、残りを Shot ごとに求める（補正量・残差は Wafer 成分なしと同じで、Shot ごとの k1・k2 が
 %   Wafer 成分を除いた値になる）。
-%   回帰は alignest.robustRidgeFit（最小二乗・Huber・LAD、L2 は2次以上の項だけ）。比べるために、同じ点・同じ損失関数で、
+%   回帰は alignest.robustRidgeFit（最小二乗・Huber・LAD、正則化（L2・L1）は選んだ次数の項だけ）。比べるために、同じ点・同じ損失関数で、
 %   Shot ごとに 1次の項（k1〜k6）で補正した残差も求める（くくりによらず、Shot ごとに別の k1〜k6）。
 %   項数の絞り込み：点の数が最も少ない k の組（Shot ごとなら Mark の最も少ない Shot。k1〜k6 を決められる組の中で。外周の式を
 %   分けるときは内周・外周ごと）の点の配置で決められる項だけを、k の番号の小さい順に選ぶ（使う項がそれより多ければ外し、
@@ -63,8 +63,14 @@ zoneSplit = options.outerMaker ~= "none";
 for w = 1:numel(wafers)
     wafers(w).points = withGroupColumns(wafers(w).points, options.outerRadiusMm);
 end
-lambda = options.lambda * options.l2;
-fitOptions = {'loss', options.loss, 'huberTuning', options.huberTuning};
+% 正則化：強さ λ（なしなら 0）と、かける項の次数。種類（L2・L1）は回帰の設定に渡す
+penalty = struct("lambda", options.lambda * (options.regularization ~= "none"), "orders", options.penaltyOrders);
+penaltyType = "l2";
+if options.regularization == "l1"
+    penaltyType = "l1";
+end
+fitOptions = {'loss', options.loss, 'huberTuning', options.huberTuning, 'penalty', penaltyType};
+noPenalty = struct("lambda", 0, "orders", zeros(1, 0));
 zoneTerms = {alignest.highOrderTerms(options.maker, options.excludedTerms)};
 if zoneSplit
     zoneTerms{2} = alignest.highOrderTerms(options.outerMaker, options.outerExcludedTerms);
@@ -125,7 +131,7 @@ for w = 1:numel(wafers)
         waferPart = zeros(nPoints, 1);
         if waferFirst
             [waferPart, waferFit] = fitWaferFirst(points, coordinates, values(:, a), axisTerms, waferPowers, ...
-                zoneSplit, lambda, fitOptions);
+                zoneSplit, penalty, fitOptions);
             if isempty(waferFit) || ~any(waferFit.ok)
                 counts.waferDropped = counts.waferDropped + 1;   % 求められなかった Wafer 成分は 0（Shot ごとの k だけ）
             else
@@ -141,7 +147,7 @@ for w = 1:numel(wafers)
             groupTerms = axisTerms(fitUnits(u).zones);
             counts.groups(a) = counts.groups(a) + numel(fitUnits(u).labels);
             fit = fitGroups(coordinates(members, :), values(members, a) - waferPart(members), groupIndex, groupTerms, ...
-                fitWaferPowers, lambda, fitOptions);
+                fitWaferPowers, penalty, fitOptions);
             done = fit.ok(groupIndex);
             correction(members(done), a) = fit.fitted(done) + waferPart(members(done));
             weights(members(done), a) = fit.weights(done);
@@ -172,7 +178,7 @@ for w = 1:numel(wafers)
         for s = 1:max([shotIndex; 0])
             members = shotRows(shotIndex == s);
             linearFit = fitGroups(coordinates(members, :), values(members, a), ones(numel(members), 1), {linearTerms}, ...
-                zeros(0, 2), 0, fitOptions);
+                zeros(0, 2), noPenalty, fitOptions);
             if linearFit.ok
                 linearCorrection(members, a) = linearFit.fitted;
             end
@@ -441,7 +447,7 @@ else
 end
 end
 
-function [waferPart, fit] = fitWaferFirst(points, coordinates, values, axisTerms, waferPowers, zoneSplit, lambda, ...
+function [waferPart, fit] = fitWaferFirst(points, coordinates, values, axisTerms, waferPowers, zoneSplit, penalty, ...
         fitOptions)
 % Shot ごとのとき、Wafer 成分を先に求める：Wafer 内で共通の k（外周の式を分けるときは内周・外周の2組）と一緒に全点で
 % 求め（「Wafer 内で共通」と同じ求め方）、点ごとの Wafer 成分の分（waferPart。定数は含めない）を返す。Wafer 成分は Shot 中心の
@@ -456,7 +462,7 @@ if isempty(fitUnits)
 end
 unit = fitUnits(1);
 fit = fitGroups(coordinates(unit.members, :), values(unit.members), unit.groupIndex, axisTerms(unit.zones), ...
-    waferPowers, lambda, fitOptions);
+    waferPowers, penalty, fitOptions);
 if ~any(fit.ok)
     return
 end
@@ -466,11 +472,11 @@ waferPart = (coordinates(:, 3) .^ (waferPowers(:, 1).') .* coordinates(:, 4) .^ 
 waferPart(~isfinite(waferPart)) = 0;
 end
 
-function out = fitGroups(coordinates, values, groupIndex, groupTerms, waferPowers, lambda, fitOptions)
+function out = fitGroups(coordinates, values, groupIndex, groupTerms, waferPowers, penalty, fitOptions)
 % 一緒に求める点の集まりに補正の式を当てはめる：k は組（groupIndex）ごと（組 g の項は groupTerms{g}。外周の式を分けると
 % 組ごとに項が違う）、Wafer 成分は共通。項がすべては決まらない組は補正しない（その組を除いて求め直す。組の項はその組の
 % 点だけで決まるので、ほかの組は変わらない）。
-% coordinates：点ごとの [Shot 内の x, Shot 内の y, Shot 中心の Xc, Yc]。
+% coordinates：点ごとの [Shot 内の x, Shot 内の y, Shot 中心の Xc, Yc]。penalty：正則化の強さ lambda とかける項の次数 orders。
 % out.ok：補正した組、out.fitted・weights：点ごと（補正しない組の点は NaN）、out.coefficients・determined・
 % constant：組ごとの cell（組の項の数 × 1）、out.waferCoefficients・waferDetermined・waferConstant：Wafer 成分の項
 nGroups = max([groupIndex(:); 0]);
@@ -489,7 +495,7 @@ while ~isempty(active)
         rows = ismember(groupIndex, active);
         [~, local] = ismember(groupIndex(rows), active);
     end
-    fit = solveGroups(coordinates(rows, :), values(rows), local, groupTerms(active), waferPowers, lambda, fitOptions);
+    fit = solveGroups(coordinates(rows, :), values(rows), local, groupTerms(active), waferPowers, penalty, fitOptions);
     ok = true(1, numel(active));
     for j = 1:numel(active)
         out.determined{active(j)} = fit.determined(fit.columns{j});
@@ -517,7 +523,7 @@ out.converged = fit.converged;
 out.robust = fit.robust;
 end
 
-function fit = solveGroups(coordinates, values, groupIndex, groupTerms, waferPowers, lambda, fitOptions)
+function fit = solveGroups(coordinates, values, groupIndex, groupTerms, waferPowers, penalty, fitOptions)
 % 設計行列：組ごとの補正の式の項（その組の点だけ値があり、ほかは 0）と、共通の Wafer 成分の項。
 % fit.columns{g}：組 g の項の列、fit.waferColumns：Wafer 成分の列
 nGroups = numel(groupTerms);
@@ -532,7 +538,7 @@ for g = 1:nGroups
     columns{g} = offset + (1:height(terms));
     local = coordinates(:, 1) .^ (terms.xPower.') .* coordinates(:, 2) .^ (terms.yPower.');
     blocks(:, columns{g}) = local .* (groupIndex == g);
-    isPenalized(columns{g}) = terms.order >= 2;
+    isPenalized(columns{g}) = ismember(terms.order, penalty.orders);   % 選んだ次数の項だけ（Wafer 成分にはかけない）
     columnGroup(columns{g}) = g;
     offset = offset + height(terms);
 end
@@ -543,7 +549,7 @@ if nGroups > 1
     groupOptions = {'rowGroup', groupIndex, 'columnGroup', [columnGroup; zeros(nWafer, 1)]};
 end
 fit = alignest.robustRidgeFit([blocks, wafer], values, [isPenalized; false(nWafer, 1)], fitOptions{:}, ...
-    'lambda', lambda, groupOptions{:});
+    'lambda', penalty.lambda, groupOptions{:});
 fit.columns = columns;
 fit.waferColumns = offset + (1:nWafer);
 end
@@ -738,16 +744,16 @@ if any(counts.skipped > 0)
         'dy %d / %d（補正量・残差は空欄）。'], groupName, counts.skipped(1), counts.groups(1), counts.skipped(2), ...
         counts.groups(2));
     messages(end) = messages(end) + "決まらない項：" + strjoin(counts.undetermined, "・") + "。";
-    if ~(options.l2 && options.lambda > 0)
-        messages(end) = messages(end) + "「VIF で選ぶ」でその項を外すか、高次項に L2 正則化をかけてください" + ...
-            "（L2 をかけると、点が少なくても高次項が決まります）。";
+    if options.regularization == "none" || options.lambda == 0
+        messages(end) = messages(end) + "「VIF で選ぶ」でその項を外すか、その次数の項に正則化（L2・L1）をかけてください" + ...
+            "（正則化をかけた次数の項は、点が少なくても決まります）。";
     else
         messages(end) = messages(end) + "1次の項（k1〜k6）を決めるには、1つの k の組に同じ直線の上に無い3点以上が要ります。";
     end
 end
 if ~isempty(counts.constant)
     messages(end + 1, 1) = "⚠ 点の配置では値が変わらない（定数と同じになる）項：" + strjoin(counts.constant, "・") + ...
-        "。L2 正則化で 0 にしました（VIF が ∞ の項。「VIF で選ぶ」で外せます）。";
+        "。正則化で 0 にしました（VIF が ∞ の項。「VIF で選ぶ」で外せます）。";
 end
 if counts.noRobust > 0
     messages(end + 1, 1) = sprintf(['点の数が項の数以下の %s が %d 個あり、そこではロバスト回帰の重みを使わずに' ...

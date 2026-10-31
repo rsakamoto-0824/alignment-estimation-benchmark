@@ -1,7 +1,7 @@
 classdef (Abstract) HighOrderTab < appui.Core
     %HIGHORDERTAB 「7. Shot高次補正」タブ：Shot 高次補正（Shot 内の座標の補正の式）の評価。入力のデータ（計測データ・未知の座標の
     %   推定値・Excel（列は読んだ後で選ぶ））、補正の式と k パラメータ（VIF で選ぶ。カスタムの式は k1〜k38）、k の組のくくり
-    %   （Wafer 内で共通・Scan 方向ごと・行の偶奇ごと・Shot ごと）、回帰（ロバスト回帰・高次項だけの L2 正則化）、補正の評価・
+    %   （Wafer 内で共通・Scan 方向ごと・行の偶奇ごと・Shot ごと）、回帰（ロバスト回帰・選んだ次数の項だけの L2・L1 正則化）、補正の評価・
     %   補正値・マップ（グリッド・並べて表示）・書き出し。計算は alignest.shotHighOrder。補正の比較・Wafer の比較・項の
     %   組み合わせの保存は HighOrderCompareTab.m。
     %   AlignmentEstimationApp（画面の本体）の一部。画面の部品は Controls、データ・結果は Core のプロパティに持つ。
@@ -20,8 +20,9 @@ classdef (Abstract) HighOrderTab < appui.Core
             %   maker（"asml"・"canon"・"nikon"・"custom"）・unit（k の組のくくり："common"・"scan"・"row"・"shot"）・
             %   waferOrder（0〜5）・outerRadiusMm（外周の Shot の半径 [mm]）・outerMaker（外周の式："none"（分けない）・
             %   "asml"・"canon"・"nikon"・"custom"）・outerTermSet（外周の式にする保存した項の組み合わせの名前）・vifThreshold・
-            %   loss（"ols"・"huber"・"lad"）・huberTuning・l2（true・false）・lambda・measured（推定値に学習に使った Mark の
-            %   実測値も足すか）。例：app.setHighOrderSettings(unit="shot", loss="ols", l2=false)
+            %   loss（"ols"・"huber"・"lad"）・huberTuning・regularization（正則化："none"・"l2"・"l1"）・penaltyOrders
+            %   （正則化をかける次数。1〜6 の並び）・lambda・measured（推定値に学習に使った Mark の実測値も足すか）。
+            %   例：app.setHighOrderSettings(unit="shot", loss="ols", regularization="l1", penaltyOrders=3:6)
             arguments
                 app
                 options.maker (1, 1) string
@@ -33,7 +34,8 @@ classdef (Abstract) HighOrderTab < appui.Core
                 options.vifThreshold (1, 1) double
                 options.loss (1, 1) string
                 options.huberTuning (1, 1) double
-                options.l2 (1, 1) logical
+                options.regularization (1, 1) string
+                options.penaltyOrders double
                 options.lambda (1, 1) double
                 options.measured (1, 1) logical
             end
@@ -41,13 +43,19 @@ classdef (Abstract) HighOrderTab < appui.Core
             controls = struct("maker", c.highOrderMaker, "unit", c.highOrderUnit, "waferOrder", c.highOrderWaferOrder, ...
                 "outerRadiusMm", c.highOrderOuterRadius, "outerMaker", c.highOrderOuterFormula, "outerTermSet", ...
                 c.highOrderOuterFormula, "vifThreshold", c.highOrderVifThreshold, "loss", c.highOrderLoss, ...
-                "huberTuning", c.highOrderHuber, "l2", c.highOrderL2, "lambda", c.highOrderLambda, "measured", ...
-                c.highOrderMeasured);
+                "huberTuning", c.highOrderHuber, "regularization", c.highOrderRegularization, "lambda", ...
+                c.highOrderLambda, "measured", c.highOrderMeasured);
             if isfield(options, "outerTermSet")
                 if ~any(termSetTable(app.Settings.highOrder.termSets).name == options.outerTermSet)
                     error('alignest:highOrderTermSet', '保存した項の組み合わせ「%s」がありません。', options.outerTermSet);
                 end
                 options.outerTermSet = outerSetPrefix() + options.outerTermSet;
+            end
+            if isfield(options, "penaltyOrders")
+                for order = 1:numel(c.highOrderPenaltyOrders)
+                    c.highOrderPenaltyOrders(order).Value = any(options.penaltyOrders == order);
+                end
+                options = rmfield(options, "penaltyOrders");
             end
             for name = string(fieldnames(options)).'
                 value = options.(name);
@@ -430,12 +438,13 @@ classdef (Abstract) HighOrderTab < appui.Core
     methods (Access = {?appui.Core})
         % ================= 7. Shot高次補正 =================
         function buildHighOrderTab(app)
+            MAX_PENALTY_ORDER = 6;   % 正則化をかけられる次数の上限（alignest.highOrderOptions と同じ）
             % 左：入力のデータ・補正の式・回帰の設定。右：メッセージと、使う項と VIF（k パラメータを選ぶ表）・補正の評価・
             % 補正値・マップ（中のタブで切り替える）
             grid = uigridlayout(app.Tabs.highOrder, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 12, 'RowSpacing', 8);
             label(grid, ['Shot 高次補正（Shot 内の座標の補正の式。ASML・Canon・Nikon・カスタム）の k パラメータを求め、' ...
-                '補正の効果を評価します。左で入力のデータ・補正の式（VIF で使う項を選べます）・回帰（ロバスト回帰、高次項だけの' ...
-                ' L2 正則化）を決めて「補正を計算する」を押すと、高次補正の残差を、Shot ごとの1次（k1〜k6）で補正した残差と' ...
+                '補正の効果を評価します。左で入力のデータ・補正の式（VIF で使う項を選べます）・回帰（ロバスト回帰、選んだ次数の' ...
+                '項だけの L2・L1 正則化）を決めて「補正を計算する」を押すと、高次補正の残差を、Shot ごとの1次（k1〜k6）で補正した残差と' ...
                 '比べて出します。'], 1, 1);
             body = uigridlayout(grid, [1, 2], 'ColumnWidth', {600, '1x'}, 'Padding', 0, 'ColumnSpacing', 14);
             registerResponsiveColumn(app, body, 1);
@@ -522,8 +531,8 @@ classdef (Abstract) HighOrderTab < appui.Core
             c.highOrderTermInfo = uilabel(termButtons, 'WordWrap', 'on', 'FontColor', app.Palette.muted, 'UserData', "muted", ...
                 'Text', '');
 
-            regression = uigridlayout(left, [2, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1x'}, 'RowHeight', {'fit', 'fit'}, ...
-                'Padding', 0);
+            regression = uigridlayout(left, [3, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1x'}, 'RowHeight', ...
+                {'fit', 'fit', 'fit'}, 'Padding', 0);
             place(regression, 8, 1);
             regressionHeading = label(regression, '③ 回帰', 1, 1);
             regressionHeading.FontWeight = 'bold';
@@ -535,15 +544,29 @@ classdef (Abstract) HighOrderTab < appui.Core
             c.highOrderHuber = uieditfield(regression, 'numeric', 'Limits', [0, Inf], 'LowerLimitInclusive', 'off', ...
                 'ValueChangedFcn', onSetting, 'Tooltip', '残差が c × 尺度 を超える点の重みを下げます（1.345 で正規分布の誤差のとき効率 95%）。');
             place(c.highOrderHuber, 1, 4);
-            c.highOrderL2 = uicheckbox(regression, 'Text', '高次項だけに L2 正則化', 'ValueChangedFcn', onSetting, ...
-                'Tooltip', ['2次以上の項の係数を小さくする向きに罰則をかけます（k1〜k6 と Wafer 成分にはかけない）。' ...
-                '点が少ない・項が似ているときの係数のばらつきを抑えます。']);
-            place(c.highOrderL2, 2, [1, 2]);
+            label(regression, '正則化', 2, 1);
+            c.highOrderRegularization = uidropdown(regression, 'Items', {'なし', 'L2（係数を小さくする）', ...
+                'L1（効かない項を 0 にする）'}, 'ItemsData', {'none', 'l2', 'l1'}, 'ValueChangedFcn', onSetting, ...
+                'Tooltip', ['選んだ次数の項の係数に罰則をかけます（定数 k1・k2 と Wafer 成分にはかけない）。L2：係数の二乗に' ...
+                '罰則（係数を小さくして、点が少ない・項が似ているときのばらつきを抑える）。L1：係数の絶対値に罰則（効かない' ...
+                '項の係数がちょうど 0 になり、使う項を選ぶのに近い）。']);
+            place(c.highOrderRegularization, 2, 2);
             label(regression, 'λ', 2, 3);
             c.highOrderLambda = uieditfield(regression, 'numeric', 'Limits', [0, Inf], 'ValueChangedFcn', onSetting, ...
-                'Tooltip', ['L2 正則化の強さ。項（列）を平均0・標準偏差1にそろえた係数にかけます。過去のシミュレーション' ...
-                '（7×11点）の標準は 0.1。点を減らすときは λ × √(77 / 点の数) が目安。']);
+                'Tooltip', ['正則化の強さ。項（列）を平均0・標準偏差1にそろえた係数にかけます。L2 は過去のシミュレーション' ...
+                '（7×11点）の標準が 0.1（点を減らすときは λ × √(77 / 点の数) が目安）。L1 は、そろえた係数でこの値 [nm] ' ...
+                'より効かない項が 0 になる目安です。']);
             place(c.highOrderLambda, 2, 4);
+            label(regression, 'かける次数', 3, 1);
+            orderGrid = uigridlayout(regression, [1, MAX_PENALTY_ORDER], 'ColumnWidth', repmat({'fit'}, 1, ...
+                MAX_PENALTY_ORDER), 'Padding', 0, 'ColumnSpacing', 8);
+            place(orderGrid, 3, [2, 4]);
+            c.highOrderPenaltyOrders = gobjects(1, MAX_PENALTY_ORDER);
+            for order = 1:MAX_PENALTY_ORDER
+                c.highOrderPenaltyOrders(order) = uicheckbox(orderGrid, 'Text', sprintf('%d次', order), ...
+                    'ValueChangedFcn', onSetting, 'Tooltip', sprintf(['%d次の項（x・y のべきの和が %d の項）に正則化を' ...
+                    'かけます（初期値は2次以上。1次は k3〜k6 の倍率・回転）。'], order, order));
+            end
             actions = uigridlayout(left, [2, 2], 'ColumnWidth', {180, 'fit'}, 'RowHeight', {'fit', 'fit'}, 'Padding', 0);
             place(actions, 9, 1);
             c.highOrderCompute = primaryButton(app, actions, '補正を計算する', @(~, ~) app.onComputeHighOrder());
@@ -706,6 +729,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             app.Controls = mergeStruct(app.Controls, c);
             buildHighOrderHistogramTab(app, outputs);
             buildHighOrderDecompositionTab(app, outputs);
+            buildHighOrderOutputTab(app, outputs);
             highOrderSettingsToControls(app);
             refreshHighOrderChoices(app);
         end
@@ -731,7 +755,10 @@ classdef (Abstract) HighOrderTab < appui.Core
             c.highOrderVifThreshold.Value = options.vifThreshold;
             c.highOrderLoss.Value = char(options.loss);
             c.highOrderHuber.Value = options.huberTuning;
-            c.highOrderL2.Value = options.l2;
+            c.highOrderRegularization.Value = char(options.regularization);
+            for order = 1:numel(c.highOrderPenaltyOrders)
+                c.highOrderPenaltyOrders(order).Value = any(options.penaltyOrders == order);
+            end
             c.highOrderLambda.Value = options.lambda;
             updateHighOrderEnabled(app);
             refreshHighOrderTerms(app);
@@ -802,14 +829,20 @@ classdef (Abstract) HighOrderTab < appui.Core
             app.Settings.highOrder.vifThreshold = c.highOrderVifThreshold.Value;
             app.Settings.highOrder.loss = string(c.highOrderLoss.Value);
             app.Settings.highOrder.huberTuning = c.highOrderHuber.Value;
-            app.Settings.highOrder.l2 = c.highOrderL2.Value;
+            app.Settings.highOrder.regularization = string(c.highOrderRegularization.Value);
+            app.Settings.highOrder.penaltyOrders = find([c.highOrderPenaltyOrders.Value]);
             app.Settings.highOrder.lambda = c.highOrderLambda.Value;
+            if isfield(app.Settings.highOrder, "l2")
+                app.Settings.highOrder = rmfield(app.Settings.highOrder, "l2");   % 以前の設定の L2 のオン・オフ（種類に直した）
+            end
         end
 
         function updateHighOrderEnabled(app)
             c = app.Controls;
             c.highOrderHuber.Enable = onOff(string(c.highOrderLoss.Value) == "huber");
-            c.highOrderLambda.Enable = onOff(c.highOrderL2.Value);
+            regularized = string(c.highOrderRegularization.Value) ~= "none";
+            c.highOrderLambda.Enable = onOff(regularized);
+            set(c.highOrderPenaltyOrders, 'Enable', onOff(regularized));
             c.highOrderMeasured.Enable = onOff(string(c.highOrderSource.Value) == "target");
         end
 
@@ -1342,6 +1375,8 @@ classdef (Abstract) HighOrderTab < appui.Core
                     drawHighOrderHistogram(app);
                 elseif event.NewValue == c.highOrderDecompositionTab
                     showHighOrderDecomposition(app);
+                elseif event.NewValue == c.highOrderOutputTab
+                    showHighOrderOutputPreview(app);
                 end
             catch
                 % 描き直せなくても前の図のままにする（表示を変えるだけなので止めない）
@@ -1352,7 +1387,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             app.Controls.highOrderError.Text = '';
             runWithAlert(app, @() app.computeHighOrder(), "Shot 高次補正を計算できませんでした", ...
                 ['入力のデータと Wafer、補正の式の設定を確かめてください。Shot ごとのときは、1つの Shot に点が足りているか' ...
-                '（「VIF で選ぶ」で項を減らす・L2 正則化をかける）を確かめてください。']);
+                '（「VIF で選ぶ」で項を減らす・正則化をかける）を確かめてください。']);
         end
 
         function onHighOrderSheetChanged(app)

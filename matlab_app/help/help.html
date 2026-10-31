@@ -70,7 +70,7 @@
   <a href="#high-order">Shot 高次補正の評価</a>
   <a class="sub" href="#high-order-input">入力のデータ</a>
   <a class="sub" href="#high-order-vif">k パラメータと VIF</a>
-  <a class="sub" href="#high-order-fit">回帰（ロバスト・L2）</a>
+  <a class="sub" href="#high-order-fit">回帰（ロバスト・L2・L1）</a>
   <a class="sub" href="#high-order-zones">外周の式・内周と外周</a>
   <a class="sub" href="#high-order-eval">評価のしかた</a>
   <a class="sub" href="#high-order-map">マップ（グリッド・並べる）</a>
@@ -79,6 +79,7 @@
   <a class="sub" href="#high-order-wafers">Wafer の比較</a>
   <a class="sub" href="#high-order-histogram">ヒストグラム</a>
   <a class="sub" href="#high-order-decomposition">残差の成分分解</a>
+  <a class="sub" href="#high-order-output">補正値・残差の書き出し</a>
 </nav>
 <main>
 <h1>ヘルプ：用語・補正の式・カーネル</h1>
@@ -344,14 +345,17 @@ Fringe 番号は、Fringe の次数 k = (n + |m|)/2 の小さい順、同じ k �
 <p><strong>項数の絞り込み</strong>：「補正を計算する」で、点の数が最も少ない k の組（Shot ごとなら計測 Mark の最も少ない Shot。Wafer 内で共通なら点の最も少ない Wafer。k1〜k6 を決められない組は除く）の点の配置では決められない項が選ばれていれば、⚠ で知らせ、k1〜k6 から始めて k の番号の小さい順に、前の項で表せない項だけを使います（前の項の組み合わせで表せる項は外す）。外した項は表の「使う」からも外します（「すべての項を使う」で戻せます）。基準の組より点の配置の悪い組（同じ位置に点が重なっているなど）は、その組だけ補正しないことがあります。</p>
 <p><strong>組み合わせの保存</strong>：「使う項と VIF」の下の「組み合わせの名前」に名前を入れて「保存」を押すと、今の補正の式と使う項を保存します（同じ名前は置き換え）。「保存した組み合わせ」で選んで「呼び出す」と、補正の式と使う項をその組み合わせにします。保存した組み合わせは次に開いたときも使え、「設定を保存…」の設定ファイル（highOrder.termSets）にも入ります。設定ファイルを読んでも、画面で保存した組み合わせは消えません（同じ名前なら設定ファイルのもの）。</p>
 
-<h3 id="high-order-fit">回帰（ロバスト回帰・高次項だけの L2 正則化）</h3>
-<div class="formula">最小二乗：(1/2n) Σ r<sub>i</sub><sup>2</sup> + (λ/2) Σ<sub>2次以上</sub> θ<sub>j</sub><sup>2</sup>
-Huber   ：(1/n) Σ s<sup>2</sup> ρ<sub>c</sub>(r<sub>i</sub>/s) + (λ/2) Σ<sub>2次以上</sub> θ<sub>j</sub><sup>2</sup>　（重み w<sub>i</sub> = min(1, c·s/|r<sub>i</sub>|)）
-LAD     ：(1/n) Σ s|r<sub>i</sub>| + (λ/2) Σ<sub>2次以上</sub> θ<sub>j</sub><sup>2</sup>　（重み w<sub>i</sub> = s / max(|r<sub>i</sub>|, 0.1·s)）
+<h3 id="high-order-fit">回帰（ロバスト回帰・選んだ次数の項だけの L2・L1 正則化）</h3>
+<div class="formula">最小二乗：(1/2n) Σ r<sub>i</sub><sup>2</sup> + 罰則
+Huber   ：(1/n) Σ s<sup>2</sup> ρ<sub>c</sub>(r<sub>i</sub>/s) + 罰則　（重み w<sub>i</sub> = min(1, c·s/|r<sub>i</sub>|)）
+LAD     ：(1/n) Σ s|r<sub>i</sub>| + 罰則　（重み w<sub>i</sub> = s / max(|r<sub>i</sub>|, 0.1·s)）
+罰則      L2：(λ/2) Σ<sub>選んだ次数の項</sub> θ<sub>j</sub><sup>2</sup>　　L1：λ Σ<sub>選んだ次数の項</sub> |θ<sub>j</sub>|
 s = 1.4826 × MAD（残差の中央値からの絶対偏差の中央値）</div>
 <ul>
-  <li>項（列）を平均0・標準偏差1にそろえてから解きます（θ はそろえた係数）。L2 が項の単位・座標の桁によらず同じ強さで効くようにするためです。</li>
-  <li>L2 正則化は2次以上の項だけにかけ、k1〜k6（並進・倍率・回転）と Wafer 成分にはかけません。λ > 0 なら、点が少ない Shot でも高次項が決まります。</li>
+  <li>項（列）を平均0・標準偏差1にそろえてから解きます（θ はそろえた係数）。正則化が項の単位・座標の桁によらず同じ強さで効くようにするためです。</li>
+  <li><strong>正則化</strong>は「なし・L2・L1」から選びます。L2 は係数を小さくし、点が少ない・項が似ているときの係数のばらつきを抑えます。L1 は効かない項の係数をちょうど 0 にします（使う項を選ぶのに近い）。項が直交するときは、L2 の係数は最小二乗の 1/(1 + λ)、L1 の係数は最小二乗の係数を λ だけ 0 に近づけた値（λ より小さい係数は 0）です。</li>
+  <li><strong>かける次数</strong>は1次〜6次から選べます（初期値は2次〜6次。1次は k3〜k6 の倍率・回転）。定数（k1・k2）と Wafer 成分にはかけません。λ > 0 なら、かけた次数の項は点が少ない Shot でも決まります。</li>
+  <li>L1 は、罰則をかけない列を最小二乗で消してから、かける列を座標降下法（1項ずつ軟しきい値で更新）で解きます。Huber・LAD と組み合わせるときは、重みを変えるたびに解き直します。</li>
   <li>Huber・LAD は、残差の大きい点ほど重みを下げた重み付き最小二乗を、重みを変えながら解き直します（IRLS）。尺度 s は最初の20回だけ求め直して固定します。点の数が項の数以下の組では重みを使いません。</li>
   <li>計算の方法は、過去のシミュレーション（high-order-correction-report の fit_batch）と同じです。λ = 0.1（7×11点）が過去の評価の標準で、点を減らすときは λ × √(77 / 点の数) が目安です。</li>
 </ul>
@@ -389,7 +393,7 @@ Shot ごとの1次で補正した残差 = 値 − 補正量（Shot ごとに求�
 <tr><th>ボタン</th><th>足す条件</th></tr>
 <tr><td class="term">今の設定を足す</td><td>左の補正の式・使う項・くくり・回帰の設定のまま1つ。設定を変えて何回か押すと、補正の内容をまとめて比べられる。</td></tr>
 <tr><td class="term">4つのくくりを足す</td><td>今の設定で、くくりだけを Wafer 内で共通・Scan 方向ごと・行の偶奇ごと・Shot ごとにした4つ。</td></tr>
-<tr><td class="term">λ ごとに足す（スイープ）</td><td>今の設定で、λ だけを入れた値（空白で区切る。0 は L2 なし）にした条件。</td></tr>
+<tr><td class="term">λ ごとに足す（スイープ）</td><td>今の設定で、λ だけを入れた値（空白で区切る。0 は正則化なし）にした条件（今の正則化の種類と次数。正則化なしなら L2）。</td></tr>
 <tr><td class="term">3つの回帰を足す</td><td>今の設定で、回帰だけを最小二乗・Huber・LAD にした3つ（<a href="#high-order-pair">2つの条件を並べる</a>で、ロバスト回帰が最小二乗よりよかった Shot を見るとき）。</td></tr>
 <tr><td class="term">この組み合わせを足す</td><td>保存した項の組み合わせ（補正の式と使う項）を、今のくくり・回帰の設定で。</td></tr>
 </table>
@@ -428,6 +432,16 @@ Shot 成分     ：Σ k<sub>j,Shot</sub>·x<sup>m</sup>y<sup>n</sup>（Shot ご�
   <li>図は、成分の割合（上の4本）と、割合の大きい項（下）を残差の二乗和に占める割合 [%] で描きます。表は、成分ごとの計と項ごとの係数（Shot 成分は Shot の平均と標準偏差）・寄与の RMS [nm]・割合・その項の分が最も大きい Shot です。「すべての Wafer」は、Wafer ごとに分けた二乗和を足し、係数は Wafer・Shot の平均です。</li>
 </ul>
 <p>「結果を Excel に書き出す…」は、「残差の成分」「残差の成分の項」のシート（今の分析の項で、すべての Wafer と Wafer ごと）と、2つの条件を並べているときは「Shotごとの比較」のシートも書きます。</p>
+
+<h3 id="high-order-output">補正値・残差の書き出し</h3>
+<p>「書き出し」のタブで、書き出すものと値を選ぶと、書き出す表のはじめの行を出します。「書き出す…」で CSV（UTF-8。Windows の Excel でも日本語の列名が読める形）か Excel に書きます。値の無いところは空欄です。</p>
+<table>
+<tr><th>書き出すもの</th><th>表</th></tr>
+<tr><td class="term">点ごとの値（計測データの形）</td><td>Operation・EqpId・LotID・Wafer・DateTime・shotNo・Direction・Xmm・Ymm・Radius・markNo・markXmm・markYmm・measX・measY・StsX・StsY の列（Overlay 計測ルールの表の順）。measX・measY に、選んだ値（高次補正の残差・補正量・Shot ごとの1次で補正した残差・補正前の値）を入れ、値の無い点は空欄で Sts を −1 にします。「1. データの読み込み」や「Excel・CSV を読み込む…」でそのまま読み直せます（例：残差を読み直して、残差の面内推定や、さらに補正を評価する）。</td></tr>
+<tr><td class="term">Shot ごとの補正値（k を横に並べる）</td><td>1行 = 1 Shot。Wafer・shotNo・Shot 中心の座標・半径・範囲・くくり・点の数と、使う項の k（列の名前に単位。k1・k2 は Wafer 成分を足した Shot 中心での並進で、足した分は「Wafer成分dx・dy」の列）。Wafer 内で共通などのくくりでは、同じ組の Shot は同じ k3 以降です。補正しなかった Shot は空欄でメモに理由を書きます。「結果を Excel に書き出す…」の「Shotごとの補正値」のシートも同じ表です。</td></tr>
+<tr><td class="term">補正の比較の全条件の点ごとの値</td><td>点ごとに、補正前の値と、比べた条件ごとの選んだ値（列の名前は「番号. 条件の名前：値の名前X[nm]」）。比べた後に条件・入力を変えたときは、比べ直してから書き出します。Excel の「説明」シートに条件ごとの設定を書きます。</td></tr>
+</table>
+<p>計算した後に設定・入力を変えていれば、書き出すときに今の設定で計算し直します（「結果を Excel に書き出す…」と同じ）。</p>
 </main>
 </div>
 <script>
