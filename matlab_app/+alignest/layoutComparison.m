@@ -1,10 +1,11 @@
 function comparison = layoutComparison(results, methodIndex, metric, statistic)
-%LAYOUTCOMPARISON 計測配置の選び方（I 最適・D 最適・ランダム・優先順・人の選択・Mark 単位）どうしを比べる表。
+%LAYOUTCOMPARISON 計測配置の選び方（I 最適・D 最適・ランダム・Excel の優先順とパターン・Mark 単位）どうしを比べる表。
 %   comparison = alignest.layoutComparison(results, methodIndex, metric, statistic)
 %   1つの手法（results.methods(methodIndex)）について、学習パターンの列（results.groups）ごとに、指標 metric の
 %   Wafer の集計 statistic（alignest.summarizeResults と同じ。ランダムのくり返しは Wafer ごとに平均）と、
 %   学習 Shot 数・計測する Mark 数・I 基準・D 基準（Wafer の平均）を並べる。
-%   comparison は表：group（列）・type（選び方：ioptimal・doptimal・random・file・manual・mark・markd）・typeLabel・
+%   comparison は表：group（列）・type（選び方：ioptimal・doptimal・random・file（Excel の優先順。以前のファイルの優先順）・
+%   manual（Excel のパターン。以前の手動・人の選択）・mark・markd）・typeLabel・
 %   nShots（学習 Shot 数の平均）・nMarks（計測する Mark 数の平均。以前の結果・読み込んだ結果では NaN）・value・
 %   criterionI・criterionD・efficiencyI・efficiencyD（全計測に対する効率 0〜1 の Wafer の平均）・
 %   nWafers・sd（Wafer 間の標準偏差）・se（平均の標準誤差 = sd / √nWafers）・minValue・maxValue（Wafer の最小・最大）。
@@ -12,7 +13,7 @@ function comparison = layoutComparison(results, methodIndex, metric, statistic)
 %   comparison.Properties.UserData に指標の名前・小さいほど良いか・選び方の数。
 %   選び方は行の planType（評価した結果）から、無ければ列の名前の先頭（"I最適 20 Shot" など）から決める。
 TYPES = ["ioptimal", "doptimal", "random", "file", "manual", "mark", "markd"];
-LABELS = ["I 最適", "D 最適", "ランダム", "優先順", "人の選択・手動", "Mark 単位の I 最適", "Mark 単位の D 最適"];
+LABELS = ["I 最適", "D 最適", "ランダム", "Excel の優先順", "Excel のパターン", "Mark 単位の I 最適", "Mark 単位の D 最適"];
 PREFIXES = ["I最適", "D最適", "ランダム", "優先順", "", "Mark最適", "MarkD最適"];
 summary = alignest.summarizeResults(results, metric, statistic);
 table_ = results.table(results.table.methodIndex == methodIndex, :);
@@ -99,9 +100,12 @@ for k = 1:numel(prefixes)
     end
 end
 methods = string(results.settings.sampling.method);
-if isscalar(methods)
+sweep = contains(name, " Shot") || contains(name, "計測率") || contains(name, "点/Shot");
+if isscalar(methods) && methods ~= "excel"
     type = methods;
-elseif ~contains(name, " Shot") && ~startsWith(name, "計測率")
-    type = "manual";
+elseif any(methods == "excel") && sweep && ~contains(name, "（")
+    type = "file";      % Excel の優先順（学習 Shot 数ごと）
+elseif ~sweep || contains(name, "（")
+    type = "manual";    % Excel のパターン（名前（12 Shot））
 end
 end

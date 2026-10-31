@@ -219,6 +219,7 @@ classdef TestEvaluation < matlab.unittest.TestCase
 
         function summaryExportAndSettingsRoundTrip(testCase)
             settings = alignest.defaultSettings();
+            settings.methods = alignest.recommendedMethods("recommended");   % 推奨の組み合わせ（9 手法）で確かめる
             settings.sampling.nShots = [10, 20];
             data = testCase.Data;
             data.units = data.units(1:3);
@@ -242,7 +243,7 @@ classdef TestEvaluation < matlab.unittest.TestCase
             settings.sampling = alignest.syncShotCounts(settings.sampling);  % 開始・終了・刻みを並びに合わせる
             testCase.verifyEqual([settings.sampling.nShotsStart, settings.sampling.nShotsEnd, settings.sampling.nShotsStep], ...
                 [10, 20, 10]);
-            settings.sampling.manualPlans = ["1 2 3"; "4 5 6"];
+            settings.sampling.layoutPlans = ["pattern|手動1|1 2 3"; "pattern|手動2|4 5 6"];
             settings.methods.featureSets = ["XY", "XYR"];
             settings.data.coordinateUnits.Xmm = "um";
             settings.factors.shotRowParity = true;

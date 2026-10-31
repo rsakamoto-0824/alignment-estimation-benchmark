@@ -472,7 +472,7 @@ classdef (Abstract) ResultsTab < appui.Core
         function comparison = drawLayoutComparison(app, methodIndex, xAxis, errorBar)
             %DRAWLAYOUTCOMPARISON 「計測配置の比較」：1つの手法について、選び方（I 最適・D 最適・ランダム・優先順・
             %   Mark 単位）ごとに、横軸（計測する Mark の数・学習 Shot 数・D 効率・I 効率）に対する指標の線を描き、
-            %   人の選択・手動は点で描く（alignest.layoutComparison。指標と Wafer の集計は結果一覧の上の選択）。
+            %   Excel で指定したパターンは点で描く（alignest.layoutComparison。指標と Wafer の集計は結果一覧の上の選択）。
             %   errorBar（alignest.errorBarKinds）を選ぶと、評価点ごとに Wafer のばらつきのエラーバーを描く。
             %   引数を省くと画面の選択。
             c = app.Controls;
@@ -512,7 +512,7 @@ classdef (Abstract) ResultsTab < appui.Core
                 name = comparison.typeLabel(rows(1));
                 marker = markers{mod(k - 1, numel(markers)) + 1};
                 if types(k) == "manual"
-                    % 人の選択・手動はパターンごとに点を描き、名前を添える
+                    % Excel で指定したパターンはパターンごとに点を描き、名前を添える
                     points = plotWithBars(x(rows), comparison.value(rows), lowerBar(rows), upperBar(rows), marker, 'none', 9);
                     text(ax, x(rows), comparison.value(rows), "  " + comparison.group(rows), 'FontSize', 10, ...
                         'Color', points.Color, 'VerticalAlignment', 'bottom', 'Interpreter', 'none', 'HandleVisibility', 'off');
@@ -664,7 +664,7 @@ classdef (Abstract) ResultsTab < appui.Core
             c.comparisonNote = uilabel(compareGrid, 'WordWrap', 'on', 'Text', '');
             c.comparisonTable = uitable(compareGrid, 'RowName', {}, ...
                 'ColumnName', {'手法', '列', '基準との差', '95% 区間', '基準より良かった割合', 'Wafer 数'});
-            % 計測配置の比較：選び方（I 最適・D 最適・人の選択など）ごとに、学習点の数に対する指標を比べる
+            % 計測配置の比較：選び方（I 最適・D 最適・Excel で指定など）ごとに、学習点の数に対する指標を比べる
             c.layoutCompareTab = uitab(c.resultTabs, 'Title', '計測配置の比較');
             layoutGrid = uigridlayout(c.layoutCompareTab, [3, 2], 'RowHeight', {'fit', '1x', 'fit'}, ...
                 'ColumnWidth', {'1.2x', '1x'}, 'Padding', 8, 'ColumnSpacing', 12);
@@ -697,7 +697,7 @@ classdef (Abstract) ResultsTab < appui.Core
                 '計測 Mark 数', '指標', '標準偏差', 'I 基準', 'D 基準', 'I 効率', 'D 効率'}, ...
                 'ColumnWidth', {110, 140, 75, 75, 'auto', 70, 65, 65, 60, 60});
             place(c.compareLayoutTable, 2, 2);
-            layoutNote = ['「2. 評価の設定」の選び方を2つ以上選んで評価すると、選び方ごとの線（人の選択・手動は点）で比べられます' ...
+            layoutNote = ['「2. 評価の設定」の選び方を2つ以上選んで評価すると、選び方ごとの線（Excel で指定したパターンは点）で比べられます' ...
                 '（指標と Wafer の集計は上の「指標」「集計」）。I 基準・D 基準は小さいほど良い計画（Wafer の平均）。'];
             c.compareLayoutInfo = uilabel(layoutGrid, 'WordWrap', 'on', 'Text', layoutNote, 'UserData', string(layoutNote));
             place(c.compareLayoutInfo, 3, [1, 2]);
@@ -1603,7 +1603,7 @@ value = round(value, 4, 'significant');
 end
 
 function positions = groupPositions(groups)
-% 「20 Shot」のような列は Shot 数、「計測率 20%」は計測率を横軸の位置に、それ以外（手動）は 1, 2, … にする
+% 「20 Shot」のような列は Shot 数、「計測率 20%」は計測率を横軸の位置に、それ以外（Excel のパターン）は 1, 2, … にする
 [numbers, ~] = groupNumbers(groups);
 if all(isfinite(numbers))
     positions = numbers;

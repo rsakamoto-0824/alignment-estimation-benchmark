@@ -98,8 +98,11 @@ result.optimizerConverged = optimizerConverged;
 result.factorEffects = effects;
 result.lengthScales = exp(logParams(1:gp.nLength)).';
 result.signalStd = exp(logParams(gp.nLength + 1));
-result.alpha = NaN;
-if gp.hasAlpha
+result.alpha = NaN;    % rationalquadratic の α
+result.period = NaN;   % periodic の周期 p（Wafer 半径で割った単位）
+if gp.hasAlpha && gp.family == "per"
+    result.period = exp(logParams(gp.nLength + 2));
+elseif gp.hasAlpha
     result.alpha = exp(logParams(gp.nLength + 2));
 end
 result.noiseStd = exp(logParams(end));

@@ -240,6 +240,11 @@ end
 
 function label = samplingLabel(sampling)
 % 学習 Shot の選び方の説明（複数選んだときは「、」でつなぐ）
+try
+    sampling = alignest.upgradeLayoutSettings(sampling);   % 以前の手動・ファイルの優先順は「Excel ファイルで指定」に
+catch
+    % 直せない以前の設定は、選び方の名前のまま書く
+end
 methods = string(sampling.method(:)).';
 parts = strings(1, 0);
 for method = methods
@@ -250,21 +255,20 @@ for method = methods
             parts(end + 1) = "制約付き D 最適"; %#ok<AGROW>
         case "random"
             parts(end + 1) = sprintf("制約つきランダム（%d 回）", sampling.randomRepeats); %#ok<AGROW>
-        case "file"
-            parts(end + 1) = sprintf("ファイルの優先順（%s、%d 行。優先度 1 = 必ず計測、0 = 計測しない）", ...
-                sampling.priorityFile, numel(sampling.priorityShots)); %#ok<AGROW>
+        case "excel"
+            parts(end + 1) = excelText(sampling); %#ok<AGROW>
         case {"mark", "markd"}
             parts(end + 1) = "Mark 単位の " + ternary(method == "markd", "D", "I") + " 最適（" + markText(sampling) + ...
                 "）"; %#ok<AGROW>
         otherwise
-            parts(end + 1) = "手動・人の選択"; %#ok<AGROW>
+            parts(end + 1) = method; %#ok<AGROW>
     end
 end
 label = strjoin(parts, "、");
 if numel(methods) > 1
     label = label + "（選び方を比べた）";
 end
-if any(ismember(methods, ["ioptimal", "doptimal", "random", "file"])) && isfield(sampling, "countBy") && ...
+if any(ismember(methods, ["ioptimal", "doptimal", "random", "excel"])) && isfield(sampling, "countBy") && ...
         sampling.countBy == "rate"
     label = label + "。学習 Shot 数は計測率（Wafer の候補 Shot 数に対する割合）で決めた";
 end
@@ -299,4 +303,17 @@ if isfield(settings.evaluation, "excludeOutliers") && settings.evaluation.exclud
             settings.evaluation.outlierSigma);
     end
 end
+end
+
+function text = excelText(sampling)
+% 「Excel ファイルで指定」の説明（ファイル名と、パターン・優先順の数。Mark 単位か）
+plans = alignest.parseLayoutPlans(string(sampling.layoutPlans));
+kinds = string({plans.kind});
+markLevel = ~isempty(plans) && ~isempty(plans(1).markNos);
+fileName = "";
+if isfield(sampling, "layoutFile") && string(sampling.layoutFile) ~= ""
+    fileName = string(sampling.layoutFile) + "、";
+end
+text = sprintf("Excel ファイルで指定（%sパターン %d・優先順 %d%s）", fileName, nnz(kinds == "pattern"), ...
+    nnz(kinds == "priority"), ternary(markLevel, "。Mark 単位", ""));
 end

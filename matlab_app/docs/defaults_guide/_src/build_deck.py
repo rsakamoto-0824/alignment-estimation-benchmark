@@ -28,7 +28,7 @@ DECK_NAME = "デフォルト設定の編集ガイド"
 DECK_TITLE = "デフォルト設定の編集ガイド（管理者向け）"
 CODE_FONT = "Courier New"
 DEFAULTS_FILE = "alignment_estimation_defaults.json"
-TEST_COUNT = 197   # runAllTests の件数（2026-10-29 時点。テストを足したら直す）
+TEST_COUNT = 199   # runAllTests の件数（2026-10-31 時点。テストを足したら直す）
 
 
 class Deck:
@@ -183,7 +183,7 @@ def build(output: Path, reference: Path):
     text(s, 7.6, 1.7, 4.9, 0.4, "設定ファイルに入るもの", size=15, color=TEAL, bold=True)
     text(s, 7.6, 2.15, 4.9, 1.9, ["データの条件（有効半径・座標の単位・行の除外・Scan 方向の付け方）",
                                   "質的変数、学習 Shot の選び方・数・制約・必ず計測する Shot",
-                                  "優先順のファイル・人の選択（手動）の Shot、Mark 単位の計画",
+                                  "Excel ファイルで指定した Shot・Mark（パターン・優先順）、Mark 単位の計画",
                                   "比べる手法、評価の条件、Overlay 補正のモデルと式"], size=12, color=BODY, bullets=True,
          space_after=3)
     box(s, 7.35, 4.3, 5.38, 1.45, fill=PANEL)
@@ -234,7 +234,7 @@ def build(output: Path, reference: Path):
     box(s, 7.95, 1.5, 4.78, 4.75, fill=PURPLE_TINT)
     text(s, 8.2, 1.65, 4.3, 0.4, "直すファイル", size=15, color=PURPLE, bold=True)
     files = [("defaultSettings.m", "data・factors・sampling・evaluation・overlay・highOrder の初期値"),
-             ("recommendedMethods.m", "推奨の組み合わせ・すべて・なし と手法の細かい設定（options）"),
+             ("recommendedMethods.m", "初期設定（GPR だけ）・推奨の組み合わせ・すべて・なし と手法の細かい設定（options）"),
              ("+appui/Core.m", "画面の定数（先頭の properties (Constant)）"),
              ("estimateRunSeconds.m", "時間の目安（1条件の秒数）"),
              ("exchangeSecondsGuide.m", "交換法の時間の目安")]
@@ -251,7 +251,7 @@ def build(output: Path, reference: Path):
     rows = [["ファイル（matlab_app の中）", "中身", "例"],
             ["+alignest/defaultSettings.m", "評価の条件の初期値（data・factors・sampling・evaluation・overlay・highOrder）",
              "外周とみなす半径 120 mm"],
-            ["+alignest/recommendedMethods.m", "比べる手法（推奨の組み合わせ・すべて・なし）と手法の細かい設定 options",
+            ["+alignest/recommendedMethods.m", "比べる手法（初期設定・推奨の組み合わせ・すべて・なし）と手法の細かい設定 options",
              "GPR matern52 × 質的変数4通り"],
             ["+appui/Core.m（先頭）", "画面の大きさ・文字の大きさ・並べる図の数・色", "FONT_SIZE = 16"],
             ["+alignest/estimateRunSeconds.m", "時間の目安（1条件 2 秒、ν を指定した Matérn は 3 倍）", "SECONDS_PER_RUN = 2"],
@@ -285,13 +285,13 @@ def build(output: Path, reference: Path):
     # 10. sampling（選び方・数）
     s = deck.body("03　設定の項目と初期値", "設定の項目②：sampling（学習 Shot の選び方・数）")
     settings_table(s, [
-        ["sampling.method", "\"ioptimal\"", "選び方（複数で比べる）：ioptimal・doptimal・random・manual・file・mark・markd", "2. 選び方"],
+        ["sampling.method", "\"ioptimal\"", "選び方（複数で比べる）：ioptimal・doptimal・random・excel・mark・markd", "2. 選び方"],
         ["sampling.nShotsStart・End・Step", "10・40・5", "学習 Shot 数の開始・終了・刻み", "2. Shot 数"],
         ["sampling.nShots", "[10 15 … 40]", "上から作った並び（計算に使う。開始〜刻みと合わせる）", "（自動）"],
         ["sampling.countBy", "\"shots\"", "Shot 数で決める（shots）か計測率で決める（rate）か", "2. 学習 Shot 数"],
         ["sampling.rateStart・End・Step", "10・40・10", "計測率 [%] の開始・終了・刻み（countBy = rate）", "2. 計測率"],
         ["sampling.randomRepeats ・ seed", "10 ・ 20261017", "ランダムの繰り返し回数・乱数の種", "2. ランダム"],
-        ["sampling.manualPlans", "[]（なし）", "手動・人の選択（1行 =「名前: shotNo …」）", "2. 手動・人の選択"],
+        ["sampling.layoutPlans・layoutFile", "[]・\"\"", "Excel ファイルで指定（1行 =「種類|名前|shotNo …」。読み込みで入る）", "2. Excel で指定"],
         ["sampling.requiredShots・requireOuterShots", "[]・false", "必ず計測する shotNo（拡張 I 最適計画）・最外周の Shot をすべて",
          "2. 必ず計測"],
         ["sampling.markPerShot", "1", "Mark 単位：1 Shot あたりの計測 Mark 数（countBy = rate なら計測率）", "2. Mark 単位"],
@@ -302,7 +302,7 @@ def build(output: Path, reference: Path):
     notes(s, "学習 Shot 数は開始・終了・刻みと並び nShots の両方を持つ。コードで変えるときは shotCountList で並びも作る。")
 
     # 11. sampling（制約・交換法）
-    s = deck.body("03　設定の項目と初期値", "設定の項目③：sampling（制約・交換法・優先順）")
+    s = deck.body("03　設定の項目と初期値", "設定の項目③：sampling（制約・交換法）")
     settings_table(s, [
         ["sampling.designOrder", "5", "最適計画の基準モデル（XY 多項式の次数。5次で 21 項）", "2. 基準モデル"],
         ["sampling.exchangeStarts", "10", "交換法の初期配置の数（時間はほぼ比例）", "2. 初期配置の数"],
@@ -311,8 +311,7 @@ def build(output: Path, reference: Path):
         ["constraints.quadrants", "true", "4象限の Shot 数をそろえる", "2. 4象限"],
         ["constraints.scanDirection", "true", "Scan 方向ごとの Shot 数をそろえる", "2. Scan 方向"],
         ["constraints.slack", "1", "許容幅（各区画の数の ±）", "2. 許容幅"],
-        ["constraints.markRatio", "true", "Mark 単位：Mark 番号ごとの数を全計測の割合にそろえる", "2. Mark 単位"],
-        ["sampling.priorityShots・Levels・File", "（読み込み）", "優先順のファイルの Shot 番号・優先度・名前", "2. 優先順のファイル"]],
+        ["constraints.markRatio", "true", "Mark 単位：Mark 番号ごとの数を全計測の割合にそろえる", "2. Mark 単位"]],
         row_h=0.44)
     point_bar(s, 6.2, "初期配置の数の目安：1つあたり 約 0.01 秒 × 学習 Shot 数（10 → 30 で約 3 倍）。10〜20 を超えても良さはほぼ同じ",
               icon="i", icon_color=BODY, h=0.6, size=13)
@@ -333,7 +332,7 @@ def build(output: Path, reference: Path):
         ["overlay.waferFormula・shotFormula・perShotFormula", "k1 + k3*x + k5*y\nk2 + k4*y + k6*x",
          "式を入力するときの dx・dy の式", "2. dx・dy"],
         ["display.scan1Up・scan1Color・scan2Color", "true・緑・紫", "表示：Scan 方向 1 を上向き（▲）にするか・1・2 の色（RGB 0〜1）",
-         "2. 表示"]],
+         "メニュー「表示」"]],
         widths=(3.85, 1.95, 4.68, 1.65), row_h=0.41)
     point_bar(s, 6.3, "Overlay 補正をすべて「なし」（waferOrder 0・shotCommon none・perShot none）にすると補正の評価をしない",
               icon="i", icon_color=BODY, h=0.55, size=13)
@@ -343,39 +342,42 @@ def build(output: Path, reference: Path):
     s = deck.body("03　設定の項目と初期値", "設定の項目⑤：methods（比べる手法）")
     settings_table(s, [
         ["methods.featureSets", "\"XYR\"", "説明変数（XY：X,Y、XYR：X,Y,半径）", "2. 説明変数"],
-        ["methods.gpr.enabled ・ kernels", "true ・ \"matern52\"", "GPR とカーネル（fitrgp の10種類と matern・ardmatern）", "2. GPR"],
+        ["methods.gpr.enabled ・ kernels", "true ・ \"matern52\"", "GPR とカーネル（fitrgp の10種類、matern・ardmatern、periodic・ardperiodic）", "2. GPR"],
         ["methods.gpr.factorModes", "none・basis・additive・mixed", "質的変数の扱い（8通りから）", "2. GPR"],
         ["methods.gpr.maternNu", "2", "matern・ardmatern の ν（複数なら ν ごと）", "2. ν"],
-        ["methods.tps・rbf", "true ・ false", "TPS・RBF（factorModes：none・backfit）", "2. TPS・RBF"],
-        ["methods.rbfe", "false（4 領域）", "RBFe（仮）：領域分割 TPS の GAM（regions：領域の数）", "2. RBFe（仮）"],
-        ["methods.kriging", "通常 true・Universal false", "Kriging（variograms：\"exponential\"）", "2. Kriging"],
-        ["methods.gam", "true（スプライン）", "GAM（shapes・gpKernels・gpMaternNu）", "2. GAM"],
-        ["methods.polynomial ・ rt", "true（5次）・true（K=5）", "XY 多項式の次数・RT モデルの次数", "2. 多項式・RT"],
-        ["methods.zernike", "false（次数 4）", "Fringe Zernike（orders：次数 k。factorModes：none・backfit）", "2. Fringe Zernike"]],
+        ["methods.tps・rbf", "false ・ false", "TPS・RBF（factorModes：none・backfit）", "2. TPS・RBF"],
+        ["methods.kriging", "通常 false・Universal false", "Kriging（variograms：\"exponential\"）", "2. Kriging"],
+        ["methods.gam", "false（スプライン）", "GAM（shapes・gpKernels・gpMaternNu）", "2. GAM"],
+        ["methods.polynomial ・ rt", "false（5次）・false（K=5）", "XY 多項式の次数（1〜8）・RT モデルの次数", "2. 多項式・RT"],
+        ["methods.zernike", "false（次数 4）", "Fringe Zernike（orders：次数 k は 1〜7。factorModes：none・backfit）", "2. Fringe Zernike"]],
         widths=(3.3, 2.55, 4.6, 1.68), row_h=0.4)
-    point_bar(s, 6.2, "初期値は推奨の組み合わせ（9 手法）。変えるときは recommendedMethods.m の上の部分を直す"
-              "（「すべて選ぶ」は \"all\" の部分）",
+    point_bar(s, 6.2, "初期値は GPR だけ（recommendedMethods.m の \"default\" の部分）。「推奨の組み合わせ」は \"recommended\"、"
+              "「すべて選ぶ」は \"all\" の部分",
               icon="i", icon_color=BODY, h=0.6, size=13)
-    notes(s, "推奨の組み合わせ：GPR matern52（X,Y,半径）× 質的変数（使わない・同時推定・加法カーネル・混合）、TPS、Kriging exponential、"
-             "GAM、XY 5次多項式、RT モデル K=5 の 9 手法。")
+    notes(s, "初期設定（default）：GPR matern52（X,Y,半径）× 質的変数（使わない・同時推定・加法カーネル・混合）の 4 手法だけ。"
+             "推奨の組み合わせ（recommended）：それに TPS、Kriging exponential、GAM、XY 5次多項式、RT モデル K=5 を足した 9 手法。"
+             "RBFe は廃止（以前の設定ファイルの methods.rbfe は読み飛ばす）。")
 
     # 14. highOrder（Shot 高次補正）
     s = deck.body("03　設定の項目と初期値", "設定の項目⑥：highOrder（7. Shot高次補正）")
     settings_table(s, [
-        ["highOrder.maker", "\"nikon\"", "補正の式（asml・canon・nikon。Overlay 計測ルールの式）", "7. 補正の式"],
-        ["highOrder.unit", "\"common\"", "common：Wafer 内で共通の1組の k、shot：Shot ごとの k", "7. 補正の単位"],
-        ["highOrder.waferOrder", "1", "common のとき一緒に求める Wafer 成分の次数（0〜3、0 = なし）", "7. Wafer 成分"],
+        ["highOrder.maker", "\"nikon\"", "補正の式（asml・canon・nikon：ルールの式、custom：k1〜k38）", "7. 補正の式"],
+        ["highOrder.unit", "\"common\"", "k のくくり（common：Wafer 内で共通・scan：Scan 方向ごと・row：行の偶奇ごと・shot：Shot ごと）", "7. 補正のくくり"],
+        ["highOrder.waferOrder", "1", "shot のほかで一緒に求める Wafer 成分の次数（0〜3、0 = なし。Wafer で共通）", "7. Wafer 成分"],
         ["highOrder.excludedTerms", "[]（すべて使う）", "使わない k の番号（例：[55, 41, 29]。k1〜k6 は外さない）", "7. 使う項と VIF"],
         ["highOrder.vifThreshold", "10", "「VIF で選ぶ」のしきい値（よく使う値は 5〜10）", "7. VIF のしきい値"],
         ["highOrder.loss", "\"huber\"", "損失関数（ols：最小二乗、huber・lad：ロバスト回帰）", "7. 回帰"],
         ["highOrder.huberTuning", "1.345", "Huber の定数 c（正規分布の誤差で効率 95%）", "7. Huber の c"],
-        ["highOrder.l2 ・ lambda", "true ・ 0.1", "高次項（2次以上）だけに L2 正則化をかけるか・強さ λ", "7. L2・λ"]],
-        widths=(3.3, 2.2, 4.95, 1.68), row_h=0.44)
-    point_bar(s, 5.6, "λ はそろえた係数に対する値。過去のシミュレーション（1 Shot 7×11 点）の標準が 0.1、点を減らすときは λ × √(77 / 点の数) が目安",
-              icon="i", icon_color=BODY, h=0.6, size=13)
-    point_bar(s, 6.35, "highOrder は評価の結果を変えない（「続きから再開」の比較にも使わない）。既定の設定ファイルにも書ける",
-              icon="i", icon_color=BODY, h=0.55, size=13)
-    notes(s, "「7. Shot高次補正」のタブの初期値。excludedTerms は「VIF で選ぶ」や表の「使う」で変わり、「設定を保存…」の JSON にも入る。"
+        ["highOrder.l2 ・ lambda", "true ・ 0.1", "高次項（2次以上）だけに L2 正則化をかけるか・強さ λ", "7. L2・λ"],
+        ["highOrder.termSets", "[]（なし）", "保存した項の組み合わせ（1行 = \"名前|式|k の番号 …\"）", "7. 組み合わせ"]],
+        widths=(3.3, 2.2, 4.95, 1.68), row_h=0.40)
+    point_bar(s, 5.8, "λ はそろえた係数に対する値。過去のシミュレーション（1 Shot 7×11 点）の標準が 0.1、点を減らすときは λ × √(77 / 点の数) が目安",
+              icon="i", icon_color=BODY, h=0.56, size=12)
+    point_bar(s, 6.46, "highOrder は評価の結果を変えない（「続きから再開」の比較にも使わない）。既定の設定ファイルにも書ける",
+              icon="i", icon_color=BODY, h=0.56, size=12)
+    notes(s, "「7. Shot高次補正」のタブの初期値。excludedTerms は「VIF で選ぶ」・表の「使う」・点の数による項の絞り込みで変わり、"
+             "「設定を保存…」の JSON にも入る。termSets は画面の「保存」で増え、MATLAB の設定（getpref）にも残る。"
+             "unit・λ・保存した組み合わせは「補正の比較」でまとめて並べて比べられる。"
              "計算の方法と式は「8. ヘルプ」の「Shot 高次補正の評価」。")
 
     # 15. options と画面の定数
@@ -384,8 +386,7 @@ def build(output: Path, reference: Path):
             ["gprMaxIterations", "300"], ["backfitMaxIterations ・ backfitToleranceNm", "20 ・ 0.001"],
             ["krigingLags", "6"], ["tpsLog10Lambda ・ rbfLog10Lambda", "[−8 3 45]（最小・最大・点数）"],
             ["rbfLengthScales", "[0.05 0.1 0.2 0.4 0.8 1.6]"], ["gamBasisAxis ・ gamBasisRadius", "8 ・ 8"],
-            ["gamGpLengthScales", "[0.15 0.3 0.6]"], ["gamGpKnots ・ gamGpGridKnots", "10 ・ 7"],
-            ["rbfeOverlap ・ rbfeMinPoints", "1.5 ・ 10"]]
+            ["gamGpLengthScales", "[0.15 0.3 0.6]"], ["gamGpKnots ・ gamGpGridKnots", "10 ・ 7"]]
     table(s, 0.6, 1.5, [3.75, 2.3], rows, size=11.5, header_size=12, row_h=0.4)
     rows = [["画面などの定数（ファイル）", "値"],
             ["FIGURE_SIZE（画面の大きさ）", "[1440 900]"], ["FONT_SIZE ・ AXES_FONT_SIZE", "16 ・ 13"],
@@ -394,7 +395,7 @@ def build(output: Path, reference: Path):
             ["SECONDS_PER_RUN ・ MATERN_NU_FACTOR", "2 秒 ・ 3 倍"],
             ["SECONDS_PER_SHOT_START（交換法）", "0.01 秒"], ["WORST_PERCENT（95%値）", "95"]]
     table(s, 6.85, 1.5, [3.98, 1.9], rows, size=11.5, header_size=12, row_h=0.43)
-    point_bar(s, 5.65, "options（rbfe… を除く）は Python 版と同じ値。変えると推定の結果が変わり、Python 版との照合テスト"
+    point_bar(s, 5.65, "options は Python 版と同じ値。変えると推定の結果が変わり、Python 版との照合テスト"
               "（TestPythonReference）が合わなくなる", icon="!", icon_color=CORAL, h=0.75, size=13)
     notes(s, "options は精度と時間の兼ね合いで決めた値。変えるときは模擬データで比べてから。画面の定数は +appui/Core.m の先頭（画面はタブごとのファイルに分けてあり、定数は共通の Core.m にまとめてある）、"
              "時間の目安は estimateRunSeconds.m・exchangeSecondsGuide.m にある。")
@@ -429,7 +430,7 @@ def build(output: Path, reference: Path):
         "settings.evaluation.outerRadiusMm = 130;",
         "settings.evaluation.excludeOutliers = true;",
         'settings.evaluation.outlierMethod = "mad";',
-        "% recommendedMethods.m（\"recommended\" の部分）",
+        "% recommendedMethods.m（\"default\" の部分＝初期設定）",
         "methods.zernike.enabled = true;",
         "methods.zernike.orders = 4;"], color=PURPLE, size=11)
     notes(s, "JSON は書いた項目だけが変わる。コードでは学習 Shot 数の並び nShots も一緒に作る（shotCountList）。")
@@ -460,7 +461,7 @@ def build(output: Path, reference: Path):
     # 18. 確かめ方
     s = deck.body("04　編集の例・注意・確かめ方", "確かめ方 ― テスト・画面・Excel")
     steps(s, 0.6, 1.5, 6.6, [
-        ("テストを全件流す（手順 C）", f"cd tests → runAllTests。「成功 {TEST_COUNT} 件、失敗 0 件、未完了 0 件」（2026-10-29 時点の件数）"),
+        ("テストを全件流す（手順 C）", f"cd tests → runAllTests。「成功 {TEST_COUNT} 件、失敗 0 件、未完了 0 件」（2026-10-31 時点の件数）"),
         ("画面で初期値を見る", "「初期設定に戻す」を押し、「2. 評価の設定」の欄が新しい値か確かめる"),
         ("設定ファイルを開いて見る", "「設定を保存…」で保存した JSON の値（名前・単位・並び）"),
         ("模擬データで評価する", "sample_data の模擬データで評価し、結果の Excel の「設定」シートを見る"),

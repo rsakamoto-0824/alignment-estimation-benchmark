@@ -10,6 +10,9 @@ classdef (Abstract) SettingsTab < appui.Core
             %   同心円の区切り・外周の半径が比（以前の設定）なら mm に直す。
             settings = alignest.upgradeRadiusSettings(settings);
             settings.methods = alignest.completeMethodSettings(settings.methods);
+            if isfield(settings, "sampling")
+                settings.sampling = alignest.upgradeLayoutSettings(settings.sampling);   % 以前の手動・ファイルの優先順
+            end
             defaults = alignest.defaultSettings();
             for group = ["data", "factors", "sampling", "evaluation", "overlay", "display", "highOrder"]
                 if ~isfield(settings, group)
@@ -27,33 +30,26 @@ classdef (Abstract) SettingsTab < appui.Core
             if ~isempty(app.Data) && ~isequal(dataOptions(settings.data), dataOptions(app.Data))
                 invalidatePreparedData(app);
             end
+            % 保存した項の組み合わせは、読んだ設定に無い名前のものも残す（画面で保存したものは設定ファイルを読んでも消さない）
+            settings.highOrder.termSets = mergeTermSets(settings.highOrder.termSets, app.Settings.highOrder.termSets);
             app.Settings = settings;
             settingsToControls(app);
             refreshRunSummary(app);
         end
 
         function layouts = loadLayoutPlans(app, filePath, sheetName)
-            %LOADLAYOUTPLANS 人が選んだ計測配置の Excel（shotNo と、パターンごとの 1・0 の列。計測マップの Excel と同じ形）を
-            %   読み、手動・人の選択の欄に1パターン1行（「名前: shotNo…」）で入れる（alignest.readLayoutPlans）。
-            %   選び方に「手動・人の選択」を足す（ほかに選んでいた選び方はそのまま。I 最適・D 最適と比べられる）。
+            %LOADLAYOUTPLANS 「Excel ファイルで指定」：学習に使う Shot・Mark を指定した Excel・CSV（shotNo（Mark 単位なら
+            %   markNo も）と、パターン（1・0）・優先順（1・2・3…）の列。alignest.readLayoutPlans）を読み、設定
+            %   sampling.layoutPlans に入れる。選び方に「Excel ファイルで指定」を足す（ほかに選んでいた選び方はそのまま。
+            %   I 最適・D 最適などと比べられる）。前に読んだ指定は置き換える。
             if nargin < 3
                 sheetName = "";
             end
             layouts = alignest.readLayoutPlans(filePath, sheetName);
             controlsToSettings(app);
-            app.Settings.sampling.manualPlans = layouts.lines;
-            app.Settings.sampling.method = unique([reshape(string(app.Settings.sampling.method), 1, []), "manual"], 'stable');
-            settingsToControls(app);
-            refreshRunSummary(app);
-        end
-
-        function priority = loadShotPriority(app, filePath)
-            %LOADSHOTPRIORITY 計測する Shot の優先順のファイルを読み、設定に入れる（選び方も「ファイルの優先順」にする）。
-            priority = alignest.readShotPriority(filePath);
-            app.Settings.sampling.priorityShots = priority.shotNo;
-            app.Settings.sampling.priorityLevels = priority.level;
-            app.Settings.sampling.priorityFile = priority.file;
-            app.Settings.sampling.method = "file";
+            app.Settings.sampling.layoutPlans = layouts.lines;
+            app.Settings.sampling.layoutFile = layouts.file;
+            app.Settings.sampling.method = unique([reshape(string(app.Settings.sampling.method), 1, []), "excel"], 'stable');
             settingsToControls(app);
             refreshRunSummary(app);
         end
@@ -67,13 +63,13 @@ classdef (Abstract) SettingsTab < appui.Core
             onChange = @(~, ~) app.onSettingsChanged();
 
             samplingPanel = uipanel(grid, 'Title', '学習に使う Shot（この Shot の計測値で、残りの Shot を推定する）');
-            s = uigridlayout(samplingPanel, [47, 2], 'RowHeight', repmat({'fit'}, 1, 47), 'ColumnWidth', {'1x', '1x'}, ...
+            s = uigridlayout(samplingPanel, [43, 2], 'RowHeight', repmat({'fit'}, 1, 43), 'ColumnWidth', {'1x', '1x'}, ...
                 'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
             label(s, '選び方（Ctrl・Shift で複数選ぶと、選び方どうしを同じ評価の中で比べる）', 1, [1, 2]);
             c.samplingMethod = uilistbox(s, 'Items', {'制約付き I 最適（前回の評価と同じ）', '制約付き D 最適', ...
-                '制約つきランダム', '手動・人の選択（Excel の計測マップから読み込める）', 'ファイルの優先順で指定', ...
+                '制約つきランダム', 'Excel ファイルで指定（人が決めたパターン・優先順。Mark 単位も）', ...
                 'Mark 単位の I 最適（計測する Mark を選ぶ）', 'Mark 単位の D 最適（計測する Mark を選ぶ）'}, ...
-                'ItemsData', {'ioptimal', 'doptimal', 'random', 'manual', 'file', 'mark', 'markd'}, ...
+                'ItemsData', {'ioptimal', 'doptimal', 'random', 'excel', 'mark', 'markd'}, ...
                 'Multiselect', 'on', 'Value', {'ioptimal'}, 'ValueChangedFcn', onChange, ...
                 'Tooltip', ['D 最適：I 最適と同じ制約で det(M) を大きくする組。Mark 単位：計測する Shot ではなく Mark を選ぶ' ...
                 '（既定では全 Shot を1点以上計測し、Mark 番号の割合を全計測とそろえる）。複数選ぶと、結果一覧の' ...
@@ -115,22 +111,17 @@ classdef (Abstract) SettingsTab < appui.Core
             c.seed = uieditfield(s, 'numeric', 'Limits', [0, 2^32 - 1], 'RoundFractionalValues', 'on', ...
                 'ValueDisplayFormat', '%d', 'ValueChangedFcn', onChange);
             place(c.seed, 8, 2);
-            label(s, '手動・人の選択（1行に1パターン。「名前: shotNo…」、shotNo は空白・カンマ区切り）', 9, 1);
-            c.loadLayouts = uibutton(s, 'Text', '人の選択を Excel から読み込む…', 'ButtonPushedFcn', @(~, ~) app.onLoadLayouts(), ...
-                'Tooltip', ['shotNo の列と、パターンごとの列（1 = 計測する、0 = しない）の Excel（「計測マップを Excel に' ...
-                '書き出す…」と同じ形）を読み、下の欄に1パターン1行で入れます。選び方の「手動・人の選択」も選びます。']);
+            label(s, 'Excel ファイルで指定（パターン・優先順。markNo の列で Mark 単位）', 9, 1);
+            c.loadLayouts = uibutton(s, 'Text', 'Excel ファイルを読み込む…', 'ButtonPushedFcn', @(~, ~) app.onLoadLayouts(), ...
+                'Tooltip', ['1行目が見出しの表。shotNo の列（Mark 単位なら markNo の列も）と、名前を見出しにした列を並べます。' ...
+                '1・0 だけの列はパターン（1 を計測する）、1・2・3… の列は優先順（1 = 必ず計測、その次から順に。0 = 計測' ...
+                'しない）で、学習 Shot 数ごとに先頭から使います。「計測マップを Excel に書き出す…」のファイルもそのまま読めます。' ...
+                '選び方の「Excel ファイルで指定」も選びます。']);
             place(c.loadLayouts, 9, 2);
-            c.manualPlans = uitextarea(s, 'ValueChangedFcn', onChange);
-            place(c.manualPlans, 10, [1, 2]);
+            c.layoutPlanInfo = uitextarea(s, 'Editable', 'off', 'Value', {'まだ読み込んでいません'});
+            place(c.layoutPlanInfo, 10, [1, 2]);
             s.RowHeight{10} = 90;
-            c.manualError = errorLabel(app, s, 11, [1, 2]);
-            c.loadPriority = uibutton(s, 'Text', '優先順のファイルを読み込む…', 'ButtonPushedFcn', @(~, ~) app.onLoadPriority(), ...
-                'Tooltip', ['Shot 番号と優先度の表（Excel・CSV）。行の順に Shot を足して学習 Shot 数にします。' ...
-                '優先度 1 = 必ず計測、0 = 計測しない（評価だけに使う）。']);
-            place(c.loadPriority, 12, 1);
-            c.priorityInfo = uilabel(s, 'WordWrap', 'on', 'Text', 'まだ読み込んでいません');
-            place(c.priorityInfo, 12, 2);
-            c.priorityError = errorLabel(app, s, 13, [1, 2]);
+            c.layoutPlanError = errorLabel(app, s, 11, [1, 2]);
             heading(s, '必ず計測する Shot（I 最適・ランダム。残りの Shot を選ぶ）', 14);
             label(s, '必ず計測する shotNo（空白またはカンマで区切る）', 15, [1, 2]);
             c.requiredShots = uieditfield(s, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['ここに書いた Shot を' ...
@@ -252,39 +243,17 @@ classdef (Abstract) SettingsTab < appui.Core
             c.overlayHelp.FontColor = app.Palette.muted;
             c.overlayHelp.UserData = "muted";
             c.overlayFormulaError = errorLabel(app, s, 43, [1, 2]);
-            % 表示：Scan 方向の向き（1・2 のどちらが上向きか）と色。図の描き方だけで、推定の結果は変わらない
-            heading(s, '表示：Scan 方向（図の色と向きだけ。推定の結果は変わらない）', 44);
-            label(s, 'Scan 方向 1・2 の向き', 45, 1);
-            c.scan1Up = uidropdown(s, 'Items', {'1 = 上向き（▲）、2 = 下向き（▼）', '1 = 下向き（▼）、2 = 上向き（▲）'}, ...
-                'ItemsData', {'up', 'down'}, 'ValueChangedFcn', onChange, 'Tooltip', ['Shot の配置・計測マップ・Wafer ごとの' ...
-                'マップ・Shot スタックマップで、Scan 方向 1・2 に付ける印（▲ 上向き・▼ 下向き）と凡例の名前を決めます。']);
-            place(c.scan1Up, 45, 2);
-            colorGrid = uigridlayout(s, [2, 4], 'ColumnWidth', {'fit', 100, 90, '1x'}, 'RowHeight', {'fit', 'fit'}, ...
-                'Padding', 0, 'RowSpacing', 2);
-            place(colorGrid, 46, [1, 2]);
-            c.scanColorButtons = gobjects(1, 2);
-            c.scanColorCodes = gobjects(1, 2);
-            for k = 1:2
-                label(colorGrid, sprintf('Scan 方向 %d の色', k), k, 1);
-                c.scanColorButtons(k) = uibutton(colorGrid, 'Text', '色を選ぶ…', 'ButtonPushedFcn', ...
-                    @(~, ~) app.onPickScanColor(k), 'Tooltip', '色を選ぶ画面を開きます（ボタンの色が今の色）。');
-                place(c.scanColorButtons(k), k, 2);
-                c.scanColorCodes(k) = uieditfield(colorGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ...
-                    'RGB の16進数（例：#1A9447）。「色を選ぶ…」で選ぶと、ここに入ります。');
-                place(c.scanColorCodes(k), k, 3);
-            end
-            c.scanColorReset = uibutton(colorGrid, 'Text', '既定の色に戻す', 'Tooltip', '緑（Scan 1）・紫（Scan 2）に戻します。', ...
-                'ButtonPushedFcn', ...
-                @(~, ~) app.onResetScanColors());
-            place(c.scanColorReset, 1, 4);
-            c.scanColorError = errorLabel(app, s, 47, [1, 2]);
 
             methodPanel = uipanel(grid, 'Title', '比べる手法');
-            m = uigridlayout(methodPanel, [27, 4], 'RowHeight', repmat({'fit'}, 1, 27), 'ColumnWidth', {'1x', '1x', '1x', '1x'}, ...
+            m = uigridlayout(methodPanel, [24, 4], 'RowHeight', repmat({'fit'}, 1, 24), 'ColumnWidth', {'1x', '1x', '1x', '1x'}, ...
                 'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
-            presetGrid = uigridlayout(m, [1, 3], 'Padding', 0, 'ColumnWidth', {'fit', 'fit', 'fit'});
+            presetGrid = uigridlayout(m, [1, 4], 'Padding', 0, 'ColumnWidth', {'fit', 'fit', 'fit', 'fit'});
             place(presetGrid, 1, [1, 4]);
-            uibutton(presetGrid, 'Text', '推奨の組み合わせ', 'ButtonPushedFcn', @(~, ~) app.onPreset("recommended"));
+            uibutton(presetGrid, 'Text', '初期設定（GPR だけ）', 'ButtonPushedFcn', @(~, ~) app.onPreset("default"), ...
+                'Tooltip', 'アプリの初期設定の手法（ガウス過程回帰だけ）に戻します。');
+            uibutton(presetGrid, 'Text', '推奨の組み合わせ', 'ButtonPushedFcn', @(~, ~) app.onPreset("recommended"), ...
+                'Tooltip', ['前回の模擬データの評価で各系統の代表になった手法（GPR・TPS・Kriging・GAM・XY 5次多項式・' ...
+                'RT モデル）を選びます。']);
             uibutton(presetGrid, 'Text', 'すべて選ぶ', 'ButtonPushedFcn', @(~, ~) app.onPreset("all"));
             uibutton(presetGrid, 'Text', 'すべて外す', 'ButtonPushedFcn', @(~, ~) app.onPreset("none"));
             label(m, '説明変数（GPR・TPS・RBF・Kriging・GAM に共通）', 2, [1, 4]);
@@ -342,7 +311,8 @@ classdef (Abstract) SettingsTab < appui.Core
             label(m, '質的変数の扱い（上で選んだ質的変数）', 7, [3, 4]);
             [kernelNames, kernelLabels] = alignest.models.gprKernelChoices();
             c.kernels = uilistbox(m, 'Items', cellstr(kernelLabels), 'ItemsData', cellstr(kernelNames), 'Multiselect', 'on', ...
-                'ValueChangedFcn', onChange);
+                'ValueChangedFcn', onChange, 'Tooltip', ['periodic（周期）：説明変数ごとに、周期 p で同じ形をくり返す' ...
+                'カーネル（p も長さスケールと一緒に推定する）。ardperiodic は長さスケールが説明変数ごと。式は「8. ヘルプ」。']);
             place(c.kernels, 8, [1, 2]);
             [modeNames, modeLabels] = alignest.models.gprFactorModes();
             modeGrid = uigridlayout(m, [numel(modeNames), 1], 'Padding', 0, 'RowSpacing', 2, ...
@@ -438,7 +408,8 @@ classdef (Abstract) SettingsTab < appui.Core
             c.rtOrders = uieditfield(m, 'text', 'ValueChangedFcn', onChange);
             place(c.rtOrders, 20, 2);
             c.zernike = uicheckbox(m, 'Text', 'Fringe Zernike', 'ValueChangedFcn', onChange, ...
-                'Tooltip', ['Fringe Zernike 多項式（Z1〜Z(k+1)²）の最小二乗。k = 3：Z1〜Z16、4：Z1〜Z25、5：Z1〜Z36。' ...
+                'Tooltip', ['Fringe Zernike 多項式（Z1〜Z(k+1)²）の最小二乗。k = 3：Z1〜Z16、4：Z1〜Z25、5：Z1〜Z36、' ...
+                '6：Z1〜Z49、7：Z1〜Z64（次数は 1〜7）。' ...
                 '空白で区切ると次数ごとに比べます。式は「8. ヘルプ」。']);
             place(c.zernike, 21, 1);
             c.zernikeOrders = uieditfield(m, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ...
@@ -451,22 +422,6 @@ classdef (Abstract) SettingsTab < appui.Core
             c.rtError = errorLabel(app, m, 22, [1, 4]);
             c.zernikeError = errorLabel(app, m, 23, [1, 4]);
             c.gamShapeError = errorLabel(app, m, 24, [1, 4]);
-            % RBFe（仮）：面内を領域に分け、領域ごとの TPS を重みでつなぐ形状関数の GAM。領域の数がハイパーパラメータ
-            c.rbfe = uicheckbox(m, 'Text', 'RBFe（仮）', 'ValueChangedFcn', onChange, 'Tooltip', ...
-                ['学習点の位置を領域の数のまとまりに分け（k-means）、領域ごとに TPS を当てはめ（λ は領域ごとに GCV）、' ...
-                '重なる所は滑らかな重みでつなぎ合わせます。右で選ぶ質的変数は Backfitting で足します（GAM）。' ...
-                '領域の数 1 は TPS と同じです。式は「8. ヘルプ」。']);
-            place(c.rbfe, 25, 1);
-            c.rbfeRegions = uieditfield(m, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ...
-                '領域の数（ハイパーパラメータ、1〜25 の整数）。空白で区切ると領域の数ごとに比べます（例：4 9）。');
-            place(c.rbfeRegions, 25, 2);
-            c.rbfeFactors = spatialFactorDropdown(m, onChange);
-            place(c.rbfeFactors, 25, [3, 4]);
-            rbfeHelp = label(m, ['↑ RBFe（仮）：面内を領域に分けた TPS をつなぐ GAM。欄は領域の数（ハイパーパラメータ。' ...
-                '空白区切りで複数）、右は質的変数の扱い。学習点が少ないときは自動で領域を減らします。'], 26, [1, 4]);
-            rbfeHelp.FontColor = app.Palette.muted;
-            rbfeHelp.UserData = "muted";
-            c.rbfeError = errorLabel(app, m, 27, [1, 4]);
 
             footer = uigridlayout(grid, [1, 4], 'ColumnWidth', {'fit', 'fit', 'fit', '1x'}, 'Padding', 0);
             place(footer, 2, [1, 2]);
@@ -499,12 +454,7 @@ classdef (Abstract) SettingsTab < appui.Core
             choiceY = alignest.factorChoice(s, "Y");   % 別に選ばないときは X と同じ（画面にもそのまま出す）
             c.factorSeparate.Value = isfield(s.factors, "separateY") && s.factors.separateY;
             c.factorSingles.Value = isfield(s.factors, "evaluateSingles") && s.factors.evaluateSingles;
-            style = alignest.plot.scanStyle(fieldOr(s, "display", struct()));
-            c.scan1Up.Value = ternary(style.scan1Up, 'up', 'down');
-            for k = 1:2
-                c.scanColorCodes(k).Value = rgbToHex(style.colors(k, :));
-            end
-            showScanSwatches(app);
+            refreshScanMenu(app);   % 「表示」→「Scan 方向の向きと色」（設定 display）
             c.factorScanY.Value = choiceY.scan;
             c.factorMarkY.Value = choiceY.mark;
             c.shotRowParityY.Value = choiceY.row;
@@ -525,8 +475,7 @@ classdef (Abstract) SettingsTab < appui.Core
             c.requireOuter.Value = s.sampling.requireOuterShots;
             c.randomRepeats.Value = s.sampling.randomRepeats;
             c.seed.Value = s.sampling.seed;
-            c.manualPlans.Value = cellstr(ternary(isempty(s.sampling.manualPlans), "", s.sampling.manualPlans(:)));
-            c.priorityInfo.Text = priorityText(s.sampling);
+            c.layoutPlanInfo.Value = cellstr(layoutText(s.sampling));
             c.zoneEdges.Value = char(strjoin(string(s.sampling.constraints.radialZoneEdgesMm), " "));
             c.quadrants.Value = s.sampling.constraints.quadrants;
             c.scanConstraint.Value = s.sampling.constraints.scanDirection;
@@ -593,9 +542,6 @@ classdef (Abstract) SettingsTab < appui.Core
             c.tps.Value = methods.tps.enabled;
             c.rbf.Value = methods.rbf.enabled;
             c.rbfFactors.Value = modeSelection(methods.rbf.factorModes);
-            c.rbfe.Value = methods.rbfe.enabled;
-            c.rbfeRegions.Value = char(strjoin(string(methods.rbfe.regions), " "));
-            c.rbfeFactors.Value = modeSelection(methods.rbfe.factorModes);
             c.tpsFactors.Value = modeSelection(methods.tps.factorModes);
             c.ordinaryFactors.Value = modeSelection(methods.kriging.ordinaryFactorModes);
             c.universalFactors.Value = modeSelection(methods.kriging.universalFactorModes);
@@ -633,13 +579,6 @@ classdef (Abstract) SettingsTab < appui.Core
             s.factors.columns = reshape(string(c.factorColumns.Value), 1, []);
             s.factors.separateY = c.factorSeparate.Value;
             s.factors.evaluateSingles = c.factorSingles.Value;
-            s.display.scan1Up = string(c.scan1Up.Value) == "up";
-            for k = 1:2
-                [rgb, ok] = hexToRgb(c.scanColorCodes(k).Value);
-                if ok
-                    s.display.("scan" + k + "Color") = rgb;   % 読めない値は前の色のまま（欄の下に理由）
-                end
-            end
             if ~s.factors.separateY
                 % 別に選ばないときは、Y 成分の欄を X 成分と同じにしておく（オンにしたときの初めの値）
                 c.factorScanY.Value = c.factorScan.Value;
@@ -685,8 +624,6 @@ classdef (Abstract) SettingsTab < appui.Core
             s.sampling.requireOuterShots = c.requireOuter.Value;
             s.sampling.randomRepeats = c.randomRepeats.Value;
             s.sampling.seed = c.seed.Value;
-            lines = string(c.manualPlans.Value);
-            s.sampling.manualPlans = lines(strlength(strtrim(lines)) > 0);
             [values, ok] = parseNumbers(c.zoneEdges.Value);
             if ok && all(values > 0 & values < s.data.waferRadiusMm)
                 s.sampling.constraints.radialZoneEdgesMm = unique(values);
@@ -736,12 +673,6 @@ classdef (Abstract) SettingsTab < appui.Core
             s.methods.tps.enabled = c.tps.Value;
             s.methods.rbf.enabled = c.rbf.Value;
             s.methods.rbf.factorModes = selectedModes(c.rbfFactors.Value);
-            s.methods.rbfe.enabled = c.rbfe.Value;
-            s.methods.rbfe.factorModes = selectedModes(c.rbfeFactors.Value);
-            [values, ok] = parseNumbers(c.rbfeRegions.Value);
-            if ok && ~isempty(values) && all(values >= 1 & values <= app.MAX_RBFE_REGIONS & values == round(values))
-                s.methods.rbfe.regions = unique(values);
-            end
             s.methods.tps.factorModes = selectedModes(c.tpsFactors.Value);
             s.methods.kriging.ordinaryFactorModes = selectedModes(c.ordinaryFactors.Value);
             s.methods.kriging.universalFactorModes = selectedModes(c.universalFactors.Value);
@@ -783,7 +714,8 @@ classdef (Abstract) SettingsTab < appui.Core
                         sprintf("（%d 通り）", numel(counts));
                 end
             catch err
-                usesCounts = any(ismember(method, ["ioptimal", "doptimal", "random", "file"])) || ...
+                usesCounts = any(ismember(method, ["ioptimal", "doptimal", "random"])) || ...
+                    (any(method == "excel") && hasPriorityPlans(app.Settings.sampling)) || ...
                     (any(ismember(method, ["mark", "markd"])) && string(c.countBy.Value) == "rate");
                 if usesCounts
                     text = "⚠ " + string(err.message);
@@ -796,20 +728,16 @@ classdef (Abstract) SettingsTab < appui.Core
             c.nShotsError.Text = text;
             messages = [messages; text(text ~= "")];
             text = "";
-            if any(method == "manual")
+            if any(method == "excel")
                 try
-                    alignest.buildPlanSpecs(struct("method", "manual", "manualPlans", string(c.manualPlans.Value)));
+                    if isempty(alignest.parseLayoutPlans(app.Settings.sampling.layoutPlans))
+                        text = "⚠ 「Excel ファイルを読み込む…」で、学習に使う Shot・Mark を指定したファイルを読み込んでください。";
+                    end
                 catch err
                     text = "⚠ " + string(err.message);
                 end
             end
-            c.manualError.Text = text;
-            messages = [messages; text(text ~= "")];
-            text = "";
-            if any(method == "file") && isempty(app.Settings.sampling.priorityShots)
-                text = "⚠ 「優先順のファイルを読み込む…」で、Shot 番号と優先度のファイルを読み込んでください。";
-            end
-            c.priorityError.Text = text;
+            c.layoutPlanError.Text = text;
             messages = [messages; text(text ~= "")];
             [values, ok] = parseNumbers(c.requiredShots.Value);
             text = "";
@@ -865,15 +793,6 @@ classdef (Abstract) SettingsTab < appui.Core
             end
             c.zernikeError.Text = text;
             messages = [messages; text(text ~= "")];
-            [values, ok] = parseNumbers(c.rbfeRegions.Value);
-            text = "";
-            if c.rbfe.Value && (~ok || isempty(values) || any(values < 1 | values > app.MAX_RBFE_REGIONS | ...
-                    values ~= round(values)))
-                text = sprintf("⚠ RBFe の領域の数は 1〜%d の整数を空白で区切って入れてください（例：4 9）。", ...
-                    app.MAX_RBFE_REGIONS);
-            end
-            c.rbfeError.Text = text;
-            messages = [messages; text(text ~= "")];
             [values, ok] = parseNumbers(c.markPerShot.Value);
             text = "";
             byRate = string(c.countBy.Value) == "rate";
@@ -881,15 +800,6 @@ classdef (Abstract) SettingsTab < appui.Core
                 text = "⚠ 1 Shot あたりの計測 Mark 数は 0 より大きい数を空白で区切って入れてください（例：1 1.5 2）。";
             end
             c.markError.Text = text;
-            messages = [messages; text(text ~= "")];
-            text = "";
-            [~, ok1] = hexToRgb(c.scanColorCodes(1).Value);
-            [~, ok2] = hexToRgb(c.scanColorCodes(2).Value);
-            if ~ok1 || ~ok2
-                text = "⚠ Scan 方向の色は #RRGGBB の形（16進数）で入れてください（例：#1A9447）。「色を選ぶ…」でも選べます。";
-            end
-            c.scanColorError.Text = text;
-            showScanSwatches(app);
             messages = [messages; text(text ~= "")];
             text = "";
             if c.gam.Value
@@ -938,7 +848,8 @@ classdef (Abstract) SettingsTab < appui.Core
             c = app.Controls;
             set([c.factorScanY, c.factorMarkY, c.shotRowParityY, c.factorColumnsY], 'Enable', onOff(c.factorSeparate.Value));
             method = string(c.samplingMethod.Value);
-            constrained = any(ismember(method, ["ioptimal", "doptimal", "random", "file"]));
+            constrained = any(ismember(method, ["ioptimal", "doptimal", "random"])) || ...
+                (any(method == "excel") && hasPriorityPlans(app.Settings.sampling));   % Excel の優先順も Shot 数ごと
             markPlans = any(ismember(method, ["mark", "markd"]));   % Mark 単位の計画も計測率でスイープできる
             optimal = any(ismember(method, ["ioptimal", "doptimal", "mark", "markd"]));
             shotConstraints = any(ismember(method, ["ioptimal", "doptimal", "random"]));
@@ -950,14 +861,13 @@ classdef (Abstract) SettingsTab < appui.Core
             set([c.requiredShots, c.requireOuter, c.requiredInfo], 'Enable', onOff(shotConstraints));
             set([c.zoneEdges, c.quadrants, c.scanConstraint], 'Enable', onOff(shotConstraints));
             c.slack.Enable = onOff(shotConstraints || markPlans);
-            set([c.loadPriority, c.priorityInfo], 'Enable', onOff(any(method == "file")));
             set([c.randomRepeats], 'Enable', onOff(any(method == "random")));
             c.seed.Enable = onOff(any(ismember(method, ["random", "ioptimal", "doptimal", "mark", "markd"])));
             set([c.designOrder, c.exchangeStarts], 'Enable', onOff(optimal));
             set([c.markRatio, c.markRequirePerShot], 'Enable', onOff(markPlans));
             c.markPerShot.Enable = onOff(markPlans && ~byRate);
             c.markMinPerShot.Enable = onOff(markPlans && c.markRequirePerShot.Value);
-            c.manualPlans.Enable = onOff(any(method == "manual"));
+            c.layoutPlanInfo.Enable = onOff(any(method == "excel"));
             c.outlierMethod.Enable = onOff(c.excludeOutliers.Value);
             set([c.overlayPerShotDx, c.overlayPerShotDy], 'Enable', onOff(string(c.overlayPerShot.Value) == "formula"));
             set([c.zernikeOrders, c.zernikeFactors], 'Enable', onOff(c.zernike.Value));
@@ -972,7 +882,6 @@ classdef (Abstract) SettingsTab < appui.Core
             set(c.variograms, 'Enable', onOff(c.ordinaryKriging.Value || c.universalKriging.Value));
             c.tpsFactors.Enable = onOff(c.tps.Value);
             c.rbfFactors.Enable = onOff(c.rbf.Value);
-            set([c.rbfeRegions, c.rbfeFactors], 'Enable', onOff(c.rbfe.Value));
             c.ordinaryFactors.Enable = onOff(c.ordinaryKriging.Value);
             c.universalFactors.Enable = onOff(c.universalKriging.Value);
             c.polynomialOrder.Enable = onOff(c.polynomial.Value);
@@ -1036,26 +945,16 @@ classdef (Abstract) SettingsTab < appui.Core
             refreshRunSummary(app);
         end
 
-        function onLoadPriority(app)
-            [fileName, folder] = uigetfile({'*.xlsx;*.xlsm;*.xls;*.csv', 'Shot の優先順 (*.xlsx, *.xlsm, *.xls, *.csv)'}, ...
-                '計測する Shot の優先順のファイルを選ぶ');
-            figure(app.Figure);
-            if isequal(fileName, 0)
-                return
-            end
-            runWithAlert(app, @() app.loadShotPriority(fullfile(folder, fileName)), "優先順のファイルを読み込めませんでした", ...
-                "1行目に項目名（Shot 番号・優先度）、2行目から Shot 番号と優先度を書いたファイルを選んでください。");
-        end
-
         function onLoadLayouts(app)
-            [fileName, folder] = uigetfile({'*.xlsx;*.xlsm;*.xls;*.csv', '計測配置 (*.xlsx, *.xlsm, *.xls, *.csv)'}, ...
-                '人が選んだ計測配置のファイルを選ぶ');
+            [fileName, folder] = uigetfile({'*.xlsx;*.xlsm;*.xls;*.csv', '学習に使う Shot・Mark (*.xlsx, *.xlsm, *.xls, *.csv)'}, ...
+                '学習に使う Shot・Mark を指定したファイルを選ぶ');
             figure(app.Figure);
             if isequal(fileName, 0)
                 return
             end
-            runWithAlert(app, @() app.loadLayoutPlans(fullfile(folder, fileName)), "計測配置を読み込めませんでした", ...
-                "1行目に shotNo とパターンの名前、2行目から shotNo と 1（計測する）・0（しない）を書いたファイルを選んでください。");
+            runWithAlert(app, @() app.loadLayoutPlans(fullfile(folder, fileName)), "Excel ファイルを読み込めませんでした", ...
+                ['1行目に shotNo（Mark 単位なら markNo も）とパターンの名前、2行目から shotNo と 1（計測する）・0（しない）、' ...
+                'または優先順（1・2・3…）を書いたファイルを選んでください。']);
         end
 
         function onSaveSettings(app)
@@ -1146,16 +1045,47 @@ function control = rateField(parent, callback)
 control = uieditfield(parent, 'numeric', 'Limits', [0, 100], 'ValueDisplayFormat', '%g', 'ValueChangedFcn', callback);
 end
 
-function text = priorityText(sampling)
-% 読み込んだ優先順のファイルの要約
-if ~isfield(sampling, "priorityShots") || isempty(sampling.priorityShots)
-    text = "まだ読み込んでいません";
+function lines = layoutText(sampling)
+% 「Excel ファイルで指定」で読み込んだ学習パターンの要約（1パターン1行）
+lines = "まだ読み込んでいません";
+try
+    plans = alignest.parseLayoutPlans(string(fieldOr(sampling, "layoutPlans", strings(0, 1))));
+catch err
+    lines = "⚠ " + string(err.message);
     return
 end
-levels = sampling.priorityLevels;
-text = sprintf("%s：%d 行（必ず計測 %d、計測しない %d、順に使う %d）。先頭：%s", sampling.priorityFile, ...
-    numel(sampling.priorityShots), nnz(levels == 1), nnz(levels == 0), nnz(~(levels == 0 | levels == 1)), ...
-    strjoin(string(sampling.priorityShots(1:min(end, 8))), " "));
+if isempty(plans)
+    return
+end
+lines = strings(numel(plans) + 1, 1);
+lines(1) = string(fieldOr(sampling, "layoutFile", "")) + "：" + sprintf("%d パターン", numel(plans));
+for k = 1:numel(plans)
+    plan = plans(k);
+    markLevel = ~isempty(plan.markNos);
+    items = string(plan.shotNos);
+    unitName = "Shot";
+    if markLevel
+        items = items + "-" + string(plan.markNos);
+        unitName = "Mark";
+    end
+    preview = strjoin(items(1:min(end, 8)).', " ") + ternary(numel(items) > 8, " …", "");
+    if plan.kind == "pattern"
+        lines(k + 1) = sprintf("・%s：パターン（%d %s）　%s", plan.name, numel(items), unitName, preview);
+    else
+        lines(k + 1) = sprintf("・%s：優先順（%d %s。必ず計測 %d）　先頭から %s", plan.name, numel(items), unitName, ...
+            nnz(plan.required), preview);
+    end
+end
+end
+
+function value = hasPriorityPlans(sampling)
+% Excel ファイルで指定した学習パターンに優先順があるか（学習 Shot 数・計測率を使う）
+value = false;
+try
+    plans = alignest.parseLayoutPlans(string(fieldOr(sampling, "layoutPlans", strings(0, 1))));
+    value = any(string({plans.kind}) == "priority");
+catch
+end
 end
 
 function spinner = shotCountSpinner(parent, callback)

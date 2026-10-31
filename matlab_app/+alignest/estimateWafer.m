@@ -106,7 +106,7 @@ switch method.family
         out.edf = [result.edfU, result.edfV];
     otherwise
         features = [];
-        if any(method.family == ["GPR", "TPS", "RBF", "RBFE", "OK", "UK"])
+        if any(method.family == ["GPR", "TPS", "RBF", "OK", "UK"])
             features = alignest.basis.distanceFeatures(marks.x, marks.y, method.featureSet, radius);
         end
         for k = find(active)
@@ -138,17 +138,6 @@ switch method.family
                     out.aux(k) = result.log10Lambda;
                     out.extra.("rbfLengthScale_" + axisNames(k)) = result.lengthScale;
                     out.extra.("log10Lambda_" + axisNames(k)) = result.log10Lambda;
-                case "RBFE"
-                    % RBFe（仮）：面内を領域に分けた TPS をつなぐ形状関数（＋質的変数の Backfitting で GAM）
-                    grid = linspace(options.tpsLog10Lambda(1), options.tpsLog10Lambda(2), options.tpsLog10Lambda(3));
-                    model = alignest.models.rbfeSetup([marks.x(train), marks.y(train)], [marks.x(test), marks.y(test)], ...
-                        features(train, :), features(test, :), sscanf(char(method.variant), 'regions%d'), grid, ...
-                        overlap=options.rbfeOverlap, minPoints=options.rbfeMinPoints);
-                    fitSpatial = @(values) alignest.models.rbfeFitPredict(model, values);
-                    result = fitWithFactors(fitSpatial, unit, train, test, y, method, settings, axisNames(k));
-                    out.aux(k) = result.log10Lambda;
-                    out.extra.("log10Lambda_" + axisNames(k)) = result.log10Lambda;
-                    out.extra.("rbfeRegions_" + axisNames(k)) = model.nRegions;
                 case {"OK", "UK"}
                     kinds = struct("OK", "ordinary", "UK", "universal");
                     model = alignest.models.krigingSetup(features(train, :), features(test, :), ...
@@ -177,7 +166,7 @@ switch method.family
                 otherwise
                     error('alignest:family', '未知の手法です: %s', method.id);
             end
-            if any(method.family == ["TPS", "RBF", "RBFE", "OK", "UK"]) && method.factorMode == "backfit"
+            if any(method.family == ["TPS", "RBF", "OK", "UK"]) && method.factorMode == "backfit"
                 out.converged = out.converged && result.backfitConverged;
                 out.extra.("backfitIterations_" + axisNames(k)) = result.nBackfitIterations;
             end
@@ -301,6 +290,9 @@ end
 extra.("sf_" + axisName) = result.signalStd;
 if ~isnan(result.alpha)
     extra.("alpha_" + axisName) = result.alpha;
+end
+if isfield(result, "period") && ~isnan(result.period)
+    extra.("period_" + axisName) = result.period;   % 周期カーネルの周期（Wafer 半径で割った単位）
 end
 for name = string(fieldnames(result.tau)).'
     extra.("tau_" + name + "_" + axisName) = result.tau.(name);

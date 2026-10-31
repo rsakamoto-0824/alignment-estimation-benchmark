@@ -1,5 +1,6 @@
 classdef TestLayoutDesignZernike < matlab.unittest.TestCase
-    %TESTLAYOUTDESIGNZERNIKE 計測配置の選び方の比較（D 最適・人の選択・Mark 単位の I 最適）、Fringe Zernike、
+    %TESTLAYOUTDESIGNZERNIKE 計測配置の選び方の比較（D 最適・Excel ファイルで指定（パターン・優先順・Mark 単位）・
+    %   Mark 単位の I 最適）、Fringe Zernike（7次まで）、
     %   異常値の MAD、Slot の偶奇、Shot ごとの成分の式、Matérn の ν の時間の目安、全角の数字を確かめる。
 
     properties
@@ -112,15 +113,84 @@ classdef TestLayoutDesignZernike < matlab.unittest.TestCase
                 [0; 0; 1; 1; 0; 0], 'VariableNames', ["shotNo", "担当者A", "担当者B", "全部", "メモ", "最外周"]);
             writetable(sheet, file, 'Sheet', '計測マップ');
             layouts = alignest.readLayoutPlans(file);
-            testCase.verifyEqual(layouts.names, ["担当者A"; "担当者B"], "全部 1 の列・文字の列・情報の列は読まない");
-            testCase.verifyEqual(layouts.shotNos{1}, [1, 3, 5]);
-            testCase.verifyEqual(layouts.lines, ["担当者A: 1 3 5"; "担当者B: 2 3 6"]);
+            testCase.verifyEqual(string({layouts.plans.name}), ["担当者A", "担当者B"], "全部 1 の列・文字の列・情報の列は読まない");
+            testCase.verifyEqual(layouts.plans(1).shotNos, [1; 3; 5]);
+            testCase.verifyEqual(layouts.lines, ["pattern|担当者A|1 3 5"; "pattern|担当者B|2 3 6"]);
+            testCase.verifyEqual(layouts.skipped, ["全部", "メモ"]);
             sampling = alignest.defaultSettings().sampling;
-            sampling.method = "manual";
-            sampling.manualPlans = layouts.lines;
+            sampling.method = "excel";
+            sampling.layoutPlans = layouts.lines;
             testCase.verifyEqual(string({alignest.buildPlanSpecs(sampling).group}), ["担当者A", "担当者B"]);
-            writetable(table((1:3).', 'VariableNames', "番号"), fullfile(folder, 'bad.xlsx'));
-            testCase.verifyError(@() alignest.readLayoutPlans(fullfile(folder, 'bad.xlsx')), 'alignest:readLayoutPlans');
+            writetable(table((1:3).', 'VariableNames', "番号"), fullfile(folder, 'only.xlsx'));
+            testCase.verifyEqual(alignest.readLayoutPlans(fullfile(folder, 'only.xlsx')).lines, "priority|優先順|1 2 3", ...
+                "Shot の列だけなら行の順を優先順にする（以前の優先順のファイルと同じ）");
+            writetable(table((1:3).', ["a"; "b"; "c"], 'VariableNames', ["shotNo", "メモ"]), fullfile(folder, 'bad.xlsx'));
+            testCase.verifyError(@() alignest.readLayoutPlans(fullfile(folder, 'bad.xlsx')), 'alignest:readLayoutPlans', ...
+                "パターン・優先順の列が無い");
+        end
+
+        function excelPlansSupportPriorityAndMarks(testCase)
+            % 「Excel ファイルで指定」：Mark 単位のパターン（markNo の列）と優先順（1・2・3…）。計測マップの Excel
+            % （計測マップ_Mark シート）もそのまま読める。パターンと優先順が混ざると、列に名前を付ける
+            unit = testCase.Data.units(1);
+            marks = unit.marks;
+            folder = tempname;
+            mkdir(folder);
+            cleanup = onCleanup(@() rmdir(folder, 's'));
+            file = fullfile(folder, 'marks.xlsx');
+            pattern = double(marks.markNo == 1 & mod(marks.shotNo, 2) == 1);   % 奇数の Shot の Mark 1
+            rank = nan(numel(marks.x), 1);
+            rank(marks.markNo == 2) = 1:nnz(marks.markNo == 2);                % Mark 2 を shotNo の順に
+            writetable(table(marks.shotNo, marks.markNo, marks.x, marks.y, pattern, rank, 'VariableNames', ...
+                ["shotNo", "markNo", "Xmm", "Ymm", "Mark1", "順位"]), file, 'Sheet', '計測マップ_Mark');
+            writetable(table(unit.shots.shotNo, double(mod(unit.shots.shotNo, 2) == 1), 'VariableNames', ...
+                ["shotNo", "Shot単位"]), file, 'Sheet', '計測マップ');
+            layouts = alignest.readLayoutPlans(file);
+            testCase.verifyTrue(layouts.markLevel, "計測マップ_Mark シートを先に読む");
+            testCase.verifyEqual(layouts.sheet, "計測マップ_Mark");
+            testCase.verifyEqual([layouts.plans.kind], ["pattern", "priority"]);
+            sampling = alignest.defaultSettings().sampling;
+            sampling.method = "excel";
+            sampling.layoutPlans = layouts.lines;
+            sampling.markPerShot = 0.5;
+            specs = alignest.buildPlanSpecs(sampling);
+            testCase.verifyEqual(string({specs.label}), [sprintf("Mark1（%d Mark）", nnz(pattern)), "順位 0.5 点/Shot"]);
+            testCase.verifyEqual(string({specs.group}), ["Mark1", "順位 0.5 点/Shot"], "パターンと優先順が混ざると名前を付ける");
+            first = alignest.planTrainingShots(unit, specs(1), sampling, 150);
+            testCase.verifyTrue(first.ok);
+            testCase.verifyEqual(sort(first.markIndex), find(pattern == 1 & (marks.validX | marks.validY)));
+            second = alignest.planTrainingShots(unit, specs(2), sampling, 150);
+            candidates = nnz(unit.shots.nValidX + unit.shots.nValidY > 0);
+            testCase.verifyEqual(second.nMarks, round(0.5 * candidates));
+            testCase.verifyTrue(all(marks.markNo(second.markIndex) == 2), "優先順の先頭から（Mark 2）");
+            testCase.verifyTrue(all(isfinite([second.criterionI, second.criterionD])));
+            % Shot 単位の優先順：1 = 必ず計測、2・3… の順、空欄は後、0 は使わない
+            file = fullfile(folder, 'shots.csv');
+            writetable(table([4; 9; 2; 7; 5; 3], [2; 1; 0; NaN; 3; 1], 'VariableNames', ["shotNo", "順番"]), file);
+            shotLayouts = alignest.readLayoutPlans(file);
+            testCase.verifyEqual(shotLayouts.lines, "priority|順番|!9 !3 4 5 7");
+            sampling.layoutPlans = shotLayouts.lines;
+            sampling.nShots = [3, 4];
+            specs = alignest.buildPlanSpecs(sampling);
+            testCase.verifyEqual(string({specs.group}), ["3 Shot", "4 Shot"], "優先順だけなら以前と同じ列の名前");
+            plan = alignest.planTrainingShots(unit, specs(1), sampling, 150);
+            testCase.verifyEqual(sort(plan.shotNos(:)).', [3, 4, 9]);
+            % 以前の設定（手動・ファイルの優先順）は Excel の指定に直して読む
+            legacy = alignest.upgradeLayoutSettings(struct("method", ["manual", "file"], "manualPlans", "A: 1 2", ...
+                "priorityShots", [5, 6, 7], "priorityLevels", [NaN, 1, 0], "priorityFile", "p.csv"));
+            testCase.verifyEqual(legacy.method, "excel");
+            testCase.verifyEqual(legacy.layoutPlans, ["pattern|A|1 2"; "priority|優先順|!6 5"]);
+            testCase.verifyEqual(legacy.layoutFile, "p.csv");
+            testCase.verifyFalse(isfield(legacy, "manualPlans"));
+            settingsFile = fullfile(folder, 'legacy.json');
+            old = alignest.defaultSettings();
+            old.sampling = rmfield(old.sampling, ["layoutPlans", "layoutFile"]);
+            old.sampling.method = "manual";
+            old.sampling.manualPlans = "担当者: 3 4 5";
+            alignest.saveSettings(old, settingsFile);
+            loaded = alignest.loadSettings(settingsFile);
+            testCase.verifyEqual(loaded.sampling.method, "excel");
+            testCase.verifyEqual(loaded.sampling.layoutPlans, "pattern|担当者|3 4 5");
         end
 
         function layoutComparisonGroupsBySelectionMethod(testCase)
@@ -148,6 +218,29 @@ classdef TestLayoutDesignZernike < matlab.unittest.TestCase
             single.sampling.method = "ioptimal";
             plain = alignest.runEvaluation(data, single);
             testCase.verifyEqual(alignest.layoutComparison(plain, 1, "RMSE_XY", "mean").type.', ["ioptimal", "ioptimal"]);
+        end
+
+        function fringeZernikeGoesToOrderSeven(testCase)
+            % Fringe Zernike は 7 次（Z1〜Z64）まで選べる（画面の上限も 7）
+            testCase.verifyEqual(size(alignest.basis.fringeZernikeModes(7), 1), 64);
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            c = app.Controls;
+            c.zernike.Value = true;
+            c.zernikeOrders.Value = '7';
+            c.zernikeOrders.ValueChangedFcn([], []);
+            testCase.verifyEqual(app.Settings.methods.zernike.orders, 7);
+            testCase.verifyEmpty(c.zernikeError.Text);
+            c.zernikeOrders.Value = '8';
+            c.zernikeOrders.ValueChangedFcn([], []);
+            testCase.verifyTrue(contains(string(c.zernikeError.Text), "1〜7"));
+            [x, y] = meshgrid(linspace(-0.9, 0.9, 12));
+            inside = hypot(x(:), y(:)) < 1;
+            points = [x(inside), y(inside)];
+            modes = alignest.basis.fringeZernikeModes(7);
+            values = alignest.basis.zernikeMatrix(points(:, 1), points(:, 2), modes) * (1:64).' / 64;
+            result = alignest.models.zernikeFitPredict(points, points, values, 7);
+            testCase.verifyEqual(result.prediction, values, 'AbsTol', 1e-8, "7 次の項でできた値をそのまま推定する");
         end
 
         function fringeZernikeFitsTheFringeTerms(testCase)
@@ -293,7 +386,7 @@ classdef TestLayoutDesignZernike < matlab.unittest.TestCase
             for name = [alignest.models.gprKernelNames(), "matern（ν を指定）", "ardmatern（ν を指定）", ...
                     "linear", "power", "gaussian", "exponential", "spherical", "加法カーネル＋交互作用", "ASML", "Canon", ...
                     "Nikon", "k1 + k3·x + k5·y", "Fringe Zernike", "MAD", "D 最適計画", "Mark 単位の I 最適・D 最適計画", ...
-                    "凸包", "外挿の判定", "学習に無い Mark 番号", "RBFe（仮）", "1 の分割", "Shot スタックマップ", ...
+                    "凸包", "外挿の判定", "学習に無い Mark 番号", "periodic（周期）", "Shot スタックマップ", ...
                     "重ね合わせ補正値", "Wafer の外の点", "質的変数を1つだけ使う手法", "エラーバー（計測配置の比較）"]
                 testCase.verifyTrue(contains(text, name), name + " の説明がヘルプにない");
             end

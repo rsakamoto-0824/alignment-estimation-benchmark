@@ -236,20 +236,24 @@ classdef TestComparisonPlansDisplay < matlab.unittest.TestCase
             testCase.verifyFalse(loaded.display.scan1Up);
             testCase.verifyTrue(alignest.sameRunSettings(alignest.defaultSettings(), settings));
             testCase.verifyEmpty(alignest.extensionConflicts(alignest.defaultSettings(), settings));
-            % 画面：設定の欄と、Wafer マップの凡例
+            % 画面：メニューの「表示」→「Scan 方向の向きと色」と、Wafer マップの凡例
             app = AlignmentEstimationApp(false);
             appCleanup = onCleanup(@() delete(app));
             app.setSettings(settings);
-            testCase.verifyEqual(app.Controls.scan1Up.Value, 'down');
-            testCase.verifyEqual(app.Controls.scanColorCodes(1).Value, '#FF0000');
-            testCase.verifyEqual(app.Controls.scanColorButtons(1).BackgroundColor, [1, 0, 0]);
-            app.Controls.scanColorCodes(2).Value = '#00ff80';
-            app.Controls.scanColorCodes(2).ValueChangedFcn([], []);
+            testCase.verifyEqual(string([app.Controls.scanUpItems.Checked]), ["off", "on"], "1 = 下向きに ✓");
+            testCase.verifyTrue(contains(app.Controls.scanColorItems(1).Text, "#FF0000"));
+            testCase.verifyFalse(isfield(app.Controls, 'scan1Up'), "「2. 評価の設定」には欄を出さない");
+            app.setScanStyle(scan2Color=[0, 1, 128 / 255]);
             testCase.verifyEqual(app.Settings.display.scan2Color, [0, 1, 128 / 255], 'AbsTol', 1e-12);
-            app.Controls.scanColorCodes(2).Value = 'green';
-            app.Controls.scanColorCodes(2).ValueChangedFcn([], []);
-            testCase.verifyNotEmpty(app.Controls.scanColorError.Text);
+            testCase.verifyTrue(contains(app.Controls.scanColorItems(2).Text, "#00FF80"));
+            testCase.verifyError(@() app.setScanStyle(scan2Color=[2, 0, 0]), 'alignest:scanColor');
             testCase.verifyEqual(app.Settings.display.scan2Color, [0, 1, 128 / 255], 'AbsTol', 1e-12, "読めない値は前の色");
+            app.Controls.scanUpItems(1).MenuSelectedFcn([], []);
+            testCase.verifyTrue(app.Settings.display.scan1Up);
+            testCase.verifyEqual(string([app.Controls.scanUpItems.Checked]), ["on", "off"]);
+            app.resetScanStyle();
+            testCase.verifyEqual(app.Settings.display, alignest.defaultSettings().display);
+            app.setScanStyle(scan1Up=false, scan1Color=[1, 0, 0], scan2Color=[0, 0, 1]);
             figureHandle = figure('Visible', 'off');
             closeFigure = onCleanup(@() close(figureHandle));
             ax = axes(figureHandle);

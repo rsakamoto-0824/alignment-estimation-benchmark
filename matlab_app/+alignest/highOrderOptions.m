@@ -1,10 +1,12 @@
 function options = highOrderOptions(settings)
 %HIGHORDEROPTIONS Shot 高次補正の評価（「7. Shot高次補正」）の設定 settings.highOrder を確かめ、説明の文を付けて返す。
-%   options.maker：補正の式（"asml"・"canon"・"nikon"。Overlay 計測ルールの Shot 高次補正の式。alignest.highOrderTerms）
-%   options.unit："common"（Wafer 内の Shot で共通の1組の k）・"shot"（Shot ごとに1組の k）
+%   options.maker：補正の式（"asml"・"canon"・"nikon"（Shot 高次補正の式）・"custom"（k1〜k38 から選ぶ）。alignest.highOrderTerms）
+%   options.termSets：保存した項の組み合わせ（1行 = "名前|式|k の番号 …"。画面の「組み合わせを保存」）
+%   options.unit：k の組のくくり。"common"（Wafer 内の Shot で共通の1組の k）・"scan"（Scan 方向ごとに1組ずつ）・
+%                 "row"（Shot 行の偶奇ごとに1組ずつ）・"shot"（Shot ごとに1組の k）
 %   options.waferOrder：Wafer 成分（Shot 中心の座標の多項式。定数を除く 1〜waferOrder 次の項）の次数。0 なら使わない。
-%                       Shot で共通のときだけ、Shot の k と一緒に求める（Shot ごとのときは Shot ごとの k1・k2 が Wafer 成分を
-%                       含むので使わない）
+%                       Shot ごとのほかは、Wafer で共通の1組として Shot の k と一緒に求める（Shot ごとのときは Shot ごとの
+%                       k1・k2 が Wafer 成分を含むので使わない）
 %   options.excludedTerms：使わない k の番号（「VIF で選ぶ」で外した・画面で外した項。k1〜k6 は外さない）
 %   options.vifThreshold：「VIF で選ぶ」のしきい値（すべての項の VIF がこの値より小さくなるまで高次項を外す）
 %   options.loss："ols"（最小二乗）・"huber"（Huber の M 推定）・"lad"（最小絶対偏差）。Huber・LAD はロバスト回帰
@@ -13,10 +15,10 @@ function options = highOrderOptions(settings)
 %   options.description：画面・Excel に出す説明
 %   以前の設定（highOrder が無い・項目が足りない）は、alignest.defaultSettings の値を使う。
 MAX_WAFER_ORDER = 3;
-MAKER_NAMES = ["asml", "canon", "nikon"];
-MAKER_LABELS = ["ASML", "Canon", "Nikon"];
-UNIT_NAMES = ["common", "shot"];
-UNIT_LABELS = ["Wafer 内の Shot で共通", "Shot ごと"];
+MAKER_NAMES = ["asml", "canon", "nikon", "custom"];
+MAKER_LABELS = ["ASML", "Canon", "Nikon", "カスタム（k1〜k38）"];
+UNIT_NAMES = ["common", "scan", "row", "shot"];
+UNIT_LABELS = ["Wafer 内の Shot で共通", "Scan 方向ごと", "Shot 行の偶奇ごと", "Shot ごと"];
 LOSS_NAMES = ["ols", "huber", "lad"];
 LOSS_LABELS = ["最小二乗", "Huber（ロバスト回帰）", "LAD（ロバスト回帰）"];
 defaults = alignest.defaultSettings().highOrder;
@@ -35,13 +37,14 @@ options.unit = string(options.unit);
 options.loss = lower(string(options.loss));
 options.l2 = logical(options.l2);
 options.excludedTerms = reshape(double(options.excludedTerms), 1, []);
+options.termSets = reshape(string(options.termSets), [], 1);
 if ~isscalar(options.maker) || ~any(options.maker == MAKER_NAMES)
     error('alignest:highOrderModel', 'Shot 高次補正の式は %s のいずれかです: %s', strjoin(MAKER_NAMES, "・"), ...
         strjoin(options.maker, "・"));
 end
 if ~isscalar(options.unit) || ~any(options.unit == UNIT_NAMES)
-    error('alignest:highOrderUnit', '補正の単位は common（Wafer 内の Shot で共通）・shot（Shot ごと）のどちらかです: %s', ...
-        strjoin(options.unit, "・"));
+    error('alignest:highOrderUnit', ['補正のくくりは common（Wafer 内の Shot で共通）・scan（Scan 方向ごと）・' ...
+        'row（Shot 行の偶奇ごと）・shot（Shot ごと）のいずれかです: %s'], strjoin(options.unit, "・"));
 end
 if ~isscalar(options.waferOrder) || ~any(options.waferOrder == 0:MAX_WAFER_ORDER)
     error('alignest:highOrderWafer', 'Wafer 成分の次数は 0〜%d の整数にしてください。', MAX_WAFER_ORDER);
@@ -71,6 +74,8 @@ counts = arrayfun(@(axisName) sprintf("%s %d / %d 項", axisName, nnz(terms.used
 unitText = UNIT_LABELS(UNIT_NAMES == options.unit);
 if options.unit == "common" && options.waferOrder > 0
     unitText = unitText + sprintf("（Wafer 成分 %d 次も一緒に求める）", options.waferOrder);
+elseif options.unit ~= "shot" && options.waferOrder > 0
+    unitText = unitText + sprintf("（Wafer 成分 %d 次は Wafer で共通にして一緒に求める）", options.waferOrder);
 end
 lossText = LOSS_LABELS(LOSS_NAMES == options.loss);
 if options.loss == "huber"

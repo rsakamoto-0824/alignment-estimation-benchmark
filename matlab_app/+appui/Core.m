@@ -41,8 +41,7 @@ classdef (Abstract) Core < handle
         EXCEL_MAX_DATA_ROWS = 1048575   % Excel の最大行数から見出しの1行を除いた数
         MAX_MATERN_NU = 50              % Matérn の ν の上限（alignest.models.maternNuCheck と同じ）
         FORMULA_CHOICE = -1             % Wafer 成分の選択肢「式を入力」の値（次数 0〜5 と区別する）
-        MAX_ZERNIKE_ORDER = 6           % Fringe Zernike の次数の上限（Z1〜Z49）
-        MAX_RBFE_REGIONS = 25           % RBFe の領域の数の上限（alignest.buildMethodList と同じ）
+        MAX_ZERNIKE_ORDER = 7           % Fringe Zernike の次数の上限（Z1〜Z64）
         WORST_PERCENT = 95              % マップに出す「95%値」の百分位（結果一覧の集計と同じ）
         IMAGE_RESOLUTION = 150          % 「図を画像で保存…」の解像度 [dpi]
         IMAGE_GAP_PIXELS = 20           % 図を横に並べて1枚の画像にするときの間 [px]
@@ -95,8 +94,11 @@ classdef (Abstract) Core < handle
         LegendMenus = struct()      % 図を右クリックしたときの凡例の位置のメニュー（図ごとに1つ）
         FixedSizes = struct("grid", {}, "property", {}, "index", {}, "size", {})  % 文字の大きさに合わせる決まった大きさ [px] の行・列
         FontVersion = 0         % 文字の大きさを変えた回数（見えていなかったタブを開いたときに、文字を付け直すかの目印）
-        HighOrderFile = []      % 「7. Shot高次補正」で読み込んだ Excel・CSV（data：alignest.readHighOrderFile の Wafer ごとのデータ、info）
+        HighOrderFile = []      % 「7. Shot高次補正」で読み込んだ Excel・CSV（raw：読んだ表、info：alignest.readHighOrderFile、
+                                %  data：選んだ列で整理した Wafer ごとのデータ（alignest.prepareHighOrderData。まだなら []）、mapping）
         HighOrderRun = []       % 「7. Shot高次補正」で最後に計算した結果（computeHighOrder。alignest.shotHighOrder の結果と入力）
+        HighOrderConditions = struct("label", {}, "highOrder", {})  % 「7. Shot高次補正」の補正の比較の条件（名前と settings.highOrder）
+        HighOrderComparison = []  % 「7. Shot高次補正」の補正の比較の結果（compareHighOrderConditionsNow。表と、比べた条件・入力）
     end
 
     properties (Dependent)
@@ -187,6 +189,20 @@ classdef (Abstract) Core < handle
             uimenu(legendMenu, 'Text', '図ごとに選んだ位置をすべて戻す', 'Separator', 'on', ...
                 'MenuSelectedFcn', @(~, ~) app.resetLegendOverrides());
             uimenu(legendMenu, 'Text', '（図を右クリックすると、その図だけの位置を選べます）', 'Enable', 'off');
+            % Scan 方向 1・2 の向き（▲・▼）と色（図の印と色だけ。推定の結果は変わらない。設定 display に入る）
+            scanMenu = uimenu(viewMenu, 'Text', 'Scan 方向の向きと色');
+            app.Controls.scanUpItems = [ ...
+                uimenu(scanMenu, 'Text', '1 = 上向き（▲）、2 = 下向き（▼）', 'MenuSelectedFcn', ...
+                @(~, ~) app.setScanStyle(scan1Up=true)), ...
+                uimenu(scanMenu, 'Text', '1 = 下向き（▼）、2 = 上向き（▲）', 'MenuSelectedFcn', ...
+                @(~, ~) app.setScanStyle(scan1Up=false))];
+            app.Controls.scanColorItems = [ ...
+                uimenu(scanMenu, 'Text', 'Scan 方向 1 の色…', 'Separator', 'on', 'MenuSelectedFcn', ...
+                @(~, ~) app.onPickScanColor(1)), ...
+                uimenu(scanMenu, 'Text', 'Scan 方向 2 の色…', 'MenuSelectedFcn', @(~, ~) app.onPickScanColor(2))];
+            uimenu(scanMenu, 'Text', '既定の向きと色に戻す', 'Separator', 'on', 'MenuSelectedFcn', ...
+                @(~, ~) app.resetScanStyle());
+            uimenu(scanMenu, 'Text', '（図の印と色だけ。推定の結果は変わりません）', 'Enable', 'off');
             uimenu(viewMenu, 'Text', '画面の大きさに合わせる', 'Separator', 'on', ...
                 'MenuSelectedFcn', @(~, ~) app.fitToScreen(true));
             uimenu(viewMenu, 'Text', 'ヘルプ（用語・補正の式・カーネル）を開く', 'Separator', 'on', ...
@@ -227,6 +243,12 @@ classdef (Abstract) Core < handle
                 app.LegendOverrides = validLegendOverrides(loadPreference(app, 'legendOverrides', struct()), ...
                     app.LEGEND_CHOICES);
                 markLegendItems(app);
+                % 「7. Shot高次補正」で保存した項の組み合わせ（同じ名前なら、既定の設定ファイルより前回保存したものを使う）
+                savedSets = loadPreference(app, 'highOrderTermSets', {});
+                if iscellstr(savedSets) || isstring(savedSets)
+                    app.Settings.highOrder.termSets = mergeTermSets(savedSets, app.Settings.highOrder.termSets);
+                    refreshHighOrderTermSets(app);
+                end
             end
             % 画面（モニター）の大きさ・解像度に合わせる：窓の幅に合わせて決まった幅の欄を狭め、別の画面に移したら
             % 窓をその画面に収まる大きさにする（画面の大きさが違う画面の間で動かしても、つり合いが崩れないように）
@@ -449,8 +471,9 @@ classdef (Abstract) Core < handle
                 error('alignest:hiddenFigure', '図の画像は、画面を出しているときに保存・コピーできます。');
             end
             drawnow;   % 並べ方を変えた直後は、図の大きさが決まってから書き出す（大きさ 0 の図は書き出せない）
-            % 描いてある図だけ（軸を消して描く図は Visible が off なので、中身があるかで決める。使わない図は中身を消してある）
-            items = items(arrayfun(@(item) isvalid(item) && ~isempty(item.Children), items));
+            % 描いてある図だけ（軸を消して描く図は Visible が off なので、中身があるかで決める。使わない図は中身を消してある。
+            % 色の点は凡例に出さないよう HandleVisibility を off にして描くので、Children ではなく allchild で数える）
+            items = items(arrayfun(@(item) isvalid(item) && ~isempty(allchild(item)), items));
             if isempty(items)
                 error('alignest:noFigure', '図がありません。先に図を描いてください。');
             end
@@ -494,7 +517,7 @@ classdef (Abstract) Core < handle
                 case "targetResidual"
                     items = c.targetResidualAxes;
                 case "highOrder"
-                    items = c.highOrderAxes;
+                    items = [c.highOrderAxes, c.highOrderAxes2, c.highOrderAxes3];   % 並べたときは3つ（使わない図は中身が無い）
                 otherwise
                     error('alignest:figureName', '保存する図の名前が違います: %s', figureName);
             end

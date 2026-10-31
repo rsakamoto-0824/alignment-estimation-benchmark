@@ -13,7 +13,10 @@ else
     squared = gp.crossSq;
     total = gp.crossSqTotal;
 end
-if gp.ard
+wantGrads = nargout >= 2 && part == "train";
+if gp.family == "per"
+    [kernel, grads] = periodicKernel(gp, p, squared, wantGrads);
+elseif gp.ard
     r2 = zeros(size(total));
     for group = 1:gp.nLength
         r2 = r2 + squared(:, :, group) / p.lengths(group)^2;
@@ -21,10 +24,28 @@ if gp.ard
 else
     r2 = total / p.lengths(1)^2;
 end
+if gp.family ~= "per"
+    [kernel, grads] = stationaryPart(gp, p, squared, r2, wantGrads);
+end
+noiseVar = p.noiseVar;
+for k = 1:gp.nCategorical
+    if part == "train"
+        same = gp.categorical(k).trainSame;
+    else
+        same = gp.categorical(k).crossSame;
+    end
+    kernel = kernel + p.categoricalVar(k) * same;
+    if wantGrads
+        grads(:, :, gp.categoricalOffset + k - 1) = 2 * p.categoricalVar(k) * same;
+    end
+end
+end
+
+function [kernel, grads] = stationaryPart(gp, p, squared, r2, wantGrads)
+% 距離 r²（長さスケールで割った）だけで決まるカーネルと、対数パラメータでの微分（質的変数の項は呼んだ側で足す）
+grads = [];
 [profile, slope, alphaDerivative] = kernelProfile(gp, r2, p.alpha);
 kernel = p.signalVar * profile;
-noiseVar = p.noiseVar;
-wantGrads = nargout >= 2 && part == "train";
 if wantGrads
     grads = zeros(size(kernel, 1), size(kernel, 2), gp.nParams - 1);
     if gp.ard
@@ -39,17 +60,35 @@ if wantGrads
         grads(:, :, gp.nLength + 2) = p.signalVar * alphaDerivative;
     end
 end
-for k = 1:gp.nCategorical
-    if part == "train"
-        same = gp.categorical(k).trainSame;
-    else
-        same = gp.categorical(k).crossSame;
-    end
-    kernel = kernel + p.categoricalVar(k) * same;
-    if wantGrads
-        grads(:, :, gp.categoricalOffset + k - 1) = 2 * p.categoricalVar(k) * same;
-    end
 end
+
+function [kernel, grads] = periodicKernel(gp, p, squared, wantGrads)
+% 周期カーネル σf² exp(−2 Σ_j sin²(π d_j / p) / ℓ_j²)（d_j：説明変数 j ごとの距離、p：周期 = p.alpha の位置のパラメータ）。
+% 微分：d/dlog ℓ_j = K · 4 sin²(φ_j)/ℓ_j²、d/dlog p = K · Σ_j 2 φ_j sin(2φ_j)/ℓ_j²（φ_j = π d_j / p）、d/dlog σf = 2K
+grads = [];
+period = p.alpha;
+nGroups = size(squared, 3);
+exponent = zeros(size(squared, 1), size(squared, 2));
+phases = cell(nGroups, 1);
+for group = 1:nGroups
+    ell = p.lengths(min(group, gp.nLength));
+    phases{group} = pi * sqrt(max(squared(:, :, group), 0)) / period;
+    exponent = exponent - 2 * sin(phases{group}) .^ 2 / ell ^ 2;
+end
+kernel = p.signalVar * exp(exponent);
+if ~wantGrads
+    return
+end
+grads = zeros(size(kernel, 1), size(kernel, 2), gp.nParams - 1);
+periodGrad = zeros(size(kernel));
+for group = 1:nGroups
+    lengthIndex = min(group, gp.nLength);
+    ell = p.lengths(lengthIndex);
+    grads(:, :, lengthIndex) = grads(:, :, lengthIndex) + kernel .* (4 * sin(phases{group}) .^ 2 / ell ^ 2);
+    periodGrad = periodGrad + 2 * phases{group} .* sin(2 * phases{group}) / ell ^ 2;
+end
+grads(:, :, gp.nLength + 1) = 2 * kernel;
+grads(:, :, gp.nLength + 2) = kernel .* periodGrad;
 end
 
 function p = splitParams(gp, logParams)
