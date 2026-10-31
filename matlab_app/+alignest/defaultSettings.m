@@ -1,5 +1,6 @@
 function settings = defaultSettings()
-%DEFAULTSETTINGS 初期設定。比べる手法は「推奨の組み合わせ」（前回の模擬データの評価で各系統の代表になった設定）。
+%DEFAULTSETTINGS 初期設定。比べる手法はガウス過程回帰（GPR）だけ（alignest.recommendedMethods の "default"。
+%   ほかの手法は画面の「推奨の組み合わせ」などで足せる）。
 settings.version = 1;
 
 % データ（Overlay 計測ルール：300 mm Wafer、有効な点は r < 150 mm）
@@ -31,7 +32,7 @@ settings.factors.y.columns = strings(1, 0);
 
 % 学習に使う Shot の選び方
 % 選び方（複数選ぶと、同じ評価の中で選び方どうしを比べる。alignest.buildPlanSpecs）：ioptimal（制約付き I 最適）／
-% doptimal（制約付き D 最適）／random（制約つきランダム）／manual（手動・人の選択）／file（ファイルの優先順）／
+% doptimal（制約付き D 最適）／random（制約つきランダム）／excel（Excel ファイルで指定：パターン・優先順。Mark 単位も）／
 % mark（Mark 単位の I 最適）／markd（Mark 単位の D 最適）
 settings.sampling.method = "ioptimal";
 settings.sampling.nShotsStart = 10;     % 学習 Shot 数は 開始・終了・刻み で決める（I 最適・ランダム）
@@ -44,10 +45,9 @@ settings.sampling.rateEnd = 40;
 settings.sampling.rateStep = 10;
 settings.sampling.randomRepeats = 10;
 settings.sampling.seed = 20261017;
-settings.sampling.manualPlans = strings(0, 1);
-settings.sampling.priorityShots = zeros(1, 0);   % 優先順のファイルの Shot 番号（行の順。alignest.readShotPriority）
-settings.sampling.priorityLevels = zeros(1, 0);  % 同じく優先度（0 = 計測しない、1 = 必ず計測する、それ以外・NaN = 行の順）
-settings.sampling.priorityFile = "";             % 読み込んだファイルの名前（表示・記録用）
+settings.sampling.layoutPlans = strings(0, 1);   % Excel ファイルで指定した学習パターン（1行1パターン。alignest.readLayoutPlans・
+                                                % parseLayoutPlans の "種類|名前|shotNo（shotNo-markNo）…"）
+settings.sampling.layoutFile = "";               % 読み込んだ Excel ファイルの名前（表示・記録用）
 settings.sampling.requiredShots = zeros(1, 0);   % 必ず計測する shotNo（I 最適・ランダム。拡張 I 最適計画）
 settings.sampling.requireOuterShots = false;     % 最外周の Shot（alignest.outerShots）をすべて必ず計測する
 settings.sampling.designOrder = 5;      % I 最適の基準モデル（XY 多項式の次数、5次で21項）
@@ -64,7 +64,7 @@ settings.sampling.markRequirePerShot = true;   % Mark 単位：各 Shot で mark
 settings.sampling.markMinPerShot = 1;          % Mark 単位：各 Shot で必ず計測する Mark の数 n（Mark の少ない Shot はその Shot の全 Mark）
 
 % 比べる手法
-settings.methods = alignest.recommendedMethods();
+settings.methods = alignest.recommendedMethods("default");
 
 % 評価
 settings.evaluation.outerRadiusMm = 120;      % 外周とみなす Mark の半径 [mm]（この半径以上が外周。半径 150 mm の Wafer が前提）
@@ -91,10 +91,13 @@ settings.overlay.shotFormula = struct("dx", "k1 + k3*x + k5*y", "dy", "k2 + k4*y
 settings.overlay.perShotFormula = struct("dx", "k1 + k3*x + k5*y", "dy", "k2 + k4*y + k6*x");  % Shot ごとの成分の式（Shot 内の座標）
 
 % Shot 高次補正の評価（「7. Shot高次補正」のタブ。alignest.highOrderOptions。推定の評価には使わない）
-settings.highOrder.maker = "nikon";        % 補正の式：asml・canon・nikon（Overlay 計測ルールの Shot 高次補正の式）
-settings.highOrder.unit = "common";        % common（Wafer 内の Shot で共通の1組の k）・shot（Shot ごとに1組の k）
-settings.highOrder.waferOrder = 1;         % common のとき一緒に求める Wafer 成分（Shot 中心の座標の多項式の次数。0〜3、0 = なし）
+settings.highOrder.maker = "nikon";        % 補正の式：asml（k1〜k19 の全項）・canon・nikon（Overlay 計測ルールの式）・
+                                           % custom（カスタム：k1〜k38 から選ぶ）
+settings.highOrder.unit = "common";        % k のくくり：common（Wafer 内の Shot で共通）・scan（Scan 方向ごと）・row（Shot 行の
+                                           % 偶奇ごと）・shot（Shot ごと）
+settings.highOrder.waferOrder = 1;         % shot のほかで一緒に求める Wafer 成分（Shot 中心の座標の多項式の次数。0〜3、0 = なし）
 settings.highOrder.excludedTerms = zeros(1, 0);  % 使わない k の番号（「VIF で選ぶ」・画面で外した項。k1〜k6 は外さない）
+settings.highOrder.termSets = strings(0, 1);     % 保存した項の組み合わせ（1行 = "名前|式|k の番号 …"。画面の「組み合わせを保存」）
 settings.highOrder.vifThreshold = 10;      % 「VIF で選ぶ」のしきい値（すべての項の VIF がこれより小さくなるまで高次項を外す）
 settings.highOrder.loss = "huber";         % 回帰の損失関数：ols（最小二乗）・huber（Huber）・lad（最小絶対偏差）
 settings.highOrder.huberTuning = 1.345;    % Huber の定数 c（正規分布の誤差で効率 95% になる値）

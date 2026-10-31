@@ -198,27 +198,30 @@ classdef TestGroupsScatterPriority < matlab.unittest.TestCase
         end
 
         function priorityFileIsReadByColumnNames(testCase)
+            % 以前の「ファイルの優先順」の形（Shot 番号と優先度。1 = 必ず計測、0 = 計測しない、空欄 = 行の順）も、
+            % 「Excel ファイルで指定」の優先順として読める（alignest.readLayoutPlans）
             folder = tempname;
             mkdir(folder);
             cleanup = onCleanup(@() rmdir(folder, 's'));
             file = fullfile(folder, 'priority.csv');
             writetable(table([5; 10; 3; 7; 1], [1; 0; NaN; 2; 1], 'VariableNames', ["メモ欄ShotNo", "Priority"]), file);
-            priority = alignest.readShotPriority(file);
-            testCase.verifyEqual(priority.shotNo, [5, 10, 3, 7, 1]);
-            testCase.verifyEqual(priority.level, [1, 0, NaN, 2, 1]);
-            testCase.verifyEqual(priority.file, "priority.csv");
+            layouts = alignest.readLayoutPlans(file);
+            plan = layouts.plans;
+            testCase.verifyEqual([plan.kind, plan.name], ["priority", "Priority"]);
+            testCase.verifyEqual(plan.shotNos, [5; 1; 7; 3], "1（必ず計測）→ 2 → 空欄（行の順）。0 は使わない");
+            testCase.verifyEqual(plan.required, [true; true; false; false]);
+            testCase.verifyEqual(layouts.file, "priority.csv");
             file = fullfile(folder, 'japanese.csv');
             writetable(table(["a"; "b"], [0; 1], [4; 8], 'VariableNames', ["備考", "優先度", "Shot"]), file);
-            priority = alignest.readShotPriority(file);
-            testCase.verifyEqual([priority.shotNo; priority.level], [4, 8; 0, 1]);
+            layouts = alignest.readLayoutPlans(file);
+            testCase.verifyEqual(layouts.lines, "priority|優先度|!8", "見出しに「優先」があれば 1・0 だけでも優先順");
             file = fullfile(folder, 'only.csv');
             writetable(table([3; 1], 'VariableNames', "No"), file);
-            priority = alignest.readShotPriority(file);
-            testCase.verifyEqual(priority.shotNo, [3, 1]);
-            testCase.verifyTrue(all(isnan(priority.level)));
+            layouts = alignest.readLayoutPlans(file);
+            testCase.verifyEqual(layouts.lines, "priority|優先順|3 1", "Shot の列だけなら行の順");
             file = fullfile(folder, 'bad.csv');
             writetable(table([3; 1.5], [0; 1], 'VariableNames', ["Shot", "Priority"]), file);
-            testCase.verifyError(@() alignest.readShotPriority(file), 'alignest:shotPriority');
+            testCase.verifyError(@() alignest.readLayoutPlans(file), 'alignest:readLayoutPlans');
         end
 
         function priorityOrderSelectsTrainingShots(testCase)

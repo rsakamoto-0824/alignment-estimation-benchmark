@@ -1,8 +1,9 @@
 function methods = recommendedMethods(selection)
-%RECOMMENDEDMETHODS 比べる手法の選び方。selection = "recommended"（既定）・"all"・"none"。
+%RECOMMENDEDMETHODS 比べる手法の選び方。selection = "recommended"（既定）・"default"・"all"・"none"。
 %   recommended：前回の模擬データ1000枚の評価で各系統の代表になった設定と、GPR の質的変数の主な扱い方
 %     GPR matern52（X,Y,半径）× 質的変数（使わない・同時推定・加法カーネル・混合）、TPS、Kriging exponential、
 %     GAM、XY5次多項式、RT モデル K=5。説明変数は X,Y,半径。
+%   default：アプリの初期設定（alignest.defaultSettings）。GPR だけ（recommended の GPR と同じ設定。ほかの手法は外す）。
 if nargin < 1
     selection = "recommended";
 end
@@ -15,9 +16,6 @@ methods.tps.enabled = true;
 methods.tps.factorModes = "none";
 methods.rbf.enabled = false;
 methods.rbf.factorModes = "none";   % none（質的変数なし）・backfit（Backfitting）、両方なら比べる
-methods.rbfe.enabled = false;        % RBFe（仮）：面内を領域に分けた TPS をつなぐ形状関数の GAM（alignest.models.rbfeSetup）
-methods.rbfe.regions = 4;            % 領域の数（ハイパーパラメータ。空白区切りで複数なら、領域の数ごとに比べる）
-methods.rbfe.factorModes = "backfit";  % 質的変数：backfit（Backfitting で効果を足す GAM）・none、両方なら比べる
 methods.kriging.ordinary = true;
 methods.kriging.universal = false;
 methods.kriging.variograms = "exponential";
@@ -47,10 +45,14 @@ methods.options.gamBasisRadius = 8;
 methods.options.gamGpLengthScales = [0.15, 0.3, 0.6];  % GAM のガウス過程の長さスケールの候補（Wafer 半径で割った単位）
 methods.options.gamGpKnots = 10;      % GAM のガウス過程の節点の数（半径）
 methods.options.gamGpGridKnots = 7;   % GAM のガウス過程の節点の格子（X・Y、各軸）
-methods.options.rbfeOverlap = 1.5;    % RBFe の領域の半径の倍率（まとまりの点の中心からの最大距離 × これ。1 より大きく、隣と重ねる）
-methods.options.rbfeMinPoints = 10;   % RBFe の領域ごとの学習点の最小数（足りなければ半径を広げ、領域の数を減らす）
 switch selection
     case "recommended"
+    case "default"
+        methods.tps.enabled = false;
+        methods.kriging.ordinary = false;
+        methods.gam.enabled = false;
+        methods.polynomial.enabled = false;
+        methods.rt.enabled = false;
     case "all"
         methods.rbf.enabled = true;
         methods.rbf.factorModes = ["none", "backfit"];
@@ -66,9 +68,6 @@ switch selection
         methods.zernike.enabled = true;
         methods.zernike.orders = [3, 4, 5];
         methods.zernike.factorModes = ["none", "backfit"];
-        methods.rbfe.enabled = true;
-        methods.rbfe.regions = [4, 9];
-        methods.rbfe.factorModes = ["none", "backfit"];
     case "none"
         methods.gpr.enabled = false;
         methods.tps.enabled = false;
@@ -78,8 +77,7 @@ switch selection
         methods.polynomial.enabled = false;
         methods.rt.enabled = false;
         methods.zernike.enabled = false;
-        methods.rbfe.enabled = false;
     otherwise
-        error('alignest:selection', '選び方は recommended・all・none のいずれかです: %s', selection);
+        error('alignest:selection', '選び方は recommended・default・all・none のいずれかです: %s', selection);
 end
 end

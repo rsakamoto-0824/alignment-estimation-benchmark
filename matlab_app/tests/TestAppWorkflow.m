@@ -49,8 +49,8 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             settings.methods = alignest.recommendedMethods('none');
             settings.methods.polynomial.enabled = true;
             settings.methods.polynomial.order = 1;
-            settings.sampling.method = "manual";
-            settings.sampling.manualPlans = "1 4 7 10 13 16 19 22 25 28";
+            settings.sampling.method = "excel";
+            settings.sampling.layoutPlans = "pattern|手動1|1 4 7 10 13 16 19 22 25 28";
             file = fullfile(folder, 'settings.json');
             alignest.saveSettings(settings, file);
             restored = alignest.loadSettings(file);
@@ -160,6 +160,7 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyEqual(numel(app.Controls.previewWafer.Items), 5 + 1, ...
                 "はじめは全 Wafer の平均（ほかの単位は「平均・楕円の単位」で選ぶ）");
             settings = app.Settings;
+            settings.methods = alignest.recommendedMethods("recommended");   % 推奨の組み合わせ（9 手法。初期設定は GPR だけ）
             settings.sampling.nShots = [10, 20];   % 並びだけを変えた設定も、開始・終了・刻みに直して表示する
             app.setSettings(settings);
             testCase.verifyEqual([app.Controls.nShotsStart.Value, app.Controls.nShotsEnd.Value, ...
@@ -831,15 +832,21 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             app.Controls.shotOverlayByScan.ValueChangedFcn([], []);
             testCase.verifyEqual(app.Controls.shotOverlayAxesGrid.ColumnWidth, {'1x', 0, 0});
             testCase.verifyEqual(string(overlayAxes(2).Visible), "off");
-            % 計測する Shot の優先順のファイル
+            % 計測する Shot の優先順（Excel ファイルで指定。以前の優先順のファイルと同じ形も読める）
             folder = tempname;
             mkdir(folder);
             cleanup = onCleanup(@() rmdir(folder, 's'));
             file = fullfile(folder, 'priority.xlsx');
             writetable(table([50; 1; 99; (2:2:40).'], [1; 0; 1; nan(20, 1)], 'VariableNames', ["shotNo", "優先度"]), file);
-            app.loadShotPriority(file);
-            testCase.verifyEqual(string(app.Controls.samplingMethod.Value), "file");
-            testCase.verifyTrue(contains(app.Controls.priorityInfo.Text, "必ず計測 2、計測しない 1"));
+            settings = app.Settings;
+            settings.sampling.method = "ioptimal";
+            app.setSettings(settings);
+            app.loadLayoutPlans(file);
+            testCase.verifyEqual(string(app.Controls.samplingMethod.Value), ["ioptimal", "excel"]);
+            testCase.verifyTrue(contains(strjoin(string(app.Controls.layoutPlanInfo.Value), " "), "優先度：優先順（22 Shot。必ず計測 2）"));
+            settings = app.Settings;
+            settings.sampling.method = "excel";
+            app.setSettings(settings);
             settings = app.Settings;
             settings.methods = alignest.recommendedMethods("none");
             settings.methods.polynomial.enabled = true;
@@ -847,7 +854,7 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             settings.sampling.nShots = [10, 20];
             app.setSettings(settings);
             results = app.runEvaluationNow(false);
-            testCase.verifyEqual(unique(string({results.plans.label})), ["優先順 10 Shot", "優先順 20 Shot"]);
+            testCase.verifyEqual(unique(string({results.plans.label})), ["優先度 10 Shot", "優先度 20 Shot"]);
             plan = results.plans(1);
             testCase.verifyTrue(all(ismember([50, 99, 2, 4], plan.shotNos)) && ~any(plan.shotNos == 1));
             % グラフのエラーバー
@@ -861,12 +868,12 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             % 評価結果の平均の図（全 Wafer、Overlay 補正も）
             group = find(string(app.Controls.mapWafer.Items) == "平均：全 Wafer（5 枚）");
             app.Controls.mapWafer.Value = group;
-            app.showMap(group, "優先順 20 Shot", 1, "vector", "estimate");
+            app.showMap(group, "優先度 20 Shot", 1, "vector", "estimate");
             testCase.verifyTrue(startsWith(app.Controls.mapInfo.Text, "平均：全 Wafer"));
             testCase.verifyTrue(startsWith(strjoin(string(app.Controls.mapAxes(3).Title.String), newline), ...
                 "残差（計測値 − 推定値）の平均"));
             testCase.verifyTrue(contains(app.Controls.mapInfo.Text, "Wafer ごとの RMSE（X・Y）：ワースト値"));
-            app.showMap(group, "優先順 20 Shot", 1, "vector", "overlay");
+            app.showMap(group, "優先度 20 Shot", 1, "vector", "overlay");
             testCase.verifyEqual(string(app.Controls.mapAxes(2).Title.String), "推定値で補正した残差の平均");
             testCase.verifyNotEmpty(findall(app.Controls.mapAxes(1), 'Type', 'patch', 'DisplayName', 'Wafer 間のばらつき（1σ 楕円）'));
             % 推定値と実測値の散布図（Mark 番号で色分け）
@@ -921,7 +928,8 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyFalse(results.cancelled);
             testCase.verifyEqual(height(results.table), 20);
             testCase.verifyEqual(string(app.Controls.resumeRun.Enable), "off");
-            testCase.verifyTrue(contains(app.Controls.runStatus.Text, "一時中断の前と後の合計"));
+            testCase.verifyTrue(contains(string(app.Controls.log.Value{1}), "一時中断の前と後の合計"), "完了の知らせは記録に残す");
+            testCase.verifyEqual(string(app.Controls.runStatus.Text), "", "完了の知らせはボタンの右に出さない");
             testCase.verifyTrue(all(isfinite(results.table.efficiencyI) & results.table.efficiencyI <= 1));
             testCase.verifyFalse(any(contains(string(app.Controls.metric.ItemsData), "adjR2")), "調整済み R² は出さない");
             % 中断の後に設定を変えると、続きからは再開できない
@@ -1004,7 +1012,8 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             app.setSettings(more);
             extended = app.extendEvaluation(false);
             testCase.verifyEqual(height(extended.table), 45);
-            testCase.verifyTrue(contains(app.Controls.runStatus.Text, "新たに 25 件を計算"));
+            testCase.verifyTrue(contains(string(app.Controls.log.Value{1}), "新たに 25 件を計算"));
+            testCase.verifyEqual(string(app.Controls.runStatus.Text), "");
             testCase.verifyEqual(string(app.Controls.summaryTable.ColumnName).', ["手法", "10 Shot", "15 Shot", "20 Shot"]);
             testCase.verifyEqual(extended.table.RMSE_XY(ismember(extended.table.Wafer + extended.table.plan + ...
                 extended.table.methodId, first.table.Wafer + first.table.plan + first.table.methodId)), first.table.RMSE_XY);
@@ -1102,9 +1111,10 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             file = fullfile(folder, 'layouts.xlsx');
             writetable(table((1:99).', double(mod((1:99).', 5) == 0), 'VariableNames', ["shotNo", "担当者A"]), file);
             layouts = app.loadLayoutPlans(file);
-            testCase.verifyEqual(layouts.names, "担当者A");
-            testCase.verifyEqual(app.Settings.sampling.method, ["ioptimal", "doptimal", "mark", "manual"]);
-            testCase.verifyTrue(startsWith(string(c.manualPlans.Value{1}), "担当者A: 5 10 15"));
+            testCase.verifyEqual(string({layouts.plans.name}), "担当者A");
+            testCase.verifyEqual(app.Settings.sampling.method, ["ioptimal", "doptimal", "mark", "excel"]);
+            testCase.verifyEqual(app.Settings.sampling.layoutPlans, "pattern|担当者A|" + strjoin(string(5:5:95), " "));
+            testCase.verifyTrue(startsWith(string(c.layoutPlanInfo.Value{2}), "・担当者A：パターン（19 Shot）　5 10 15"));
             % 異常値の MAD・Shot ごとの成分の式・Fringe Zernike
             c.excludeOutliers.Value = true;
             c.outlierMethod.Value = 'mad';

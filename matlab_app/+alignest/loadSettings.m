@@ -12,7 +12,7 @@ if nargin >= 2 && source == "text"
     catch err
         error('alignest:loadSettings', '設定を JSON として読めません（%s）', err.message);
     end
-    settings = merge(alignest.defaultSettings(), alignest.upgradeRadiusSettings(decoded));
+    settings = merge(alignest.defaultSettings(), upgradeLayout(alignest.upgradeRadiusSettings(decoded)));
     if isstruct(decoded) && isfield(decoded, "sampling") && isstruct(decoded.sampling) && ...
             ~isfield(decoded.sampling, "nShots") && any(isfield(decoded.sampling, ["nShotsStart", "nShotsEnd", "nShotsStep"]))
         sampling = settings.sampling;
@@ -34,6 +34,24 @@ catch err
     error('alignest:loadSettings', '設定ファイルを読めません: %s（%s）', filePath, err.message);
 end
 settings = alignest.loadSettings(string(text), "text");
+end
+
+function decoded = upgradeLayout(decoded)
+% 以前の「手動・人の選択」「ファイルの優先順」を「Excel ファイルで指定」に直す（alignest.upgradeLayoutSettings）。
+% 直せない（優先順の Shot が無いなど）ときは、その選び方を除いて読む（何も残らなければ I 最適）
+if ~isstruct(decoded) || ~isfield(decoded, "sampling") || ~isstruct(decoded.sampling)
+    return
+end
+try
+    decoded.sampling = alignest.upgradeLayoutSettings(decoded.sampling);
+catch
+    methods = reshape(string(decoded.sampling.method), 1, []);
+    methods = methods(~ismember(methods, ["manual", "file"]));
+    if isempty(methods)
+        methods = "ioptimal";
+    end
+    decoded.sampling.method = methods;
+end
 end
 
 function merged = merge(defaults, decoded)

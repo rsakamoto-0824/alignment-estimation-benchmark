@@ -1,9 +1,13 @@
 function fit = robustRidgeFit(A, y, isPenalized, options)
 %ROBUSTRIDGEFIT 補正の式の係数を、ロバスト回帰（Huber・LAD）と、選んだ項だけの L2 正則化で求める（1組の点・1つの軸）。
 %   fit = alignest.robustRidgeFit(A, y, isPenalized, loss=..., huberTuning=..., lambda=...)
+%   fit = alignest.robustRidgeFit(..., rowGroup=..., columnGroup=...)   % 組ごとに別の係数を持つ項があるとき
 %   A：設計行列（点の数 × 項の数。値がすべて 1 の列を定数の列とする）、y：値 [nm]（点の数 × 1）、
 %   isPenalized：L2 正則化をかける項（項の数 × 1。Shot 高次補正では2次以上の項）。
 %   loss："ols"（最小二乗）・"huber"・"lad"、huberTuning：Huber の定数 c、lambda：L2 の強さ λ（0 なら L2 なし）。
+%   rowGroup：点の組の番号（点の数 × 1。1, 2, …）、columnGroup：項の組の番号（項の数 × 1。0 はすべての点の項、g は組 g の
+%   点だけの項で、ほかの点では 0 の列）。組 g の項は組 g の点だけで平均 0 にそろえ（組 g の点で 1・ほかで 0 の列を組 g の
+%   定数の列とする）、大きさはすべての点で二乗平均 1 にそろえる。最小二乗では、組ごとに別に解いたときと同じ L2 の強さになる。
 %   目的関数（n：点の数、r_i：残差、s：残差の尺度 = MAD × 1.4826、θ：列をそろえたときの係数）
 %     最小二乗：(1/2n) Σ r_i^2              + (λ/2) Σ_{L2 の項} θ_j^2
 %     Huber   ：(1/n)  Σ s^2 ρ_c(r_i / s)   + (λ/2) Σ_{L2 の項} θ_j^2
@@ -33,6 +37,8 @@ arguments
     options.loss (1, 1) string {mustBeMember(options.loss, ["ols", "huber", "lad"])} = "ols"
     options.huberTuning (1, 1) double {mustBePositive} = 1.345
     options.lambda (1, 1) double {mustBeNonnegative} = 0
+    options.rowGroup double = []
+    options.columnGroup double = []
 end
 MAD_TO_SIGMA = 1.4826;            % MAD を正規分布の標準偏差に直す係数
 SCALE_UPDATE_ITERATIONS = 20;     % 尺度 s を求め直す回数（その後は固定して収束させる）
@@ -45,8 +51,16 @@ CONSTANT_TOLERANCE = 1e-9;        % ばらつき（標準偏差）が値の大�
 [n, p] = size(A);
 y = y(:);
 isPenalized = isPenalized(:) & options.lambda > 0;
-if numel(y) ~= n || numel(isPenalized) ~= p
-    error('alignest:fitSize', '設計行列・値・L2 をかける項の数が合いません。');
+rowGroup = options.rowGroup(:);
+columnGroup = options.columnGroup(:);
+if isempty(rowGroup)
+    rowGroup = ones(n, 1);
+end
+if isempty(columnGroup)
+    columnGroup = zeros(p, 1);
+end
+if numel(y) ~= n || numel(isPenalized) ~= p || numel(rowGroup) ~= n || numel(columnGroup) ~= p
+    error('alignest:fitSize', '設計行列・値・L2 をかける項・組の番号の数が合いません。');
 end
 fit = struct("coefficients", zeros(p, 1), "fitted", zeros(n, 1), "weights", ones(n, 1), "determined", false(p, 1), ...
     "constant", false(p, 1), "robust", false, "converged", true, "iterations", 0, "looResidual", nan(n, 1));
@@ -54,19 +68,14 @@ if n == 0
     return
 end
 
-% 列をそろえる（定数の列はそのまま。定数の列が無いときは中心を動かさない）
-isIntercept = all(A == 1, 1);
-center = mean(A, 1);
-spread = std(A, 1, 1);
-center(isIntercept) = 0;
+% 列をそろえる（定数の列はそのまま。定数の列が無い組は中心を動かさない）。組の項は、その組の点だけで中心を求める
+[isIntercept, center, inGroup] = columnCenters(A, rowGroup, columnGroup);
+centered = A - center .* inGroup;
+spread = sqrt(mean(centered .^ 2, 1));
 spread(isIntercept) = 1;
-if ~any(isIntercept)
-    center(:) = 0;
-    spread = sqrt(mean(A .^ 2, 1));
-end
 constant = spread <= CONSTANT_TOLERANCE * max(abs(A), [], 1);   % 定数の列のほかに、値が（ほぼ）変わらない列
 spread(constant) = 1;
-standardized = (A - center) ./ spread;
+standardized = centered ./ spread;
 
 % 決まる列：L2 をかけない列は、前の列で表せない列だけ（列の順に確かめる）。L2 をかける列は必ず決まる
 constant = constant(:) & ~isIntercept(:);
@@ -110,9 +119,13 @@ end
 % そろえた係数を、そろえる前の列の係数に戻す（定数の列の係数で中心の分を差し引く）
 coefficients = zeros(p, 1);
 coefficients(columns) = theta ./ spread(columns).';
-intercept = find(isIntercept(:) & determined, 1);
-if ~isempty(intercept)
-    coefficients(intercept) = coefficients(intercept) - sum(theta .* (center(columns) ./ spread(columns)).');
+for group = unique(columnGroup).'
+    intercept = find(isIntercept(:) & determined & columnGroup == group, 1);
+    if ~isempty(intercept)
+        members = columnGroup(columns) == group;
+        coefficients(intercept) = coefficients(intercept) - ...
+            sum(theta(members) .* (center(columns(members)) ./ spread(columns(members))).');
+    end
 end
 fit.coefficients = coefficients;
 fit.fitted = A * coefficients;
@@ -132,6 +145,27 @@ function theta = solveWeighted(A, y, weights, penaltyRows)
 % 重み付き最小二乗（L2 の行を足したもの）を QR 分解（バックスラッシュ）で解く
 rootWeights = sqrt(weights);
 theta = [rootWeights .* A; penaltyRows] \ [rootWeights .* y; zeros(size(penaltyRows, 1), 1)];
+end
+
+function [isIntercept, center, inGroup] = columnCenters(A, rowGroup, columnGroup)
+% 定数の列（組 g の点で 1・ほかの点で 0。組 0 はすべての点で 1）と、列の中心（定数の列がある組の列だけ、その組の点の平均）。
+% inGroup：列ごとに、その列の組の点（組 0 の列はすべての点）
+[n, p] = size(A);
+isIntercept = false(1, p);
+center = zeros(1, p);
+inGroup = true(n, p);
+for group = unique(columnGroup).'
+    members = find(columnGroup == group).';
+    if group ~= 0
+        inGroup(:, members) = repmat(rowGroup == group, 1, numel(members));
+    end
+    rows = inGroup(:, members(1));
+    isIntercept(members) = all(A(rows, members) == 1, 1) & all(A(~rows, members) == 0, 1);
+    if any(isIntercept(members))
+        center(members) = mean(A(rows, members), 1);
+        center(members(isIntercept(members))) = 0;
+    end
+end
 end
 
 function keep = independentColumns(A, tolerance)

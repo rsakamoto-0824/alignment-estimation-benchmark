@@ -5,8 +5,10 @@ function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm)
 %   制約（sampling.constraints）：同心円の区画（Shot 中心の半径 [mm] を radialZoneEdgesMm で区切る）、
 %   4象限（Shot 中心の偏角、軸上は反時計回りに次の象限）、Scan方向。各区画の Shot 数を割合 × 選ぶ数 ± slack に収める。
 %   乱数は sampling.seed・Shot 数・繰り返し番号から決めるので、候補が同じ Wafer では同じ Shot が選ばれる。
-%   ファイルの優先順（file）：優先度 1 の Shot は必ず学習に使い、残りを優先度 0（計測しない）を除いてファイルの行の順に
-%   足して学習 Shot 数にする（sampling.priorityShots・priorityLevels）。Wafer に無い Shot・計測できない Shot は飛ばす。
+%   Excel で指定したパターン（type "manual"）：spec.shotNos の Shot（spec.markNos があれば、その Shot・Mark の組の Mark）を
+%   学習に使う。Excel で指定した優先順（type "file"）：spec.required の項目は必ず学習に使い、残りを spec.shotNos の順に
+%   足して学習 Shot 数にする（Mark 単位は、Mark の数 = round(spec.markPerShot × 候補 Shot 数)、計測率で決めるときは
+%   round(spec.rate / 100 × 候補の全 Mark の数)）。Wafer に無い Shot・Mark、計測できない Shot・Mark は飛ばす。
 %   計測率（spec.rate [%]）で決めるときは、学習 Shot 数 = round(計測率 / 100 × 候補 Shot 数)（1 以上）。
 %   I 最適・ランダムでは、必ず計測する Shot（alignest.requiredShotIndex：指定した shotNo と最外周）を先に入れ、
 %   残りを選ぶ（拡張 I 最適計画）。必ず計測する Shot が学習 Shot 数以上なら、それだけを使う。
@@ -36,6 +38,10 @@ if isfield(spec, "rate") && isfinite(spec.rate)
     plan.rate = spec.rate;
     nShots = max(1, round(spec.rate / 100 * numel(candidates)));
 end
+if any(spec.type == ["manual", "file"]) && isfield(spec, "markNos") && ~isempty(spec.markNos)
+    plan = markListPlan(unit, spec, sampling, waferRadiusMm, candidates, plan);   % Excel で指定した Mark
+    return
+end
 switch spec.type
     case "manual"
         [found, position] = ismember(spec.shotNos(:), shots.shotNo);
@@ -51,7 +57,7 @@ switch spec.type
         end
         plan.shotIndex = chosen(:);
     case "file"
-        [plan.shotIndex, plan.message, plan.requiredShotIndex] = priorityShots(shots, candidates, sampling, nShots);
+        [plan.shotIndex, plan.message, plan.requiredShotIndex] = priorityShots(shots, candidates, spec, nShots);
         if isempty(plan.shotIndex)
             return
         end
@@ -209,27 +215,22 @@ end
 [iValue, dValue, iEfficiency, dEfficiency] = alignest.designCriteria(blocks(selected));
 end
 
-function [shotIndex, message, required] = priorityShots(shots, candidates, sampling, nShots)
-% 優先度 1 を全部、残りを行の順に（優先度 0 は使わない）。required は優先度 1 の Shot
+function [shotIndex, message, required] = priorityShots(shots, candidates, spec, nShots)
+% 優先順：必ず計測する Shot（spec.required）を全部、残りを spec.shotNos の順に。required は必ず計測した Shot
 message = "";
-shotNos = sampling.priorityShots(:);
-levels = sampling.priorityLevels(:);
-if numel(levels) ~= numel(shotNos)
-    levels = nan(size(shotNos));
-end
+shotNos = spec.shotNos(:);
+flags = requiredFlags(spec);
 [found, position] = ismember(shotNos, shots.shotNo);
 usable = found & ismember(position, candidates);
 missing = unique(shotNos(~usable));
 if ~isempty(missing)
     message = "この Wafer に無い、または計測できない優先順の Shot：" + strjoin(string(missing.'), " ") + "。";
 end
-excluded = unique(position(usable & levels == 0));
-required = unique(position(usable & levels == 1), 'stable');
-required = setdiff(required, excluded, 'stable');
-ordered = position(usable & levels ~= 0 & levels ~= 1);
+required = unique(position(usable & flags), 'stable');
+ordered = position(usable & ~flags);
 [~, firstPosition] = unique(ordered, 'stable');
 ordered = ordered(sort(firstPosition));
-ordered = ordered(~ismember(ordered, [required; excluded]));
+ordered = ordered(~ismember(ordered, required));
 if numel(required) >= nShots
     shotIndex = required;
     if numel(required) > nShots
@@ -249,6 +250,75 @@ if isempty(shotIndex)
 end
 shotIndex = shotIndex(:);
 required = required(:);
+end
+
+function plan = markListPlan(unit, spec, sampling, waferRadiusMm, candidates, plan)
+% Excel で指定した Mark：パターン（manual）はその Mark、優先順（file）は必ず計測する Mark と、残りを順に足して Mark の数にする
+marks = unit.marks;
+markCandidates = find(ismember(marks.shotIndex, candidates) & (marks.validX | marks.validY));
+keys = [spec.shotNos(:), spec.markNos(:)];
+[found, position] = ismember(keys, [marks.shotNo, marks.markNo], 'rows');
+usable = found & ismember(position, markCandidates);
+if any(~usable)
+    missing = unique(compose("%g-%g", keys(~usable, 1), keys(~usable, 2)), 'stable');
+    plan.message = "この Wafer に無い、または計測値の無い Mark（shotNo-markNo）：" + strjoin(missing(:).', " ") + "。";
+end
+if spec.type == "manual"
+    chosen = unique(position(usable), 'stable');
+else
+    nGroups = numel(unique(marks.shotIndex(markCandidates)));
+    if isfinite(plan.rate)
+        nMarks = max(1, round(plan.rate / 100 * numel(markCandidates)));
+    else
+        nMarks = max(1, round(spec.markPerShot * nGroups));
+    end
+    flags = requiredFlags(spec);
+    required = unique(position(usable & flags), 'stable');
+    ordered = unique(position(usable & ~flags), 'stable');
+    ordered = ordered(~ismember(ordered, required));
+    if numel(required) >= nMarks
+        chosen = required;
+        if numel(required) > nMarks
+            plan.message = strtrim(plan.message + sprintf(" 必ず計測する Mark が %d 個あり、計測する Mark の数 %d より" + ...
+                "多いので、すべて使いました。", numel(required), nMarks));
+        end
+    else
+        chosen = [required; ordered(1:min(nMarks - numel(required), numel(ordered)))];
+        if numel(chosen) < nMarks
+            plan.message = strtrim(plan.message + sprintf(" 優先順で使える Mark が %d 個しかなく、計測する Mark の数 %d に" + ...
+                "足りません。", numel(chosen), nMarks));
+        end
+    end
+end
+if isempty(chosen)
+    plan.message = strtrim(plan.message + " 学習に使える Mark がありません。");
+    return
+end
+if numel(chosen) >= numel(markCandidates)
+    plan.message = strtrim(plan.message + " 全候補 Mark が学習に入り、評価する Mark が残りません。");
+    return
+end
+plan.markIndex = sort(chosen(:));
+plan.shotIndex = unique(marks.shotIndex(plan.markIndex));
+plan.nShots = numel(plan.shotIndex);
+plan.shotNos = unit.shots.shotNo(plan.shotIndex);
+plan.nMarks = numel(plan.markIndex);
+plan.ok = true;
+try
+    blocks = markBlocks(unit, markCandidates, sampling.designOrder, waferRadiusMm);
+    [~, selected] = ismember(plan.markIndex, markCandidates);
+    [plan.criterionI, plan.criterionD, plan.efficiencyI, plan.efficiencyD] = alignest.designCriteria(blocks(selected));
+catch
+    % 候補の Mark が基準モデルの項数より少ないときは、I 基準・D 基準を求めない（NaN のまま）
+end
+end
+
+function flags = requiredFlags(spec)
+% 優先順で必ず計測する項目（spec.required。無ければすべて false）
+flags = false(numel(spec.shotNos), 1);
+if isfield(spec, "required") && numel(spec.required) == numel(spec.shotNos)
+    flags = logical(spec.required(:));
+end
 end
 
 function seed = seedFor(baseSeed, nShots, repeat)

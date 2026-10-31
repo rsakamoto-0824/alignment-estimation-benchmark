@@ -1,5 +1,6 @@
 classdef (Abstract) Display < appui.Core
-    %DISPLAY 「8. ヘルプ」タブと表示の設定：画面の色（ライト・ダーク）、文字の大きさ、凡例の位置、画面（モニター）の大きさに合わせる窓。
+    %DISPLAY 「8. ヘルプ」タブと表示の設定：画面の色（ライト・ダーク）、文字の大きさ、凡例の位置、Scan 方向の向きと色、
+    %   画面（モニター）の大きさに合わせる窓。
     %   AlignmentEstimationApp（画面の本体）の一部。画面の部品は Controls、データ・結果は Core のプロパティに持つ。
     %   ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
 
@@ -136,6 +137,32 @@ classdef (Abstract) Display < appui.Core
             copygraphics(helper, 'ContentType', 'image', 'Resolution', get(groot, 'ScreenPixelsPerInch'));
         end
 
+        function setScanStyle(app, options)
+            %SETSCANSTYLE 「表示」→「Scan 方向の向きと色」：Scan 方向 1・2 の向きと色を変え、Scan 方向を描いた図を描き直す。
+            %   名前と値の組で渡す：scan1Up（true なら 1 が上向き ▲・2 が下向き ▼）、scan1Color・scan2Color（RGB 0〜1）。
+            %   図の印と色だけで、推定の結果は変わらない（設定 display に入り、「設定を保存…」の JSON にも書く）。
+            arguments
+                app
+                options.scan1Up (1, 1) logical
+                options.scan1Color (1, 3) double
+                options.scan2Color (1, 3) double
+            end
+            display = fieldOr(app.Settings, "display", struct());
+            for name = string(fieldnames(options)).'
+                display.(name) = options.(name);
+            end
+            alignest.plot.scanStyle(display);   % 色が 0〜1 の RGB かを先に確かめる
+            app.Settings.display = display;
+            refreshScanMenu(app);
+            redrawScanFigures(app);
+        end
+
+        function resetScanStyle(app)
+            %RESETSCANSTYLE Scan 方向の向きと色を初期設定（1 = 上向き ▲・緑、2 = 下向き ▼・紫）に戻す。
+            defaults = alignest.defaultSettings().display;
+            setScanStyle(app, scan1Up=defaults.scan1Up, scan1Color=defaults.scan1Color, scan2Color=defaults.scan2Color);
+        end
+
         function captureTab(app, tabName, filePath)
             %CAPTURETAB タブを表示して画面の画像を保存する（説明資料・動作確認用）。
             % 画面の配置が描き終わるまで少し待ってから保存する（すぐ保存すると古い配置の絵になることがある）
@@ -222,6 +249,58 @@ classdef (Abstract) Display < appui.Core
             if ~isempty(app.HighOrderRun)
                 showHighOrderRun(app);
             end
+            if ~isempty(app.HighOrderFile)
+                showHighOrderMapping(app, currentHighOrderMapping(app));   % 列を選んでいない必須の項目の色
+            end
+            showHighOrderComparison(app);   % 設定を変えた後の知らせの色
+        end
+
+        function refreshScanMenu(app)
+            % 「Scan 方向の向きと色」のメニューに、今の向き（✓）と色（16進数）を出す
+            c = app.Controls;
+            if ~isfield(c, 'scanUpItems')
+                return
+            end
+            style = alignest.plot.scanStyle(fieldOr(app.Settings, "display", struct()));
+            c.scanUpItems(1).Checked = onOff(style.scan1Up);
+            c.scanUpItems(2).Checked = onOff(~style.scan1Up);
+            for k = 1:2
+                c.scanColorItems(k).Text = sprintf('Scan 方向 %d の色…（今は %s）', k, rgbToHex(style.colors(k, :)));
+            end
+        end
+
+        function onPickScanColor(app, k)
+            % 色を選ぶ画面で Scan 方向 k の色を選ぶ（取り消したら変えない）
+            current = scanStyle(app).colors(k, :);
+            chosen = uisetcolor(current, sprintf('Scan 方向 %d の色', k));
+            figure(app.Figure);
+            if isequal(chosen, 0) || isequal(chosen, current)
+                return
+            end
+            setScanStyle(app, ("scan" + k + "Color"), chosen);
+        end
+
+        function redrawScanFigures(app)
+            % Scan 方向の印・色を使う図（Shot の配置・計測値・計測マップ・Wafer ごとのマップ）を描き直す。
+            % 描いていない図・描けない状態の図はそのまま（次に描くときに新しい向きと色になる）
+            draws = {};
+            if ~isempty(app.Data)
+                draws = [draws, {@() drawLayout(app), @() drawPreview(app)}];
+            end
+            if isfield(app.Controls, 'measureAxes') && ~isempty(app.Controls.measureAxes) && ...
+                    all(isgraphics(app.Controls.measureAxes))
+                draws{end + 1} = @() drawMeasurementMap(app);
+            end
+            if ~isempty(app.Results)
+                draws{end + 1} = @() drawMap(app);
+            end
+            for k = 1:numel(draws)
+                try
+                    draws{k}();
+                catch
+                    % 図を描き直せなくても、設定は変わっている（次に描くときに使う）
+                end
+            end
         end
 
         function data = helpData(app)
@@ -254,7 +333,8 @@ classdef (Abstract) Display < appui.Core
             % 列の多い表（TABLE_FONT_SIZE の文字で出す表）
             tables = [app.Controls.unitTable, app.Controls.normalityTable, app.Controls.anovaTable, ...
                 app.Controls.targetTable, app.Controls.targetResultTable, app.Controls.highOrderTermTable, ...
-                app.Controls.highOrderSummaryTable, app.Controls.highOrderCoefficientTable];
+                app.Controls.highOrderSummaryTable, app.Controls.highOrderCoefficientTable, ...
+                app.Controls.highOrderMappingTable, app.Controls.highOrderCompareTable];
         end
 
         function pixels = scaledPixels(app, pixels)

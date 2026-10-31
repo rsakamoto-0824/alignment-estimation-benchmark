@@ -274,7 +274,7 @@ classdef (Abstract) RunTab < appui.Core
         end
 
         function style = scanStyle(app)
-            % Scan 方向の色と向き（設定の「表示：Scan 方向」。alignest.plot.scanStyle）
+            % Scan 方向の色と向き（「表示」→「Scan 方向の向きと色」。設定 display。alignest.plot.scanStyle）
             style = alignest.plot.scanStyle(fieldOr(app.Settings, "display", struct()));
         end
 
@@ -282,45 +282,6 @@ classdef (Abstract) RunTab < appui.Core
             % 説明の文に入れる Scan 方向の印（例：「Scan 1 ▲ 上・Scan 2 ▼ 下」）
             style = scanStyle(app);
             text = strjoin("Scan " + (1:2) + " " + style.symbols + " " + style.words, "・");
-        end
-
-        function onPickScanColor(app, k)
-            % 色を選ぶ画面で Scan 方向 k の色を選び、16進数の欄に入れる（取り消したら変えない）
-            c = app.Controls;
-            [current, ok] = hexToRgb(c.scanColorCodes(k).Value);
-            if ~ok
-                current = scanStyle(app).colors(k, :);
-            end
-            chosen = uisetcolor(current, sprintf('Scan 方向 %d の色', k));
-            figure(app.Figure);
-            if isequal(chosen, 0) || isequal(chosen, current)
-                return
-            end
-            c.scanColorCodes(k).Value = rgbToHex(chosen);
-            onSettingsChanged(app);
-        end
-
-        function onResetScanColors(app)
-            defaults = alignest.plot.scanStyle();
-            for k = 1:2
-                app.Controls.scanColorCodes(k).Value = rgbToHex(defaults.colors(k, :));
-            end
-            onSettingsChanged(app);
-        end
-
-        function showScanSwatches(app)
-            % 「色を選ぶ…」のボタンを今の色で塗る（文字は背景に合わせて白か黒）
-            c = app.Controls;
-            if ~isfield(c, 'scanColorButtons')
-                return
-            end
-            for k = 1:2
-                [rgb, ok] = hexToRgb(c.scanColorCodes(k).Value);
-                if ok
-                    c.scanColorButtons(k).BackgroundColor = rgb;
-                    c.scanColorButtons(k).FontColor = ternary(sum(rgb .* [0.299, 0.587, 0.114]) > 0.55, [0, 0, 0], [1, 1, 1]);
-                end
-            end
         end
 
         function onResetScanDirections(app)
@@ -398,7 +359,8 @@ classdef (Abstract) RunTab < appui.Core
             if nFailed > 0
                 status = status + sprintf(" うち %d 件は推定できませんでした（理由は下の記録）。", nFailed);
             end
-            c.runStatus.Text = status;
+            % 完了の知らせはボタンの右に出さない（下の記録に残す）。一時中断のときだけ、続きから再開できることを出す
+            c.runStatus.Text = ternary(results.cancelled, status, "");
             c.log.Value = cellstr([status; results.additions(:); results.log(:)]);
             refreshResultControls(app);
             c.resumeRun.Enable = onOff(results.cancelled);

@@ -1,6 +1,7 @@
 classdef TestResultsImport < matlab.unittest.TestCase
     %TESTRESULTSIMPORT 評価結果の Excel（alignest.exportResults）を読み込み（alignest.importResults）、
-    %   結果の表・学習パターン・手法・設定が書き出す前と同じに戻ることを確かめる。
+    %   結果の表・学習パターン・手法・設定が書き出す前と同じに戻ることと、「ハイパーパラメータ」の見出し（以前の版の
+    %   「超パラメータ」の見出しも読めること）を確かめる。
 
     properties
         Results
@@ -88,5 +89,44 @@ classdef TestResultsImport < matlab.unittest.TestCase
             writetable(table("W1", 'VariableNames', "Wafer"), file, 'Sheet', 'Waferごと');
             testCase.verifyError(@() alignest.importResults(file), 'alignest:importResults');
         end
+
+        function hyperparameterColumnKeepsOldFilesReadable(testCase)
+            % Excel の見出しは「ハイパーパラメータ」。以前の版の「超パラメータ」の見出しのファイルも読める
+            [names, headers] = alignest.resultColumnNames(false);
+            testCase.verifyEqual(headers(names == "hyperparameters"), "ハイパーパラメータ");
+            testCase.verifyFalse(any(contains(headers, "超パラメータ")));
+            root = fileparts(fileparts(mfilename('fullpath')));
+            raw = alignest.readMeasurementFile(fullfile(root, 'sample_data', 'sample_alignment.csv'));
+            data = alignest.prepareData(raw, alignest.guessColumnMapping(raw.Properties.VariableNames), ...
+                directionRule="serpentine");
+            data.units = data.units(1);
+            settings = alignest.defaultSettings();
+            settings.methods = alignest.recommendedMethods('none');
+            settings.methods.gpr.enabled = true;
+            settings.methods.gpr.factorModes = "none";
+            settings.sampling.nShots = 20;
+            [settings.sampling.nShotsStart, settings.sampling.nShotsEnd, settings.sampling.nShotsStep] = deal(20, 20, 10);
+            results = alignest.runEvaluation(data, settings);
+            file = fullfile(testCase.Folder, 'hyperparameters.xlsx');
+            alignest.exportResults(results, file, "sample_alignment.csv");
+            cells = readcell(file, 'Sheet', 'Waferごと');
+            column = find(strcmp(string(cells(1, :)), "ハイパーパラメータ"));
+            testCase.verifyNumElements(column, 1);
+            writecell({'超パラメータ'}, file, 'Sheet', 'Waferごと', 'Range', excelColumn(column) + "1");
+            imported = alignest.importResults(file);
+            testCase.verifyEqual(imported.table.hyperparameters, results.table.hyperparameters, ...
+                "以前の見出しの列も「ハイパーパラメータ」として読む");
+            testCase.verifyTrue(contains(imported.table.hyperparameters(1), "ls1_X"));
+        end
     end
+end
+
+function letters = excelColumn(index)
+% Excel の列の番号を列の文字にする（1 → A、27 → AA）
+letters = "";
+while index > 0
+    remainder = mod(index - 1, 26);
+    letters = char('A' + remainder) + letters;
+    index = floor((index - 1) / 26);
+end
 end

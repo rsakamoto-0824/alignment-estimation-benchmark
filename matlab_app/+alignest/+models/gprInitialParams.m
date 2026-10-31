@@ -1,11 +1,14 @@
 function [start, lower, upper] = gprInitialParams(gp, y)
 %GPRINITIALPARAMS ハイパーパラメータ（対数）の初期値と探索範囲。
 %   初期値は fitrgp の既定と同じ考え方：ℓ = 説明変数の標準偏差（等方は平均）、σf = σn = std(y)/√2、α = 1。
+%   周期カーネルの周期 p は 1（Wafer 半径）から始め、PERIOD_BOUNDS の中で探す。
 %   説明変数は Wafer 半径で割った無次元量、σ の範囲は学習データの標準偏差に対する倍率で決める。
 LENGTH_SCALE_BOUNDS = [1e-3, 1e3];
 SIGNAL_STD_BOUNDS = [1e-3, 1e3];
 NOISE_STD_BOUNDS = [1e-2, 1e1];        % 下限は fitrgp の SigmaLowerBound 既定（1e-2 × std(y)）に合わせる
 ALPHA_BOUNDS = [1e-3, 1e3];
+PERIOD_START = 1;                      % 周期カーネルの周期 p の初期値（Wafer 半径で割った単位。Wafer の半分の幅）
+PERIOD_BOUNDS = [0.05, 20];            % 周期 p の範囲（Mark の間隔より短い周期・Wafer より十分長い周期は探さない）
 CATEGORICAL_STD_BOUNDS = [1e-4, 1e1];  % 質的変数の項 τ。下限は「効果なし」まで縮められる値
 CATEGORICAL_STD_START = 0.2;
 stdY = max(std(y(:), 1), 1e-6);
@@ -17,7 +20,11 @@ end
 start = [log(lengths); log(stdY / sqrt(2))];
 lower = [repmat(log(LENGTH_SCALE_BOUNDS(1)), gp.nLength, 1); log(SIGNAL_STD_BOUNDS(1) * stdY)];
 upper = [repmat(log(LENGTH_SCALE_BOUNDS(2)), gp.nLength, 1); log(SIGNAL_STD_BOUNDS(2) * stdY)];
-if gp.hasAlpha
+if gp.hasAlpha && gp.family == "per"
+    start = [start; log(PERIOD_START)];
+    lower = [lower; log(PERIOD_BOUNDS(1))];
+    upper = [upper; log(PERIOD_BOUNDS(2))];
+elseif gp.hasAlpha
     start = [start; 0];
     lower = [lower; log(ALPHA_BOUNDS(1))];
     upper = [upper; log(ALPHA_BOUNDS(2))];

@@ -1,6 +1,6 @@
 classdef TestModelOptions < matlab.unittest.TestCase
-    %TESTMODELOPTIONS 追加したモデルの選択肢：Kriging の spherical バリオグラム、ν を指定する Matérn カーネル、
-    %   GAM の形状関数（スプライン・ガウス過程回帰）を確かめる。
+    %TESTMODELOPTIONS 追加したモデルの選択肢：Kriging の spherical バリオグラム、ν を指定する Matérn カーネル、周期カーネル、
+    %   GAM の形状関数（スプライン・ガウス過程回帰）、初期設定の手法（GPR だけ）を確かめる。
 
     properties
         Data
@@ -72,6 +72,73 @@ classdef TestModelOptions < matlab.unittest.TestCase
             testCase.verifyError(@() alignest.models.gprSetup(features, features, groups, "matern_nu0"), 'alignest:maternNu');
             testCase.verifyError(@() alignest.models.gprSetup(features, features, groups, "matern_nu60"), 'alignest:maternNu');
             testCase.verifyError(@() alignest.models.gprSetup(features, features, groups, "maternx"), 'alignest:kernel');
+        end
+
+        function periodicKernelFitsRepeatingPatterns(testCase)
+            % 周期カーネル（説明変数ごとの周期カーネルの積）：対数周辺尤度の微分が数値微分と合い、周期のある面を
+            % squaredexponential よりよく推定する。推定した周期は結果の period_X に出る
+            rng(4);
+            train = 2 * rand(60, 2) - 1;
+            test = 2 * rand(30, 2) - 1;
+            surface = @(z) sin(2 * pi * z(:, 1) / 0.5) + 0.3 * cos(2 * pi * z(:, 2) / 0.5);
+            y = surface(train) + 0.05 * randn(60, 1);
+            errors = struct();
+            for kernel = ["periodic", "ardperiodic", "squaredexponential"]
+                gp = alignest.models.gprSetup(train, test, [1, 2], kernel);
+                start = alignest.models.gprInitialParams(gp, y) + 0.1;
+                [~, gradient] = alignest.models.gprObjective(gp, start, y, ones(60, 1));
+                numeric = zeros(size(start));
+                for k = 1:numel(start)
+                    step = zeros(size(start));
+                    step(k) = 1e-6;
+                    numeric(k) = (alignest.models.gprObjective(gp, start + step, y, ones(60, 1)) - ...
+                        alignest.models.gprObjective(gp, start - step, y, ones(60, 1))) / 2e-6;
+                end
+                testCase.verifyEqual(gradient(:), numeric(:), 'AbsTol', 1e-5 * max(abs(numeric)), kernel);
+                fit = alignest.models.gprFit(gp, y, ones(60, 1));
+                prediction = alignest.models.gprPredict(gp, fit, ones(30, 1));
+                errors.(kernel) = sqrt(mean((prediction(:) - surface(test)) .^ 2));
+            end
+            testCase.verifyLessThan(errors.periodic, errors.squaredexponential / 5);
+            testCase.verifyLessThan(errors.ardperiodic, errors.squaredexponential / 5);
+            [names, labels] = alignest.models.gprKernelChoices();
+            testCase.verifyEqual(labels(names == "periodic"), "periodic（周期）");
+            % 評価の流れで推定でき、周期がハイパーパラメータに残る
+            settings = alignest.defaultSettings();
+            settings.methods = alignest.recommendedMethods('none');
+            settings.methods.gpr.enabled = true;
+            settings.methods.gpr.kernels = "periodic";
+            settings.methods.gpr.factorModes = "none";
+            settings.sampling.nShots = 30;
+            [settings.sampling.nShotsStart, settings.sampling.nShotsEnd, settings.sampling.nShotsStep] = deal(30, 30, 10);
+            data = testCase.Data;
+            data.units = data.units(1);
+            results = alignest.runEvaluation(data, settings);
+            testCase.verifyEqual(string({results.methods.id}), "GPR_periodic_XYR_none");
+            testCase.verifyTrue(all(isfinite(results.table.RMSE_XY)));
+            testCase.verifyTrue(contains(results.table.hyperparameters(1), "period_X"));
+        end
+
+        function defaultMethodsAreGprOnly(testCase)
+            % 初期設定でチェックする手法はガウス過程回帰だけ（「推奨の組み合わせ」はほかの系統も含む）
+            methods = alignest.buildMethodList(alignest.defaultSettings().methods);
+            testCase.verifyTrue(all(string({methods.family}) == "GPR"));
+            recommended = alignest.buildMethodList(alignest.recommendedMethods("recommended"));
+            testCase.verifyTrue(numel(unique(string({recommended.family}))) > 1);
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            c = app.Controls;
+            testCase.verifyTrue(c.gpr.Value);
+            testCase.verifyFalse(any([c.tps.Value, c.ordinaryKriging.Value, c.gam.Value, c.polynomial.Value, c.rt.Value]));
+            testCase.verifyFalse(isfield(c, 'rbfe'), "RBFe は廃止");
+            settings = alignest.defaultSettings();
+            settings.methods.rbfe = struct("enabled", true, "regions", 4, "factorModes", "backfit");   % 以前の設定ファイル
+            file = [tempname, '.json'];
+            fileCleanup = onCleanup(@() delete(file));
+            alignest.saveSettings(settings, file);
+            loaded = alignest.loadSettings(file);
+            testCase.verifyFalse(isfield(loaded.methods, "rbfe"), "以前の RBFe の項目は読み飛ばす");
+            testCase.verifyEqual(alignest.completeMethodSettings(settings.methods), alignest.defaultSettings().methods);
         end
 
         function methodListExpandsNuAndGamShapes(testCase)

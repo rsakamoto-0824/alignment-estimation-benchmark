@@ -1,6 +1,7 @@
 function config = completeMethodSettings(config)
 %COMPLETEMETHODSETTINGS 以前の設定構造体にも追加項目の初期値を補う。
-%   使わなくなった説明変数の組 XYRT（方位角 T）は除く（残りが無ければ XYR にする）。
+%   使わなくなった説明変数の組 XYRT（方位角 T）は除く（残りが無ければ XYR にする）。廃止した手法 RBFe（rbfe と
+%   options の rbfeOverlap・rbfeMinPoints）の項目は除く（以前の設定ファイルも読める）。
 defaults = alignest.recommendedMethods();
 featureSets = string(config.featureSets);
 featureSets = featureSets(featureSets ~= "XYRT");
@@ -8,7 +9,13 @@ if isempty(featureSets)
     featureSets = "XYR";
 end
 config.featureSets = reshape(featureSets, 1, []);
-for group = ["gpr", "rbf", "rbfe", "tps", "kriging", "gam", "zernike", "options"]
+if isfield(config, "rbfe")
+    config = rmfield(config, "rbfe");
+end
+if isfield(config, "options")
+    config.options = rmfield(config.options, intersect(fieldnames(config.options), {'rbfeOverlap', 'rbfeMinPoints'}));
+end
+for group = ["gpr", "rbf", "tps", "kriging", "gam", "zernike", "options"]
     if ~isfield(config, group)
         config.(group) = defaults.(group);
         continue

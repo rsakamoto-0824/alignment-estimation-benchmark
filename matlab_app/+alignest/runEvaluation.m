@@ -392,7 +392,7 @@ end
 
 function text = extraText(extra)
 % 推定のハイパーパラメータを「名前=値」の並びにする（ls：長さスケール、sf：σf、tau：質的変数の項の τ、
-% log10Lambda：TPS・RBF・RBFe の平滑化の強さ、rbfeRegions：RBFe で使った領域の数 など）
+% log10Lambda：TPS・RBF の平滑化の強さ など）
 names = string(fieldnames(extra));
 parts = strings(size(names));
 for k = 1:numel(names)
