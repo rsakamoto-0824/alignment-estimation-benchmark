@@ -95,8 +95,13 @@ settings.highOrder.maker = "nikon";        % 補正の式：asml（k1〜k19 の�
                                            % custom（カスタム：k1〜k38 から選ぶ）
 settings.highOrder.unit = "common";        % k のくくり：common（Wafer 内の Shot で共通）・scan（Scan 方向ごと）・row（Shot 行の
                                            % 偶奇ごと）・shot（Shot ごと）
-settings.highOrder.waferOrder = 1;         % shot のほかで一緒に求める Wafer 成分（Shot 中心の座標の多項式の次数。0〜3、0 = なし）
+settings.highOrder.waferOrder = 1;         % Wafer 成分（Shot 中心の座標の多項式の次数。0〜5、0 = なし。shot のほかは k と一緒に、
+                                           % shot は先に求めて引く）
 settings.highOrder.excludedTerms = zeros(1, 0);  % 使わない k の番号（「VIF で選ぶ」・画面で外した項。k1〜k6 は外さない）
+settings.highOrder.outerRadiusMm = 120;    % 外周の Shot（Shot 中心の半径がこの値 [mm] 以上）。内周・外周に分けた評価と外周の式に使う
+settings.highOrder.outerMaker = "none";    % 外周の Shot の補正の式：none（分けない）・asml・canon・nikon・custom
+settings.highOrder.outerExcludedTerms = zeros(1, 0);  % 外周の式で使わない k の番号（保存した項の組み合わせを選んだとき）
+settings.highOrder.outerName = "";         % 外周の式に選んだ保存した項の組み合わせの名前（式の全項なら ""）
 settings.highOrder.termSets = strings(0, 1);     % 保存した項の組み合わせ（1行 = "名前|式|k の番号 …"。画面の「組み合わせを保存」）
 settings.highOrder.vifThreshold = 10;      % 「VIF で選ぶ」のしきい値（すべての項の VIF がこれより小さくなるまで高次項を外す）
 settings.highOrder.loss = "huber";         % 回帰の損失関数：ols（最小二乗）・huber（Huber）・lad（最小絶対偏差）
