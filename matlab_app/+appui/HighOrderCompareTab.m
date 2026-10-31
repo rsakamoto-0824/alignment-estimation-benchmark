@@ -9,7 +9,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
         function conditions = addHighOrderConditions(app, kind, values)
             %ADDHIGHORDERCONDITIONS 「補正の比較」の条件を足す（今の補正の式・使う項・くくり・回帰の設定をもとにする）。
             %   kind："current"（今の設定のまま1つ）・"units"（くくりを Wafer 内で共通・Scan 方向ごと・行の偶奇ごと・Shot ごとに
-            %   変えた4つ）・"loss"（回帰を最小二乗・Huber・LAD に変えた3つ）・"lambda"（values の λ ごと。L2 正則化をかける）・
+            %   変えた4つ）・"loss"（回帰を最小二乗・Huber・LAD に変えた3つ）・"lambda"（values の λ ごと。今の正則化の種類で。なしなら L2）・
             %   "termSet"（values の名前の保存した項の組み合わせ）。
             %   足した後の条件の一覧を返す。
             if nargin < 3
@@ -44,11 +44,22 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
                     if isempty(lambdas) || any(~isfinite(lambdas) | lambdas < 0)
                         error('alignest:highOrderLambda', 'λ は 0 以上の数を空白で区切って入れてください（例：0 0.01 0.1 1）。');
                     end
+                    kind = options.regularization;
+                    if kind == "none"
+                        kind = "l2";   % 正則化なしのときは L2 で λ を変える
+                    end
                     for lambda = unique(lambdas, 'stable')
                         variant = base;
                         variant.lambda = lambda;
-                        variant.l2 = lambda > 0;
-                        added(end + 1) = condition(sprintf("λ = %g｜%s", lambda, unitLabel(options)), variant); %#ok<AGROW>
+                        variant.regularization = kind;
+                        if lambda == 0
+                            variant.regularization = "none";
+                        end
+                        if isfield(variant, "l2")
+                            variant = rmfield(variant, "l2");
+                        end
+                        added(end + 1) = condition(sprintf("λ = %g（%s）｜%s", lambda, ...
+                            regularizationLabel(variant.regularization), unitLabel(options)), variant); %#ok<AGROW>
                     end
                 case "termSet"
                     sets = termSetTable(base.termSets);
@@ -398,11 +409,11 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             sweep = uigridlayout(controls, [1, 4], 'ColumnWidth', {'fit', '1x', 'fit', 'fit'}, 'Padding', 0);
             label(sweep, 'λ（空白で区切る）', 1, 1);
             c.highOrderSweepLambda = uieditfield(sweep, 'text', 'Value', '0 0.01 0.1 1', 'Tooltip', ...
-                'L2 正則化の強さ λ を空白で区切って入れます（0 は L2 なし）。');
+                '正則化の強さ λ を空白で区切って入れます（0 は正則化なし）。');
             place(c.highOrderSweepLambda, 1, 2);
             c.highOrderSweepButton = uibutton(sweep, 'Text', 'λ ごとに足す（スイープ）', 'ButtonPushedFcn', ...
                 @(~, ~) app.onAddHighOrderConditions("lambda"), 'Tooltip', ['今の設定で、λ だけを左の値に変えた条件を' ...
-                '足します（高次項だけの L2 正則化。λ ごとの残差を比べられます）。']);
+                '足します（今の正則化の種類と次数。正則化なしなら L2。λ ごとの残差を比べられます）。']);
             place(c.highOrderSweepButton, 1, 3);
             c.highOrderLossButton = uibutton(sweep, 'Text', '3つの回帰を足す', 'ButtonPushedFcn', ...
                 @(~, ~) app.onAddHighOrderConditions("loss"), 'Tooltip', ['今の設定で、回帰だけを最小二乗・Huber・LAD に' ...
@@ -842,11 +853,16 @@ end
 function text = conditionLabel(options)
 % 条件の名前（補正の式・くくり・回帰・λ）
 text = makerLabel(options) + "・" + unitLabel(options);
-if options.l2 && options.lambda > 0
-    text = text + sprintf("・λ = %g", options.lambda);
+if options.regularization ~= "none" && options.lambda > 0
+    text = text + sprintf("・%s λ = %g", upper(options.regularization), options.lambda);
 else
-    text = text + "・L2 なし";
+    text = text + "・正則化なし";
 end
+end
+
+function text = regularizationLabel(kind)
+names = struct("none", "なし", "l2", "L2", "l1", "L1");
+text = names.(kind);
 end
 
 function text = makerLabel(options)

@@ -106,6 +106,7 @@ settings.highOrder.termSets = strings(0, 1);     % 保存した項の組み合�
 settings.highOrder.vifThreshold = 10;      % 「VIF で選ぶ」のしきい値（すべての項の VIF がこれより小さくなるまで高次項を外す）
 settings.highOrder.loss = "huber";         % 回帰の損失関数：ols（最小二乗）・huber（Huber）・lad（最小絶対偏差）
 settings.highOrder.huberTuning = 1.345;    % Huber の定数 c（正規分布の誤差で効率 95% になる値）
-settings.highOrder.l2 = true;              % 高次項（2次以上）だけに L2 正則化をかける
-settings.highOrder.lambda = 0.1;           % L2 正則化の強さ λ（列を平均0・標準偏差1にそろえた係数に対して）
+settings.highOrder.regularization = "l2";  % 正則化：none（なし）・l2（係数を小さくする）・l1（効かない項の係数を 0 にする）
+settings.highOrder.penaltyOrders = 2:6;    % 正則化をかける項の次数（1〜6 から選ぶ。定数 k1・k2 と Wafer 成分にはかけない）
+settings.highOrder.lambda = 0.1;           % 正則化の強さ λ（列を平均0・標準偏差1にそろえた係数に対して）
 end

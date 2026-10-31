@@ -16,7 +16,10 @@ function options = highOrderOptions(settings)
 %   options.vifThreshold：「VIF で選ぶ」のしきい値（すべての項の VIF がこの値より小さくなるまで高次項を外す）
 %   options.loss："ols"（最小二乗）・"huber"（Huber の M 推定）・"lad"（最小絶対偏差）。Huber・LAD はロバスト回帰
 %   options.huberTuning：Huber の定数 c（残差が c × 尺度 を超える点の重みを下げる）
-%   options.l2：true なら高次項（2次以上）だけに L2 正則化をかける。options.lambda：その強さ λ（列をそろえた係数に対して）
+%   options.regularization：正則化の種類。"none"（なし）・"l2"（係数の二乗に罰則。係数を小さくする）・"l1"（係数の絶対値に
+%                           罰則。効かない項の係数を 0 にする）。以前の設定の l2（true・false）は "l2"・"none" と読む
+%   options.penaltyOrders：正則化をかける項の次数（1〜6 の行ベクトル。定数 k1・k2 と Wafer 成分にはかけない）
+%   options.lambda：正則化の強さ λ（列をそろえた係数に対して）
 %   options.description：画面・Excel に出す説明
 %   以前の設定（highOrder が無い・項目が足りない）は、alignest.defaultSettings の値を使う。
 MAX_WAFER_ORDER = 5;
@@ -26,6 +29,8 @@ UNIT_NAMES = ["common", "scan", "row", "shot"];
 UNIT_LABELS = ["Wafer 内の Shot で共通", "Scan 方向ごと", "Shot 行の偶奇ごと", "Shot ごと"];
 LOSS_NAMES = ["ols", "huber", "lad"];
 LOSS_LABELS = ["最小二乗", "Huber（ロバスト回帰）", "LAD（ロバスト回帰）"];
+REGULARIZATION_NAMES = ["none", "l2", "l1"];
+MAX_PENALTY_ORDER = 6;   % 正則化をかけられる次数の上限（Nikon の式の6次まで）
 defaults = alignest.defaultSettings().highOrder;
 source = struct();
 if isfield(settings, "highOrder") && isstruct(settings.highOrder)
@@ -37,10 +42,19 @@ for name = string(fieldnames(defaults)).'
         options.(name) = source.(name);
     end
 end
+if isfield(source, "l2") && isscalar(source.l2)
+    % 以前の設定（L2 のオン・オフ）：オフなら正則化なし、オンで種類が無ければ L2
+    if ~logical(source.l2)
+        options.regularization = "none";
+    elseif ~isfield(source, "regularization")
+        options.regularization = "l2";
+    end
+end
 options.maker = lower(string(options.maker));
 options.unit = string(options.unit);
 options.loss = lower(string(options.loss));
-options.l2 = logical(options.l2);
+options.regularization = lower(string(options.regularization));
+options.penaltyOrders = reshape(double(options.penaltyOrders), 1, []);
 options.excludedTerms = reshape(double(options.excludedTerms), 1, []);
 options.termSets = reshape(string(options.termSets), [], 1);
 options.outerMaker = lower(string(options.outerMaker));
@@ -68,7 +82,19 @@ if ~isscalar(options.huberTuning) || ~isfinite(options.huberTuning) || options.h
     error('alignest:highOrderHuber', 'Huber の定数 c は正の数にしてください（よく使う値は 1.345）。');
 end
 if ~isscalar(options.lambda) || ~isfinite(options.lambda) || options.lambda < 0
-    error('alignest:highOrderLambda', 'L2 正則化の強さ λ は 0 以上の数にしてください。');
+    error('alignest:highOrderLambda', '正則化の強さ λ は 0 以上の数にしてください。');
+end
+if ~isscalar(options.regularization) || ~any(options.regularization == REGULARIZATION_NAMES)
+    error('alignest:highOrderRegularization', '正則化は none（なし）・l2・l1 のいずれかです: %s', ...
+        strjoin(options.regularization, "・"));
+end
+orders = options.penaltyOrders;
+if any(~isfinite(orders) | orders ~= round(orders) | orders < 1 | orders > MAX_PENALTY_ORDER)
+    error('alignest:highOrderPenaltyOrders', '正則化をかける次数は 1〜%d の整数にしてください。', MAX_PENALTY_ORDER);
+end
+options.penaltyOrders = unique(orders);
+if options.regularization ~= "none" && isempty(options.penaltyOrders)
+    error('alignest:highOrderPenaltyOrders', '正則化をかける次数を1つ以上選んでください（かけないときは正則化を「なし」に）。');
 end
 for terms = {options.excludedTerms, options.outerExcludedTerms}
     if any(~isfinite(terms{1}) | terms{1} < 1 | terms{1} ~= round(terms{1}))
@@ -102,9 +128,10 @@ lossText = LOSS_LABELS(LOSS_NAMES == options.loss);
 if options.loss == "huber"
     lossText = lossText + sprintf("（c = %.4g）", options.huberTuning);
 end
-l2Text = "L2 正則化なし";
-if options.l2 && options.lambda > 0
-    l2Text = sprintf("高次項（2次以上）だけに L2 正則化（λ = %.4g）", options.lambda);
+l2Text = "正則化なし";
+if options.regularization ~= "none" && options.lambda > 0
+    l2Text = sprintf("%s 正則化（%sの項、λ = %.4g）", upper(options.regularization), ...
+        orderText(options.penaltyOrders), options.lambda);
 end
 options.description = formulaText + "、" + unitText + "、" + lossText + "、" + l2Text;
 end
@@ -117,5 +144,14 @@ counts = arrayfun(@(axisName) sprintf("%s %d / %d 項", axisName, nnz(terms.used
 text = makerLabels(makerNames == maker) + " の式（" + strjoin(counts, "・") + "）";
 if setName ~= ""
     text = "「" + setName + "」（" + text + "）";
+end
+end
+
+function text = orderText(orders)
+% 次数の並びの説明（例：[2 3 4 5 6] → "2〜6次"、[1 3] → "1・3次"）
+if numel(orders) >= 2 && all(diff(orders) == 1)
+    text = sprintf("%d〜%d次", orders(1), orders(end));
+else
+    text = strjoin(string(orders), "・") + "次";
 end
 end

@@ -1,26 +1,30 @@
 function fit = robustRidgeFit(A, y, isPenalized, options)
-%ROBUSTRIDGEFIT 補正の式の係数を、ロバスト回帰（Huber・LAD）と、選んだ項だけの L2 正則化で求める（1組の点・1つの軸）。
-%   fit = alignest.robustRidgeFit(A, y, isPenalized, loss=..., huberTuning=..., lambda=...)
+%ROBUSTRIDGEFIT 補正の式の係数を、ロバスト回帰（Huber・LAD）と、選んだ項だけの正則化（L2・L1）で求める（1組の点・1つの軸）。
+%   fit = alignest.robustRidgeFit(A, y, isPenalized, loss=..., huberTuning=..., lambda=..., penalty="l2")
 %   fit = alignest.robustRidgeFit(..., rowGroup=..., columnGroup=...)   % 組ごとに別の係数を持つ項があるとき
 %   A：設計行列（点の数 × 項の数。値がすべて 1 の列を定数の列とする）、y：値 [nm]（点の数 × 1）、
-%   isPenalized：L2 正則化をかける項（項の数 × 1。Shot 高次補正では2次以上の項）。
-%   loss："ols"（最小二乗）・"huber"・"lad"、huberTuning：Huber の定数 c、lambda：L2 の強さ λ（0 なら L2 なし）。
+%   isPenalized：正則化をかける項（項の数 × 1。Shot 高次補正では選んだ次数の項）。
+%   loss："ols"（最小二乗）・"huber"・"lad"、huberTuning：Huber の定数 c、lambda：正則化の強さ λ（0 なら正則化なし）、
+%   penalty："l2"（係数の二乗に罰則。係数を小さくする）・"l1"（係数の絶対値に罰則。効かない項の係数を 0 にする）。
 %   rowGroup：点の組の番号（点の数 × 1。1, 2, …）、columnGroup：項の組の番号（項の数 × 1。0 はすべての点の項、g は組 g の
 %   点だけの項で、ほかの点では 0 の列）。組 g の項は組 g の点だけで平均 0 にそろえ（組 g の点で 1・ほかで 0 の列を組 g の
 %   定数の列とする）、大きさはすべての点で二乗平均 1 にそろえる。最小二乗では、組ごとに別に解いたときと同じ L2 の強さになる。
 %   目的関数（n：点の数、r_i：残差、s：残差の尺度 = MAD × 1.4826、θ：列をそろえたときの係数）
-%     最小二乗：(1/2n) Σ r_i^2              + (λ/2) Σ_{L2 の項} θ_j^2
-%     Huber   ：(1/n)  Σ s^2 ρ_c(r_i / s)   + (λ/2) Σ_{L2 の項} θ_j^2
-%     LAD     ：(1/n)  Σ s |r_i|            + (λ/2) Σ_{L2 の項} θ_j^2
+%     最小二乗：(1/2n) Σ r_i^2              + 罰則
+%     Huber   ：(1/n)  Σ s^2 ρ_c(r_i / s)   + 罰則
+%     LAD     ：(1/n)  Σ s |r_i|            + 罰則
+%     罰則：L2 は (λ/2) Σ_{かける項} θ_j^2、L1 は λ Σ_{かける項} |θ_j|
 %   計算の方法は high-order-correction-report の fit_batch と同じ：
 %   - 定数の列を除く列を平均 0・標準偏差 1 にそろえてから解く（L2 が項の単位・座標の桁によらず同じ強さで効くように）
 %   - L2 は「L2 の項の係数を 0 に近づける行」を設計行列の下に足して、最小二乗として解く
+%   - L1 は、罰則をかけない列を最小二乗で消してから、かける列を座標降下法（Lasso。1つずつ軟しきい値で更新）で解き、
+%     かけない列の係数はその残りから最小二乗で求める
 %   - Huber・LAD は、残差の大きい点ほど重みを下げた重み付き最小二乗を、重みを変えながら解き直す（IRLS）。
 %     重みは Huber が min(1, c s/|r_i|)、LAD が s / max(|r_i|, 0.1 s)。尺度 s は最初の SCALE_UPDATE_ITERATIONS 回だけ
 %     求め直し、その後は固定する（MAD が隣り合う残差の間で行き来して収束しないのを防ぐ）
 %   決まらない項：L2 をかけない列のうち、値が変わらない列（定数の列を除く）と前の列で表せる列（点が少ない・点の配置で
-%   決まらない）は、係数を 0 にして解く（fit.determined が false）。L2 をかける列は λ > 0 なら必ず決まる（ほかの列と
-%   似ていても、L2 で一つに決まる）。L2 をかける列で値が変わらない列（定数の列と同じ）は、L2 の解のとおり係数 0 とする
+%   決まらない）は、係数を 0 にして解く（fit.determined が false）。正則化をかける列は λ > 0 なら決まるとする（ほかの列と
+%   似ていても、L2 なら一つに決まり、L1 なら 0 になる項が出る）。かける列で値が変わらない列（定数の列と同じ）は係数 0 とする
 %   （fit.determined は true、fit.constant が true）。
 %   点の数が決まった項の数以下のときは、残差がほぼ 0 になり尺度を決められないので、ロバストの重みは使わない（fit.robust）。
 %   fit.coefficients：A の列（そろえる前）に対する係数（項の数 × 1）、fit.fitted：A * 係数、fit.weights：最後の重み
@@ -28,7 +32,8 @@ function fit = robustRidgeFit(A, y, isPenalized, options)
 %   fit.robust・converged・iterations。
 %   fit.looResidual：1点ずつ抜いて求め直したときの、抜いた点の予測の誤差（値 − 予測）。e_i / (1 − h_i)（h_i は重み付きの
 %   ハット行列の対角）で求める。最小二乗は求め直したときと同じ値。L2・Huber・LAD は、列のそろえ方・L2 の強さ・重みを
-%   すべての点のときのままとした近似（求め直した値との差は、誤差の大きさの1割ほど）。
+%   すべての点のときのままとした近似（求め直した値との差は、誤差の大きさの1割ほど）。L1 は、係数が 0 でない項だけで罰則なしに
+%   当てはめたときのハット行列の対角で近似する。
 %   h_i が 1 に近い点（その点だけで決まる項がある）は NaN。
 arguments
     A double
@@ -37,6 +42,7 @@ arguments
     options.loss (1, 1) string {mustBeMember(options.loss, ["ols", "huber", "lad"])} = "ols"
     options.huberTuning (1, 1) double {mustBePositive} = 1.345
     options.lambda (1, 1) double {mustBeNonnegative} = 0
+    options.penalty (1, 1) string {mustBeMember(options.penalty, ["l2", "l1"])} = "l2"
     options.rowGroup double = []
     options.columnGroup double = []
 end
@@ -85,11 +91,18 @@ determined(free) = independentColumns(standardized(:, free), RELATIVE_TOLERANCE)
 columns = find(determined & ~constant);
 As = standardized(:, columns);
 penalized = isPenalized(columns);
-penaltyRows = sqrt(n * options.lambda) * diag(double(penalized));
-penaltyRows = penaltyRows(penalized, :);
+penaltyRows = zeros(0, numel(columns));
+if options.penalty == "l2"
+    penaltyRows = sqrt(n * options.lambda) * diag(double(penalized));
+    penaltyRows = penaltyRows(penalized, :);
+end
+l1Threshold = 0;   % L1 の軟しきい値（目的関数を n 倍したときの λ）
+if options.penalty == "l1"
+    l1Threshold = n * options.lambda;
+end
 
 weights = ones(n, 1);
-theta = solveWeighted(As, y, weights, penaltyRows);
+theta = solveWeighted(As, y, weights, penaltyRows, penalized, l1Threshold, zeros(numel(columns), 1));
 fit.robust = options.loss ~= "ols" && n > numel(columns);
 if fit.robust
     scale = 0;
@@ -105,7 +118,7 @@ if fit.robust
         else
             weights = scale ./ max(absResidual, LAD_MIN_RESIDUAL_RATIO * scale);
         end
-        thetaNew = solveWeighted(As, y, weights, penaltyRows);
+        thetaNew = solveWeighted(As, y, weights, penaltyRows, penalized, l1Threshold, theta);
         change = max(abs(thetaNew - theta));
         theta = thetaNew;
         fit.iterations = iteration;
@@ -131,8 +144,12 @@ fit.coefficients = coefficients;
 fit.fitted = A * coefficients;
 fit.weights = weights;
 % 1点抜きの予測の誤差：H = W^(1/2) A (A'WA + P'P)^(-1) A' W^(1/2) の対角 h_i から e_i / (1 − h_i)
-information = As.' * (weights .* As) + penaltyRows.' * penaltyRows;
-leverage = weights .* sum((As / information) .* As, 2);
+active = true(numel(columns), 1);
+if l1Threshold > 0
+    active = ~penalized | theta ~= 0;   % L1 は係数が 0 でない項だけで近似する
+end
+information = As(:, active).' * (weights .* As(:, active)) + penaltyRows(:, active).' * penaltyRows(:, active);
+leverage = weights .* sum((As(:, active) / information) .* As(:, active), 2);
 residual = y - fit.fitted;
 loo = residual ./ (1 - leverage);
 loo(leverage >= LEVERAGE_LIMIT | ~isfinite(loo)) = NaN;
@@ -141,10 +158,51 @@ fit.determined = determined | (constant & isPenalized);
 fit.constant = constant;
 end
 
-function theta = solveWeighted(A, y, weights, penaltyRows)
-% 重み付き最小二乗（L2 の行を足したもの）を QR 分解（バックスラッシュ）で解く
+function theta = solveWeighted(A, y, weights, penaltyRows, penalized, l1Threshold, start)
+% 重み付き最小二乗に罰則を足して解く。L2（penaltyRows）：罰則の行を足して QR 分解（バックスラッシュ）で解く。
+% L1（l1Threshold > 0）：(1/2) Σ w_i r_i^2 + l1Threshold Σ_{かける項} |θ_j| を、かけない列を消してから座標降下法で解く
+% （start から始める。IRLS では前の係数から始めると早く収束する）
+MAX_SWEEPS = 10000;           % 座標降下法で全部の項を更新する回数の上限
+SWEEP_TOLERANCE = 1e-10;      % そろえた係数の変化がこれより小さくなったら止める
+ZERO_TOLERANCE = 1e-12;       % かけない列で表せる割合がこれより大きい列は、係数 0 とする
 rootWeights = sqrt(weights);
-theta = [rootWeights .* A; penaltyRows] \ [rootWeights .* y; zeros(size(penaltyRows, 1), 1)];
+if l1Threshold <= 0 || ~any(penalized)
+    theta = [rootWeights .* A; penaltyRows] \ [rootWeights .* y; zeros(size(penaltyRows, 1), 1)];
+    return
+end
+weightedA = rootWeights .* A;
+weightedY = rootWeights .* y;
+free = weightedA(:, ~penalized);
+shrunk = weightedA(:, penalized);
+projectedA = shrunk;
+projectedY = weightedY;
+if ~isempty(free)
+    [basis, ~] = qr(free, 0);
+    projectedA = shrunk - basis * (basis.' * shrunk);
+    projectedY = weightedY - basis * (basis.' * weightedY);
+end
+gram = projectedA.' * projectedA;
+target = projectedA.' * projectedY;
+usable = diag(gram) > ZERO_TOLERANCE * max(sum(shrunk .^ 2, 1).', eps);
+beta = start(penalized);
+beta(~usable) = 0;
+for sweep = 1:MAX_SWEEPS
+    largest = 0;
+    for j = find(usable).'
+        rho = target(j) - gram(j, :) * beta + gram(j, j) * beta(j);
+        updated = sign(rho) * max(abs(rho) - l1Threshold, 0) / gram(j, j);
+        largest = max(largest, abs(updated - beta(j)));
+        beta(j) = updated;
+    end
+    if largest < SWEEP_TOLERANCE
+        break
+    end
+end
+theta = zeros(size(A, 2), 1);
+theta(penalized) = beta;
+if ~isempty(free)
+    theta(~penalized) = free \ (weightedY - shrunk * beta);
+end
 end
 
 function [isIntercept, center, inGroup] = columnCenters(A, rowGroup, columnGroup)

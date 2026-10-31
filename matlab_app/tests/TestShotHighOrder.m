@@ -565,8 +565,8 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             app.exportHighOrderTo(file);
             sheets = string(sheetnames(file));
             delete(file);
-            testCase.verifyEqual(sheets.', ["説明", "補正の評価", "補正値", "項とVIF", "残差の成分", "残差の成分の項", ...
-                "点ごとの値"]);
+            testCase.verifyEqual(sheets.', ["説明", "補正の評価", "補正値", "Shotごとの補正値", "項とVIF", "残差の成分", ...
+                "残差の成分の項", "点ごとの値"]);
             % 未知の座標の推定値（Wafer の外の点は使わない）と、学習に使った Mark の実測値
             app.addTargetPoints("shots", 6, 8, NaN);
             app.addTargetPoints("shots", -6, -8, NaN);
@@ -631,7 +631,7 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             testCase.verifyEqual(height(comparison), 12);
             testCase.verifyEqual(c.highOrderOutputs.SelectedTab, c.highOrderCompareTab);
             testCase.verifyEqual(height(c.highOrderCompareTable.Data), 12);
-            testCase.verifyEqual(comparison.lambda(contains(comparison.label, "λ = 0｜")), [0; 0]);
+            testCase.verifyEqual(comparison.lambda(contains(comparison.label, "λ = 0（")), [0; 0]);
             testCase.verifyNotEmpty(c.highOrderCompareAxes.Children);
             exported = [tempname, '.xlsx'];
             app.exportHighOrderTo(exported);

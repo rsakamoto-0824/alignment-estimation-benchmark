@@ -1,7 +1,8 @@
 classdef (Abstract) HighOrderAnalysisTab < appui.Core
-    %HIGHORDERANALYSISTAB 「7. Shot高次補正」の残差を調べる部分：ヒストグラム（補正前の値・Shot ごとの1次の残差・高次補正の
-    %   残差、または補正の比較の条件の残差を重ねる。内周・外周で分けられる）と、残差の成分分解（Wafer 線形成分・Shot 共通成分・
-    %   Shot 成分・残りに分け、k パラメータのどの項に近いかを出す。alignest.decomposeHighOrderResidual）。
+    %HIGHORDERANALYSISTAB 「7. Shot高次補正」の残差を調べて書き出す部分：ヒストグラム（補正前の値・Shot ごとの1次の残差・
+    %   高次補正の残差、または補正の比較の条件の残差を重ねる。内周・外周で分けられる）、残差の成分分解（Wafer 線形成分・Shot
+    %   共通成分・Shot 成分・残りに分け、k パラメータのどの項に近いかを出す。alignest.decomposeHighOrderResidual）、書き出し
+    %   （点ごとの補正量・残差を計測データの形で、Shot ごとの k を横に並べて、補正の比較の全条件をまとめて。CSV・Excel）。
     %   入力のデータ・補正の計算・マップは HighOrderTab.m、補正の比較は HighOrderCompareTab.m。AlignmentEstimationApp（画面の
     %   本体）の一部で、ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
 
@@ -138,10 +139,43 @@ classdef (Abstract) HighOrderAnalysisTab < appui.Core
                 '（前の項・前の成分で表せる分は前に入ります）。点の配置で決まらない項は出していません。'], levels.n(1), ...
                 sqrt(sum(levels.ss) / max(levels.n(1), 1)), strjoin(shares, "・")));
         end
+
+        function data = exportHighOrderValues(app, kind, value, filePath)
+            %EXPORTHIGHORDERVALUES 「書き出し」：補正値・補正残差などの表を作り、filePath（.csv・.xlsx）に書く
+            %   （alignest.writeHighOrderTable）。kind："points"（点ごとの値を計測データの形で。alignest.highOrderMeasurementTable。
+            %   「1. データの読み込み」でそのまま読み直せる）・"shots"（Shot ごとの k を横に並べる。alignest.highOrderShotTable）・
+            %   "conditions"（補正の比較の全条件の点ごとの値。alignest.highOrderConditionTable）。value：点ごとの値の種類
+            %   （"residual"・"correction"・"linear"・"value"。shots では使わない）。filePath を省くか "" なら書かずに表だけ
+            %   返す（画面の「書き出す表」に出す）。計算した後に設定・入力を変えていれば、書く前に計算し直す（「結果を Excel に
+            %   書き出す…」と同じ）。補正の比較は、比べた後に条件・入力を変えていれば書かない（比べ直してください）。
+            c = app.Controls;
+            if nargin >= 2
+                c.highOrderOutputKind.Value = char(kind);
+            end
+            if nargin >= 3
+                c.highOrderOutputValue.Value = char(value);
+            end
+            if nargin < 4
+                filePath = "";
+            end
+            filePath = string(filePath);
+            kind = string(c.highOrderOutputKind.Value);
+            value = string(c.highOrderOutputValue.Value);
+            if filePath ~= "" && kind ~= "conditions" && ~isempty(app.HighOrderRun) && staleHighOrderText(app) ~= ""
+                shown = c.highOrderOutputs.SelectedTab;
+                computeHighOrder(app);   % 画面と同じ結果を書くため、今の設定・入力で計算し直す
+                c.highOrderOutputs.SelectedTab = shown;
+            end
+            [data, notes] = highOrderOutputTable(app, kind, value);
+            showHighOrderOutputPreview(app, data);
+            if filePath ~= ""
+                alignest.writeHighOrderTable(filePath, data, notes);
+            end
+        end
     end
 
     methods (Access = {?appui.Core})
-        % ================= 7. Shot高次補正：ヒストグラム・残差の成分分解 =================
+        % ================= 7. Shot高次補正：ヒストグラム・残差の成分分解・書き出し =================
         function buildHighOrderHistogramTab(app, outputs)
             % 「ヒストグラム」のタブ：重ねる値の種類・軸・Wafer・範囲、重ねる値の一覧と図
             c = struct();
@@ -346,6 +380,137 @@ classdef (Abstract) HighOrderAnalysisTab < appui.Core
                 drawHighOrderHistogram(app);
             elseif c.highOrderOutputs.SelectedTab == c.highOrderDecompositionTab
                 showHighOrderDecomposition(app);
+            elseif c.highOrderOutputs.SelectedTab == c.highOrderOutputTab
+                showHighOrderOutputPreview(app);
+            end
+        end
+
+        function buildHighOrderOutputTab(app, outputs)
+            % 「書き出し」のタブ：書き出すもの・値・書き出すボタンと、書き出す表（はじめの行）
+            c = struct();
+            tab = uitab(outputs, 'Title', '書き出し');
+            c.highOrderOutputTab = tab;
+            grid = uigridlayout(tab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 6, 'RowSpacing', 4);
+            controls = uigridlayout(grid, [2, 4], 'ColumnWidth', {'fit', '1x', 'fit', '0.8x'}, 'RowHeight', ...
+                {'fit', 'fit'}, 'Padding', 0);
+            onChange = @(~, ~) app.showHighOrderOutputPreview();
+            label(controls, '書き出すもの', 1, 1);
+            c.highOrderOutputKind = uidropdown(controls, 'Items', {'点ごとの値（計測データの形。読み直せる）', ...
+                'Shot ごとの補正値（k を横に並べる）', '補正の比較の全条件の点ごとの値'}, 'ItemsData', {'points', 'shots', ...
+                'conditions'}, 'ValueChangedFcn', onChange, 'Tooltip', ['点ごとの値：Operation・EqpId・LotID・Wafer・' ...
+                'DateTime・shotNo・Direction・Xmm・Ymm・Radius・markNo・markXmm・markYmm・measX・measY・StsX・StsY の列で、' ...
+                'measX・measY に選んだ値を入れます（「1. データの読み込み」や「Excel・CSV を読み込む…」でそのまま読めます）。' ...
+                'Shot ごとの補正値：1行 = 1 Shot、k1〜kN（k1・k2 は Wafer 成分を足した Shot 中心での並進）。補正の比較：' ...
+                '比べた条件ごとの値を列に並べます。']);
+            place(c.highOrderOutputKind, 1, 2);
+            label(controls, '値', 1, 3);
+            c.highOrderOutputValue = uidropdown(controls, 'Items', {'高次補正の残差', '補正量', ...
+                'Shot ごとの1次で補正した残差', '補正前の値'}, 'ItemsData', {'residual', 'correction', 'linear', 'value'}, ...
+                'ValueChangedFcn', onChange);
+            place(c.highOrderOutputValue, 1, 4);
+            c.highOrderOutputInfo = uilabel(controls, 'WordWrap', 'on', 'Text', '');
+            place(c.highOrderOutputInfo, 2, [1, 3]);
+            c.highOrderOutputWrite = primaryButton(app, controls, '書き出す…', @(~, ~) app.onExportHighOrderValues());
+            place(c.highOrderOutputWrite, 2, 4);
+            c.highOrderOutputTable = uitable(grid, 'RowName', {}, 'Data', table());
+            place(c.highOrderOutputTable, 2, 1);
+            c.highOrderOutputNote = uilabel(grid, 'WordWrap', 'on', 'FontColor', app.Palette.muted, 'UserData', "muted", ...
+                'Text', ['CSV は UTF-8（Windows の Excel でも日本語が読める形）、値の無いところは空欄です（計測データの形では ' ...
+                'StsX・StsY が −1）。Excel は「説明」と「値」のシートに書きます。係数は mm の座標での値です。']);
+            place(c.highOrderOutputNote, 3, 1);
+            app.Controls = mergeStruct(app.Controls, c);
+        end
+
+        function showHighOrderOutputPreview(app, data)
+            % 「書き出し」の表のはじめの行と説明（data を省くと、今の選択で作る。作れなければ知らせる）
+            PREVIEW_ROWS = 200;   % 画面に出す行の数（すべての行はファイルに書く）
+            c = app.Controls;
+            if ~isfield(c, 'highOrderOutputTable')
+                return
+            end
+            kind = string(c.highOrderOutputKind.Value);
+            c.highOrderOutputValue.Enable = onOff(kind ~= "shots");
+            c.highOrderOutputInfo.FontColor = app.Palette.text;
+            if nargin < 2
+                try
+                    data = highOrderOutputTable(app, kind, string(c.highOrderOutputValue.Value));
+                catch err
+                    c.highOrderOutputTable.Data = table();
+                    c.highOrderOutputWrite.Enable = 'off';
+                    c.highOrderOutputInfo.Text = char("⚠ " + err.message);
+                    c.highOrderOutputInfo.FontColor = app.Palette.error;
+                    return
+                end
+            end
+            c.highOrderOutputTable.Data = data(1:min(height(data), PREVIEW_ROWS), :);
+            c.highOrderOutputWrite.Enable = 'on';
+            text = sprintf("%d 行・%d 列", height(data), width(data));
+            if height(data) > PREVIEW_ROWS
+                text = text + sprintf("（はじめの %d 行を表示。すべての行を書きます）", PREVIEW_ROWS);
+            end
+            stale = "";
+            if kind ~= "conditions" && staleHighOrderText(app) ~= ""
+                stale = "。前の計算の結果です（書き出すときに計算し直します）";
+            end
+            c.highOrderOutputInfo.Text = char(text + stale);
+        end
+
+        function [data, notes] = highOrderOutputTable(app, kind, value)
+            % 書き出す表と、Excel の「説明」シートに書く行
+            [~, ~, valueLabel] = alignest.highOrderValueColumns(value);
+            notes = ["作成日時", string(datetime('now', 'Format', 'yyyy/MM/dd HH:mm:ss'))];
+            if kind == "conditions"
+                comparison = app.HighOrderComparison;
+                if isempty(comparison) || ~isfield(comparison, 'results') || isempty(comparison.results)
+                    error('alignest:highOrderConditions', ['「補正の比較」で条件を足して「すべて計算して比べる」を押すと、' ...
+                        '全条件の値を書き出せます。']);
+                end
+                if staleComparisonText(app) ~= ""
+                    error('alignest:highOrderConditions', ['比べた後に条件・入力を変えました。「補正の比較」の「すべて計算して' ...
+                        '比べる」で比べ直してから書き出してください。']);
+                end
+                labels = string({comparison.conditions.label});
+                data = alignest.highOrderConditionTable(comparison.results, labels, value);
+                descriptions = strings(numel(labels), 1);
+                for k = 1:numel(labels)
+                    descriptions(k) = "（計算できなかった）";
+                    if ~isempty(comparison.results{k})
+                        descriptions(k) = comparison.results{k}.description;
+                    end
+                end
+                notes = [notes; "値", valueLabel + " [nm]"; compose("条件 %d. ", (1:numel(labels)).') + labels(:), ...
+                    descriptions];
+                return
+            end
+            run = app.HighOrderRun;
+            if isempty(run)
+                error('alignest:noHighOrder', '「補正を計算する」を押すと、補正値・残差を書き出せます。');
+            end
+            notes = [notes; "補正", run.result.description; "入力のデータ", highOrderSourceText(app, run.source)];
+            if kind == "shots"
+                data = alignest.highOrderShotTable(run.result);
+                notes = [notes; "値", "Shot ごとの補正値（k）。k1・k2 は Wafer 成分を足した Shot 中心での並進"];
+            else
+                data = alignest.highOrderMeasurementTable(run.result, run.wafers, value);
+                notes = [notes; "値", "measX・measY = " + valueLabel + " [nm]"];
+            end
+        end
+
+        function onExportHighOrderValues(app)
+            c = app.Controls;
+            names = struct("points", "shot_high_order_values", "shots", "shot_high_order_k_per_shot", "conditions", ...
+                "shot_high_order_conditions");
+            [fileName, folder] = uiputfile({'*.csv', 'CSV（UTF-8） (*.csv)'; '*.xlsx', 'Excel ブック (*.xlsx)'}, ...
+                '補正値・残差を書き出す', char(names.(string(c.highOrderOutputKind.Value)) + ".csv"));
+            figure(app.Figure);
+            if isequal(fileName, 0)
+                return
+            end
+            target = fullfile(folder, fileName);
+            if runWithAlert(app, @() app.exportHighOrderValues(string(c.highOrderOutputKind.Value), ...
+                    string(c.highOrderOutputValue.Value), target), "書き出せませんでした", ...
+                    "同じ名前のファイルを Excel で開いていれば閉じて、もう一度試してください。")
+                uialert(app.Figure, sprintf('書き出しました：%s', target), '書き出しました', 'Icon', 'success');
             end
         end
 
