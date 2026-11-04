@@ -1,6 +1,6 @@
 classdef TestAppConsistency < matlab.unittest.TestCase
     %TESTAPPCONSISTENCY アプリ全体の点検で直したところ：図の画像の保存・コピー（できないときの知らせ）、データを変えたときに
-    %   前のデータの交互作用の結果を残さないこと、Wafer ごとのマップの上の欄の並び。
+    %   前のデータの交互作用の結果を残さないこと、Wafer ごとのマップの上の欄の並び、計算中の進み具合の窓（文が見切れない高さ）。
 
     properties
         Root
@@ -65,6 +65,41 @@ classdef TestAppConsistency < matlab.unittest.TestCase
             testCase.verifyEqual(c.saveMap.Parent, c.mapClearConditions.Parent);
             testCase.verifyNotEqual(c.saveMap.Parent, c.mapMethod.Parent);
             testCase.verifyEqual(numel(c.mapMethod.Parent.ColumnWidth), 9);
+        end
+
+        function progressWindowGrowsWithMessage(testCase)
+            % 計算中の進み具合の窓：文の行数に合わせて高くなる（低くはしない）。棒と割合、止めるボタン（窓の × も同じ）、
+            % 閉じると消える。止めるボタンの無い窓は × で止めない。アプリの画面が見えていなければ窓も出さない
+            owner = uifigure('Visible', 'off', 'Position', [100, 100, 1200, 700]);
+            closeOwner = onCleanup(@() delete(owner));
+            palette = struct("background", [1, 1, 1], "text", [0, 0, 0], "muted", [0.4, 0.4, 0.4], "accent", [0, 0.4, 0.7], ...
+                "field", [1, 1, 1], "button", [0.95, 0.95, 0.95]);
+            window = appui.ProgressWindow(owner, "評価中", "学習パターンを作っています…", palette, 16, "一時中断");
+            testCase.verifyEqual(string(window.Window.Visible), "off");
+            short = window.Window.Position(4);
+            longName = join(repmat("GAM｜X,Y,半径（質的変数あり）｜ガウス過程 xy+r", 1, 4), "｜");
+            window.Message = sprintf("12 / 480 件（残り 約 3 分）\n%s", longName);
+            tall = window.Window.Position(4);
+            testCase.verifyGreaterThan(tall, short, "長い文なら高くする");
+            testCase.verifyEqual(window.Message, sprintf("12 / 480 件（残り 約 3 分）\n%s", longName));
+            window.Message = "短い文";
+            testCase.verifyEqual(window.Window.Position(4), tall, "短くしても低くしない");
+            window.Value = 0.25;
+            labels = findall(window.Window, 'Type', 'uilabel');
+            testCase.verifyTrue(any(string({labels.Text}) == "25%"));
+            testCase.verifyEqual(window.Value, 0.25);
+            testCase.verifyFalse(window.CancelRequested);
+            button = findall(window.Window, 'Type', 'uibutton');
+            button.ButtonPushedFcn(button, []);
+            testCase.verifyTrue(window.CancelRequested);
+            testCase.verifyEqual(string(button.Enable), "off");
+            close(window);
+            testCase.verifyFalse(isvalid(window));
+            fixed = appui.ProgressWindow(owner, "計測マップ", "", palette, 16, "");
+            closeFixed = onCleanup(@() delete(fixed));
+            testCase.verifyEmpty(findall(fixed.Window, 'Type', 'uibutton'));
+            fixed.Window.CloseRequestFcn(fixed.Window, []);
+            testCase.verifyFalse(fixed.CancelRequested, "止めるボタンの無い窓は止めない");
         end
     end
 end

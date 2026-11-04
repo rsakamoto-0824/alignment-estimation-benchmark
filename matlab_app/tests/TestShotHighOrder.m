@@ -545,9 +545,11 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             testCase.verifyEqual(height(values), 5);
             testCase.verifyEqual(width(values), 1 + 2 * 4, "Wafer と、使う4項の値と標準偏差");
             residuals = app.drawHighOrderWaferComparison("residual", "dy", "median");
-            testCase.verifyEqual(residuals.Properties.VariableNames, {'Wafer', '補正前', 'Shot ごとの1次', '高次補正'});
+            testCase.verifyEqual(residuals.Properties.VariableNames, {'Wafer', '式', '補正前', 'Wafer 高次補正だけ', ...
+                'Wafer 高次補正＋Shot 共通補正', 'Shot ごとの1次', '高次補正'}, "dx・dy の行を並べる");
             y = result.summary(result.summary.axis == "Y" & result.summary.wafer ~= "すべての Wafer", :);
-            testCase.verifyEqual(residuals.("高次補正"), y.highOrderMedian, 'AbsTol', 1e-9);
+            testCase.verifyEqual(residuals.("高次補正")(residuals.("式") == "dy"), y.highOrderMedian, 'AbsTol', 1e-9);
+            testCase.verifyEqual(string(c.highOrderWaferAxes(2).Visible), "on", "残差は dx・dy の図を並べる");
             testCase.verifyEqual(string(c.highOrderWaferStatistic.Enable), "on");
             % 項を戻すと、前の結果が古いことを知らせる
             excluded = app.selectHighOrderTermsByVif(10);

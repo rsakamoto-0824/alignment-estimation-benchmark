@@ -530,7 +530,7 @@ classdef (Abstract) DataTab < appui.Core
             place(c.shotOverlayWafers, 2, 1);
             label(overlayControls, 'Wafer 成分を除く（Shot 中心の多項式）', 3, 1);
             c.shotOverlayWaferOrder = uidropdown(overlayControls, 'Items', {'除かない', '1次（並進・倍率・回転・直交度）', ...
-                '2次', '3次'}, 'ItemsData', {0, 1, 2, 3}, 'ValueChangedFcn', onOverlay, ...
+                '2次', '3次', '4次', '5次'}, 'ItemsData', {0, 1, 2, 3, 4, 5}, 'ValueChangedFcn', onOverlay, ...
                 'Tooltip', 'Wafer ごとに Shot 中心の座標の多項式を最小二乗で当てはめて除き、Shot 内の成分だけを重ねます。');
             place(c.shotOverlayWaferOrder, 4, 1);
             label(overlayControls, '共分散楕円（Shot・Wafer 間のばらつき。色は |相関係数|）', 5, 1);
@@ -608,7 +608,7 @@ classdef (Abstract) DataTab < appui.Core
         end
 
         function drawInteractionPlot(app)
-            % 選んだ組・軸の交互作用の図（線がほぼ平行なら交互作用は小さい）
+            % 選んだ組・軸の交互作用の箱ひげ図（水準の組ごとの値の分布。平均をつなぐ線がほぼ平行なら交互作用は小さい）
             c = app.Controls;
             analysis = app.Interactions;
             pair = string(c.interactionPair.Value);
@@ -628,8 +628,8 @@ classdef (Abstract) DataTab < appui.Core
                 titleText = titleText + newline + sprintf("交互作用 F = %.2f、p = %s、偏 η² = %.3f", row.F(1), ...
                     pValueText(row.p(1)), row.partialEta2(1));
             end
-            cells = analysis.cells(analysis.cells.axis == axisName, :);
-            alignest.plot.interactionPlot(c.interactionAxes, cells, names(1), names(2), titleText, spec.unit);
+            sample = analysis.samples([analysis.samples.axis] == axisName);
+            alignest.plot.interactionPlot(c.interactionAxes, sample, names(1), names(2), titleText, spec.unit);
             c.interactionAxes.Visible = 'on';
             styleAxes(app, c.interactionAxes, app.AXES_FONT_SIZE);
         end

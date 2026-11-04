@@ -1,22 +1,31 @@
 function data = highOrderShotTable(result)
-%HIGHORDERSHOTTABLE Shot ごとの補正値（k パラメータ）を、1行 = 1 Shot、列 = k1〜kN に横に並べた表にする（「7. Shot高次補正」の
-%   「書き出し」。装置に入れる Shot ごとの補正値に近い形）。
+%HIGHORDERSHOTTABLE Shot ごとの補正値を、1行 = 1 Shot に、Wafer 低次・Wafer 高次・Shot 共通 低次・Shot 共通 高次・Shot 毎 低次・
+%   Shot 毎 高次の順に横に並べた表にする（「7. Shot高次補正」の「書き出し」。段階の分け方は alignest.highOrderLevels）。
 %   data = alignest.highOrderShotTable(result)
-%   result：alignest.shotHighOrder の結果。行は Wafer の順・Shot の番号の順。列：Wafer・shotNo・Xmm・Ymm（Shot 中心 [mm]）・
-%   Radius・範囲（内周・外周）・くくり（k の組の名前。Wafer 内で共通などでは、同じ組の Shot は同じ k）・点の数、使う項の
-%   k（使う項を k の番号の順。外周の式を分けたときは両方の式の項。その Shot の式に無い項は空欄）、Wafer 成分 dx・dy（Shot 中心で
-%   求めた Wafer 成分 [nm]）、メモ。k1・k2 は Wafer 成分を足した値（Shot 中心での並進）。足した分は Wafer 成分の列にある。
-%   係数は mm の座標での値（列の名前の単位：k1・k2 は nm、1次は nm/mm、n 次は nm/mm^n）。補正しなかった Shot は空欄。
+%   result：alignest.shotHighOrder の結果。行は Wafer の順・Shot の番号の順。列：
+%   - Wafer・shotNo・Xmm・Ymm（Shot 中心 [mm]）・Radius・範囲（内周・外周）・くくり（k の組の名前）・点の数
+%   - Wafer 低次 dx・dy、Wafer 高次 dx・dy：Wafer 成分のその次数の項を Shot 中心で求めた値 [nm]（その Shot の並進になる）
+%   - Shot 共通の k、Shot 毎の k（くくりが Shot ごとのときだけ。ほかは空欄）：それぞれ低次（k1〜k6）、高次（k7〜）の順
+%   - 合計の k：その Shot に当てる k（Shot 共通 + Shot 毎。k1・k2 には Wafer 低次・高次の並進も足す）
+%   - メモ（補正しなかった Shot、点が足りず項を減らした Shot）
+%   k は使う項（外周の式を分けたときは両方の式の項）。その Shot の式に無い項は空欄。係数は mm の座標での値（列の名前の単位：
+%   k1・k2 は nm、1次は nm/mm、n 次は nm/mm^n）。補正しなかった Shot は値が空欄。
 arguments
     result struct
 end
-FORMULA_AXES = ["dx", "dy"];
+HIGH_ORDER = 2;   % これ以上の次数を「高次」とする（alignest.highOrderLevels と同じ）
+CONSTANT_K = [1, 2];   % dx・dy の定数の k（Wafer 成分の並進を足す）
 points = result.points(isfinite(result.points.shotNo), :);
-coefficients = result.coefficients;
+levels = alignest.highOrderLevels(result);
 terms = result.terms(result.terms.used, :);
 [~, first] = unique(terms.k);   % 外周の式を分けたときは、内周・外周の式の項をまとめる
 terms = terms(first, :);
+[~, order] = sortrows([terms.order >= HIGH_ORDER, terms.k]);   % 低次（k1〜k6）、高次の順
+terms = terms(order, :);
 names = "k" + string(terms.k) + "[" + unitOf(terms.order) + "]";
+perShot = result.options.unit == "shot";
+zoneSplit = result.options.outerMaker ~= "none";
+reductions = result.groupReductions;
 waferLabels = unique(points.wafer, 'stable');
 parts = cell(numel(waferLabels), 1);
 for w = 1:numel(waferLabels)
@@ -26,44 +35,65 @@ for w = 1:numel(waferLabels)
     Xc = mine.x(firstRows) - mine.localX(firstRows);
     Yc = mine.y(firstRows) - mine.localY(firstRows);
     groups = mine.group(firstRows);
-    rows = coefficients(coefficients.wafer == waferLabels(w), :);
-    shotRows = rows(rows.component == "Shot 高次補正", :);
-    waferRows = rows(rows.component == "Wafer 成分", :);
-    values = nan(nShots, height(terms));
-    waferPart = zeros(nShots, 2);
-    corrected = false(nShots, 1);
+    zones = mine.zone(firstRows);
+    rows = levels(levels.wafer == waferLabels(w), :);
+    waferRows = rows(startsWith(rows.level, "Wafer"), :);
+    commonRows = rows(startsWith(rows.level, "Shot 共通"), :);
+    eachRows = rows(startsWith(rows.level, "Shot 毎"), :);
+    waferPart = nan(nShots, 4);   % 低次 dx・dy、高次 dx・dy
+    [common, each] = deal(nan(nShots, height(terms)));
     counts = zeros(nShots, 1);
+    note = strings(nShots, 1);
     for s = 1:nShots
         inShot = mine.shotNo == shots(s);
         counts(s) = nnz(inShot & (isfinite(mine.valueX) | isfinite(mine.valueY)));
-        if result.options.unit == "shot"
-            own = shotRows(shotRows.shotNo == shots(s), :);
+        if ~any(inShot & (isfinite(mine.correctionX) | isfinite(mine.correctionY)))
+            note(s) = "補正しなかった（点が足りない・点の配置で項が決まらない）";
+            continue
+        end
+        for part = 1:4
+            levelRows = waferRows(waferRows.level == ternary(part <= 2, "Wafer 低次", "Wafer 高次") & ...
+                waferRows.axis == ternary(mod(part, 2) == 1, "dx", "dy"), :);
+            waferPart(s, part) = sum(levelRows.value .* Xc(s) .^ levelRows.xPower .* Yc(s) .^ levelRows.yPower);
+        end
+        if perShot
+            zone = ternary(zoneSplit, zones(s), "");
+            common(s, :) = valuesByK(commonRows(commonRows.zone == zone, :), terms.k);
+            each(s, :) = valuesByK(eachRows(eachRows.shotNo == shots(s), :), terms.k);
+            mineReduced = reductions(reductions.wafer == waferLabels(w) & reductions.shotNo == shots(s), :);
         else
-            own = shotRows(shotRows.group == groups(s), :);
+            common(s, :) = valuesByK(commonRows(commonRows.group == groups(s), :), terms.k);
+            mineReduced = reductions(reductions.wafer == waferLabels(w) & reductions.group == groups(s), :);
         end
-        corrected(s) = ~isempty(own);
-        [found, column] = ismember(own.k, terms.k);
-        values(s, column(found)) = own.value(found).';
-        for a = 1:2
-            axisRows = waferRows(waferRows.axis == FORMULA_AXES(a), :);
-            waferPart(s, a) = sum(axisRows.value .* Xc(s) .^ axisRows.xPower .* Yc(s) .^ axisRows.yPower);
+        if height(mineReduced) > 0
+            note(s) = "点が足りず項を減らした（" + strjoin(mineReduced.axis + "：" + mineReduced.dropped, "、") + ...
+                " を使わない）";
         end
     end
-    waferPart(~corrected, :) = NaN;
+    % 合計：Shot 共通 + Shot 毎（どちらも無い項は空欄）。k1・k2 には Wafer 成分の並進を足す
+    total = sum(cat(3, common, each), 3, 'omitnan');
+    total(isnan(common) & isnan(each)) = NaN;
     for a = 1:2
-        column = find(terms.k == a, 1);   % k1（dx の定数）・k2（dy の定数）に Wafer 成分を足す
+        column = find(terms.k == CONSTANT_K(a), 1);
         if ~isempty(column)
-            values(:, column) = values(:, column) + waferPart(:, a);
+            total(:, column) = total(:, column) + waferPart(:, a) + waferPart(:, a + 2);
         end
     end
-    note = strings(nShots, 1);
-    note(~corrected) = "補正しなかった（点が足りない・点の配置で項が決まらない）";
-    parts{w} = [table(repmat(waferLabels(w), nShots, 1), shots, Xc, Yc, hypot(Xc, Yc), mine.zone(firstRows), groups, ...
-        counts, 'VariableNames', ["Wafer", "shotNo", "Xmm", "Ymm", "Radius", "範囲", "くくり", "点の数"]), ...
-        array2table(values, 'VariableNames', cellstr(names)), table(waferPart(:, 1), waferPart(:, 2), note, ...
-        'VariableNames', ["Wafer成分dx[nm](k1に含む)", "Wafer成分dy[nm](k2に含む)", "メモ"])];
+    parts{w} = [table(repmat(waferLabels(w), nShots, 1), shots, Xc, Yc, hypot(Xc, Yc), zones, groups, counts, ...
+        'VariableNames', ["Wafer", "shotNo", "Xmm", "Ymm", "Radius", "範囲", "くくり", "点の数"]), ...
+        array2table(waferPart, 'VariableNames', ["Wafer低次dx[nm]", "Wafer低次dy[nm]", "Wafer高次dx[nm]", ...
+        "Wafer高次dy[nm]"]), array2table(common, 'VariableNames', cellstr("Shot共通" + names)), ...
+        array2table(each, 'VariableNames', cellstr("Shot毎" + names)), ...
+        array2table(total, 'VariableNames', cellstr("合計" + names)), table(note, 'VariableNames', "メモ")];
 end
 data = vertcat(parts{:});
+end
+
+function values = valuesByK(rows, kNumbers)
+% 行の値を k の番号の列に並べる（無い k は NaN）
+values = nan(1, numel(kNumbers));
+[found, column] = ismember(rows.k, kNumbers);
+values(column(found)) = rows.value(found);
 end
 
 function text = unitOf(order)
@@ -71,4 +101,12 @@ function text = unitOf(order)
 text = "nm/mm^" + string(order);
 text(order == 0) = "nm";
 text(order == 1) = "nm/mm";
+end
+
+function value = ternary(condition, whenTrue, whenFalse)
+if condition
+    value = whenTrue;
+else
+    value = whenFalse;
+end
 end

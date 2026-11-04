@@ -97,6 +97,10 @@ classdef (Abstract) Core < handle
         HighOrderFile = []      % 「7. Shot高次補正」で読み込んだ Excel・CSV（raw：読んだ表、info：alignest.readHighOrderFile、
                                 %  data：選んだ列で整理した Wafer ごとのデータ（alignest.prepareHighOrderData。まだなら []）、mapping）
         HighOrderRun = []       % 「7. Shot高次補正」で最後に計算した結果（computeHighOrder。alignest.shotHighOrder の結果と入力）
+        HighOrderSweep = []     % 「7. Shot高次補正」の λ・c のスイープの結果（sweepHighOrderParameters。alignest.sweepHighOrder の
+                                %  結果と、スイープしたときの入力・設定）
+        HighOrderCheck = []     % 「7. Shot高次補正」の計算の前の確かめ（今の設定・入力で点が足りない k の組。alignest.shotHighOrder の
+                                %  checkOnly。入力が無ければ []）
         HighOrderConditions = struct("label", {}, "highOrder", {})  % 「7. Shot高次補正」の補正の比較の条件（名前と settings.highOrder）
         HighOrderComparison = []  % 「7. Shot高次補正」の補正の比較の結果（compareHighOrderConditionsNow。表・条件ごとの結果と、比べた条件・入力）
     end

@@ -19,7 +19,9 @@ classdef (Abstract) HighOrderTab < appui.Core
             %SETHIGHORDERSETTINGS 補正の式・単位・回帰の欄を変える（画面で選ぶのと同じ）。名前と値の組で渡す：
             %   maker（"asml"・"canon"・"nikon"・"custom"）・unit（k の組のくくり："common"・"scan"・"row"・"shot"）・
             %   waferOrder（0〜5）・outerRadiusMm（外周の Shot の半径 [mm]）・outerMaker（外周の式："none"（分けない）・
-            %   "asml"・"canon"・"nikon"・"custom"）・outerTermSet（外周の式にする保存した項の組み合わせの名前）・vifThreshold・
+            %   "asml"・"canon"・"nikon"・"custom"）・outerTermSet（外周の式にする保存した項の組み合わせの名前）・shortage
+            %   （点が足りない Shot・組："reduceAll"（全体の項を減らす）・"reduceGroup"（その組だけ項を減らす）・"skip"
+            %   （その組は補正しない））・vifThreshold・
             %   loss（"ols"・"huber"・"lad"）・huberTuning・regularization（正則化："none"・"l2"・"l1"）・penaltyOrders
             %   （正則化をかける次数。1〜6 の並び）・lambda・measured（推定値に学習に使った Mark の実測値も足すか）。
             %   例：app.setHighOrderSettings(unit="shot", loss="ols", regularization="l1", penaltyOrders=3:6)
@@ -31,6 +33,7 @@ classdef (Abstract) HighOrderTab < appui.Core
                 options.outerRadiusMm (1, 1) double
                 options.outerMaker (1, 1) string
                 options.outerTermSet (1, 1) string
+                options.shortage (1, 1) string
                 options.vifThreshold (1, 1) double
                 options.loss (1, 1) string
                 options.huberTuning (1, 1) double
@@ -42,7 +45,8 @@ classdef (Abstract) HighOrderTab < appui.Core
             c = app.Controls;
             controls = struct("maker", c.highOrderMaker, "unit", c.highOrderUnit, "waferOrder", c.highOrderWaferOrder, ...
                 "outerRadiusMm", c.highOrderOuterRadius, "outerMaker", c.highOrderOuterFormula, "outerTermSet", ...
-                c.highOrderOuterFormula, "vifThreshold", c.highOrderVifThreshold, "loss", c.highOrderLoss, ...
+                c.highOrderOuterFormula, "shortage", c.highOrderShortage, "vifThreshold", c.highOrderVifThreshold, ...
+                "loss", c.highOrderLoss, ...
                 "huberTuning", c.highOrderHuber, "regularization", c.highOrderRegularization, "lambda", ...
                 c.highOrderLambda, "measured", c.highOrderMeasured);
             if isfield(options, "outerTermSet")
@@ -142,42 +146,72 @@ classdef (Abstract) HighOrderTab < appui.Core
 
         function excluded = selectHighOrderTermsByVif(app, threshold)
             %SELECTHIGHORDERTERMSBYVIF 「VIF で選ぶ」：式のすべての項から始めて、VIF がしきい値以上の高次項を外す
-            %   （alignest.highOrderVif）。threshold を省略すると画面のしきい値。外した k の番号を返す。
+            %   （alignest.highOrderVif）。threshold を省略すると画面のしきい値。外した k の番号を返す（内周の式）。
+            %   外周の式を分けるときは、外周の式も外周の Shot の点で同じように選ぶ（保存した組み合わせの名前は外す）。
             c = app.Controls;
             if nargin >= 2
                 c.highOrderVifThreshold.Value = threshold;
             end
             readHighOrderControls(app);
             options = alignest.highOrderOptions(app.Settings);
-            [local, valid] = highOrderLocal(app);
+            [local, valid] = highOrderLocal(app, "inner");
             terms = alignest.highOrderTerms(options.maker);
             [~, info] = alignest.highOrderVif(terms, local, valid, options.vifThreshold);
             excluded = info.suggestedExcluded;
             app.Settings.highOrder.excludedTerms = excluded;
+            if options.outerMaker ~= "none"
+                [local, valid] = highOrderLocal(app, "outer");
+                [~, outerInfo] = alignest.highOrderVif(alignest.highOrderTerms(options.outerMaker), local, valid, ...
+                    options.vifThreshold);
+                app.Settings.highOrder.outerExcludedTerms = outerInfo.suggestedExcluded;
+                app.Settings.highOrder.outerName = "";
+                refreshHighOrderOuterChoices(app);
+            end
             refreshHighOrderTerms(app);
             markHighOrderStale(app);
         end
 
         function useAllHighOrderTerms(app)
-            %USEALLHIGHORDERTERMS 「すべての項を使う」：外した項を戻す
+            %USEALLHIGHORDERTERMS 「すべての項を使う」：外した項を戻す（外周の式を分けるときは外周の式も、式の全項にする）
             app.Settings.highOrder.excludedTerms = zeros(1, 0);
+            if lower(string(fieldOr(app.Settings.highOrder, "outerMaker", "none"))) ~= "none"
+                app.Settings.highOrder.outerExcludedTerms = zeros(1, 0);
+                app.Settings.highOrder.outerName = "";
+                refreshHighOrderOuterChoices(app);
+            end
             refreshHighOrderTerms(app);
             markHighOrderStale(app);
         end
 
-        function setHighOrderTermUsed(app, k, used)
+        function setHighOrderTermUsed(app, k, used, zone)
             %SETHIGHORDERTERMUSED k の番号の項を使う（used = true）・使わない（false）にする（表のチェックと同じ）。
-            %   k1〜k6（定数・1次）は外せない。
+            %   zone（省略可）："inner"（内周の式。外周の式を分けないときは、すべての Shot の式。既定）・"outer"（外周の式。
+            %   外周の式を分けるときだけ。保存した組み合わせを外周の式にしていたら、その名前は外す）。k1〜k6（定数・1次）は外せない。
+            if nargin < 4
+                zone = "inner";
+            end
+            zone = string(zone);
             if k <= 6 && ~used
                 error('alignest:highOrderTerms', 'k1〜k6（並進・倍率・回転）は補正の土台なので外せません。');
             end
-            excluded = reshape(app.Settings.highOrder.excludedTerms, 1, []);
+            field = "excludedTerms";
+            if zone == "outer"
+                if lower(string(fieldOr(app.Settings.highOrder, "outerMaker", "none"))) == "none"
+                    error('alignest:highOrderTerms', '外周の式を分けていません（左の②の「外周の式」で選んでください）。');
+                end
+                field = "outerExcludedTerms";
+            end
+            excluded = reshape(app.Settings.highOrder.(field), 1, []);
             if used
                 excluded = excluded(excluded ~= k);
             else
                 excluded = unique([excluded, k]);
             end
-            app.Settings.highOrder.excludedTerms = excluded;
+            app.Settings.highOrder.(field) = excluded;
+            if zone == "outer"
+                app.Settings.highOrder.outerName = "";   % 保存した組み合わせから変えた（「外周の式」は式の名前で出す）
+                refreshHighOrderOuterChoices(app);
+            end
             refreshHighOrderTerms(app);
             markHighOrderStale(app);
         end
@@ -224,14 +258,15 @@ classdef (Abstract) HighOrderTab < appui.Core
         end
 
         function summary = drawHighOrderMap(app, waferIndex, view, value, mode, group, layout)
-            %DRAWHIGHORDERMAP 「マップ」：選んだ Wafer の補正後の残差（または Shot ごとの1次で補正した残差・補正量・2次以上の
-            %   項だけの補正量・補正前の値）を、Wafer 上（alignest.plot.correctionMap）か、Shot を重ねて（alignest.plot.shotStackMap）
+            %DRAWHIGHORDERMAP 「マップ」：選んだ Wafer の補正後の残差（または Shot ごとの1次で補正した残差・Wafer 高次補正だけ・
+            %   Wafer 高次補正＋Shot 共通補正の残差・補正量・2次以上の項だけの補正量・補正前の値）を、Wafer 上（alignest.plot.correctionMap）か、Shot を重ねて（alignest.plot.shotStackMap）
             %   描く。表示がグリッドなら、求めた補正の式で変形させた Shot の形（alignest.plot.shotGridMap）を描く。
-            %   waferIndex：計算した Wafer の番号、view："wafer"・"stack"、value："residual"・"linear"・"correction"・"highOnly"・
-            %   "value"、mode："vector"・"X"・"Y"・"grid"、group：描く k の組（"" = すべての点。Scan 方向ごと・行の偶奇ごとの
+            %   waferIndex：計算した Wafer の番号、view："wafer"・"stack"、value："residual"・"linear"・"wafer"・"common"・
+            %   "correction"・"highOnly"・"value"、mode："vector"・"X"・"Y"・"grid"、group：描く k の組（"" = すべての点。Scan 方向ごと・行の偶奇ごとの
             %   とき "Scan 方向 1"・"奇数行" など）、layout："single"（1つの図）・"side"（補正前の値・補正量・補正後の残差を並べる。
-            %   矢印の倍率と色の範囲をそろえる）。省略すると画面の選択。summary は1つ目の図の点の数と |平均|+3σ
-            %   （グリッドは Shot の数・倍率。結果が無ければ []）。
+            %   矢印の倍率と色の範囲をそろえる）。省略すると画面の選択。グリッドの刻み・変位の倍率は画面の欄
+            %   （highOrderGridStep・highOrderGridScale。0 = 自動）。summary は1つ目の図の点の数と |平均|+3σ
+            %   （グリッドは Shot の数・倍率・刻み。結果が無ければ []）。
             c = app.Controls;
             if nargin >= 6
                 c.highOrderMapGroup.Value = char(group);
@@ -273,6 +308,7 @@ classdef (Abstract) HighOrderTab < appui.Core
                 titleText = titleText + "（" + groupName + "）";
             end
             mode = string(c.highOrderMapMode.Value);
+            set([c.highOrderGridStep, c.highOrderGridScale], 'Enable', onOff(mode == "grid"));
             stack = string(c.highOrderMapView.Value) == "stack";
             side = string(c.highOrderMapLayout.Value) == "side";
             c.highOrderMapValue.Enable = onOff(~side);   % 並べるときは補正前の値・補正量・残差で決まっている
@@ -316,14 +352,16 @@ classdef (Abstract) HighOrderTab < appui.Core
                     gridSummary = alignest.plot.shotGridMap(ax, [shots.Xc, shots.Yc], wafer.unit.shotSizeMm, ...
                         @(local) alignest.highOrderModelAt(run.result.coefficients, run.result.options.unit, ...
                         string(wafer.label), shots, local, part), stack=stack, titleText=panelTitle + "（グリッド）", ...
-                        waferRadiusMm=app.Settings.data.waferRadiusMm);
+                        waferRadiusMm=app.Settings.data.waferRadiusMm, gridStepMm=c.highOrderGridStep.Value, ...
+                        scaleMmPerNm=c.highOrderGridScale.Value);
                     if side
                         legend(ax, 'off');
                     end
                     panelSummary = struct("n", gridSummary.n, "meanPlus3SigmaX", NaN, "meanPlus3SigmaY", NaN, "valueLabel", ...
-                        valueLabel, "positions", NaN, "scaleMmPerNm", gridSummary.scaleMmPerNm, "maxNm", gridSummary.maxNm);
-                    texts(k) = sprintf("%s（グリッド）：%d Shot、変位の最大 %.3f nm（1 nm = %.3g mm で描く）", valueLabel, ...
-                        gridSummary.n, gridSummary.maxNm, gridSummary.scaleMmPerNm);
+                        valueLabel, "positions", NaN, "scaleMmPerNm", gridSummary.scaleMmPerNm, "maxNm", gridSummary.maxNm, ...
+                        "gridStepMm", gridSummary.gridStepMm);
+                    texts(k) = sprintf("%s（グリッド）：%d Shot、変位の最大 %.3f nm（1 nm = %.3g mm で描く。刻み %.3g mm）", ...
+                        valueLabel, gridSummary.n, gridSummary.maxNm, gridSummary.scaleMmPerNm, gridSummary.gridStepMm);
                 else
                     drawMode = ternary(mode == "grid", "vector", mode);
                     panelSummary = drawHighOrderPanel(app, ax, points, wafer, values{k}, valueLabel, drawMode, stack, ...
@@ -412,14 +450,17 @@ classdef (Abstract) HighOrderTab < appui.Core
             end
             skippedNames = struct("common", "補正しなかった Wafer", "scan", "補正しなかった組", "row", ...
                 "補正しなかった組", "shot", "補正しなかった Shot");
-            % 大事な数（|平均|+3σ）を左に、点の数などを右に並べる（列が多く、狭い窓では右がスクロールになるため）
+            % 大事な数（|平均|+3σ）を左に、点の数などを右に並べる（列が多く、狭い窓では右がスクロールになるため）。
+            % 補正前は値そのもの、ほかは補正した後に残った残差であることを列の名前に書く。列の名前の「|」は表の見出しの
+            % 改行になるので、絶対値の記号は全角の「｜」にする
             data = table(s.wafer, s.axis, round(s.before, 3), round(s.linear, 3), round(s.highOrder, 3), ...
                 round(s.improvement, 3), round(s.highOrderP95, 3), round(s.highOrderMedian, 3), s.n, s.nCorrected, ...
-                s.shots, s.kSets, s.skipped, s.downweighted, round(s.rmsHighOrder, 3), 'VariableNames', ...
-                ["Wafer", "軸", "補正前 [nm]", "Shot ごとの1次 [nm]", "高次補正 [nm]", "改善 [nm]", ...
-                "高次補正 |残差| 95% 点 [nm]", "高次補正 |残差| 中央値 [nm]", "点の数", "比べた点", "Shot の数", ...
-                "k の組の数", skippedNames.(result.options.unit), "重みを下げた点", "高次補正の RMS [nm]"]);
-            widths = [{170, 40}, repmat({90}, 1, 6), repmat({70}, 1, 7)];
+                s.shots, s.kSets, s.skipped, s.outliers, round(s.rmsHighOrder, 3), 'VariableNames', ...
+                ["Wafer", "軸", "補正前の値|｜平均｜+3σ [nm]", "Shot ごとの1次の残差|｜平均｜+3σ [nm]", ...
+                "高次補正の残差|｜平均｜+3σ [nm]", "改善 [nm]|1次の残差 −|高次補正の残差", "高次補正の|｜残差｜95% 点 [nm]", ...
+                "高次補正の|｜残差｜中央値 [nm]", "点の数", "比べた点", "Shot の数", "k の組の数", ...
+                skippedNames.(result.options.unit), "外れ値と|みなした点", "高次補正の|残差の RMS [nm]"]);
+            widths = [{170, 40}, {120, 150, 130, 130, 110, 110}, repmat({76}, 1, 7)];
             if split
                 data = [data(:, 1:2), table(s.region, 'VariableNames', "範囲"), data(:, 3:end)];
                 widths = [widths(1:2), {50}, widths(3:end)];
@@ -480,8 +521,8 @@ classdef (Abstract) HighOrderTab < appui.Core
 
             place(uilabel(left, 'Text', '② 補正の式と k パラメータ', 'FontWeight', 'bold'), 5, 1);
             onSetting = @(~, ~) app.onHighOrderSettingsChanged();
-            modelGrid = uigridlayout(left, [3, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1x'}, 'RowHeight', ...
-                {'fit', 'fit', 'fit'}, 'Padding', 0);
+            modelGrid = uigridlayout(left, [4, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1x'}, 'RowHeight', ...
+                {'fit', 'fit', 'fit', 'fit'}, 'Padding', 0);
             place(modelGrid, 6, 1);
             label(modelGrid, '補正の式', 1, 1);
             c.highOrderMaker = uidropdown(modelGrid, 'Items', {'ASML', 'Canon', 'Nikon', 'カスタム（k1〜k38）'}, ...
@@ -521,6 +562,16 @@ classdef (Abstract) HighOrderTab < appui.Core
                 'Nikon やカスタム）。k の組は内周と外周で別に求めます（くくりの組ごと。Wafer 成分は共通）。式の全項か、' ...
                 '「使う項と VIF」で保存した項の組み合わせを選べます。']);
             place(c.highOrderOuterFormula, 3, 4);
+            label(modelGrid, '点が足りない Shot', 4, 1);
+            c.highOrderShortage = uidropdown(modelGrid, 'Items', {'全体の項を減らす（点が最も少ない Shot に合わせる）', ...
+                'その Shot（組）だけ項を減らす', 'その Shot（組）は補正しない'}, 'ItemsData', {'reduceAll', 'reduceGroup', ...
+                'skip'}, 'ValueChangedFcn', onSetting, 'Tooltip', ['選んだ項を決めるのに点が足りない Shot（Shot ごと' ...
+                'でないときは k の組）の扱い。全体の項を減らす：点の数が最も少ない Shot で決められる項だけを、k の小さい順に' ...
+                'すべての Shot で使います（減らした項は表の「使う」からも外れます）。その Shot だけ項を減らす：足りない Shot ' ...
+                'だけ、その点で決められる項（k の小さい順）で補正し、ほかの Shot は選んだ項をすべて使います。その Shot は' ...
+                '補正しない：項は減らさず、足りない Shot は補正しません（評価からも外れます）。どれでも、k1〜k6 も決まらない' ...
+                ' Shot は補正しません。']);
+            place(c.highOrderShortage, 4, [2, 4]);
             termButtons = uigridlayout(left, [1, 3], 'ColumnWidth', {'fit', 'fit', '1x'}, 'Padding', 0);
             place(termButtons, 7, 1);
             c.highOrderVifSelect = uibutton(termButtons, 'Text', 'VIF で選ぶ', 'ButtonPushedFcn', ...
@@ -538,7 +589,8 @@ classdef (Abstract) HighOrderTab < appui.Core
             regressionHeading.FontWeight = 'bold';
             c.highOrderLoss = uidropdown(regression, 'Items', {'最小二乗', 'Huber（ロバスト）', 'LAD（ロバスト）'}, ...
                 'ItemsData', {'ols', 'huber', 'lad'}, 'ValueChangedFcn', onSetting, 'Tooltip', ['Huber・LAD：残差の大きい点' ...
-                '（外れ値）ほど重みを下げて求め直します（尺度は残差の MAD × 1.4826）。最小二乗は比べるとき用。']);
+                '（外れ値）ほど、当てはめへの影響（重み）を小さくして求め直します（尺度は残差の MAD × 1.4826）。影響を半分' ...
+                '未満にした点を「外れ値とみなした点」として数えます。最小二乗は比べるとき用。']);
             place(c.highOrderLoss, 1, 2);
             label(regression, 'Huber の c', 1, 3);
             c.highOrderHuber = uieditfield(regression, 'numeric', 'Limits', [0, Inf], 'LowerLimitInclusive', 'off', ...
@@ -634,16 +686,19 @@ classdef (Abstract) HighOrderTab < appui.Core
             c.highOrderSummaryZoneInfo.FontColor = app.Palette.muted;
             c.highOrderSummaryZoneInfo.UserData = "muted";
             c.highOrderSummaryTable = uitable(summaryGrid, 'RowName', {}, 'Data', table(), 'ColumnWidth', ...
-                [{170, 40}, repmat({90}, 1, 6), repmat({70}, 1, 7)]);
+                [{170, 40}, {120, 150, 130, 130, 110, 110}, repmat({76}, 1, 7)]);
             place(c.highOrderSummaryTable, 2, 1);
-            note = label(summaryGrid, ['補正前・Shot ごとの1次・高次補正・改善の列は |平均|+3σ [nm]。|残差| 95% 点・中央値は' ...
-                '、高次補正の残差の大きさ（絶対値）の 95% 点と中央値 [nm]。高次補正と Shot ごとの1次（k1〜k6 を Shot ごとに' ...
-                '求めた補正。同じ損失関数）の両方ができた点で比べます。改善 = Shot ごとの1次 − 高次補正。重みを下げた点：' ...
-                'ロバスト回帰で外れ値とみなして重みを下げた点の数。'], 3, 1);
+            note = label(summaryGrid, ['補正前の値：補正する前の計測値。Shot ごとの1次の残差：Shot ごとに1次の項（k1〜k6）' ...
+                'だけで補正した後に残った残差（くらべる基準）。高次補正の残差：選んだ高次の式で補正した後に残った残差。どれも |平均|+3σ [nm]' ...
+                '（小さいほどよい）。改善 = 1次の残差 − 高次補正の残差（正なら高次補正で小さくなった）。高次補正の |残差| 95% 点・' ...
+                '中央値：高次補正の残差の大きさの 95% 点と中央値 [nm]。高次補正と1次の補正の両方ができた点で比べます（同じ損失' ...
+                '関数）。外れ値とみなした点：Huber・LAD（ロバスト回帰）が、残差が大きいため当てはめへの影響（重み）を半分未満に' ...
+                '弱めた点の数（Huber は |残差| が尺度の 2c 倍、LAD は2倍を超えた点。尺度は残差の MAD × 1.4826。最小二乗では 0）。'], 3, 1);
             note.FontColor = app.Palette.muted;
             note.UserData = "muted";
             buildHighOrderCompareTab(app, outputs);
             buildHighOrderPairTab(app, outputs);
+            buildHighOrderSweepTab(app, outputs);
             coefficientTab = uitab(outputs, 'Title', '補正値（k パラメータ）');
             coefficientGrid = uigridlayout(coefficientTab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 6, ...
                 'RowSpacing', 4);
@@ -670,8 +725,8 @@ classdef (Abstract) HighOrderTab < appui.Core
             mapTab = uitab(outputs, 'Title', 'マップ');
             c.highOrderMapTab = mapTab;
             mapGrid = uigridlayout(mapTab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 6, 'RowSpacing', 4);
-            mapControls = uigridlayout(mapGrid, [2, 7], 'ColumnWidth', {'fit', '1x', 'fit', '1.2x', 'fit', '1.1x', 'fit'}, ...
-                'RowHeight', {'fit', 'fit'}, 'Padding', 0);
+            mapControls = uigridlayout(mapGrid, [3, 7], 'ColumnWidth', {'fit', '1x', 'fit', '1.2x', 'fit', '1.1x', 'fit'}, ...
+                'RowHeight', {'fit', 'fit', 'fit'}, 'Padding', 0);
             onMap = @(~, ~) app.drawHighOrderMap();
             label(mapControls, 'Wafer', 1, 1);
             c.highOrderMapWafer = uidropdown(mapControls, 'Items', {'—'}, 'ItemsData', {1}, 'Enable', 'off', ...
@@ -692,10 +747,11 @@ classdef (Abstract) HighOrderTab < appui.Core
             place(c.highOrderSaveFigure, 1, 7);
             label(mapControls, '値', 2, 1);
             c.highOrderMapValue = uidropdown(mapControls, 'Items', {'高次補正の残差', ...
-                'Shot ごとの1次（k1〜k6）で補正した残差', '補正量', '補正量（2次以上の項だけ）', '補正前の値', ...
+                'Shot ごとの1次（k1〜k6）で補正した残差', 'Wafer 高次補正だけの残差', 'Wafer 高次補正＋Shot 共通補正の残差', ...
+                '補正量', '補正量（2次以上の項だけ）', '補正前の値', ...
                 '残差の成分：Wafer 線形', '残差の成分：Shot 共通', '残差の成分：Shot', '残差の成分：残り'}, ...
-                'ItemsData', {'residual', 'linear', 'correction', 'highOnly', 'value', 'decompWafer', 'decompCommon', ...
-                'decompShot', 'decompRest'}, 'ValueChangedFcn', onMap, ...
+                'ItemsData', {'residual', 'linear', 'wafer', 'common', 'correction', 'highOnly', 'value', 'decompWafer', ...
+                'decompCommon', 'decompShot', 'decompRest'}, 'ValueChangedFcn', onMap, ...
                 'Tooltip', ['残差 = 値 − 補正量。補正量は高次補正（使う項と Wafer 成分）を当てはめた値。2次以上の項だけ：' ...
                 '補正量のうち2次以上の項の分（Shot の形の高次の歪み）。残差の成分：高次補正の残差を「残差の成分分解」の' ...
                 'タブの項で分けた成分。']);
@@ -704,7 +760,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             c.highOrderMapMode = uidropdown(mapControls, 'Items', {'ベクトル（矢印）', 'X（色）', 'Y（色）', ...
                 'グリッド（Shot の形）'}, 'ItemsData', {'vector', 'X', 'Y', 'grid'}, 'ValueChangedFcn', onMap, 'Tooltip', ...
                 ['グリッド：求めた補正の式で、Shot の枠のグリッドを変形させて描きます（値が補正量のとき。変位は拡大して' ...
-                '描きます）。']);
+                '描きます。刻みと倍率は下の欄で変えられます）。']);
             place(c.highOrderMapMode, 2, 4);
             label(mapControls, '並べ方', 2, 5);
             c.highOrderMapLayout = uidropdown(mapControls, 'Items', {'1つの図', '補正前・補正量・残差を並べる'}, ...
@@ -714,6 +770,24 @@ classdef (Abstract) HighOrderTab < appui.Core
             c.highOrderCopyFigure = uibutton(mapControls, 'Text', '図をコピー', 'Tooltip', app.COPY_TOOLTIP, ...
                 'ButtonPushedFcn', @(source, ~) app.onCopyFigure("highOrder", source));
             place(c.highOrderCopyFigure, 2, 7);
+            % グリッドの欄は別の格子にする（上の列の幅を変えないように）
+            gridControls = uigridlayout(mapControls, [1, 5], 'ColumnWidth', {'fit', 70, 'fit', 70, '1x'}, 'Padding', 0);
+            place(gridControls, 3, [1, 7]);
+            label(gridControls, 'グリッドの刻み [mm]', 1, 1);
+            c.highOrderGridStep = uieditfield(gridControls, 'numeric', 'Value', 0, 'Limits', [0, Inf], ...
+                'ValueChangedFcn', onMap, 'Enable', 'off', 'Tooltip', ['グリッド（Shot の形）の線の間隔 [mm]。Shot の中心から' ...
+                'この刻みごとの線と、Shot の端の線を描きます。0 なら縦・横 5 本ずつ（Shot の端から端まで等しい間隔）。']);
+            place(c.highOrderGridStep, 1, 2);
+            label(gridControls, '変位の倍率 [mm/nm]', 1, 3);
+            c.highOrderGridScale = uieditfield(gridControls, 'numeric', 'Value', 0, 'Limits', [0, Inf], ...
+                'ValueChangedFcn', onMap, 'Enable', 'off', 'Tooltip', ['グリッドの縮尺：補正量（変位）1 nm を、図の上で何 mm に' ...
+                '描くか。大きくすると変形が大きく見えます。0 なら自動（変位の大きさの 95% 点が、グリッドの間隔の 0.4 倍）。' ...
+                '描いた倍率は図の横軸の名前と下の説明に出ます。']);
+            place(c.highOrderGridScale, 1, 4);
+            gridNote = label(gridControls, '（グリッドのとき。0 = 自動）', 1, 5);
+            gridNote.WordWrap = 'off';   % 狭い窓でも折り返して欄を高くしない
+            gridNote.FontColor = app.Palette.muted;
+            gridNote.UserData = "muted";
             c.highOrderPanel = uipanel(mapGrid, 'BorderType', 'none');
             place(c.highOrderPanel, 2, 1);
             c.highOrderAxesGrid = uigridlayout(c.highOrderPanel, [1, 3], 'ColumnWidth', {'1x', 0, 0}, 'Padding', 0, ...
@@ -751,6 +825,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             c.highOrderUnit.Value = char(options.unit);
             c.highOrderWaferOrder.Value = double(fieldOr(source, "waferOrder", options.waferOrder));
             c.highOrderOuterRadius.Value = options.outerRadiusMm;
+            c.highOrderShortage.Value = char(options.shortage);
             refreshHighOrderOuterChoices(app);
             c.highOrderVifThreshold.Value = options.vifThreshold;
             c.highOrderLoss.Value = char(options.loss);
@@ -779,6 +854,12 @@ classdef (Abstract) HighOrderTab < appui.Core
             values = ["none", "asml", "canon", "nikon", "custom", reshape(outerSetPrefix() + sets.name, 1, [])];
             maker = lower(string(fieldOr(source, "outerMaker", "none")));
             name = string(fieldOr(source, "outerName", ""));
+            excluded = fieldOr(source, "outerExcludedTerms", zeros(1, 0));
+            if maker ~= "none" && name == "" && ~isempty(excluded) && any(values == maker)
+                % 「使う項と VIF」で外周の項を選んだ：全項ではないので、外した項の数を出す
+                items(values == maker) = extractBefore(items(values == maker), "（") + ...
+                    sprintf("（%d 項を外す）", numel(excluded));
+            end
             value = maker;
             if maker ~= "none" && name ~= ""
                 value = outerSetPrefix() + name;
@@ -826,6 +907,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             app.Settings.highOrder.waferOrder = c.highOrderWaferOrder.Value;
             app.Settings.highOrder.outerRadiusMm = c.highOrderOuterRadius.Value;
             readHighOrderOuterFormula(app);
+            app.Settings.highOrder.shortage = string(c.highOrderShortage.Value);
             app.Settings.highOrder.vifThreshold = c.highOrderVifThreshold.Value;
             app.Settings.highOrder.loss = string(c.highOrderLoss.Value);
             app.Settings.highOrder.huberTuning = c.highOrderHuber.Value;
@@ -930,21 +1012,43 @@ classdef (Abstract) HighOrderTab < appui.Core
             catch
                 return   % 設定の誤りは欄の下に出している
             end
-            terms = alignest.highOrderTerms(options.maker, options.excludedTerms);
-            try
-                [local, valid] = highOrderLocal(app);
-                [terms, info] = alignest.highOrderVif(terms, local, valid, options.vifThreshold);
-                pointText = sprintf("VIF は Shot 内の位置 dx %d・dy %d か所（%d・%d 点）で求めました。", info.positions(1), ...
-                    info.positions(2), info.points(1), info.points(2));
-                if isempty(info.suggestedExcluded)
-                    pointText = pointText + "「VIF で選ぶ」で外れる項はありません。";
-                else
-                    pointText = pointText + "「VIF で選ぶ」で外れる項：" + strjoin("k" + string(info.suggestedExcluded), "・") + "。";
-                end
-            catch
-                [terms.vifAll, terms.vifUsed] = deal(nan(height(terms), 1));
-                pointText = "入力のデータを選ぶと VIF を出します。";
+            % 外周の式を分けるときは、内周の式（内周の Shot の点で VIF）と外周の式（外周の Shot の点で VIF）を並べる
+            split = options.outerMaker ~= "none";
+            zones = "inner";
+            if split
+                zones = ["inner", "outer"];
             end
+            makers = [options.maker, options.outerMaker];
+            excludedSets = {options.excludedTerms, options.outerExcludedTerms};
+            zoneLabels = ["内周", "外周"];
+            parts = cell(1, numel(zones));
+            texts = strings(1, numel(zones));
+            for z = 1:numel(zones)
+                terms = alignest.highOrderTerms(makers(z), excludedSets{z});
+                prefix = "";
+                if split
+                    prefix = zoneLabels(z) + "の式：";
+                end
+                try
+                    [local, valid] = highOrderLocal(app, zones(z));
+                    [terms, info] = alignest.highOrderVif(terms, local, valid, options.vifThreshold);
+                    texts(z) = prefix + sprintf("VIF は Shot 内の位置 dx %d・dy %d か所（%d・%d 点）で求めました。", ...
+                        info.positions(1), info.positions(2), info.points(1), info.points(2));
+                    if isempty(info.suggestedExcluded)
+                        texts(z) = texts(z) + "「VIF で選ぶ」で外れる項はありません。";
+                    else
+                        texts(z) = texts(z) + "「VIF で選ぶ」で外れる項：" + ...
+                            strjoin("k" + string(info.suggestedExcluded), "・") + "。";
+                    end
+                catch
+                    [terms.vifAll, terms.vifUsed] = deal(nan(height(terms), 1));
+                    texts(z) = prefix + "入力のデータを選ぶと VIF を出します。";
+                end
+                terms.zone = repmat(zones(z), height(terms), 1);
+                parts{z} = terms(:, ["used", "axis", "k", "term", "order", "protected", "vifAll", "vifUsed", "zone"]);
+            end
+            terms = vertcat(parts{:});
+            pointText = strjoin(texts, " ");
             n = height(terms);
             data = cell(n, 7);
             for k = 1:n
@@ -952,6 +1056,19 @@ classdef (Abstract) HighOrderTab < appui.Core
                     terms.order(k), vifText(terms.vifAll(k)), vifText(terms.vifUsed(k))};
             end
             table_ = c.highOrderTermTable;
+            if split
+                % 範囲の列を2列目に足す（内周・外周）
+                data = [data(:, 1), cellstr(reshape(zoneLabels(1 + (terms.zone == "outer")), [], 1)), data(:, 2:end)];
+                table_.ColumnName = {'使う', '範囲', '式', 'k', '項', '次数', 'VIF（全項）', 'VIF（使う項）'};
+                table_.ColumnFormat = {'logical', 'char', 'char', 'char', 'char', 'numeric', 'char', 'char'};
+                table_.ColumnEditable = [true, false(1, 7)];
+                table_.ColumnWidth = {50, 50, 50, 56, 90, 56, 130, 130};
+            else
+                table_.ColumnName = {'使う', '式', 'k', '項', '次数', 'VIF（全項）', 'VIF（使う項）'};
+                table_.ColumnFormat = {'logical', 'char', 'char', 'char', 'numeric', 'char', 'char'};
+                table_.ColumnEditable = [true, false(1, 6)];
+                table_.ColumnWidth = {50, 50, 56, 90, 56, 130, 130};
+            end
             table_.Data = data;
             table_.UserData = terms;
             removeStyle(table_);
@@ -963,27 +1080,98 @@ classdef (Abstract) HighOrderTab < appui.Core
             if ~isempty(unused)
                 addStyle(table_, uistyle('FontColor', app.Palette.muted), 'row', unused);
             end
-            c.highOrderTermInfo.Text = sprintf('使う項：dx %d / %d・dy %d / %d（右の「使う項と VIF」で選べます）', ...
-                nnz(terms.used & terms.axis == "dx"), nnz(terms.axis == "dx"), nnz(terms.used & terms.axis == "dy"), ...
-                nnz(terms.axis == "dy"));
+            % 計算の前の確かめ：点の数が最も少ない k の組で決まらない項を、赤い太字にする
+            check = refreshHighOrderCheck(app);
+            short = false(height(terms), 1);
+            if ~isempty(check)
+                for entry = check.shortage
+                    short = short | (terms.used & terms.zone == zones(min(entry.zoneIndex, numel(zones))) & ...
+                        terms.axis == entry.axis & ismember(terms.k, entry.dropped));
+                end
+            end
+            if any(short)
+                addStyle(table_, uistyle('FontColor', app.Palette.error, 'FontWeight', 'bold'), 'row', find(short));
+                pointText = "⚠ 赤い太字の項は、点の数が最も少ない Shot（k の組）では決まりません（右上のメッセージ）。" + pointText;
+            end
+            counts = strings(1, numel(zones));
+            for z = 1:numel(zones)
+                mine = terms(terms.zone == zones(z), :);
+                counts(z) = sprintf("dx %d / %d・dy %d / %d", nnz(mine.used & mine.axis == "dx"), nnz(mine.axis == "dx"), ...
+                    nnz(mine.used & mine.axis == "dy"), nnz(mine.axis == "dy"));
+                if split
+                    counts(z) = zoneLabels(z) + " " + counts(z);
+                end
+            end
+            termText = "使う項：" + strjoin(counts, "、") + "（右の「使う項と VIF」で選べます）";
+            if any(short)
+                termText = "⚠ 点の数が最も少ない Shot では決まらない項があります（右の表の赤い太字。" + ...
+                    sprintf("dx %d 項・dy %d 項）。", nnz(short & terms.axis == "dx"), nnz(short & terms.axis == "dy")) + termText;
+            end
+            c.highOrderTermInfo.Text = char(termText);
+            c.highOrderTermInfo.FontColor = ternary(any(short), app.Palette.error, app.Palette.muted);
             c.highOrderVifInfo.Text = char(pointText);
+            showHighOrderCheck(app);
         end
 
-        function [local, valid] = highOrderLocal(app)
-            % VIF に使う点：選んだ Wafer の点の Shot 内の座標と、dx・dy の値があるか（Shot の分からない点は除く）
+        function check = refreshHighOrderCheck(app)
+            % 計算の前の確かめ（今の設定・入力で、点が足りない k の組。alignest.shotHighOrder の checkOnly）を求め直す。
+            % 入力が無い・設定に誤りがあるときは []
+            check = [];
+            try
+                wafers = highOrderWafers(app);
+                if ~isempty(wafers)
+                    check = alignest.shotHighOrder(wafers, app.Settings, checkOnly=true);
+                end
+            catch
+                check = [];
+            end
+            app.HighOrderCheck = check;
+        end
+
+        function showHighOrderCheck(app)
+            % 計算の前の確かめの知らせを、計算していないときは右上のメッセージに出す（計算した後は showHighOrderMessages）
+            c = app.Controls;
+            if ~isfield(c, 'highOrderMessage')
+                return
+            end
+            if ~isempty(app.HighOrderRun)
+                showHighOrderMessages(app);
+                return
+            end
+            instruction = "入力のデータと Wafer を選び、補正の式・回帰を決めてから「補正を計算する」を押してください。";
+            messages = highOrderCheckMessages(app);
+            c.highOrderMessage.Value = cellstr([messages; instruction]);
+            c.highOrderMessage.FontColor = ternary(isempty(messages), app.Palette.text, app.Palette.error);
+        end
+
+        function messages = highOrderCheckMessages(app)
+            % 計算の前の確かめの知らせ（点が足りない k の組が無ければ空）
+            messages = strings(0, 1);
+            if ~isempty(app.HighOrderCheck)
+                messages = app.HighOrderCheck.messages;
+            end
+        end
+
+        function [local, valid] = highOrderLocal(app, zone)
+            % VIF に使う点：選んだ Wafer の点の Shot 内の座標と、dx・dy の値があるか（Shot の分からない点は除く）。
+            % zone（省略可）："inner"（既定）・"outer"。外周の式を分けるときは、その範囲の Shot の点だけ（alignest.shotHighOrder と同じ）
+            RADIUS_TOLERANCE_MM = 1e-9;   % 境界ちょうどの Shot を外周に入れる（alignest.shotHighOrder と同じ）
+            if nargin < 2
+                zone = "inner";
+            end
             wafers = highOrderWafers(app);
             points = vertcat(wafers.points);
             source = app.Settings.highOrder;
-            if string(fieldOr(source, "outerMaker", "none")) ~= "none"
-                % 外周の式を分けるときは、表の式（内周の式）を内周の Shot の点で（alignest.shotHighOrder と同じ）
-                points = points(hypot(points.Xc, points.Yc) < fieldOr(source, "outerRadiusMm", Inf) - 1e-9, :);
+            if lower(string(fieldOr(source, "outerMaker", "none"))) ~= "none"
+                outer = hypot(points.Xc, points.Yc) >= fieldOr(source, "outerRadiusMm", Inf) - RADIUS_TOLERANCE_MM;
+                points = points(outer == (string(zone) == "outer"), :);
             end
             local = [points.localX, points.localY];
             valid = [isfinite(points.valueX), isfinite(points.valueY)] & isfinite(points.shotNo);
         end
 
         function onHighOrderTermEdited(app, event)
-            % 表の「使う」を変えたら設定に移す（k1〜k6 は外せないので戻す）
+            % 表の「使う」を変えたら設定に移す（k1〜k6 は外せないので戻す。外周の式の行は外周の式の項）
             terms = app.Controls.highOrderTermTable.UserData;
             row = event.Indices(1);
             if isempty(terms) || row > height(terms)
@@ -995,7 +1183,7 @@ classdef (Abstract) HighOrderTab < appui.Core
                 app.Controls.highOrderTermInfo.Tooltip = 'k1〜k6（並進・倍率・回転）は補正の土台なので外せません。';
                 return
             end
-            setHighOrderTermUsed(app, terms.k(row), logical(event.NewData));
+            setHighOrderTermUsed(app, terms.k(row), logical(event.NewData), terms.zone(row));
         end
 
         function onHighOrderVifSelect(app)
@@ -1220,7 +1408,8 @@ classdef (Abstract) HighOrderTab < appui.Core
             stale = staleHighOrderText(app);
             messages = run.result.messages;
             if stale ~= ""
-                messages = [stale; messages];
+                % 設定・入力を変えた後は、今の設定での計算の前の確かめも先に出す
+                messages = [stale; highOrderCheckMessages(app); messages];
             end
             c.highOrderMessage.Value = cellstr(messages);
             warn = stale ~= "" || any(startsWith(messages, "⚠"));
@@ -1336,6 +1525,12 @@ classdef (Abstract) HighOrderTab < appui.Core
                 app.HighOrderComparison = [];
                 showHighOrderComparison(app);
             end
+            sweep = app.HighOrderSweep;
+            if ~isempty(sweep) && (sweep.snapshot.source == kind || (kind == "data" && sweep.snapshot.source == "target"))
+                app.HighOrderSweep = [];
+                c.highOrderTuneApply.Enable = 'off';
+                drawHighOrderSweep(app);
+            end
             refreshHighOrderChoices(app);
         end
 
@@ -1355,8 +1550,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             refreshHighOrderHistogramChoices(app);
             refreshHighOrderDecompositionChoices(app);
             drawShownHighOrderAnalysis(app);
-            c.highOrderMessage.Value = {'入力のデータと Wafer を選び、補正の式・回帰を決めてから「補正を計算する」を押してください。'};
-            c.highOrderMessage.FontColor = app.Palette.text;
+            showHighOrderCheck(app);   % 計算の前の確かめと、計算のしかたの知らせ
         end
 
         function onHighOrderOutputChanged(app, event)
@@ -1371,6 +1565,8 @@ classdef (Abstract) HighOrderTab < appui.Core
                     drawHighOrderComparisonChart(app);
                 elseif event.NewValue == c.highOrderPairTab
                     drawHighOrderPair(app);
+                elseif event.NewValue == c.highOrderTuneTab
+                    drawHighOrderSweep(app);
                 elseif event.NewValue == c.highOrderHistogramTab
                     drawHighOrderHistogram(app);
                 elseif event.NewValue == c.highOrderDecompositionTab
@@ -1503,6 +1699,10 @@ switch valueName
         values = [points.residualX, points.residualY];
     case "linear"
         values = [points.linearResidualX, points.linearResidualY];
+    case "wafer"
+        values = [points.waferResidualX, points.waferResidualY];
+    case "common"
+        values = [points.commonResidualX, points.commonResidualY];
     case "correction"
         values = [points.correctionX, points.correctionY];
     case "value"
@@ -1523,7 +1723,8 @@ end
 
 function text = highOrderValueLabel(valueName)
 % マップの値の名前
-names = struct("residual", "高次補正の残差", "linear", "Shot ごとの1次で補正した残差", "correction", "補正量", ...
+names = struct("residual", "高次補正の残差", "linear", "Shot ごとの1次で補正した残差", "wafer", ...
+    "Wafer 高次補正だけの残差", "common", "Wafer 高次補正＋Shot 共通補正の残差", "correction", "補正量", ...
     "highOnly", "補正量（2次以上の項）", "value", "補正前の値", "decompWafer", "残差の Wafer 線形成分", ...
     "decompCommon", "残差の Shot 共通成分", "decompShot", "残差の Shot 成分", "decompRest", "残差の残り");
 text = string(names.(valueName));

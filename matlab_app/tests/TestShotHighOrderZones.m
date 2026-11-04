@@ -127,7 +127,7 @@ classdef TestShotHighOrderZones < matlab.unittest.TestCase
 
         function robustWinsAreFoundShotByShot(testCase)
             % 外れ値（1点 +20 nm）を入れた Shot では、|残差| の中央値で比べるとロバスト回帰（Huber）が最小二乗より改善し、
-            % その Shot には重みを下げた点がある。RMS で比べると、外れ値の点の残差が効いて最小二乗の方がよい
+            % その Shot には外れ値とみなした点がある。RMS で比べると、外れ値の点の残差が効いて最小二乗の方がよい
             truth = struct("dx", [1, 0.5; 3, 0.02; 5, -0.01], "dy", [2, -0.3; 4, 0.01; 6, 0.015]);
             points = waferFrom(testCase, truth);
             rng(5);
@@ -150,7 +150,7 @@ classdef TestShotHighOrderZones < matlab.unittest.TestCase
             testCase.verifyEqual(shots.difference, shots.reference - shots.other);
             mine = shots(ismember(shots.shotNo, outlierShots), :);
             testCase.verifyEqual(mine.verdict, repmat("改善", numel(outlierShots), 1));
-            testCase.verifyTrue(all(mine.downweightedOther > 0) && all(mine.downweightedReference == 0));
+            testCase.verifyTrue(all(mine.outliersOther > 0) && all(mine.outliersReference == 0));
             testCase.verifyEqual(unique(shots.zone).', ["内周", "外周"]);
             byRms = alignest.compareHighOrderShots(ols.points, huber.points, axis="X", statistic="rms", toleranceNm=0.01);
             testCase.verifyEqual(byRms.verdict(ismember(byRms.shotNo, outlierShots)), ...

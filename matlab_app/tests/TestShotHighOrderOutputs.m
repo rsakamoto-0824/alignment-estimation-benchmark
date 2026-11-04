@@ -153,21 +153,28 @@ classdef TestShotHighOrderOutputs < matlab.unittest.TestCase
             bare = alignest.highOrderMeasurementTable(result, struct("label", "W1 (EQ1)", "points", points), "residual");
             testCase.verifyEqual(unique(bare.Wafer), "W1 (EQ1)");
             testCase.verifyEqual(numel(unique(bare.markNo)), size(testCase.Grid.local, 1));
-            % Shot ごとの k：Wafer 内で共通なら k3 はどの Shot も同じ、k1 は Wafer 成分（0.01 × Xc）を足した値
+            % Shot ごとの k：Wafer 低次（0.01 × Xc）・Shot 共通（k3 はどの Shot も同じ）の順。Shot ごとに求めないので Shot 毎は
+            % 空欄。合計の k1 は Wafer 成分を足した値
             shots = alignest.highOrderShotTable(result);
+            names = string(shots.Properties.VariableNames);
             testCase.verifyEqual(height(shots), size(testCase.Grid.centers, 1));
-            testCase.verifyEqual(shots.("k3[nm/mm]"), repmat(0.02, height(shots), 1), 'AbsTol', 1e-9);
-            testCase.verifyEqual(shots.("Wafer成分dx[nm](k1に含む)"), 0.01 * shots.Xmm, 'AbsTol', 1e-9);
-            testCase.verifyEqual(shots.("k1[nm]"), 0.5 + 0.01 * shots.Xmm, 'AbsTol', 1e-8);
-            testCase.verifyEqual(shots.("k9[nm/mm^2]"), repmat(0.0005, height(shots), 1), 'AbsTol', 1e-9);
-            % Shot ごと：Shot ごとの k をそのまま並べる
+            testCase.verifyEqual(names(9:14), ["Wafer低次dx[nm]", "Wafer低次dy[nm]", "Wafer高次dx[nm]", ...
+                "Wafer高次dy[nm]", "Shot共通k1[nm]", "Shot共通k2[nm]"]);
+            testCase.verifyEqual(shots.("Shot共通k3[nm/mm]"), repmat(0.02, height(shots), 1), 'AbsTol', 1e-9);
+            testCase.verifyEqual(shots.("Wafer低次dx[nm]"), 0.01 * shots.Xmm, 'AbsTol', 1e-9);
+            testCase.verifyEqual(shots.("合計k1[nm]"), 0.5 + 0.01 * shots.Xmm, 'AbsTol', 1e-8);
+            testCase.verifyEqual(shots.("Shot共通k9[nm/mm^2]"), repmat(0.0005, height(shots), 1), 'AbsTol', 1e-9);
+            testCase.verifyTrue(all(isnan(shots{:, startsWith(names, "Shot毎")}), 'all'));
+            % Shot ごと：合計は Shot ごとの k（Shot 共通 + Shot 毎）
             settings.highOrder.unit = "shot";
             perShot = alignest.shotHighOrder(wafer, settings);
             shotK = alignest.highOrderShotTable(perShot);
-            k3 = perShot.coefficients(perShot.coefficients.k == 3, :);
+            k3 = perShot.coefficients(perShot.coefficients.k == 3 & perShot.coefficients.component == "Shot 高次補正", :);
             [~, row] = ismember(k3.shotNo, shotK.shotNo);
-            testCase.verifyEqual(shotK.("k3[nm/mm]")(row), k3.value, 'AbsTol', 1e-12);
-            testCase.verifyEqual(shotK.("k1[nm]"), 0.5 + 0.01 * shotK.Xmm, 'AbsTol', 1e-8, "Shot ごとの k1 も Shot 中心の並進");
+            testCase.verifyEqual(shotK.("合計k3[nm/mm]")(row), k3.value, 'AbsTol', 1e-12);
+            testCase.verifyEqual(shotK.("Shot共通k3[nm/mm]") + shotK.("Shot毎k3[nm/mm]"), shotK.("合計k3[nm/mm]"), ...
+                'AbsTol', 1e-12);
+            testCase.verifyEqual(shotK.("合計k1[nm]"), 0.5 + 0.01 * shotK.Xmm, 'AbsTol', 1e-8, "Shot ごとの k1 も Shot 中心の並進");
             % 補正の比較の全条件：条件ごとに X・Y の列。計算できなかった条件は書かない
             conditions = alignest.highOrderConditionTable({result, [], perShot}, ["共通", "失敗", "Shot ごと"], "residual");
             names = string(conditions.Properties.VariableNames);

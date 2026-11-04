@@ -10,8 +10,8 @@ function shots = compareHighOrderShots(reference, other, options)
 %   toleranceNm：差の大きさがこの値 [nm] 以下の Shot は「同じ」とする。
 %   比べる点は、両方の結果で補正した点（残差のある点）だけ。shots は Shot ごとの表（Wafer の順、Shot の番号の順）：
 %   wafer・shotNo・zone（内周・外周）・Xc・Yc（Shot 中心 [mm]）・nCompared（比べた点の数）・reference・other（Shot の値 [nm]）・
-%   difference（reference − other。正なら改善）・verdict（"改善"・"悪化"・"同じ"）・downweightedReference・downweightedOther
-%   （ロバスト回帰で重みを下げた点の数。外れ値とみなした点）。
+%   difference（reference − other。正なら改善）・verdict（"改善"・"悪化"・"同じ"）・outliersReference・outliersOther
+%   （外れ値とみなした点の数：ロバスト回帰で重みを半分未満に下げた点。alignest.highOrderOutliers）。
 arguments
     reference table
     other table
@@ -19,7 +19,6 @@ arguments
     options.statistic (1, 1) string {mustBeMember(options.statistic, ["median", "rms", "max"])} = "median"
     options.toleranceNm (1, 1) double {mustBeNonnegative, mustBeFinite} = 0.1
 end
-WEIGHT_TOLERANCE = 1e-6;   % 重みがこれより 1 から下がった点を「重みを下げた点」に数える（alignest.shotHighOrder と同じ）
 samePoints = height(reference) == height(other) && all(reference.wafer == other.wafer) && ...
     isequaln(reference.shotNo, other.shotNo) && isequaln(reference.x, other.x) && isequaln(reference.y, other.y);
 if ~samePoints
@@ -36,14 +35,14 @@ rows = find(compared);
 [shotKeys, first, index] = unique(keys, 'rows');   % Wafer の順、Shot の番号の順
 nShots = size(shotKeys, 1);
 [referenceStat, otherStat] = deal(nan(nShots, 1));
-[nCompared, downReference, downOther] = deal(zeros(nShots, 1));
+[nCompared, outliersReference, outliersOther] = deal(zeros(nShots, 1));
 for s = 1:nShots
     members = rows(index == s);
     referenceStat(s) = statisticOf(referenceValue(members), options.statistic);
     otherStat(s) = statisticOf(otherValue(members), options.statistic);
     nCompared(s) = numel(members);
-    downReference(s) = nnz(referenceWeight(members) < 1 - WEIGHT_TOLERANCE);
-    downOther(s) = nnz(otherWeight(members) < 1 - WEIGHT_TOLERANCE);
+    outliersReference(s) = nnz(alignest.highOrderOutliers(referenceWeight(members)));
+    outliersOther(s) = nnz(alignest.highOrderOutliers(otherWeight(members)));
 end
 difference = referenceStat - otherStat;
 verdict = repmat("同じ", nShots, 1);
@@ -52,13 +51,14 @@ verdict(difference < -options.toleranceNm) = "悪化";
 firstRows = rows(first);
 shots = table(reference.wafer(firstRows), shotKeys(:, 2), reference.zone(firstRows), ...
     reference.x(firstRows) - reference.localX(firstRows), reference.y(firstRows) - reference.localY(firstRows), ...
-    nCompared, referenceStat, otherStat, difference, verdict, downReference, downOther, 'VariableNames', ["wafer", ...
-    "shotNo", "zone", "Xc", "Yc", "nCompared", "reference", "other", "difference", "verdict", ...
-    "downweightedReference", "downweightedOther"]);
+    nCompared, referenceStat, otherStat, difference, verdict, outliersReference, outliersOther, 'VariableNames', ...
+    ["wafer", "shotNo", "zone", "Xc", "Yc", "nCompared", "reference", "other", "difference", "verdict", ...
+    "outliersReference", "outliersOther"]);
 end
 
 function [value, weight] = residualSize(points, axisName)
-% 点ごとの残差の大きさ [nm] と、ロバスト回帰の重み（X・Y の大きさのときは、どちらかの軸で重みを下げた点を下げた点とする）
+% 点ごとの残差の大きさ [nm] と、ロバスト回帰の重み（X・Y の大きさのときは、小さいほうの重み。どちらかの軸で外れ値と
+% みなした点を外れ値とする）
 switch axisName
     case "xy"
         value = hypot(points.residualX, points.residualY);

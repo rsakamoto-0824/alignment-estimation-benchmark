@@ -103,6 +103,8 @@ settings.highOrder.outerMaker = "none";    % 外周の Shot の補正の式：no
 settings.highOrder.outerExcludedTerms = zeros(1, 0);  % 外周の式で使わない k の番号（保存した項の組み合わせを選んだとき）
 settings.highOrder.outerName = "";         % 外周の式に選んだ保存した項の組み合わせの名前（式の全項なら ""）
 settings.highOrder.termSets = strings(0, 1);     % 保存した項の組み合わせ（1行 = "名前|式|k の番号 …"。画面の「組み合わせを保存」）
+settings.highOrder.shortage = "reduceAll";  % 点が足りない k の組：reduceAll（全体の項を減らす）・reduceGroup（その組
+                                           % だけ項を減らす）・skip（その組は補正しない）
 settings.highOrder.vifThreshold = 10;      % 「VIF で選ぶ」のしきい値（すべての項の VIF がこれより小さくなるまで高次項を外す）
 settings.highOrder.loss = "huber";         % 回帰の損失関数：ols（最小二乗）・huber（Huber）・lad（最小絶対偏差）
 settings.highOrder.huberTuning = 1.345;    % Huber の定数 c（正規分布の誤差で効率 95% になる値）

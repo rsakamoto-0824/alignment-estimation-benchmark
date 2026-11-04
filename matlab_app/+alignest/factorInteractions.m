@@ -10,7 +10,9 @@ function analysis = factorInteractions(data, options)
 %   analysis.main：軸・変数ごとの主効果の表（axis・factor・nLevels・F・p・etaSquared・verdict・levelSummary）
 %   analysis.tests：軸・組ごとの交互作用の表（axis・factorA・factorB・n・FA・pA・FB・pB・F・df・p・partialEta2・
 %     verdict・note）
-%   analysis.cells：交互作用の図に使う水準の組の平均（axis を足した alignest.stats.interactionTests の cells）
+%   analysis.cells：水準の組の平均（axis を足した alignest.stats.interactionTests の cells）
+%   analysis.samples：交互作用の箱ひげ図に使う点ごとの値（軸ごとの構造体：axis・values（面内の傾向を除いた値）・factors
+%     （質的変数ごとの name・levels））
 %   analysis.advice：説明変数・カーネルの選び方の目安（文の並び）、ほかに nUnits・nPoints・trendOrder・axes。
 arguments
     data struct
@@ -33,12 +35,14 @@ units = data.units(unitIndex);
 axisNames = ["X", "Y"];
 [mainParts, testParts, cellParts] = deal(cell(1, 2));
 nPoints = zeros(1, 2);
+samples = struct("axis", {}, "values", {}, "factors", {});
 for k = 1:2
     [values, factors] = pooledValues(units, axisNames(k), options);
     nPoints(k) = nnz(isfinite(values));
     if nPoints(k) == 0
         continue   % 1変数の Y 成分など、計測値の無い成分
     end
+    samples(end + 1) = struct("axis", axisNames(k), "values", values, "factors", factors); %#ok<AGROW>
     main = alignest.stats.anovaMainEffects(values, factors);
     main.verdict = verdicts(main.p, main.etaSquared, main.note, SIGNIFICANCE, MIN_EFFECT, "効果あり");
     mainParts{k} = [table(repmat(axisNames(k), height(main), 1), 'VariableNames', "axis"), ...
@@ -51,6 +55,7 @@ end
 analysis.main = vertcatOrEmpty(mainParts);
 analysis.tests = vertcatOrEmpty(testParts);
 analysis.cells = vertcatOrEmpty(cellParts);
+analysis.samples = samples;
 analysis.nUnits = numel(units);
 analysis.nPoints = nPoints;
 analysis.trendOrder = options.trendOrder;

@@ -182,9 +182,10 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
 
         function data = drawHighOrderWaferComparison(app, view, axisName, statistic)
             %DRAWHIGHORDERWAFERCOMPARISON 「Wafer の比較」：計算した Wafer ごとに、k パラメータ（view = "edge"：Shot の端での
-            %   大きさ [nm]、"value"：係数そのもの）か残差（view = "residual"：補正前・Shot ごとの1次・高次補正の残差の
-            %   statistic）を並べて描く。axisName："dx"・"dy"。statistic："meanPlus3Sigma"・"p95"・"median"。
-            %   省略すると画面の選択。data は描いた値の表（Wafer × 項、または Wafer × 補正）。
+            %   大きさ [nm]、"value"：係数そのもの。axisName の式）か残差（view = "residual"：dx・dy の図を左右に並べ、補正前・
+            %   Wafer 高次補正だけ・Wafer 高次補正＋Shot 共通補正・Shot ごとの1次・高次補正の残差の statistic を棒で並べる）を描く。
+            %   axisName："dx"・"dy"（残差のときは使わない）。statistic："meanPlus3Sigma"・"p95"・"median"。
+            %   省略すると画面の選択。data は描いた値の表（Wafer × 項、または Wafer・軸 × 補正）。
             c = app.Controls;
             if nargin >= 2
                 c.highOrderWaferView.Value = char(view);
@@ -195,12 +196,18 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             if nargin >= 4
                 c.highOrderWaferStatistic.Value = char(statistic);
             end
-            ax = c.highOrderWaferAxes;
+            ax = c.highOrderWaferAxes(1);
             data = table();
             run = app.HighOrderRun;
-            cla(ax, 'reset');
-            legend(ax, 'off');
-            c.highOrderWaferStatistic.Enable = onOff(string(c.highOrderWaferView.Value) == "residual");
+            for item = c.highOrderWaferAxes
+                cla(item, 'reset');
+                legend(item, 'off');
+            end
+            residualView = string(c.highOrderWaferView.Value) == "residual";
+            c.highOrderWaferStatistic.Enable = onOff(residualView);
+            c.highOrderWaferAxis.Enable = onOff(~residualView);   % 残差は dx・dy を並べる
+            c.highOrderWaferAxesGrid.ColumnWidth = ternary(residualView, {'1x', '1x'}, {'1x', 0});
+            c.highOrderWaferAxes(2).Visible = onOff(residualView);
             if isempty(run)
                 c.highOrderWaferInfo.Text = '「補正を計算する」を押すと、Wafer ごとの k パラメータ・残差を並べます。';
                 return
@@ -210,17 +217,31 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             labels = reshape(string({run.wafers.label}), [], 1);
             colors = lines(max(numel(labels), 1));
             if view == "residual"
-                data = residualByWafer(run.result.points, labels, axisName, string(c.highOrderWaferStatistic.Value));
-                bars = bar(ax, categorical(labels, labels), data{:, 2:end}, 'grouped');
-                names = ["補正前", "Shot ごとの1次（k1〜k6）", "高次補正"];
-                for k = 1:numel(bars)
-                    bars(k).DisplayName = names(k);
+                statistic = string(c.highOrderWaferStatistic.Value);
+                [names, waferOrderText] = residualStageNames(run.result.options);
+                formulaAxes = ["dx", "dy"];
+                parts = cell(2, 1);
+                for k = 1:2
+                    part = residualByWafer(run.result.points, labels, formulaAxes(k), statistic);
+                    item = c.highOrderWaferAxes(k);
+                    bars = bar(item, categorical(labels, labels), part{:, 3:end}, 'grouped');
+                    for b = 1:numel(bars)
+                        bars(b).DisplayName = names(b);
+                    end
+                    ylabel(item, statisticLabel(statistic) + " [nm]");
+                    title(item, sprintf("Wafer ごとの残差（%s）", formulaAxes(k)), 'Interpreter', 'none');
+                    grid(item, 'on');
+                    box(item, 'on');
+                    styleAxes(app, item, app.AXES_FONT_SIZE);
+                    % 凡例は両方の図に同じ形で出す（片方だけだと、その図だけ小さくなって左右の高さがそろわない）
+                    legend(item, 'Location', 'northoutside', 'NumColumns', 2, 'Box', 'off', 'Interpreter', 'none');
+                    parts{k} = part;
                 end
-                ylabel(ax, statisticLabel(string(c.highOrderWaferStatistic.Value)) + " [nm]");
-                title(ax, sprintf("Wafer ごとの残差（%s）", axisName), 'Interpreter', 'none');
-                legend(ax, 'Location', 'northoutside', 'NumColumns', 3, 'Box', 'off');
-                c.highOrderWaferInfo.Text = ['残差は、高次補正と Shot ごとの1次の補正の両方ができた点で求めます' ...
-                    '（|残差| の 95% 点・中央値は残差の大きさ）。'];
+                data = vertcat(parts{:});
+                c.highOrderWaferInfo.Text = char("残差は、高次補正と Shot ごとの1次の補正の両方ができた点で求めます" + ...
+                    "（|残差| の 95% 点・中央値は残差の大きさ）。Wafer 高次補正だけ：Shot 中心の座標の多項式（" + waferOrderText + ...
+                    "、定数を含む）を当てはめた残差。Wafer 高次補正＋Shot 共通補正：それに Wafer 内の Shot で共通の1組の k" + ...
+                    "（外周の式を分けるときは内周・外周の2組）を一緒に当てはめた残差。どれも同じ損失関数・正則化です。");
             else
                 [data, termNames] = coefficientsByWafer(run, labels, axisName, view);
                 hold(ax, 'on');
@@ -254,12 +275,14 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             grid(ax, 'on');
             box(ax, 'on');
             styleAxes(app, ax, app.AXES_FONT_SIZE);
+            % 右の図を出すかは、描き終えてからもう一度決める（描く途中で軸の設定が初めに戻っても、表示を合わせる）
+            c.highOrderWaferAxes(2).Visible = onOff(residualView);
         end
         function shots = drawHighOrderPair(app, reference, other, waferIndex, axisName, statistic, toleranceNm)
             %DRAWHIGHORDERPAIR 「2つの条件を並べる」：「補正の比較」で計算した2つの条件の、選んだ Wafer の高次補正の残差を
             %   左右に並べる（左が基準）。Shot ごとの残差の値（alignest.compareHighOrderShots）が基準より小さくなった Shot（改善）と
-            %   大きくなった Shot（悪化）を右の図の Shot の枠で示し、ロバスト回帰で重みを下げた点（外れ値とみなした点）に丸を
-            %   付ける。「Shot ごとの表」には、その Wafer の Shot ごとの値を、改善の大きい順に出す。
+            %   大きくなった Shot（悪化）を右の図の Shot の枠で示し、外れ値とみなした点（ロバスト回帰で影響を半分未満に弱めた点。
+            %   alignest.highOrderOutliers）に丸を付ける。「Shot ごとの表」には、その Wafer の Shot ごとの値を、改善の大きい順に出す。
             %   reference・other：条件の番号（「補正の比較」の一覧の番号）、waferIndex：Wafer の番号、axisName："xy"（X・Y の
             %   大きさ）・"X"・"Y"、statistic："median"（|残差| の中央値）・"rms"・"max"、toleranceNm：同じとみなす差 [nm]。
             %   省略すると画面の選択。shots はすべての Wafer の Shot ごとの比較の表（比べられなければ空の表）。
@@ -351,9 +374,9 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
                     set(better, 'LineWidth', FRAME_WIDTH);
                     set(worse, 'LineWidth', FRAME_WIDTH, 'LineStyle', '--');
                 end
-                down = downweightedPoints(parts{k}, axisName);
-                if any(down)
-                    plot(ax, parts{k}.x(down), parts{k}.y(down), 'o', 'MarkerSize', 6, 'LineWidth', 1, 'Color', ...
+                outliers = outlierPoints(parts{k}, axisName);
+                if any(outliers)
+                    plot(ax, parts{k}.x(outliers), parts{k}.y(outliers), 'o', 'MarkerSize', 6, 'LineWidth', 1, 'Color', ...
                         app.Palette.text, 'LineStyle', 'none', 'HandleVisibility', 'off');
                 end
                 hold(ax, 'off');
@@ -364,9 +387,9 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             [~, order] = sort(mine.difference, 'descend');
             mine = mine(order, :);
             c.highOrderPairTable.Data = table(mine.shotNo, mine.zone, round(mine.reference, 3), round(mine.other, 3), ...
-                round(mine.difference, 3), mine.verdict, mine.nCompared, mine.downweightedReference, ...
-                mine.downweightedOther, 'VariableNames', ["shotNo", "範囲", "基準 [nm]", "比べる条件 [nm]", ...
-                "差（基準 − 比べる）[nm]", "判定", "比べた点", "重みを下げた点（基準）", "重みを下げた点（比べる）"]);
+                round(mine.difference, 3), mine.verdict, mine.nCompared, mine.outliersReference, ...
+                mine.outliersOther, 'VariableNames', ["shotNo", "範囲", "基準 [nm]", "比べる条件 [nm]", ...
+                "差（基準 − 比べる）[nm]", "判定", "比べた点", "外れ値とみなした点（基準）", "外れ値とみなした点（比べる）"]);
             verdictColumn = 6;
             for verdictName = ["改善", "悪化"]
                 rows = find(mine.verdict == verdictName);
@@ -605,7 +628,10 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             place(c.highOrderWaferStatistic, 1, 6);
             panel = uipanel(grid, 'BorderType', 'none');
             place(panel, 2, 1);
-            c.highOrderWaferAxes = uiaxes(uigridlayout(panel, [1, 1], 'Padding', 0));
+            % 残差は dx・dy の図を左右に並べる（k パラメータは左の図だけ。右の列は幅 0）
+            c.highOrderWaferAxesGrid = uigridlayout(panel, [1, 2], 'ColumnWidth', {'1x', 0}, 'Padding', 0, ...
+                'ColumnSpacing', 8);
+            c.highOrderWaferAxes = [uiaxes(c.highOrderWaferAxesGrid), uiaxes(c.highOrderWaferAxesGrid, 'Visible', 'off')];
             c.highOrderWaferInfo = uilabel(grid, 'WordWrap', 'on', 'Text', ...
                 '「補正を計算する」を押すと、Wafer ごとの k パラメータ・残差を並べます。');
             place(c.highOrderWaferInfo, 3, 1);
@@ -886,22 +912,34 @@ text = labels(names == options.unit);
 end
 
 function data = residualByWafer(points, labels, axisName, statistic)
-% Wafer ごとの補正前・Shot ごとの1次・高次補正の残差の値（どちらの補正もできた点）
+% Wafer ごとの補正前・Wafer 高次補正だけ・Wafer 高次補正＋Shot 共通補正・Shot ごとの1次・高次補正の残差の値（高次補正と
+% Shot ごとの1次の両方ができた点。それぞれの補正ができなかった点は除く）
 suffix = "X";
 if axisName == "dy"
     suffix = "Y";
 end
-values = nan(numel(labels), 3);
+columns = ["value", "waferResidual", "commonResidual", "linearResidual", "residual"] + suffix;
+values = nan(numel(labels), numel(columns));
 for w = 1:numel(labels)
     rows = points(points.wafer == labels(w), :);
     compared = isfinite(rows.("residual" + suffix)) & isfinite(rows.("linearResidual" + suffix));
-    columns = ["value", "linearResidual", "residual"] + suffix;
-    for k = 1:3
+    for k = 1:numel(columns)
         values(w, k) = statisticOf(rows.(columns(k))(compared), statistic);
     end
 end
-data = table(labels, values(:, 1), values(:, 2), values(:, 3), 'VariableNames', ["Wafer", "補正前", ...
-    "Shot ごとの1次", "高次補正"]);
+data = [table(labels, repmat(axisName, numel(labels), 1), 'VariableNames', ["Wafer", "式"]), ...
+    array2table(values, 'VariableNames', ["補正前", "Wafer 高次補正だけ", "Wafer 高次補正＋Shot 共通補正", ...
+    "Shot ごとの1次", "高次補正"])];
+end
+
+function [names, orderText] = residualStageNames(options)
+% 「Wafer の比較」の残差の棒の名前（凡例）と、Wafer 成分の次数の説明
+orderText = sprintf("%d次", options.waferOrder);
+if options.waferOrder == 0
+    orderText = "0次：平均だけ";
+end
+names = ["補正前", "Wafer 高次補正だけ（" + orderText + "）", "Wafer 高次補正＋Shot 共通補正", ...
+    "Shot ごとの1次（k1〜k6）", "高次補正（" + unitLabel(options) + "）"];
 end
 
 function value = statisticOf(values, statistic)
@@ -971,9 +1009,9 @@ end
 data = [table(labels, 'VariableNames', "Wafer"), table(columns{:}, 'VariableNames', names)];
 end
 
-function down = downweightedPoints(points, axisName)
-% ロバスト回帰で重みを下げた点（外れ値とみなした点。X・Y の大きさのときは、どちらかの軸で下げた点）
-WEIGHT_TOLERANCE = 1e-6;   % alignest.shotHighOrder と同じ
+function outliers = outlierPoints(points, axisName)
+% 外れ値とみなした点（ロバスト回帰で影響を半分未満に弱めた点。alignest.highOrderOutliers。X・Y の大きさのときは、どちらかの
+% 軸で外れ値とみなした点）
 switch axisName
     case "xy"
         weight = min(points.weightX, points.weightY);
@@ -982,7 +1020,7 @@ switch axisName
     otherwise
         weight = points.weightY;
 end
-down = weight < 1 - WEIGHT_TOLERANCE;
+outliers = alignest.highOrderOutliers(weight);
 end
 
 function text = statisticText(axisName, statistic, tolerance)
@@ -1000,14 +1038,15 @@ count = @(table_, verdict) nnz(table_.verdict == verdict);
 outer = mine(mine.zone == "外周", :);
 inner = mine(mine.zone == "内周", :);
 text = sprintf("左：条件 %d、右：条件 %d。", first, second) + statisticText(axisName, statistic, tolerance) + ...
-    "右の図の Shot の枠：青の実線 = 改善、橙の破線 = 悪化。○ = ロバスト回帰で重みを下げた点。" + ...
+    "右の図の Shot の枠：青の実線 = 改善、橙の破線 = 悪化。○ = 外れ値とみなした点（ロバスト回帰が、残差が大きいため" + ...
+    "影響を半分未満に弱めた点）。" + ...
     sprintf("%s：改善 %d・悪化 %d・同じ %d Shot（外周 %d / %d、内周 %d / %d）。", waferLabel, count(mine, "改善"), ...
     count(mine, "悪化"), count(mine, "同じ"), count(outer, "改善"), count(outer, "悪化"), count(inner, "改善"), ...
     count(inner, "悪化")) + sprintf("すべての Wafer：改善 %d・悪化 %d・同じ %d Shot。", count(shots, "改善"), ...
     count(shots, "悪化"), count(shots, "同じ"));
 improved = shots(shots.verdict == "改善", :);
-if any(shots.downweightedOther > 0)
-    text = text + sprintf("改善した Shot のうち、右の条件で重みを下げた点がある Shot：%d / %d。", ...
-        nnz(improved.downweightedOther > 0), height(improved));
+if any(shots.outliersOther > 0)
+    text = text + sprintf("改善した Shot のうち、右の条件で外れ値とみなした点がある Shot：%d / %d。", ...
+        nnz(improved.outliersOther > 0), height(improved));
 end
 end
