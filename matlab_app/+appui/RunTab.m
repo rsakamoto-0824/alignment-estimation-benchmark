@@ -167,7 +167,7 @@ classdef (Abstract) RunTab < appui.Core
             specs = alignest.buildPlanSpecs(app.Settings.sampling);
             dialog = [];
             if app.Figure.Visible == "on"
-                dialog = uiprogressdlg(app.Figure, 'Title', '計測マップ', 'Message', '', 'ShowPercentage', 'on');
+                dialog = appui.ProgressWindow(app.Figure, "計測マップ", "", app.Palette, app.FontSize, "");
             end
             cleanup = onCleanup(@() closeDialog(dialog));
             candidates = find(shots.nValidX + shots.nValidY > 0);
@@ -318,8 +318,9 @@ classdef (Abstract) RunTab < appui.Core
             c.runStatus.FontColor = app.Palette.text;
             dialog = [];
             if showProgress
-                dialog = uiprogressdlg(app.Figure, 'Title', '評価中', 'Message', '学習パターンを作っています…', ...
-                    'Cancelable', 'on', 'CancelText', '一時中断', 'ShowPercentage', 'on');
+                % 知らせの文（組み合わせの名前）が長くても見切れないように、文の行数に合わせて高さを変える窓にする
+                dialog = appui.ProgressWindow(app.Figure, "評価中", "学習パターンを作っています…", app.Palette, ...
+                    app.FontSize, "一時中断");
             end
             timer = tic;
             lastUpdate = -Inf;

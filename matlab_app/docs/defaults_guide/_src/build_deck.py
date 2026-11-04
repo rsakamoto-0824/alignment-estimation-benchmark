@@ -28,7 +28,7 @@ DECK_NAME = "デフォルト設定の編集ガイド"
 DECK_TITLE = "デフォルト設定の編集ガイド（管理者向け）"
 CODE_FONT = "Courier New"
 DEFAULTS_FILE = "alignment_estimation_defaults.json"
-TEST_COUNT = 209   # runAllTests の件数（2026-10-31 時点。テストを足したら直す）
+TEST_COUNT = 219   # runAllTests の件数（2026-11-05 時点。テストを足したら直す）
 
 
 class Deck:
@@ -365,19 +365,22 @@ def build(output: Path, reference: Path):
         ["highOrder.unit", "\"common\"", "k のくくり（common：共通・scan：Scan 方向・row：行の偶奇・shot）", "7. 補正のくくり"],
         ["highOrder.waferOrder", "1", "Wafer 成分の次数（0〜5、0 = なし。shot は先に求めて引く）", "7. Wafer 成分"],
         ["highOrder.excludedTerms", "[]（すべて使う）", "使わない k の番号（例：[55, 41, 29]。k1〜k6 は外さない）", "7. 使う項と VIF"],
+        ["highOrder.shortage", "\"reduceAll\"", "点が足りない Shot の扱い（reduceAll・reduceGroup・skip）", "7. 点が足りない Shot"],
         ["highOrder.outerRadiusMm", "120", "外周の Shot（Shot 中心の半径 [mm] がこの値以上）", "7. 外周の半径"],
         ["highOrder.outerMaker ・ outerName", "\"none\" ・ \"\"", "外周の式（none：分けない）・選んだ組み合わせの名前", "7. 外周の式"],
         ["highOrder.vifThreshold", "10", "「VIF で選ぶ」のしきい値（よく使う値は 5〜10）", "7. VIF のしきい値"],
         ["highOrder.loss ・ huberTuning", "\"huber\" ・ 1.345", "損失関数（ols・huber・lad）・Huber の定数 c", "7. 回帰・Huber"],
         ["highOrder.regularization ・ penaltyOrders ・ lambda", "\"l2\" ・ [2〜6] ・ 0.1", "正則化（none・l2・l1）・かける次数（1〜6）・強さ λ", "7. 正則化・λ"],
         ["highOrder.termSets", "[]（なし）", "保存した項の組み合わせ（1行 = \"名前|式|k の番号 …\"）", "7. 組み合わせ"]],
-        widths=(3.3, 2.2, 4.95, 1.68), row_h=0.36)
-    point_bar(s, 6.12, "λ はそろえた係数に対する値（L2 は 1 Shot 7×11 点の標準 0.1。点を減らすときは λ × √(77 / 点の数)）。"
+        widths=(3.3, 1.95, 4.9, 1.98), row_h=0.35)
+    point_bar(s, 6.2, "λ はそろえた係数に対する値（L2 は 1 Shot 7×11 点の標準 0.1。点を減らすときは λ × √(77 / 点の数)）。"
               "highOrder は評価の結果を変えない（「続きから再開」の比較にも使わない）",
               icon="i", icon_color=BODY, h=0.7, size=12)
     notes(s, "「7. Shot高次補正」のタブの初期値。excludedTerms は「VIF で選ぶ」・表の「使う」・点の数による項の絞り込みで変わり、"
              "「設定を保存…」の JSON にも入る。termSets は画面の「保存」で増え、MATLAB の設定（getpref）にも残る。"
              "以前の設定ファイルの l2（true・false）は、regularization の l2・none として読む。"
+             "shortage は、選んだ項を決めるのに点が足りない Shot（k の組）の扱い：reduceAll（全体の項を減らす。点の数が最も少ない"
+             "組に合わせて k の小さい順に絞る）・reduceGroup（その Shot だけ項を減らす）・skip（その Shot は補正しない）。"
              "unit・λ・回帰・保存した組み合わせは「補正の比較」でまとめて並べて比べられる。outerMaker を none 以外にすると、"
              "外周の Shot だけその式で補正する（保存した組み合わせを選ぶと、その使わない項 outerExcludedTerms と名前 outerName も入る）。"
              "既定の設定ファイルにも書ける。"
@@ -464,7 +467,7 @@ def build(output: Path, reference: Path):
     # 18. 確かめ方
     s = deck.body("04　編集の例・注意・確かめ方", "確かめ方 ― テスト・画面・Excel")
     steps(s, 0.6, 1.5, 6.6, [
-        ("テストを全件流す（手順 C）", f"cd tests → runAllTests。「成功 {TEST_COUNT} 件、失敗 0 件、未完了 0 件」（2026-10-31 時点の件数）"),
+        ("テストを全件流す（手順 C）", f"cd tests → runAllTests。「成功 {TEST_COUNT} 件、失敗 0 件、未完了 0 件」（2026-11-05 時点の件数）"),
         ("画面で初期値を見る", "「初期設定に戻す」を押し、「2. 評価の設定」の欄が新しい値か確かめる"),
         ("設定ファイルを開いて見る", "「設定を保存…」で保存した JSON の値（名前・単位・並び）"),
         ("模擬データで評価する", "sample_data の模擬データで評価し、結果の Excel の「設定」シートを見る"),

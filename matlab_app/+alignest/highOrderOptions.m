@@ -13,6 +13,9 @@ function options = highOrderOptions(settings)
 %   options.outerMaker：外周の Shot の補正の式（"none" なら分けない。"asml"・"canon"・"nikon"・"custom"）。分けると、k の組を
 %                       内周・外周で別にする（くくりの組ごとに、内周は options.maker、外周は outerMaker の式）
 %   options.outerExcludedTerms：外周の式で使わない k の番号、options.outerName：外周の式に選んだ保存した項の組み合わせの名前
+%   options.shortage：点が足りない k の組（点の配置で使う項が決まらない Shot・組）の扱い。"reduceAll"（全体の項を減らす：
+%                     点の数が最も少ない組に合わせて、すべての組で使う項を k の小さい順に減らす）・"reduceGroup"（その組だけ
+%                     項を減らす）・"skip"（その組は補正しない）。どれでも k1〜k6 も決まらない組は補正しない
 %   options.vifThreshold：「VIF で選ぶ」のしきい値（すべての項の VIF がこの値より小さくなるまで高次項を外す）
 %   options.loss："ols"（最小二乗）・"huber"（Huber の M 推定）・"lad"（最小絶対偏差）。Huber・LAD はロバスト回帰
 %   options.huberTuning：Huber の定数 c（残差が c × 尺度 を超える点の重みを下げる）
@@ -30,6 +33,8 @@ UNIT_LABELS = ["Wafer 内の Shot で共通", "Scan 方向ごと", "Shot 行の�
 LOSS_NAMES = ["ols", "huber", "lad"];
 LOSS_LABELS = ["最小二乗", "Huber（ロバスト回帰）", "LAD（ロバスト回帰）"];
 REGULARIZATION_NAMES = ["none", "l2", "l1"];
+SHORTAGE_NAMES = ["reduceAll", "reduceGroup", "skip"];
+SHORTAGE_LABELS = ["全体の項を減らす", "その組だけ項を減らす", "その組は補正しない"];
 MAX_PENALTY_ORDER = 6;   % 正則化をかけられる次数の上限（Nikon の式の6次まで）
 defaults = alignest.defaultSettings().highOrder;
 source = struct();
@@ -60,6 +65,7 @@ options.termSets = reshape(string(options.termSets), [], 1);
 options.outerMaker = lower(string(options.outerMaker));
 options.outerExcludedTerms = reshape(double(options.outerExcludedTerms), 1, []);
 options.outerName = string(options.outerName);
+options.shortage = string(options.shortage);
 if ~isscalar(options.maker) || ~any(options.maker == MAKER_NAMES)
     error('alignest:highOrderModel', 'Shot 高次補正の式は %s のいずれかです: %s', strjoin(MAKER_NAMES, "・"), ...
         strjoin(options.maker, "・"));
@@ -67,6 +73,10 @@ end
 if ~isscalar(options.unit) || ~any(options.unit == UNIT_NAMES)
     error('alignest:highOrderUnit', ['補正のくくりは common（Wafer 内の Shot で共通）・scan（Scan 方向ごと）・' ...
         'row（Shot 行の偶奇ごと）・shot（Shot ごと）のいずれかです: %s'], strjoin(options.unit, "・"));
+end
+if ~isscalar(options.shortage) || ~any(options.shortage == SHORTAGE_NAMES)
+    error('alignest:highOrderShortage', ['点が足りない組の扱いは reduceAll（全体の項を減らす）・reduceGroup（その組だけ' ...
+        '項を減らす）・skip（その組は補正しない）のいずれかです: %s'], strjoin(options.shortage, "・"));
 end
 if ~isscalar(options.waferOrder) || ~any(options.waferOrder == 0:MAX_WAFER_ORDER)
     error('alignest:highOrderWafer', 'Wafer 成分の次数は 0〜%d の整数にしてください。', MAX_WAFER_ORDER);
@@ -134,6 +144,10 @@ if options.regularization ~= "none" && options.lambda > 0
         orderText(options.penaltyOrders), options.lambda);
 end
 options.description = formulaText + "、" + unitText + "、" + lossText + "、" + l2Text;
+if options.shortage ~= "reduceAll"
+    % 初期の扱い（全体の項を減らす）は、以前の説明と同じにするため書かない
+    options.description = options.description + "、点が足りない組：" + SHORTAGE_LABELS(SHORTAGE_NAMES == options.shortage);
+end
 end
 
 function text = formulaDescription(maker, excludedTerms, makerNames, makerLabels, setName)

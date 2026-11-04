@@ -1388,8 +1388,8 @@ classdef (Abstract) ResultsTab < appui.Core
             end
             dialog = [];
             if app.Figure.Visible == "on"
-                dialog = uiprogressdlg(app.Figure, 'Title', titleText, 'Message', '推定値を計算しています…', ...
-                    'Cancelable', 'on', 'CancelText', '止める', 'ShowPercentage', 'on');
+                dialog = appui.ProgressWindow(app.Figure, titleText, "推定値を計算しています…", app.Palette, ...
+                    app.FontSize, "止める");
             end
             cleanup = onCleanup(@() closeDialog(dialog));
             if nargin < 6

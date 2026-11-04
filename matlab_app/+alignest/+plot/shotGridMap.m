@@ -7,8 +7,12 @@ function summary = shotGridMap(ax, centers, sizeMm, displacement, options)
 %   options.stack = false：Wafer 上の各 Shot の位置に、変形していない Shot の枠（灰色）と変形させたグリッドを描く。
 %   options.stack = true：すべての Shot のグリッドを1つの Shot に重ね（薄い線）、平均のグリッドを濃い線で描く。
 %   options.scaleMmPerNm：変位の倍率 [mm/nm]（0 なら、変位の大きさの 95% 点がグリッドの間隔の SHIFT_RATIO 倍になる）。
-%   options.gridLines：グリッドの線の数（縦・横それぞれ）、options.titleText：題名、options.waferRadiusMm：Wafer の半径。
-%   summary：描いた Shot の数 n、倍率 scaleMmPerNm、変位の大きさの最大 maxNm。
+%   options.gridStepMm：グリッドの刻み [mm]（Shot の中心から刻みごとの線と、Shot の端の線を描く。0 なら gridLines）。
+%   線が縦・横それぞれ MAX_GRID_LINES 本を超える細かい刻みは、超えない刻みに広げる（summary.gridStepMm）。
+%   options.gridLines：刻みが 0 のときのグリッドの線の数（縦・横それぞれ。Shot の端から端まで等しい間隔）、
+%   options.titleText：題名、options.waferRadiusMm：Wafer の半径。
+%   summary：描いた Shot の数 n、倍率 scaleMmPerNm、変位の大きさの最大 maxNm、刻み gridStepMm（使った刻み [mm]。線の数で
+%   決めたときは線の間隔）。
 arguments
     ax
     centers double
@@ -16,12 +20,14 @@ arguments
     displacement function_handle
     options.stack (1, 1) logical = false
     options.scaleMmPerNm (1, 1) double {mustBeNonnegative} = 0
+    options.gridStepMm (1, 1) double {mustBeNonnegative, mustBeFinite} = 0
     options.gridLines (1, 1) double {mustBeInteger, mustBePositive} = 5
     options.titleText (1, 1) string = ""
     options.waferRadiusMm (1, 1) double = 150
 end
 SAMPLES = 15;                  % グリッドの線1本を描く点の数
 SHIFT_RATIO = 0.4;             % 自動の倍率：変位の大きさの95%点がグリッドの間隔のこの割合
+MAX_GRID_LINES = 101;          % 刻みで描くときの線の数の上限（縦・横それぞれ。細かすぎて描けなくならないように）
 FRAME_COLOR = [0.65, 0.65, 0.65];
 GRID_COLOR = [0.80, 0.25, 0.20];
 EACH_COLOR = [0.42, 0.62, 0.85];
@@ -29,13 +35,22 @@ MEAN_COLOR = [0.05, 0.20, 0.45];
 WAFER_COLOR = [0.3, 0.3, 0.3];
 % グリッドの線（横の線と縦の線）。線ごとに SAMPLES 点、線の間は NaN で区切る
 half = sizeMm / 2;
-levelsX = linspace(-half(1), half(1), options.gridLines);
-levelsY = linspace(-half(2), half(2), options.gridLines);
+if options.gridStepMm > 0
+    step = max(options.gridStepMm, max(sizeMm) / (MAX_GRID_LINES - 1));
+    levelsX = gridLevels(half(1), step);
+    levelsY = gridLevels(half(2), step);
+else
+    levelsX = linspace(-half(1), half(1), options.gridLines);
+    levelsY = linspace(-half(2), half(2), options.gridLines);
+    step = min(sizeMm) / max(options.gridLines - 1, 1);
+end
 along = linspace(0, 1, SAMPLES).';
 local = zeros(0, 2);
-for k = 1:options.gridLines
-    local = [local; -half(1) + 2 * half(1) * along, repmat(levelsY(k), SAMPLES, 1); NaN, NaN]; %#ok<AGROW>
-    local = [local; repmat(levelsX(k), SAMPLES, 1), -half(2) + 2 * half(2) * along; NaN, NaN]; %#ok<AGROW>
+for level = levelsY   % 横の線
+    local = [local; -half(1) + 2 * half(1) * along, repmat(level, SAMPLES, 1); NaN, NaN]; %#ok<AGROW>
+end
+for level = levelsX   % 縦の線
+    local = [local; repmat(level, SAMPLES, 1), -half(2) + 2 * half(2) * along; NaN, NaN]; %#ok<AGROW>
 end
 inside = all(isfinite(local), 2);
 [dx, dy] = deal(nan(size(centers, 1), size(local, 1)));
@@ -46,7 +61,7 @@ maxNm = max([magnitude(:); 0]);
 scale = options.scaleMmPerNm;
 if scale == 0
     typical = alignest.stats.percentile(magnitude(:), 95);
-    spacing = min(sizeMm) / max(options.gridLines - 1, 1);
+    spacing = min([diff(levelsX), diff(levelsY), step]);   % 端の線との間が狭いときは、その間隔
     scale = SHIFT_RATIO * spacing / max(typical, eps);
 end
 cla(ax, 'reset');
@@ -111,5 +126,12 @@ end
 if ~isempty(items)
     legend(ax, items, 'Location', 'southoutside', 'Box', 'off', 'FontSize', 9);
 end
-summary = struct("n", nnz(drawn), "scaleMmPerNm", scale, "maxNm", maxNm);
+summary = struct("n", nnz(drawn), "scaleMmPerNm", scale, "maxNm", maxNm, "gridStepMm", step);
+end
+
+function levels = gridLevels(half, step)
+% Shot の中心から step [mm] おきの線（端までに入るもの）と、Shot の端の線の位置
+DIGITS = 9;   % 計算の丸めの差で同じ位置の線が2本にならないように
+count = floor(half / step + 1e-9);
+levels = unique(round([-half, (-count:count) * step, half], DIGITS));
 end
