@@ -81,7 +81,7 @@ parts.append(section('workflow', '''
 <div class="workflow"><div class="workflow-step"><span>1</span><strong>退避</strong><small>変更前を保存</small></div><div class="workflow-arrow">→</div><div class="workflow-step"><span>2</span><strong>特定</strong><small>タブと関数を対応</small></div><div class="workflow-arrow">→</div><div class="workflow-step"><span>3</span><strong>編集</strong><small>1種類ずつ変更</small></div><div class="workflow-arrow">→</div><div class="workflow-step"><span>4</span><strong>確認</strong><small>再起動と小規模評価</small></div><div class="workflow-arrow">→</div><div class="workflow-step"><span>5</span><strong>配布</strong><small>Windows版を再作成</small></div></div>
 <h3>画面のどこを直すか</h3>
 '''+table(['画面・目的','開くファイル','検索する関数・名前','主な役割'],[
-('ウィンドウ名・タブ名・メニュー','+appui/Core.m','APP_TITLE / function startApp','起動時のタイトル、8つのタブ、メニュー「表示」を作る。'),
+('ウィンドウ名・タブ名・メニュー','+appui/Core.m','APP_TITLE / function startApp','起動時のタイトル、9つのタブ、メニュー「設定」（表示の設定・乱数の種・ヘルプ）を作る。'),
 ('1. データの読み込み','+appui/DataTab.m','function buildDataTab','ファイル、列対応、座標単位、入力プレビュー。'),
 ('2. 評価の設定','+appui/SettingsTab.m','function buildSettingsTab','選び方、計測数、質的変数、手法、補正条件。'),
 ('3. 実行','+appui/RunTab.m','function buildRunTab','開始・再開・条件追加、計測マップ、ログ。'),
@@ -92,7 +92,8 @@ parts.append(section('workflow', '''
 ('7. Shot高次補正の比較','+appui/HighOrderCompareTab.m','function buildHighOrderCompareTab / buildHighOrderPairTab / buildHighOrderWaferTab','補正の比較（条件の一覧・λのスイープ・3つの回帰）、2つの条件を並べる、Waferの比較（残差はdx・dyの図を並べる）、項の組み合わせの保存の欄。'),
 ('7. Shot高次補正の残差の分析と書き出し','+appui/HighOrderAnalysisTab.m','function buildHighOrderHistogramTab / buildHighOrderDecompositionTab / buildHighOrderOutputTab','ヒストグラム（重ねる値・軸・Wafer・範囲）、残差の成分分解（分析の項・Shot成分の項）、書き出し（書き出すもの・値・書き出すボタンと表）の欄。'),
 ('7. Shot高次補正のλ・cのスイープ','+appui/HighOrderSweepTab.m','function buildHighOrderSweepTab','変える値（λ・c・組み合わせ）・範囲と刻み・図の値・実行と最もよい値を使うボタン、推移の図と表の欄。'),
-('8. ヘルプ・表示の設定','+appui/Display.m','function buildHelpTab / setTheme / setFontSize','help/help.htmlの表示、画面の色・文字の大きさ・凡例の位置。'),
+('8. Mark配置の最適化','+appui/MarkLayoutTab.m','function buildMarkLayoutTab','入力・候補のMark（格子で置く・必ず計測）・補正の式・回帰・配置の選び方と評価の欄、乱数のShotの形・制御残差とI効率・配置・表のタブ。'),
+('9. ヘルプ・表示の設定','+appui/Display.m','function buildHelpTab / setTheme / setFontSize','help/help.htmlの表示、画面の色・文字の大きさ・凡例の位置。'),
 ('画面と設定を相互に渡す','+appui/SettingsTab.m','settingsToControls / controlsToSettings','設定→画面、画面→設定。片側だけ直すと値が戻る・反映されない。'),
 ('いくつかのタブで使う小さな関数','+appui/private/','label / place / onOff など','部品を作る・置く、値を文字にする。1つの関数が1つのファイル。'),
 ('計算そのもの','+alignest 以下','—','データ整理、手法、評価、書き出し。見た目だけなら通常ここを直さない。'),
@@ -180,13 +181,13 @@ table(['部品・操作','主な接続先','変更後に確認すること'],[
     '<strong>計算と保存へ渡っているか確認する。</strong><p>+alignestの該当関数が新しい値を実際に使い、設定の保存・再読込で値が残り、旧JSONでも起動することを確認します。</p>',
 ]) ))
 
-parts.append(section('appearance', '''<h3>文字の大きさ</h3><p><code>+appui/Core.m</code> の冒頭の定数 <code>FONT_SIZE=16</code>、<code>AXES_FONT_SIZE=13</code>、<code>TABLE_FONT_SIZE=13</code> などを確認します。<code>startApp</code> でFontSizeをまとめて適用し、表などは例外のサイズを上書きしています。利用者がメニュー「表示」→「文字の大きさ」で選ぶと、<code>setFontSize</code>（<code>+appui/Display.m</code>）が <code>FONT_SIZE</code> との比を画面・表・図と決まった幅の欄に掛けます。部品を作った行だけでFontSizeを指定しても、後で変わる場合があります。図を描く関数の最後では <code>styleAxes</code> を呼び、文字の大きさと凡例の位置をそろえます。</p>
+parts.append(section('appearance', '''<h3>文字の大きさ</h3><p><code>+appui/Core.m</code> の冒頭の定数 <code>FONT_SIZE=16</code>、<code>AXES_FONT_SIZE=13</code>、<code>TABLE_FONT_SIZE=13</code> などを確認します。<code>startApp</code> でFontSizeをまとめて適用し、表などは例外のサイズを上書きしています。利用者がメニュー「設定」→「文字の大きさ」で選ぶと、<code>setFontSize</code>（<code>+appui/Display.m</code>）が <code>FONT_SIZE</code> との比を画面・表・図と決まった幅の欄に掛けます。部品を作った行だけでFontSizeを指定しても、後で変わる場合があります。図を描く関数の最後では <code>styleAxes</code> を呼び、文字の大きさと凡例の位置をそろえます。</p>
 <h3>色・テーマ</h3><p><code>themePalette</code>（<code>+appui/private/themePalette.m</code>）がライト・ダークの背景、文字、補足、エラー、入力欄、ボタンの色をまとめています。切替処理は <code>setTheme → applyTheme</code>（<code>+appui/Display.m</code>）です。新しい部品も <code>app.Palette.text / muted / error</code> など役割で色を指定します。</p>
-'''+figure('04_dark.png','ダークモードの実画面','メニュー「表示」からテーマを切り替えます。追加した説明文、入力欄、表、無効状態の文字が背景に埋もれないか確認します。')+
+'''+figure('04_dark.png','ダークモードの実画面','メニュー「設定」からテーマを切り替えます。追加した説明文、入力欄、表、無効状態の文字が背景に埋もれないか確認します。')+
 table(['調整したいもの','主な場所','注意'],[
-('画面全体の基準文字','FONT_SIZE（Core.m）とstartApp','部品ごとの例外サイズを確認。利用者は「表示」→「文字の大きさ」で変えられる。'),
+('画面全体の基準文字','FONT_SIZE（Core.m）とstartApp','部品ごとの例外サイズを確認。利用者は「設定」→「文字の大きさ」で変えられる。'),
 ('表の列幅','ColumnWidth / METHOD_COLUMN_WIDTH等','長い手法名と数値の両方が読める幅。'),
-('図の文字・凡例の位置','AXES_FONT_SIZE / SMALL_AXES_FONT_SIZE / styleAxes','グラフ再描画後にも適用されるか。凡例の位置は利用者が「表示」→「凡例の位置」と図の右クリックで選ぶ。'),
+('図の文字・凡例の位置','AXES_FONT_SIZE / SMALL_AXES_FONT_SIZE / styleAxes','グラフ再描画後にも適用されるか。凡例の位置は利用者が「設定」→「凡例の位置」と図の右クリックで選ぶ。'),
 ('ウィンドウの初期サイズ','FIGURE_SIZE / figurePosition / fitToScreen','本PCの確認画像は1600×1000指定。既定は1440×900で、小さい画面に合わせて調整される。'),
 ('ヘルプ本文','help/help.html / buildHelpTab','UIの名称を変えたらヘルプ内の説明も合わせる。'),
 ]) + note('色の設定を変えると利用者全体の見た目が変わります', 'themePaletteの共通色はアプリ全体に使われます。1個のエラー文だけのつもりで共通色を変更しないようにし、ライト・ダークの両方で表・図・警告を見直します。')))

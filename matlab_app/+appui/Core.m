@@ -8,7 +8,7 @@ classdef (Abstract) Core < handle
         APP_TITLE = "面内推定評価ツール"
         PREF_GROUP = "AlignmentEstimationApp"   % 表示の設定（画面の色・文字の大きさ・凡例の位置）を次に開いたときも使うための保存先（getpref）
         FONT_SIZE = 16                  % 画面の文字の標準の大きさ。下の文字の大きさ・決まった幅 [px] は、この大きさのときの値
-        FONT_SIZE_CHOICES = [12, 14, 16, 18, 20]   % 「表示」→「文字の大きさ」の選択肢 [pt]
+        FONT_SIZE_CHOICES = [12, 14, 16, 18, 20]   % 「設定」→「文字の大きさ」の選択肢 [pt]
         FONT_SIZE_LIMITS = [10, 24]     % setFontSize で指定できる文字の大きさの範囲 [pt]
         AXES_FONT_SIZE = 13
         SMALL_AXES_FONT_SIZE = 10       % 図を並べるとき（計測マップ・マップの比較）の文字の大きさ
@@ -103,6 +103,11 @@ classdef (Abstract) Core < handle
                                 %  checkOnly。入力が無ければ []）
         HighOrderConditions = struct("label", {}, "highOrder", {})  % 「7. Shot高次補正」の補正の比較の条件（名前と settings.highOrder）
         HighOrderComparison = []  % 「7. Shot高次補正」の補正の比較の結果（compareHighOrderConditionsNow。表・条件ごとの結果と、比べた条件・入力）
+        MarkLayoutFile = []     % 「8. Mark配置の最適化」で読み込んだ Excel・CSV（raw・info：alignest.readHighOrderFile、mapping、
+                                %  wafers・coordinates・dataInfo：選んだ列で整理した入力（alignest.markLayoutFileData。まだなら dataInfo は []））
+        MarkLayoutInput = []    % 「8. Mark配置の最適化」の今の入力の候補の Mark と Shot ごとの値（alignest.markCandidates。入力が無ければ []）
+        MarkLayoutStudy = []    % 「8. Mark配置の最適化」で最後に計算した結果（alignest.markLayoutStudy と、計算したときの入力・設定）
+        MarkLayoutSelection = zeros(0, 1)  % 「候補の Mark」の表で選んでいる行（「選んだ行を消す」で使う）
     end
 
     properties (Dependent)
@@ -157,7 +162,8 @@ classdef (Abstract) Core < handle
             app.Tabs.map = uitab(app.TabGroup, 'Title', '5. Waferごとのマップ');
             app.Tabs.target = uitab(app.TabGroup, 'Title', '6. 未知の座標の推定');
             app.Tabs.highOrder = uitab(app.TabGroup, 'Title', '7. Shot高次補正');
-            app.Tabs.help = uitab(app.TabGroup, 'Title', '8. ヘルプ');
+            app.Tabs.markLayout = uitab(app.TabGroup, 'Title', '8. Mark配置の最適化');
+            app.Tabs.help = uitab(app.TabGroup, 'Title', '9. ヘルプ');
             app.TabGroup.SelectionChangedFcn = @(~, event) app.onTabChanged(event);
             buildDataTab(app);
             buildSettingsTab(app);
@@ -166,9 +172,12 @@ classdef (Abstract) Core < handle
             buildMapTab(app);
             buildTargetTab(app);
             buildHighOrderTab(app);
+            buildMarkLayoutTab(app);
             buildHelpTab(app);
-            % 表示のメニュー：ライトモード・ダークモードの切り替え、文字の大きさ、凡例の位置と、ヘルプを開く
-            viewMenu = uimenu(app.Figure, 'Text', '表示');
+            % 設定のメニュー：ライトモード・ダークモードの切り替え、文字の大きさ、凡例の位置、Scan 方向の向きと色、乱数の種と、
+            % ヘルプを開く
+            viewMenu = uimenu(app.Figure, 'Text', '設定');
+            app.Controls.settingsMenu = viewMenu;
             app.Controls.themeLight = uimenu(viewMenu, 'Text', 'ライトモード', 'Checked', 'on', ...
                 'MenuSelectedFcn', @(~, ~) app.setTheme("light"));
             app.Controls.themeDark = uimenu(viewMenu, 'Text', 'ダークモード', ...
@@ -209,6 +218,9 @@ classdef (Abstract) Core < handle
             uimenu(scanMenu, 'Text', '（図の印と色だけ。推定の結果は変わりません）', 'Enable', 'off');
             uimenu(viewMenu, 'Text', '画面の大きさに合わせる', 'Separator', 'on', ...
                 'MenuSelectedFcn', @(~, ~) app.fitToScreen(true));
+            % 乱数の種（学習 Shot の選び方と Mark 配置の最適化で共通。設定 sampling.seed。結果が変わる設定）
+            app.Controls.randomSeedItem = uimenu(viewMenu, 'Text', '乱数の種…', 'Separator', 'on', ...
+                'MenuSelectedFcn', @(~, ~) app.onPickRandomSeed());
             uimenu(viewMenu, 'Text', 'ヘルプ（用語・補正の式・カーネル）を開く', 'Separator', 'on', ...
                 'MenuSelectedFcn', @(~, ~) set(app.TabGroup, 'SelectedTab', app.Tabs.help));
             set(findall(app.Figure, '-property', 'FontSize'), 'FontSize', app.FONT_SIZE);
@@ -528,6 +540,12 @@ classdef (Abstract) Core < handle
                     items = c.highOrderHistogramAxes;
                 case "highOrderDecomposition"
                     items = c.highOrderDecompositionAxes;
+                case "markLayoutChart"
+                    items = c.markOptChartAxes;
+                case "markLayoutMap"
+                    items = c.markOptMapAxes;
+                case "markLayoutShape"
+                    items = c.markOptShapeAxes;
                 otherwise
                     error('alignest:figureName', '保存する図の名前が違います: %s', figureName);
             end

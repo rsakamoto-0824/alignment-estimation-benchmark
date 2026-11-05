@@ -28,7 +28,7 @@ DECK_NAME = "デフォルト設定の編集ガイド"
 DECK_TITLE = "デフォルト設定の編集ガイド（管理者向け）"
 CODE_FONT = "Courier New"
 DEFAULTS_FILE = "alignment_estimation_defaults.json"
-TEST_COUNT = 219   # runAllTests の件数（2026-11-05 時点。テストを足したら直す）
+TEST_COUNT = 227   # runAllTests の件数（2026-11-05 時点。テストを足したら直す）
 
 
 class Deck:
@@ -116,7 +116,7 @@ def build(output: Path, reference: Path):
                                    "exe を配る手順の詳細（Windows 手順書）"], size=13, color=BODY, bullets=True, space_after=4)
     chapters = [("01", "設定の仕組み", "初期値に、ファイルと画面の変更を重ねる流れ", TEAL),
                 ("02", "3つの変え方と手順", "設定ファイル・既定の設定ファイル・コード", CORAL),
-                ("03", "設定の項目と初期値", "data・factors・sampling・evaluation・overlay・methods・highOrder", PURPLE),
+                ("03", "設定の項目と初期値", "data・factors・sampling・evaluation・overlay・methods・highOrder・markLayout", PURPLE),
                 ("04", "編集の例・注意・確かめ方", "JSON とコードの例、型・単位、テスト", GOLD)]
     for index, (number, heading, body, color) in enumerate(chapters):
         y = 1.5 + index * 1.33
@@ -233,7 +233,7 @@ def build(output: Path, reference: Path):
         color=PURPLE, gap=0.8, size=13.5)
     box(s, 7.95, 1.5, 4.78, 4.75, fill=PURPLE_TINT)
     text(s, 8.2, 1.65, 4.3, 0.4, "直すファイル", size=15, color=PURPLE, bold=True)
-    files = [("defaultSettings.m", "data・factors・sampling・evaluation・overlay・highOrder の初期値"),
+    files = [("defaultSettings.m", "data・factors・sampling・evaluation・overlay・highOrder・markLayout の初期値"),
              ("recommendedMethods.m", "初期設定（GPR だけ）・推奨の組み合わせ・すべて・なし と手法の細かい設定（options）"),
              ("+appui/Core.m", "画面の定数（先頭の properties (Constant)）"),
              ("estimateRunSeconds.m", "時間の目安（1条件の秒数）"),
@@ -249,7 +249,7 @@ def build(output: Path, reference: Path):
     # 8. どこに何があるか
     s = deck.body("03　設定の項目と初期値", "どこに何があるか ― 初期値と定数のファイル")
     rows = [["ファイル（matlab_app の中）", "中身", "例"],
-            ["+alignest/defaultSettings.m", "評価の条件の初期値（data・factors・sampling・evaluation・overlay・highOrder）",
+            ["+alignest/defaultSettings.m", "評価の条件の初期値（data・factors・sampling・evaluation・overlay・highOrder・markLayout）",
              "外周とみなす半径 120 mm"],
             ["+alignest/recommendedMethods.m", "比べる手法（初期設定・推奨の組み合わせ・すべて・なし）と手法の細かい設定 options",
              "GPR matern52 × 質的変数4通り"],
@@ -257,7 +257,7 @@ def build(output: Path, reference: Path):
             ["+alignest/estimateRunSeconds.m", "時間の目安（1条件 2 秒、ν を指定した Matérn は 3 倍）", "SECONDS_PER_RUN = 2"],
             ["+alignest/exchangeSecondsGuide.m", "交換法の時間の目安（初期配置1つ × 学習 Shot 1つ）", "0.01 秒"],
             ["+alignest/siteDefaults.m", "既定の設定ファイル（手順 B）を読む", DEFAULTS_FILE],
-            ["help/help.html", "「8. ヘルプ」の説明（用語・カーネル・補正の式）", "手法を足したら説明も足す"]]
+            ["help/help.html", "「9. ヘルプ」の説明（用語・カーネル・補正の式）", "手法を足したら説明も足す"]]
     table(s, 0.6, 1.5, [3.6, 5.2, 3.33], rows, size=12, row_h=0.56, bold_first=True)
     point_bar(s, 6.2, "設定ファイルの項目の名前は、defaultSettings.m の settings.〈グループ〉.〈項目〉 と同じ",
               icon="i", icon_color=BODY, h=0.6, size=13.5)
@@ -290,7 +290,7 @@ def build(output: Path, reference: Path):
         ["sampling.nShots", "[10 15 … 40]", "上から作った並び（計算に使う。開始〜刻みと合わせる）", "（自動）"],
         ["sampling.countBy", "\"shots\"", "Shot 数で決める（shots）か計測率で決める（rate）か", "2. 学習 Shot 数"],
         ["sampling.rateStart・End・Step", "10・40・10", "計測率 [%] の開始・終了・刻み（countBy = rate）", "2. 計測率"],
-        ["sampling.randomRepeats ・ seed", "10 ・ 20261017", "ランダムの繰り返し回数・乱数の種", "2. ランダム"],
+        ["sampling.randomRepeats ・ seed", "10 ・ 20261017", "ランダムの繰り返し回数・乱数の種（メニュー「設定」）", "2. ランダム"],
         ["sampling.layoutPlans・layoutFile", "[]・\"\"", "Excel ファイルで指定（1行 =「種類|名前|shotNo …」。読み込みで入る）", "2. Excel で指定"],
         ["sampling.requiredShots・requireOuterShots", "[]・false", "必ず計測する shotNo（拡張 I 最適計画）・最外周の Shot をすべて",
          "2. 必ず計測"],
@@ -332,11 +332,11 @@ def build(output: Path, reference: Path):
         ["overlay.waferFormula・shotFormula・perShotFormula", "k1 + k3*x + k5*y\nk2 + k4*y + k6*x",
          "式を入力するときの dx・dy の式", "2. dx・dy"],
         ["display.scan1Up・scan1Color・scan2Color", "true・緑・紫", "表示：Scan 方向 1 を上向き（▲）にするか・1・2 の色（RGB 0〜1）",
-         "メニュー「表示」"]],
+         "メニュー「設定」"]],
         widths=(3.85, 1.95, 4.68, 1.65), row_h=0.41)
     point_bar(s, 6.3, "Overlay 補正をすべて「なし」（waferOrder 0・shotCommon none・perShot none）にすると補正の評価をしない",
               icon="i", icon_color=BODY, h=0.55, size=13)
-    notes(s, "補正の式の書き方と、すべての補正の式は「8. ヘルプ」にまとめている。")
+    notes(s, "補正の式の書き方と、すべての補正の式は「9. ヘルプ」にまとめている。")
 
     # 13. methods
     s = deck.body("03　設定の項目と初期値", "設定の項目⑤：methods（比べる手法）")
@@ -384,9 +384,35 @@ def build(output: Path, reference: Path):
              "unit・λ・回帰・保存した組み合わせは「補正の比較」でまとめて並べて比べられる。outerMaker を none 以外にすると、"
              "外周の Shot だけその式で補正する（保存した組み合わせを選ぶと、その使わない項 outerExcludedTerms と名前 outerName も入る）。"
              "既定の設定ファイルにも書ける。"
-             "計算の方法と式は「8. ヘルプ」の「Shot 高次補正の評価」。")
+             "計算の方法と式は「9. ヘルプ」の「Shot 高次補正の評価」。")
 
-    # 15. options と画面の定数
+    # 15. markLayout（Mark 配置の最適化）
+    s = deck.body("03　設定の項目と初期値", "設定の項目⑦：markLayout（8. Mark配置の最適化）")
+    settings_table(s, [
+        ["markLayout.maker ・ excludedTerms", "\"nikon\" ・ []", "補正の式・使わない k の番号（highOrder と同じ書き方）", "8. 補正の式"],
+        ["markLayout.vifThreshold", "10", "「VIF で選ぶ」のしきい値（候補の Mark の位置で求める）", "8. VIF のしきい値"],
+        ["markLayout.loss ・ huberTuning", "\"huber\" ・ 1.345", "制御残差を求める当てはめの損失関数・Huber の c", "8. 回帰"],
+        ["markLayout.regularization ・ penaltyOrders ・ lambda", "\"l2\" ・ [2〜6] ・ 0.1", "正則化（none・l2・l1）・かける次数・強さ λ", "8. 正則化・λ"],
+        ["markLayout.minMarks ・ maxMarks", "0 ・ 0", "Mark の数の最低数・最大数（0 = 使う項の数・すべての候補）", "8. 最低数・最大数"],
+        ["markLayout.starts", "5", "Mark の数ごとに配置を探す始め方の数（1〜50）", "8. 探す回数"],
+        ["markLayout.values", "\"measured\"", "制御残差を求める値（measured：実測値・random：乱数の形）", "8. 評価に使う値"],
+        ["markLayout.shapes", "200", "乱数の Shot の形の数（1〜1000。乱数の種は sampling.seed と共通）", "8. 形の数"],
+        ["markLayout.orderSigmaNm", "[3,3,1.5,1,0.5,0.3]", "乱数の形の 0〜5次の項の大きさ（Shot の端の標準偏差 [nm]）", "8. 項の大きさ"],
+        ["markLayout.noiseNm ・ outlierPercent ・ outlierNm", "0.5 ・ 0 ・ 10", "計測のばらつき [nm]・飛び値の割合 [%]・大きさ [nm]", "8. ばらつき・飛び値"],
+        ["markLayout.coordinateXmm/Ymm ・ requiredXmm/Ymm", "[]（なし）", "画面で入力した座標・必ず計測する Mark の座標 [mm]", "8. 候補の Mark"]],
+        widths=(3.75, 1.75, 4.65, 1.98), row_h=0.33)
+    point_bar(s, 6.38, "最低数は使う項の数・必ず計測する Mark の数より少なくしない（少なければ上げて知らせる）。"
+              "markLayout は評価の結果を変えない（「続きから再開」の比較にも使わない）",
+              icon="i", icon_color=BODY, h=0.6, size=12)
+    notes(s, "「8. Mark配置の最適化」のタブの初期値。Mark の数ごとに I 最適計画で配置を選び、選んだ Mark の値で補正したときの"
+             "制御残差を I 効率と比べる。excludedTerms は「VIF で選ぶ」・表の「使う」で変わる。coordinateXmm・coordinateYmm は"
+             "画面で入力した候補の Mark の座標（「格子で置く」で作る）、requiredXmm・requiredYmm は必ず計測する Mark の座標で、"
+             "どちらも「設定を保存…」の JSON に入る（必ず計測する Mark は座標で覚えるので、入力を変えても同じ位置なら残る）。"
+             "values が random のとき、0〜5次の項に orderSigmaNm の大きさの正規乱数の係数を掛けた形に、noiseNm のばらつきと、"
+             "outlierPercent の割合の点に outlierNm の飛び値を足して補正し、足す前の形で制御残差を求める。"
+             "既定の設定ファイルにも書ける。計算の方法と式は「9. ヘルプ」の「Mark 配置の最適化」。")
+
+    # 16. options と画面の定数
     s = deck.body("03　設定の項目と初期値", "手法の細かい設定（methods.options）と画面の定数")
     rows = [["methods.options", "初期値"],
             ["gprMaxIterations", "300"], ["backfitMaxIterations ・ backfitToleranceNm", "20 ・ 0.001"],
@@ -406,7 +432,7 @@ def build(output: Path, reference: Path):
     notes(s, "options は精度と時間の兼ね合いで決めた値。変えるときは模擬データで比べてから。画面の定数は +appui/Core.m の先頭（画面はタブごとのファイルに分けてあり、定数は共通の Core.m にまとめてある）、"
              "時間の目安は estimateRunSeconds.m・exchangeSecondsGuide.m にある。")
 
-    # 16. 編集の例
+    # 17. 編集の例
     s = deck.body("04　編集の例・注意・確かめ方", "編集の例 ― 同じ変更を設定ファイルとコードで書く")
     text(s, 0.6, 1.45, 12.13, 0.7, "例：D 最適も比べる・学習 Shot 数を 10〜50（10 刻み）・同心円を 60・100 mm・外周を 130 mm・"
          "異常値を MAD で除く・Fringe Zernike（次数 4）も比べる", size=13, color=INK, bold=True)
@@ -441,7 +467,7 @@ def build(output: Path, reference: Path):
         "methods.zernike.orders = 4;"], color=PURPLE, size=11)
     notes(s, "JSON は書いた項目だけが変わる。コードでは学習 Shot 数の並び nShots も一緒に作る（shotCountList）。")
 
-    # 17. 気をつけること
+    # 18. 気をつけること
     s = deck.body("04　編集の例・注意・確かめ方", "気をつけること")
     tips = [("\"", TEAL, "型と形をそろえる", "文字は \"…\"（JSON も \"…\"）、並びは横の [a, b]。true・false は小文字。"
              "JSON は UTF-8 で保存する"),
@@ -464,7 +490,7 @@ def build(output: Path, reference: Path):
         text(s, x + 0.25, y + 1.0, 3.34, 1.3, body, size=12.5, color=BODY)
     notes(s, "設定ファイルは loadSettings が初期値の型に合わせて読む（文字の並び・数の行ベクトル）。知らない項目は無視する。")
 
-    # 18. 確かめ方
+    # 19. 確かめ方
     s = deck.body("04　編集の例・注意・確かめ方", "確かめ方 ― テスト・画面・Excel")
     steps(s, 0.6, 1.5, 6.6, [
         ("テストを全件流す（手順 C）", f"cd tests → runAllTests。「成功 {TEST_COUNT} 件、失敗 0 件、未完了 0 件」（2026-11-05 時点の件数）"),
@@ -485,7 +511,7 @@ def build(output: Path, reference: Path):
               icon="✓", icon_color=TEAL, h=0.5, size=13)
     notes(s, "テストは matlab_app/tests にある。1つのファイルだけ確かめるときは runtests('TestOverlay') のように指定する。")
 
-    # 19. まとめ
+    # 20. まとめ
     s = deck.slide(dark=True)
     text(s, 0.8, 0.55, 12.13, 0.8, "まとめ", size=32, color=WHITE, bold=True)
     points = [(TEAL, "A 設定ファイルを配る：評価ごとに条件を変える。「設定を保存…」→「設定を読み込む…」"),
@@ -501,7 +527,7 @@ def build(output: Path, reference: Path):
     related = [("README.md", "設定の項目・使い方の全体"),
                ("docs/admin_guide/admin_guide.html", "アプリの構成と保守の作業"),
                ("docs/windows_guide/windows_guide.html", "画面の使い方・exe を作る・配る"),
-               ("「8. ヘルプ」タブ", "用語・カーネル・補正の式")]
+               ("「9. ヘルプ」タブ", "用語・カーネル・補正の式")]
     for index, (name, body) in enumerate(related):
         y = 2.5 + index * 0.98
         circle(s, 8.35, y + 0.08, 0.4, LIGHT, str(index + 1), label_color=INK, size=12)

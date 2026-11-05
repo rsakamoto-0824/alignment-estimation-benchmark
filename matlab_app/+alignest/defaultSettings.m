@@ -44,7 +44,7 @@ settings.sampling.rateStart = 10;       % 計測率 [%] の開始・終了・刻
 settings.sampling.rateEnd = 40;
 settings.sampling.rateStep = 10;
 settings.sampling.randomRepeats = 10;
-settings.sampling.seed = 20261017;
+settings.sampling.seed = 20261017;   % 乱数の種（メニュー「設定」→「乱数の種…」。学習 Shot の選び方と Mark 配置の最適化で共通）
 settings.sampling.layoutPlans = strings(0, 1);   % Excel ファイルで指定した学習パターン（1行1パターン。alignest.readLayoutPlans・
                                                 % parseLayoutPlans の "種類|名前|shotNo（shotNo-markNo）…"）
 settings.sampling.layoutFile = "";               % 読み込んだ Excel ファイルの名前（表示・記録用）
@@ -111,4 +111,28 @@ settings.highOrder.huberTuning = 1.345;    % Huber の定数 c（正規分布の
 settings.highOrder.regularization = "l2";  % 正則化：none（なし）・l2（係数を小さくする）・l1（効かない項の係数を 0 にする）
 settings.highOrder.penaltyOrders = 2:6;    % 正則化をかける項の次数（1〜6 から選ぶ。定数 k1・k2 と Wafer 成分にはかけない）
 settings.highOrder.lambda = 0.1;           % 正則化の強さ λ（列を平均0・標準偏差1にそろえた係数に対して）
+
+% 「8. Mark配置の最適化」：Shot 高次補正の計測 Mark の配置を、Mark の数ごとに I 最適計画で選び、補正した制御残差と比べる
+% （alignest.markLayoutStudy）。補正の式・回帰の項目の意味は highOrder と同じ
+settings.markLayout.maker = "nikon";        % 補正の式：asml・canon・nikon・custom（k1〜k38 から選ぶ）
+settings.markLayout.excludedTerms = zeros(1, 0);  % 使わない k の番号（「VIF で選ぶ」・画面で外した項。k1〜k6 は外さない）
+settings.markLayout.vifThreshold = 10;      % 「VIF で選ぶ」のしきい値（VIF は候補の Mark の位置で求める）
+settings.markLayout.loss = "huber";         % 回帰の損失関数：ols・huber・lad
+settings.markLayout.huberTuning = 1.345;    % Huber の定数 c
+settings.markLayout.regularization = "l2";  % 正則化：none・l2・l1
+settings.markLayout.penaltyOrders = 2:6;    % 正則化をかける項の次数（1〜6）
+settings.markLayout.lambda = 0.1;           % 正則化の強さ λ
+settings.markLayout.minMarks = 0;           % 計測する Mark の数の最低数（0 = 使う項の数。必ず計測する Mark より少なくしない）
+settings.markLayout.maxMarks = 0;           % 計測する Mark の数の最大数（0 = すべての候補の Mark）
+settings.markLayout.starts = 5;             % Mark の数ごとに I 最適な配置を探す始め方の数（多いほどよい配置が見つかりやすい）
+settings.markLayout.values = "measured";    % 制御残差を求める値：measured（実測値）・random（乱数の Shot の形）
+settings.markLayout.shapes = 200;           % 乱数の Shot の形の数（1〜1000）
+settings.markLayout.orderSigmaNm = [3, 3, 1.5, 1, 0.5, 0.3];  % 乱数の形の 0〜5次の項の大きさ（Shot の端での標準偏差 [nm]）
+settings.markLayout.noiseNm = 0.5;          % 計測のばらつき（各点に足す乱数の標準偏差 [nm]）
+settings.markLayout.outlierPercent = 0;     % 飛び値にする点の割合 [%]
+settings.markLayout.outlierNm = 10;         % 飛び値の大きさ [nm]（向きはばらばら）
+settings.markLayout.coordinateXmm = zeros(0, 1);  % 画面で入力する候補の Mark の Shot 内の座標 [mm]（Shot 中心から）
+settings.markLayout.coordinateYmm = zeros(0, 1);
+settings.markLayout.requiredXmm = zeros(0, 1);    % 必ず計測する Mark の Shot 内の座標 [mm]
+settings.markLayout.requiredYmm = zeros(0, 1);
 end

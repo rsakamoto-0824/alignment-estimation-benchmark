@@ -530,7 +530,7 @@ classdef (Abstract) HighOrderTab < appui.Core
                 'ルールの Shot 高次補正の式（Canon・Nikon はルールの式のまま、ASML は k1〜k19 のすべての項）。カスタム：' ...
                 'Nikon・Canon と同じ番号の付け方の k1〜k38（4次までのすべての項と5次の項の一部。使う項は表で選び、' ...
                 '組み合わせを保存できます）。' ...
-                '式は「8. ヘルプ」。']);
+                '式は「9. ヘルプ」。']);
             place(c.highOrderMaker, 1, 2);
             label(modelGrid, '補正のくくり', 1, 3);
             c.highOrderUnit = uidropdown(modelGrid, 'Items', {'Wafer 内で共通', 'Scan 方向ごと', '行の偶奇ごと', ...
@@ -990,9 +990,9 @@ classdef (Abstract) HighOrderTab < appui.Core
                     end
             end
             if isempty(labels)
-                setHighOrderList(c.highOrderWafer, "—", {1});
+                setListChoices(c.highOrderWafer, "—", {1});
             else
-                setHighOrderList(c.highOrderWafer, labels, num2cell(1:numel(labels)));
+                setListChoices(c.highOrderWafer, labels, num2cell(1:numel(labels)));
             end
             c.highOrderInputInfo.Text = char(info);
             hasInput = ~isempty(labels);
@@ -1770,18 +1770,6 @@ for k = 1:n
 end
 residuals = table(count, spread, p95, middle, 'VariableNames', ["残差の点の数", "残差 |平均|+3σ [nm]", ...
     "|残差| 95% 点 [nm]", "|残差| 中央値 [nm]"]);
-end
-
-function setHighOrderList(listbox, items, itemsData)
-% 複数選べる一覧の選択肢を変える（前に選んでいた番号のうち残っているものは選んだまま。無ければ最初の1つを選ぶ）
-previous = listbox.Value;
-listbox.Items = cellstr(items);
-listbox.ItemsData = itemsData;
-kept = previous(cellfun(@(value) any(cellfun(@(item) isequal(item, value), itemsData)), previous));
-if isempty(kept)
-    kept = itemsData(1);
-end
-listbox.Value = kept;
 end
 
 function prefix = outerSetPrefix()

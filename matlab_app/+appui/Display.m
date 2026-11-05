@@ -1,12 +1,12 @@
 classdef (Abstract) Display < appui.Core
-    %DISPLAY 「8. ヘルプ」タブと表示の設定：画面の色（ライト・ダーク）、文字の大きさ、凡例の位置、Scan 方向の向きと色、
-    %   画面（モニター）の大きさに合わせる窓。
+    %DISPLAY 「9. ヘルプ」タブとメニュー「設定」：画面の色（ライト・ダーク）、文字の大きさ、凡例の位置、Scan 方向の向きと色、
+    %   画面（モニター）の大きさに合わせる窓、乱数の種。
     %   AlignmentEstimationApp（画面の本体）の一部。画面の部品は Controls、データ・結果は Core のプロパティに持つ。
     %   ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
 
     methods
         function fitToScreen(app, center)
-            %FITTOSCREEN 窓を、窓の中心がある画面（モニター）に合わせる（メニューの「表示」→「画面の大きさに合わせる」）。
+            %FITTOSCREEN 窓を、窓の中心がある画面（モニター）に合わせる（メニューの「設定」→「画面の大きさに合わせる」）。
             %   大きさは FIGURE_SIZE を画面に収まるように縮めたもの（画面が大きければ FIGURE_SIZE に戻す）。窓は画面の
             %   中に入れ、center が true（省略時）なら画面の中央に置く。決まった幅の欄も窓の幅に合わせる。
             if nargin < 2
@@ -29,7 +29,7 @@ classdef (Abstract) Display < appui.Core
         end
 
         function setTheme(app, mode)
-            %SETTHEME 画面の色を mode = "light"（ライトモード）・"dark"（ダークモード）にする（メニューの「表示」と同じ）。
+            %SETTHEME 画面の色を mode = "light"（ライトモード）・"dark"（ダークモード）にする（メニューの「設定」と同じ）。
             %   画面の部品・図（軸・文字・凡例・色の目盛り）・表・ヘルプの色を変え、これから描く図にも同じ色を使う。
             %   画面を出しているときは、次に開いたときも同じ色にする（setpref）。
             mode = string(mode);
@@ -45,7 +45,7 @@ classdef (Abstract) Display < appui.Core
         end
 
         function setFontSize(app, size)
-            %SETFONTSIZE 画面の文字の大きさを size [pt] にする（メニューの「表示」→「文字の大きさ」と同じ。16 が標準）。
+            %SETFONTSIZE 画面の文字の大きさを size [pt] にする（メニューの「設定」→「文字の大きさ」と同じ。16 が標準）。
             %   画面の欄・表の文字と、描いた図の文字（軸・題名・凡例・図の中の文字・色の目盛り）を同じ比で変え、
             %   これから描く図にも使う。決まった幅・高さの欄（左の条件の欄・一覧の高さなど）と表の列の幅も同じ比で変える
             %   （大きな文字が欄からはみ出さないように）。画面を出しているときは、次に開いたときも同じ大きさにする（setpref）。
@@ -65,7 +65,7 @@ classdef (Abstract) Display < appui.Core
 
         function setLegendLocation(app, location, target)
             %SETLEGENDLOCATION 図の凡例の位置を location にする（LEGEND_CHOICES の1つ。"auto" は図ごとの既定、
-            %   "none" は凡例を出さない）。target を省略すると、すべての図（メニューの「表示」→「凡例の位置」）。
+            %   "none" は凡例を出さない）。target を省略すると、すべての図（メニューの「設定」→「凡例の位置」）。
             %   target に図（axes）か図の名前（Controls の名前。並べた図は枠の名前）を渡すと、その図だけ（図を右クリック
             %   したときのメニュー）。location = "inherit" で、その図の指定をやめて、すべての図の設定に従う。
             %   描いてある図はすぐに置き直し、これから描く図にも使う。画面を出しているときは、次に開いたときも同じにする。
@@ -138,7 +138,7 @@ classdef (Abstract) Display < appui.Core
         end
 
         function setScanStyle(app, options)
-            %SETSCANSTYLE 「表示」→「Scan 方向の向きと色」：Scan 方向 1・2 の向きと色を変え、Scan 方向を描いた図を描き直す。
+            %SETSCANSTYLE 「設定」→「Scan 方向の向きと色」：Scan 方向 1・2 の向きと色を変え、Scan 方向を描いた図を描き直す。
             %   名前と値の組で渡す：scan1Up（true なら 1 が上向き ▲・2 が下向き ▼）、scan1Color・scan2Color（RGB 0〜1）。
             %   図の印と色だけで、推定の結果は変わらない（設定 display に入り、「設定を保存…」の JSON にも書く）。
             arguments
@@ -155,6 +155,26 @@ classdef (Abstract) Display < appui.Core
             app.Settings.display = display;
             refreshScanMenu(app);
             redrawScanFigures(app);
+        end
+
+        function setRandomSeed(app, seed)
+            %SETRANDOMSEED 「設定」→「乱数の種…」：乱数の種（0〜2^32−1 の整数）を変える。学習 Shot の選び方（ランダム・I 最適・
+            %   D 最適・Mark 単位の交換法の始め方）と、「8. Mark配置の最適化」（乱数の Shot の形・配置を探す始め方）で共通に使う
+            %   （設定 sampling.seed。同じ種なら同じ結果。評価の結果が変わるので、評価し直す）。
+            MAX_SEED = 2 ^ 32 - 1;
+            if ~isnumeric(seed) || ~isscalar(seed) || ~isfinite(seed) || seed ~= round(seed) || seed < 0 || seed > MAX_SEED
+                error('alignest:randomSeed', '乱数の種は 0〜%d の整数にしてください。', MAX_SEED);
+            end
+            app.Settings.sampling.seed = double(seed);
+            refreshSeedMenu(app);
+            refreshRunSummary(app);
+            if isfield(app.Controls, 'markOptShapeAxes')
+                drawMarkLayoutShape(app);   % 乱数の Shot の形も変わる
+                if ~isempty(app.MarkLayoutStudy)
+                    drawMarkLayoutChart(app);   % 計算し直す知らせ
+                end
+                showMarkLayoutMessages(app);
+            end
         end
 
         function resetScanStyle(app)
@@ -176,7 +196,7 @@ classdef (Abstract) Display < appui.Core
     end
 
     methods (Access = {?appui.Core})
-        % ================= 8. ヘルプ =================
+        % ================= 9. ヘルプ =================
         function buildHelpTab(app)
             % 用語・推定の手法・カーネル・Overlay 補正の式の説明（help/help.html。exe にも入れる）を出す
             grid = uigridlayout(app.Tabs.help, [1, 1], 'Padding', 0);
@@ -253,6 +273,13 @@ classdef (Abstract) Display < appui.Core
                 showHighOrderMapping(app, currentHighOrderMapping(app));   % 列を選んでいない必須の項目の色
             end
             showHighOrderComparison(app);   % 設定を変えた後の知らせの色
+            refreshMarkLayoutInput(app);    % 「8. Mark配置の最適化」の表の色・図
+            if ~isempty(app.MarkLayoutFile)
+                showMarkLayoutMapping(app, currentMarkLayoutMapping(app));
+            end
+            if ~isempty(app.MarkLayoutStudy)
+                showMarkLayoutStudy(app);
+            end
         end
 
         function refreshScanMenu(app)
@@ -266,6 +293,52 @@ classdef (Abstract) Display < appui.Core
             c.scanUpItems(2).Checked = onOff(~style.scan1Up);
             for k = 1:2
                 c.scanColorItems(k).Text = sprintf('Scan 方向 %d の色…（今は %s）', k, rgbToHex(style.colors(k, :)));
+            end
+        end
+
+        function refreshSeedMenu(app)
+            % 「乱数の種…」のメニューに今の値を出す
+            if isfield(app.Controls, 'randomSeedItem')
+                app.Controls.randomSeedItem.Text = sprintf('乱数の種…（今は %d）', round(app.Settings.sampling.seed));
+            end
+        end
+
+        function onPickRandomSeed(app)
+            % 乱数の種を入れる小さな窓（OK で setRandomSeed。取り消したら変えない）
+            WINDOW_SIZE = [440, 190];
+            palette = app.Palette;
+            corner = app.Figure.Position(1:2) + (app.Figure.Position(3:4) - WINDOW_SIZE) / 2;
+            dialog = uifigure('Name', '乱数の種', 'Position', [corner, WINDOW_SIZE], 'WindowStyle', 'modal', ...
+                'Color', palette.background, 'Resize', 'off');
+            grid = uigridlayout(dialog, [3, 3], 'RowHeight', {'fit', 'fit', 'fit'}, 'ColumnWidth', {'fit', '1x', 'fit'}, ...
+                'Padding', 14, 'RowSpacing', 10, 'BackgroundColor', palette.background);
+            note = label(grid, ['学習 Shot の選び方（ランダム・I 最適・D 最適・Mark 単位の交換法の始め方）と、' ...
+                '「8. Mark配置の最適化」（乱数の Shot の形・配置を探す始め方）で使う乱数の種。同じ種なら同じ結果になります。'], ...
+                1, [1, 3]);
+            note.FontColor = palette.text;
+            seedLabel = label(grid, '乱数の種', 2, 1);
+            seedLabel.FontColor = palette.text;
+            field = uieditfield(grid, 'numeric', 'Limits', [0, 2 ^ 32 - 1], 'RoundFractionalValues', 'on', ...
+                'ValueDisplayFormat', '%d', 'Value', app.Settings.sampling.seed, 'BackgroundColor', palette.field, ...
+                'FontColor', palette.text);
+            place(field, 2, [2, 3]);
+            buttons = uigridlayout(grid, [1, 3], 'ColumnWidth', {'1x', 'fit', 'fit'}, 'Padding', 0, ...
+                'BackgroundColor', palette.background);
+            place(buttons, 3, [1, 3]);
+            ok = primaryButton(app, buttons, 'OK', @(~, ~) accept());
+            place(ok, 1, 2);
+            cancel = uibutton(buttons, 'Text', '取り消す', 'ButtonPushedFcn', @(~, ~) delete(dialog), ...
+                'BackgroundColor', palette.button, 'FontColor', palette.text);
+            place(cancel, 1, 3);
+            set(findall(dialog, '-property', 'FontSize'), 'FontSize', app.FontSize);
+
+            function accept()
+                value = field.Value;
+                delete(dialog);
+                figure(app.Figure);
+                if value ~= app.Settings.sampling.seed
+                    setRandomSeed(app, value);
+                end
             end
         end
 
@@ -334,7 +407,9 @@ classdef (Abstract) Display < appui.Core
             tables = [app.Controls.unitTable, app.Controls.normalityTable, app.Controls.anovaTable, ...
                 app.Controls.targetTable, app.Controls.targetResultTable, app.Controls.highOrderTermTable, ...
                 app.Controls.highOrderSummaryTable, app.Controls.highOrderCoefficientTable, ...
-                app.Controls.highOrderMappingTable, app.Controls.highOrderCompareTable, app.Controls.highOrderTuneTable];
+                app.Controls.highOrderMappingTable, app.Controls.highOrderCompareTable, app.Controls.highOrderTuneTable, ...
+                app.Controls.markOptMappingTable, app.Controls.markOptCandidateTable, app.Controls.markOptTermTable, ...
+                app.Controls.markOptResultTable];
         end
 
         function pixels = scaledPixels(app, pixels)
@@ -628,7 +703,7 @@ classdef (Abstract) Display < appui.Core
         end
 
         function markLegendItems(app)
-            % 「表示」→「凡例の位置」のメニューに、今の設定の印を付ける
+            % 「設定」→「凡例の位置」のメニューに、今の設定の印を付ける
             for item = app.Controls.legendItems
                 item.Checked = onOff(item.UserData == app.LegendLocation);
             end

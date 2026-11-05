@@ -236,7 +236,7 @@ classdef TestComparisonPlansDisplay < matlab.unittest.TestCase
             testCase.verifyFalse(loaded.display.scan1Up);
             testCase.verifyTrue(alignest.sameRunSettings(alignest.defaultSettings(), settings));
             testCase.verifyEmpty(alignest.extensionConflicts(alignest.defaultSettings(), settings));
-            % 画面：メニューの「表示」→「Scan 方向の向きと色」と、Wafer マップの凡例
+            % 画面：メニューの「設定」→「Scan 方向の向きと色」と、Wafer マップの凡例
             app = AlignmentEstimationApp(false);
             appCleanup = onCleanup(@() delete(app));
             app.setSettings(settings);

@@ -488,7 +488,7 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             cleanup = onCleanup(@() delete(app));
             c = app.Controls;
             testCase.verifyEqual(app.Tabs.highOrder.Title, '7. Shot高次補正');
-            testCase.verifyEqual(app.Tabs.help.Title, '8. ヘルプ');
+            testCase.verifyEqual(app.Tabs.help.Title, '9. ヘルプ');
             testCase.verifyEqual(string(c.highOrderCompute.Enable), "off", "データが無いうちは計算できない");
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
             app.applyMapping();

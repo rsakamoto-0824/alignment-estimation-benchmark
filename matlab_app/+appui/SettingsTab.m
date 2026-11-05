@@ -105,12 +105,11 @@ classdef (Abstract) SettingsTab < appui.Core
             place(c.nShotsList, 5, [1, 2]);
             c.nShotsError = errorLabel(app, s, 6, [1, 2]);
             label(s, 'ランダムの繰り返し回数', 7, 1);
-            label(s, '乱数の種', 7, 2);
+            seedNote = label(s, '乱数の種はメニュー「設定」→「乱数の種…」', 7, 2);
+            seedNote.FontColor = app.Palette.muted;
+            seedNote.UserData = "muted";
             c.randomRepeats = uispinner(s, 'Limits', [1, 1000], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
             place(c.randomRepeats, 8, 1);
-            c.seed = uieditfield(s, 'numeric', 'Limits', [0, 2^32 - 1], 'RoundFractionalValues', 'on', ...
-                'ValueDisplayFormat', '%d', 'ValueChangedFcn', onChange);
-            place(c.seed, 8, 2);
             label(s, 'Excel ファイルで指定（パターン・優先順。markNo の列で Mark 単位）', 9, 1);
             c.loadLayouts = uibutton(s, 'Text', 'Excel ファイルを読み込む…', 'ButtonPushedFcn', @(~, ~) app.onLoadLayouts(), ...
                 'Tooltip', ['1行目が見出しの表。shotNo の列（Mark 単位なら markNo の列も）と、名前を見出しにした列を並べます。' ...
@@ -312,7 +311,7 @@ classdef (Abstract) SettingsTab < appui.Core
             [kernelNames, kernelLabels] = alignest.models.gprKernelChoices();
             c.kernels = uilistbox(m, 'Items', cellstr(kernelLabels), 'ItemsData', cellstr(kernelNames), 'Multiselect', 'on', ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['periodic（周期）：説明変数ごとに、周期 p で同じ形をくり返す' ...
-                'カーネル（p も長さスケールと一緒に推定する）。ardperiodic は長さスケールが説明変数ごと。式は「8. ヘルプ」。']);
+                'カーネル（p も長さスケールと一緒に推定する）。ardperiodic は長さスケールが説明変数ごと。式は「9. ヘルプ」。']);
             place(c.kernels, 8, [1, 2]);
             [modeNames, modeLabels] = alignest.models.gprFactorModes();
             modeGrid = uigridlayout(m, [numel(modeNames), 1], 'Padding', 0, 'RowSpacing', 2, ...
@@ -410,7 +409,7 @@ classdef (Abstract) SettingsTab < appui.Core
             c.zernike = uicheckbox(m, 'Text', 'Fringe Zernike', 'ValueChangedFcn', onChange, ...
                 'Tooltip', ['Fringe Zernike 多項式（Z1〜Z(k+1)²）の最小二乗。k = 3：Z1〜Z16、4：Z1〜Z25、5：Z1〜Z36、' ...
                 '6：Z1〜Z49、7：Z1〜Z64（次数は 1〜7）。' ...
-                '空白で区切ると次数ごとに比べます。式は「8. ヘルプ」。']);
+                '空白で区切ると次数ごとに比べます。式は「9. ヘルプ」。']);
             place(c.zernike, 21, 1);
             c.zernikeOrders = uieditfield(m, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ...
                 '次数 k（空白区切りで複数）。Z1〜Z(k+1)² を使う（k = 4 で Z25 まで）。');
@@ -454,7 +453,7 @@ classdef (Abstract) SettingsTab < appui.Core
             choiceY = alignest.factorChoice(s, "Y");   % 別に選ばないときは X と同じ（画面にもそのまま出す）
             c.factorSeparate.Value = isfield(s.factors, "separateY") && s.factors.separateY;
             c.factorSingles.Value = isfield(s.factors, "evaluateSingles") && s.factors.evaluateSingles;
-            refreshScanMenu(app);   % 「表示」→「Scan 方向の向きと色」（設定 display）
+            refreshScanMenu(app);   % 「設定」→「Scan 方向の向きと色」（設定 display）
             c.factorScanY.Value = choiceY.scan;
             c.factorMarkY.Value = choiceY.mark;
             c.shotRowParityY.Value = choiceY.row;
@@ -474,7 +473,7 @@ classdef (Abstract) SettingsTab < appui.Core
             c.requiredShots.Value = char(strjoin(string(s.sampling.requiredShots), " "));
             c.requireOuter.Value = s.sampling.requireOuterShots;
             c.randomRepeats.Value = s.sampling.randomRepeats;
-            c.seed.Value = s.sampling.seed;
+            refreshSeedMenu(app);   % 「設定」→「乱数の種…」（設定 sampling.seed）
             c.layoutPlanInfo.Value = cellstr(layoutText(s.sampling));
             c.zoneEdges.Value = char(strjoin(string(s.sampling.constraints.radialZoneEdgesMm), " "));
             c.quadrants.Value = s.sampling.constraints.quadrants;
@@ -561,6 +560,7 @@ classdef (Abstract) SettingsTab < appui.Core
             validateSettings(app);
             updateEnabled(app);
             highOrderSettingsToControls(app);   % 「7. Shot高次補正」の欄（設定ファイルの highOrder）
+            markLayoutSettingsToControls(app);  % 「8. Mark配置の最適化」の欄（設定ファイルの markLayout）
         end
 
         function controlsToSettings(app)
@@ -623,7 +623,6 @@ classdef (Abstract) SettingsTab < appui.Core
             end
             s.sampling.requireOuterShots = c.requireOuter.Value;
             s.sampling.randomRepeats = c.randomRepeats.Value;
-            s.sampling.seed = c.seed.Value;
             [values, ok] = parseNumbers(c.zoneEdges.Value);
             if ok && all(values > 0 & values < s.data.waferRadiusMm)
                 s.sampling.constraints.radialZoneEdgesMm = unique(values);
@@ -862,7 +861,6 @@ classdef (Abstract) SettingsTab < appui.Core
             set([c.zoneEdges, c.quadrants, c.scanConstraint], 'Enable', onOff(shotConstraints));
             c.slack.Enable = onOff(shotConstraints || markPlans);
             set([c.randomRepeats], 'Enable', onOff(any(method == "random")));
-            c.seed.Enable = onOff(any(ismember(method, ["random", "ioptimal", "doptimal", "mark", "markd"])));
             set([c.designOrder, c.exchangeStarts], 'Enable', onOff(optimal));
             set([c.markRatio, c.markRequirePerShot], 'Enable', onOff(markPlans));
             c.markPerShot.Enable = onOff(markPlans && ~byRate);
@@ -897,7 +895,7 @@ classdef (Abstract) SettingsTab < appui.Core
             c.overlayHelp.Text = char(ternary(scalar, "1変数の推定（「1. データの読み込み」の「推定する値」）では、" + ...
                 "Overlay 補正の評価と RT モデルは使いません（X・Y の2成分が要るため）。", ...
                 "すべて「なし」なら評価しません。結果一覧の指標「OVL …」と、Wafer ごとのマップの「Overlay 補正」で" + ...
-                "見られます。補正の式は「8. ヘルプ」にまとめています。「6. 未知の座標の推定」の「補正のモデル」でも変えられます。"));
+                "見られます。補正の式は「9. ヘルプ」にまとめています。「6. 未知の座標の推定」の「補正のモデル」でも変えられます。"));
             syncTargetOverlayControls(app);   % 「6. 未知の座標の推定」の「補正のモデル」も同じ値にする
         end
 
