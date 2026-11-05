@@ -1164,7 +1164,7 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyEqual(app.Controls.mapAxes(1).Color, [1, 1, 1]);
             testCase.verifyError(@() app.setTheme("blue"), 'alignest:theme');
             testCase.verifyTrue(endsWith(string(app.Controls.helpView.HTMLSource), "help.html"));
-            testCase.verifyEqual(app.Tabs.help.Title, '8. ヘルプ');
+            testCase.verifyEqual(app.Tabs.help.Title, '9. ヘルプ');
         end
     end
 end

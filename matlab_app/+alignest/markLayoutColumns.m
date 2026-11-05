@@ -1,0 +1,13 @@
+function columns = markLayoutColumns()
+%MARKLAYOUTCOLUMNS 「8. Mark配置の最適化」で読み込む Excel・CSV の項目（「Excel・CSV の列」で、ファイルの列を選ぶ）。
+%   columns：構造体の配列。name（項目名。alignest.highOrderColumns と同じ名前で、見出しからの推定も同じ）・meaning（意味）・
+%   required（必ず列を選ぶ項目。Shot 内の座標だけ）。X・Y の値が無い表は、候補の Mark の座標だけとして読む。
+names = ["Wafer", "shotNo", "Xmm", "Ymm", "markXmm", "markYmm", "measX", "measY", "StsX", "StsY"];
+meanings = ["Wafer の名前（無ければ全行を1枚）", "Shot の番号（無ければ Shot 中心の座標で分ける）", ...
+    "Shot 中心の X 座標 [mm]（shotNo が無いとき Shot を分ける）", "Shot 中心の Y 座標 [mm]", ...
+    "Shot 内の X 座標 [mm]（Shot 中心から）", "Shot 内の Y 座標 [mm]", ...
+    "X の値（dx）[nm]（無ければ座標だけ）", "Y の値（dy）[nm]（無ければ座標だけ）", ...
+    "X の値の状態（0 = 有効。無ければ値のある点）", "Y の値の状態（0 = 有効。無ければ値のある点）"];
+required = [false, false, false, false, true, true, false, false, false, false];
+columns = struct("name", cellstr(names), "meaning", cellstr(meanings), "required", num2cell(required));
+end

@@ -133,7 +133,7 @@ classdef (Abstract) HighOrderSweepTab < appui.Core
                 row = find(data.("λ") == best.lambda & data.("c") == best.huberTuning, 1);
                 addStyle(c.highOrderTuneTable, uistyle('FontWeight', 'bold'), 'row', row);
             end
-            % 説明は短くし（図の高さを取るため）、詳しい見方は「8. ヘルプ」
+            % 説明は短くし（図の高さを取るため）、詳しい見方は「9. ヘルプ」
             howToRead = "λ・c は破線（1点抜きの予測の誤差）で選びます（実線の当てはめた残差は λ が小さいほど小さく見える）。";
             if sweep.parameter == "both"
                 howToRead = "色は 1点抜きの予測の誤差（★ が最小。当てはめた残差は「表」）。";

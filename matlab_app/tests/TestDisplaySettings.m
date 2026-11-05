@@ -1,5 +1,5 @@
 classdef TestDisplaySettings < matlab.unittest.TestCase
-    %TESTDISPLAYSETTINGS 「表示」の文字の大きさ（画面の欄・表・図・決まった大きさの欄）と、凡例の位置（すべての図・
+    %TESTDISPLAYSETTINGS 「設定」の文字の大きさ（画面の欄・表・図・決まった大きさの欄）と、凡例の位置（すべての図・
     %   図ごと・並べた図）を確かめる。
 
     properties

@@ -274,7 +274,7 @@ classdef (Abstract) RunTab < appui.Core
         end
 
         function style = scanStyle(app)
-            % Scan 方向の色と向き（「表示」→「Scan 方向の向きと色」。設定 display。alignest.plot.scanStyle）
+            % Scan 方向の色と向き（「設定」→「Scan 方向の向きと色」。設定 display。alignest.plot.scanStyle）
             style = alignest.plot.scanStyle(fieldOr(app.Settings, "display", struct()));
         end
 

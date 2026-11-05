@@ -353,7 +353,7 @@ classdef (Abstract) TargetTab < appui.Core
                 'Padding', 6, 'RowSpacing', 4);
             modelNote = label(modelGrid, ['重ね合わせ補正値を求める補正モデル（Wafer 成分 + Shot 共通成分 + Shot ごとの成分）。' ...
                 '「2. 評価の設定」の Overlay 補正と同じ設定です（どちらで変えても同じ。評価の Overlay 補正の評価にも使う）。' ...
-                '式の書き方は「8. ヘルプ」。'], 1, [1, 3]);
+                '式の書き方は「9. ヘルプ」。'], 1, [1, 3]);
             modelNote.FontColor = app.Palette.muted;
             modelNote.UserData = "muted";
             label(modelGrid, 'Wafer 成分', 2, 1);
@@ -441,6 +441,9 @@ classdef (Abstract) TargetTab < appui.Core
                 refreshTargetChoices(app);
             elseif event.NewValue == app.Tabs.highOrder
                 refreshHighOrderChoices(app);
+            elseif event.NewValue == app.Tabs.markLayout
+                refreshMarkLayoutChoices(app);   % データ・「7. Shot高次補正」の入力・保存した項の組み合わせが変わっていれば合わせる
+                refreshMarkLayoutInput(app);
             end
         end
 
@@ -874,16 +877,4 @@ text = "しない";
 if value
     text = "する";
 end
-end
-
-function setListChoices(listbox, items, itemsData)
-% 複数選べる一覧の選択肢を変える（前に選んでいた値のうち残っているものは選んだまま。無ければ最初の1つを選ぶ）
-previous = listbox.Value;
-listbox.Items = cellstr(items);
-listbox.ItemsData = itemsData;
-kept = previous(cellfun(@(value) any(cellfun(@(item) isequal(item, value), itemsData)), previous));
-if isempty(kept)
-    kept = itemsData(1);
-end
-listbox.Value = kept;
 end
