@@ -6,8 +6,8 @@ function [values, keys, labels] = explanatoryValues(estimates, units, unitLabels
 %   Shot 内・Shot 中心の座標は、計測データの Wafer（units、名前は unitLabels）と推定値の表の markIndex から引く
 %   （units を省く・Excel から読み込んだ推定値で markIndex が無いときは NaN）。labels は画面に出す名前。
 keys = ["x", "y", "r", "theta", "markX", "markY", "shotX", "shotY"];
-labels = ["Wafer 上の X [mm]", "Wafer 上の Y [mm]", "半径 [mm]", "方位角 [度]", "Shot 内の X [mm]（markXmm）", ...
-    "Shot 内の Y [mm]（markYmm）", "Shot 中心の X [mm]", "Shot 中心の Y [mm]"];
+labels = ["Wafer 上の X [mm]", "Wafer 上の Y [mm]", "半径 [mm]", "方位角 [度]", "Shot 内の X [mm]", ...
+    "Shot 内の Y [mm]", "Shot 中心の X [mm]", "Shot 中心の Y [mm]"];
 n = height(estimates);
 values = array2table(nan(n, numel(keys)), 'VariableNames', cellstr(keys));
 values.x = estimates.x;

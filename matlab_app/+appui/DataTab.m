@@ -34,8 +34,8 @@ classdef (Abstract) DataTab < appui.Core
             refreshValueColumns(app);
             fillMappingTable(app, alignest.guessColumnMapping(raw.Properties.VariableNames));
             fillUnitTable(app);
-            c.mappingStatus.Text = sprintf(['%d 行・%d 列を読みました。「ファイルの列」の対応と、右の「座標の単位」を' ...
-                '確かめてから、「この対応で読み込む」を押してください。'], height(raw), width(raw));
+            c.mappingStatus.Text = sprintf('%d 行・%d 列を読みました。「この対応で読み込む」を押してください。', height(raw), ...
+                width(raw));
             c.mappingStatus.FontColor = app.Palette.text;
             c.applyMapping.Enable = 'on';
             c.summary.Value = {''};
@@ -78,8 +78,7 @@ classdef (Abstract) DataTab < appui.Core
             app.MeasurementCache = [];
             refreshMeasurementChoices(app);
             refreshPreviewGroupBy(app);
-            app.Controls.mappingStatus.Text = sprintf(['読み込みました（%d 枚）。上の「Wafer マップ」「Shot レイアウト」で' ...
-                'データを確かめ、「2. 評価の設定」で比べ方を決めてください。'], summary.nUnits);
+            app.Controls.mappingStatus.Text = sprintf('読み込みました（%d 枚）。', summary.nUnits);
             app.Controls.mappingStatus.FontColor = app.Palette.text;
             drawPreview(app);
             drawLayout(app);
@@ -360,14 +359,9 @@ classdef (Abstract) DataTab < appui.Core
             filePanel = uipanel(grid, 'Title', '計測データのファイル');
             fileGrid = uigridlayout(filePanel, [6, 4], 'ColumnWidth', {'fit', '1x', 260, 300}, ...
                 'RowHeight', {'fit', 'fit', 'fit', 'fit', 'fit', 'fit'}, 'Padding', 10);
-            help = uilabel(fileGrid, 'WordWrap', 'on', 'Text', ['Excel（.xlsx）または CSV。1行目に項目名、2行目からデータ。' ...
-                '項目名がアライメント計測テーブルの標準（Operation, EqpId, LotID, Wafer, DateTime, shotNo, Direction, Xmm, Ymm, ' ...
-                'Radius, markNo, markXmm, markYmm, measX, measY, StsX, StsY）なら自動で対応づけます。']);
-            help.Layout.Row = 1;
-            help.Layout.Column = [1, 4];
             label(fileGrid, 'ファイル', 2, [1, 2]);
             label(fileGrid, 'シート', 2, 3);
-            label(fileGrid, '有効半径 [mm]（この半径以上の点は除く）', 2, 4);
+            label(fileGrid, '有効半径 [mm]', 2, 4);
             c.chooseFile = uibutton(fileGrid, 'Text', 'ファイルを選ぶ…', 'ButtonPushedFcn', @(~, ~) app.onChooseFile());
             c.chooseFile.Layout.Row = 3;
             c.chooseFile.Layout.Column = 1;
@@ -389,8 +383,8 @@ classdef (Abstract) DataTab < appui.Core
                 'Tooltip', 'どちらかが−1なら行全体を除外します。オフの場合も、無効な軸の測定値は解析に使いません。', ...
                 'ValueChangedFcn', onDataOption);
             place(c.excludeUnmeasuredRecords, 4, [3, 4]);
-            label(fileGrid, 'Scan 方向（Direction）が無い行に付ける値', 5, 1);
-            [ruleNames, ruleLabels] = alignest.directionRules();
+            label(fileGrid, 'Scan 方向の付与', 5, 1);
+            [ruleNames, ~, ruleLabels] = alignest.directionRules();
             c.directionRule = uidropdown(fileGrid, 'Items', cellstr(ruleLabels), 'ItemsData', cellstr(ruleNames), ...
                 'Tooltip', ['Direction の列が無いとき（または空の行）に、規則で Scan 方向 1・2 を付けます。' ...
                 '行・列は Wafer ごとに Shot 中心の座標から数えます。付けた結果は「Shot レイアウト」で確かめられます。'], ...
@@ -402,8 +396,8 @@ classdef (Abstract) DataTab < appui.Core
             directionHelp.FontColor = app.Palette.muted;
             % 座標の定義（Shot 中心＋Shot 内の位置、または絶対座標だけ）と、推定する値（X・Y 成分、または1つの列）
             label(fileGrid, '座標の定義', 6, 1);
-            c.coordinateMode = uidropdown(fileGrid, 'Items', {'Shot 中心＋Shot 内の位置（Xmm・Ymm ＋ markXmm・markYmm）', ...
-                'Wafer 上の絶対座標だけ（Xmm・Ymm が点の座標）'}, 'ItemsData', {'shotMark', 'absolute'}, ...
+            c.coordinateMode = uidropdown(fileGrid, 'Items', {'Shot 中心＋Shot 内の位置', ...
+                'Wafer 上の絶対座標だけ'}, 'ItemsData', {'shotMark', 'absolute'}, ...
                 'ValueChangedFcn', onDataOption, 'Tooltip', ['絶対座標だけ：Xmm・Ymm の項目に点の Wafer 上の座標の列を' ...
                 '対応づけます。shotNo があれば同じ Shot の点の平均を Shot 中心に、markXmm・markYmm があれば' ...
                 '点の座標 − markXmm を Shot 中心にします。どちらも無ければ点を1つずつ Shot として扱います。']);
@@ -411,7 +405,7 @@ classdef (Abstract) DataTab < appui.Core
             valueGrid = uigridlayout(fileGrid, [1, 4], 'ColumnWidth', {'fit', '1x', 'fit', 70}, 'Padding', 0);
             place(valueGrid, 6, [3, 4]);
             label(valueGrid, '推定する値', 1, 1);
-            c.valueColumn = uidropdown(valueGrid, 'Items', {'X・Y 成分（measX・measY）'}, 'ItemsData', {''}, ...
+            c.valueColumn = uidropdown(valueGrid, 'Items', {'X・Y 成分'}, 'ItemsData', {''}, ...
                 'ValueChangedFcn', onDataOption, 'Tooltip', ['膜厚・線幅など、ファイルの1つの列を1変数として推定するときは' ...
                 'その列を選びます（measX・measY は使いません。Overlay 補正の評価と RT モデルは使えません）。']);
             place(c.valueColumn, 1, 2);
@@ -423,9 +417,9 @@ classdef (Abstract) DataTab < appui.Core
             c.dataTabs = uitabgroup(grid);
             c.mappingTab = uitab(c.dataTabs, 'Title', '列の対応・座標の単位');
             lower = uigridlayout(c.mappingTab, [1, 2], 'ColumnWidth', {'1x', '1.1x'}, 'Padding', 8, 'ColumnSpacing', 12);
-            mappingPanel = uipanel(lower, 'Title', '列の対応（標準の項目 ← ファイルの列）');
+            mappingPanel = uipanel(lower, 'Title', '列の対応');
             mappingGrid = uigridlayout(mappingPanel, [3, 1], 'RowHeight', {'1x', 'fit', 'fit'}, 'Padding', 10);
-            c.mapping = uitable(mappingGrid, 'ColumnName', {'標準の項目', '意味（変換後）', '必須', 'ファイルの列'}, ...
+            c.mapping = uitable(mappingGrid, 'ColumnName', {'標準の項目', '意味', '必須', 'ファイルの列'}, ...
                 'ColumnEditable', [false, false, false, true], 'RowName', {}, 'ColumnWidth', {100, 'auto', 50, 150}, ...
                 'CellEditCallback', @(~, event) app.onMappingEdited(event));
             c.mappingStatus = uilabel(mappingGrid, 'WordWrap', 'on', ...
@@ -434,14 +428,11 @@ classdef (Abstract) DataTab < appui.Core
             c.applyMapping.Enable = 'off';
 
             right = uigridlayout(lower, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 0, 'RowSpacing', 12);
-            unitPanel = uipanel(right, 'Title', '座標の単位（読み込むときに mm に変換する）');
+            unitPanel = uipanel(right, 'Title', '座標の単位');
             unitGrid = uigridlayout(unitPanel, [4, 3], 'RowHeight', {'fit', 'fit', 150, 'fit'}, ...
                 'ColumnWidth', {'fit', 170, '1x'}, 'Padding', 8, 'RowSpacing', 4);
-            unitHelp = label(unitGrid, ['mm でない列は「入力の単位」を選び直します（列名が Xmm でも中身が µm なら µm）。' ...
-                '測定値 measX・measY は nm のまま変換しません。'], 1, [1, 3]);
-            unitHelp.FontColor = app.Palette.muted;
             label(unitGrid, 'まとめて選ぶ', 2, 1);
-            c.unitAll = uidropdown(unitGrid, 'Items', {'（列ごとに選ぶ）', 'すべて mm', 'すべて µm', 'すべて nm', 'すべて m'}, ...
+            c.unitAll = uidropdown(unitGrid, 'Items', {'列ごと', 'すべて mm', 'すべて µm', 'すべて nm', 'すべて m'}, ...
                 'ItemsData', {'', 'mm', 'um', 'nm', 'm'}, 'Value', '', 'ValueChangedFcn', @(~, ~) app.onUnitAll());
             place(c.unitAll, 2, 2);
             c.suggestUnits = uibutton(unitGrid, 'Text', '値の大きさから単位を推定', ...
@@ -458,7 +449,7 @@ classdef (Abstract) DataTab < appui.Core
             resultGrid = uigridlayout(resultPanel, [1, 1], 'Padding', 10);
             c.summary = uitextarea(resultGrid, 'Editable', 'off', 'Value', {''});
 
-            c.previewTab = uitab(c.dataTabs, 'Title', 'Wafer マップ（計測値）');
+            c.previewTab = uitab(c.dataTabs, 'Title', 'Wafer マップ');
             previewGrid = uigridlayout(c.previewTab, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 8, 'RowSpacing', 8);
             previewControls = uigridlayout(previewGrid, [3, 11], 'ColumnWidth', {'fit', 260, 'fit', 170, 'fit', 80, 60, ...
                 'fit', 'fit', 90, '1x'}, 'RowHeight', {'fit', 'fit', 'fit'}, 'Padding', 0);
@@ -466,7 +457,7 @@ classdef (Abstract) DataTab < appui.Core
             c.previewWafer = uidropdown(previewControls, 'Items', {'—'}, 'ValueChangedFcn', @(~, ~) app.drawPreview());
             place(c.previewWafer, 1, 2);
             label(previewControls, '平均・楕円の単位', 1, 3);
-            c.previewGroupBy = uidropdown(previewControls, 'Items', {'ALL（全 Wafer）'}, 'ItemsData', {'all'}, ...
+            c.previewGroupBy = uidropdown(previewControls, 'Items', {'ALL'}, 'ItemsData', {'all'}, ...
                 'ValueChangedFcn', @(~, ~) app.onPreviewGroupByChanged(), 'Tooltip', ['平均の図と共分散楕円を、どの単位で' ...
                 '求めるか。ALL は全 Wafer、LotID・EqpId・Operation・その他の列は値ごと（その他の列は、その値の Mark だけを使う）。' ...
                 '選ぶと「表示する Wafer・平均」に平均の選択肢が出ます。']);
@@ -484,10 +475,10 @@ classdef (Abstract) DataTab < appui.Core
             place(c.previewEllipse, 1, 10);
             c.previewEllipseOnly = ellipseOnlyCheckbox(previewControls, @(~, ~) app.drawPreview());
             place(c.previewEllipseOnly, 1, 11);
-            c.previewScanFrames = uicheckbox(previewControls, 'Text', 'Shot の枠を Scan 方向で色分け（▲ 上・▼ 下の印つき）', ...
+            c.previewScanFrames = uicheckbox(previewControls, 'Text', 'Shot の枠を Scan 方向で色分け', ...
                 'ValueChangedFcn', @(~, ~) app.drawPreview());
             place(c.previewScanFrames, 2, [1, 2]);
-            c.previewRings = uicheckbox(previewControls, 'Text', '同心円の区切り（「2. 評価の設定」の制約）を描く', ...
+            c.previewRings = uicheckbox(previewControls, 'Text', '同心円の区切りを描く', ...
                 'ValueChangedFcn', @(~, ~) app.drawPreview(), 'Tooltip', ['I 最適・ランダムで同心円の制約を使うとき、' ...
                 '区切りの半径（Shot 中心の半径 [mm]）を橙の一点鎖線で描きます。']);
             place(c.previewRings, 2, [3, 7]);
@@ -510,8 +501,7 @@ classdef (Abstract) DataTab < appui.Core
             c.resetScanDirections = uibutton(layoutControls, 'Text', 'Scan 方向の変更を元に戻す', 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~, ~) app.onResetScanDirections());
             place(c.resetScanDirections, 2, [1, 2]);
-            c.scanEditInfo = uilabel(layoutControls, 'WordWrap', 'on', 'Text', ...
-                '左の図の Shot をクリックすると、その shotNo の Scan 方向を 1 ↔ 2 で入れ替えます（すべての Wafer の同じ shotNo）。');
+            c.scanEditInfo = uilabel(layoutControls, 'WordWrap', 'on', 'Text', 'Shot をクリックで Scan 方向を入れ替え');
             place(c.scanEditInfo, 2, 3);
             c.layoutPanel = uipanel(layoutGrid, 'BorderType', 'none');
             layoutAxesGrid = uigridlayout(c.layoutPanel, [1, 2], 'ColumnWidth', {'1.25x', '1x'}, 'Padding', 0, ...
@@ -525,15 +515,15 @@ classdef (Abstract) DataTab < appui.Core
             overlayControls = uigridlayout(overlayGrid, [13, 1], 'RowHeight', {'fit', 110, 'fit', 'fit', 'fit', 'fit', ...
                 'fit', 'fit', 'fit', 'fit', 'fit', '1x', 0}, 'Padding', 0, 'RowSpacing', 4);
             onOverlay = @(~, ~) app.drawShotOverlay();
-            label(overlayControls, 'Wafer（Ctrl・Shift で複数選ぶ）', 1, 1);
+            label(overlayControls, 'Wafer', 1, 1);
             c.shotOverlayWafers = uilistbox(overlayControls, 'Items', {}, 'Multiselect', 'on', 'ValueChangedFcn', onOverlay);
             place(c.shotOverlayWafers, 2, 1);
-            label(overlayControls, 'Wafer 成分を除く（Shot 中心の多項式）', 3, 1);
-            c.shotOverlayWaferOrder = uidropdown(overlayControls, 'Items', {'除かない', '1次（並進・倍率・回転・直交度）', ...
+            label(overlayControls, 'Wafer 成分を除く', 3, 1);
+            c.shotOverlayWaferOrder = uidropdown(overlayControls, 'Items', {'除かない', '1次', ...
                 '2次', '3次', '4次', '5次'}, 'ItemsData', {0, 1, 2, 3, 4, 5}, 'ValueChangedFcn', onOverlay, ...
                 'Tooltip', 'Wafer ごとに Shot 中心の座標の多項式を最小二乗で当てはめて除き、Shot 内の成分だけを重ねます。');
             place(c.shotOverlayWaferOrder, 4, 1);
-            label(overlayControls, '共分散楕円（Shot・Wafer 間のばらつき。色は |相関係数|）', 5, 1);
+            label(overlayControls, '共分散楕円', 5, 1);
             c.shotOverlayEllipse = ellipseDropdown(overlayControls, onOverlay);
             place(c.shotOverlayEllipse, 6, 1);
             c.shotOverlayIndividual = uicheckbox(overlayControls, 'Text', '個々の Shot の矢印も描く', 'Value', true, ...
@@ -545,7 +535,7 @@ classdef (Abstract) DataTab < appui.Core
                 'ValueChangedFcn', onOverlay, 'Tooltip', ['すべての Shot の図の右に、Scan 方向 1・2 の Shot だけを重ねた図を' ...
                 '同じ矢印の倍率で並べます（Scan 方向はデータの Direction、または取り込みで付けた値）。']);
             place(c.shotOverlayByScan, 9, 1);
-            label(overlayControls, '矢印の倍率 [mm/nm]（0 = 自動）', 10, 1);
+            label(overlayControls, '矢印の倍率 [mm/nm]', 10, 1);
             c.shotOverlayScale = uieditfield(overlayControls, 'numeric', 'Value', 0, 'Limits', [0, Inf], ...
                 'ValueChangedFcn', onOverlay);
             place(c.shotOverlayScale, 11, 1);
@@ -570,16 +560,16 @@ classdef (Abstract) DataTab < appui.Core
             c.interactionAdvice = uitextarea(interactionControls, 'Editable', 'off', 'Value', ...
                 {'データを読み込むと、質的変数の効果と交互作用を調べて、ここに目安を出します。'});
             place(c.interactionAdvice, 2, 1);
-            label(interactionControls, 'Wafer（Ctrl・Shift で複数選ぶ）', 3, 1);
+            label(interactionControls, 'Wafer', 3, 1);
             c.interactionWafers = uilistbox(interactionControls, 'Items', {}, 'Multiselect', 'on');
             place(c.interactionWafers, 4, 1);
-            label(interactionControls, '除く面内の傾向（Wafer ごとの XY 多項式の次数）', 5, 1);
-            c.interactionTrendOrder = uidropdown(interactionControls, 'Items', {'0（平均だけ）', '1次', '2次', '3次', ...
+            label(interactionControls, '除く面内の傾向', 5, 1);
+            c.interactionTrendOrder = uidropdown(interactionControls, 'Items', {'平均だけ', '1次', '2次', '3次', ...
                 '4次', '5次'}, 'ItemsData', {0, 1, 2, 3, 4, 5}, 'Value', app.INTERACTION_TREND_ORDER, 'Tooltip', ...
                 ['Wafer ごと・X・Y 別に、計測値から面内の傾向（Wafer 上の座標の多項式）を除いてから調べます' ...
                 '（面内の形の違いを質的変数の効果と見誤らないため）。']);
             place(c.interactionTrendOrder, 6, 1);
-            label(interactionControls, 'その他の列（質的変数として加える。Ctrl・Shift）', 7, 1);
+            label(interactionControls, 'その他の列', 7, 1);
             c.interactionColumns = uilistbox(interactionControls, 'Items', {}, 'Multiselect', 'on', 'Value', {});
             place(c.interactionColumns, 8, 1);
             c.interactionRun = uibutton(interactionControls, 'Text', '評価する', ...
@@ -596,10 +586,10 @@ classdef (Abstract) DataTab < appui.Core
             interactionResults = uigridlayout(interactionGrid, [2, 1], 'RowHeight', {'1x', '1.2x'}, 'Padding', 0, ...
                 'RowSpacing', 6);
             c.interactionMainTable = uitable(interactionResults, 'RowName', {}, 'ColumnName', {'軸', '質的変数', ...
-                '水準の数', 'F', 'p 値', 'η²', '判定（主効果）', '水準ごとの平均 [nm]（点数）'}, ...
+                '水準の数', 'F', 'p 値', 'η²', '判定', '水準ごとの平均 [nm]（点数）'}, ...
                 'ColumnWidth', {40, 150, 70, 80, 80, 70, 150, 'auto'});
             c.interactionTable = uitable(interactionResults, 'RowName', {}, 'ColumnName', {'軸', '組', '点数', ...
-                '主効果 1つ目：p', '主効果 2つ目：p', '交互作用 F', 'p 値', '偏 η²', '判定（交互作用）・メモ'}, ...
+                '主効果 1つ目：p', '主効果 2つ目：p', '交互作用 F', 'p 値', '偏 η²', '判定・メモ'}, ...
                 'ColumnWidth', {40, 230, 60, 110, 110, 90, 80, 70, 'auto'});
             c.interactionAxes = uiaxes(interactionGrid);
             c.interactionAxes.Visible = 'off';
@@ -703,7 +693,7 @@ classdef (Abstract) DataTab < appui.Core
             warnings = find(~checks.ok);
             status = app.Controls.unitStatus;
             if isempty(warnings)
-                status.Text = "読み込むときに、選んだ単位から mm に変換します（ファイルは変更しません）。";
+                status.Text = "";
                 status.FontColor = app.Palette.text;
             else
                 addStyle(unitTable, uistyle('FontColor', app.Palette.error, 'FontWeight', 'bold'), 'cell', ...
@@ -775,8 +765,7 @@ classdef (Abstract) DataTab < appui.Core
             refreshFactorColumns(app);
             validateSettings(app);
             if ~isempty(app.RawTable)
-                app.Controls.mappingStatus.Text = ['列の対応・座標の単位・有効半径・行の除外条件・Scan 方向の付与を確認し、' ...
-                    '「この対応で読み込む」を押してください。'];
+                app.Controls.mappingStatus.Text = '「この対応で読み込む」を押してください。';
             end
             refreshRunSummary(app);
         end
@@ -817,7 +806,7 @@ classdef (Abstract) DataTab < appui.Core
             if selected ~= "" && ~any(columns == selected)
                 columns(end + 1) = selected;
             end
-            c.valueColumn.Items = cellstr(["X・Y 成分（measX・measY）", "1変数：" + columns]);
+            c.valueColumn.Items = cellstr(["X・Y 成分", "1変数：" + columns]);
             c.valueColumn.ItemsData = cellstr(["", columns]);
             c.valueColumn.Value = char(selected);
             c.valueUnit.Enable = onOff(selected ~= "");
@@ -924,12 +913,10 @@ classdef (Abstract) DataTab < appui.Core
             if ~isempty(rings)
                 extras = extras + "橙の一点鎖線は同心円の区切り（" + strjoin(string(rings), "・") + " mm）。";
             elseif c.previewRings.Value
-                extras = extras + "同心円の制約は使っていません（「2. 評価の設定」で I 最適・ランダムと区切りを選ぶと描きます）。";
+                extras = extras + "同心円の制約は使っていません。";
             end
-            c.previewInfo.Text = sprintf("%s：%d 点。点線は半径 %g mm%s。%s。色の図の範囲は X・Y 共通で ±%.2f nm。%s", option.label, ...
-                size(points, 1), radius, ternary(c.previewShotFrames.Value, "、灰色の枠は Shot", ""), arrowText, limit, ...
-                ternary(option.isGroup, "座標ごとに Wafer 間で平均（楕円は Wafer 間のばらつき、色は X・Y の相関係数の絶対値 |r|）。", "")) + ...
-                extras;
+            c.previewInfo.Text = sprintf("%s：%d 点。%s。色の範囲 ±%.2f nm。", option.label, size(points, 1), arrowText, ...
+                limit) + extras;
         end
 
         function refreshPreviewGroupBy(app)
@@ -937,7 +924,7 @@ classdef (Abstract) DataTab < appui.Core
             c = app.Controls;
             columns = string(app.Data.attributeNames);
             keys = ["all", "lotId", "eqpId", "operation", "slotParity", "col:" + columns];
-            labels = ["ALL（全 Wafer）", "LotID", "EqpId", "Operation", "Slot の偶奇（Wafer ID のハイフンの後の番号）", ...
+            labels = ["ALL", "LotID", "EqpId", "Operation", "Slot の偶奇（Wafer ID のハイフンの後の番号）", ...
                 "その他の列：" + columns];
             previous = string(c.previewGroupBy.Value);
             c.previewGroupBy.Items = cellstr(labels);
@@ -980,14 +967,11 @@ classdef (Abstract) DataTab < appui.Core
             ax.ButtonDownFcn = @(~, event) app.onLayoutClicked(event);
             changed = numel(app.Settings.data.directionOverrideShots);
             c.resetScanDirections.Enable = onOff(changed > 0);
-            c.scanEditInfo.Text = "左の図の Shot をクリックすると、その shotNo の Scan 方向を 1 ↔ 2 で入れ替えます" + ...
-                "（すべての Wafer の同じ shotNo）。" + ternary(changed > 0, sprintf("変えた Shot：%s", ...
+            c.scanEditInfo.Text = "Shot をクリックで Scan 方向を入れ替え" + ternary(changed > 0, sprintf("。変えた Shot：%s", ...
                 strjoin(compose("%g→S%d", app.Settings.data.directionOverrideShots(:), ...
                 app.Settings.data.directionOverrideValues(:)), "、")), "");
-            c.layoutInfo.Text = sprintf(['%s：%d Shot・%d Mark、Shot の大きさ %.3f × %.3f mm、Scan 方向 %s。' ...
-                '左の数字は shotNo、右は Shot 中心から見た Mark の位置（M の後が markNo）。'], unit.label, ...
-                numel(unit.shots.Xmm), numel(unit.marks.x), unit.shotSizeMm, ...
-                ternary(unit.hasDirection, "あり（S1・S2 で表示）", "なし"));
+            c.layoutInfo.Text = sprintf('%s：%d Shot・%d Mark、Shot の大きさ %.3f × %.3f mm、Scan 方向 %s。', unit.label, ...
+                numel(unit.shots.Xmm), numel(unit.marks.x), unit.shotSizeMm, ternary(unit.hasDirection, "あり", "なし"));
         end
 
         function showOverlayPanels(app, count)

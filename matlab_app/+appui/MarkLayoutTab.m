@@ -66,6 +66,9 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                 "minMarks", c.markOptMinMarks, "maxMarks", c.markOptMaxMarks, "starts", c.markOptStarts, ...
                 "values", c.markOptValues, "shapes", c.markOptShapes, "noiseNm", c.markOptNoise, ...
                 "outlierPercent", c.markOptOutlierPercent, "outlierNm", c.markOptOutlierSize);
+            if isfield(options, "values")
+                app.MarkLayoutValuesAuto = false;
+            end
             for name = string(fieldnames(options)).'
                 if isfield(fields, name)
                     control = fields.(name);
@@ -279,9 +282,11 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             showMarkLayoutMessages(app);
         end
 
-        function study = optimizeMarkLayout(app)
+        function study = optimizeMarkLayout(app, progressFcn)
             %OPTIMIZEMARKLAYOUT 「配置を最適化する」：今の入力・補正の式・回帰・配置の選び方で、Mark の数ごとに I 最適計画の配置を
-            %   選び、制御残差を求めて、図・配置・表に出す（alignest.markLayoutStudy）。study は結果。
+            %   選び、制御残差を求めて、図・配置・表に出す（alignest.markLayoutStudy）。study は結果。progressFcn（省略可）：
+            %   progressFcn(割合 0〜1, 説明) が false なら止める（進み具合の窓を出さずに動かすとき）。
+            hasProgressFcn = nargin >= 2;
             readMarkLayoutControls(app);
             alignest.markLayoutOptions(app.Settings);   % 設定の誤りを先に知らせる
             refreshMarkLayoutInput(app);
@@ -305,9 +310,12 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             showMarkLayoutStudy(app);
             c = app.Controls;
             c.markOptOutputs.SelectedTab = c.markOptChartTab;
+            if height(study.evaluation) == 0
+                c.markOptOutputs.SelectedTab = c.markOptMapTab;   % 配置を選ぶ途中で止めた：制御残差の図はまだ無い
+            end
 
             function continueRun = reportProgress(fraction, message)
-                continueRun = true;
+                continueRun = ~hasProgressFcn || progressFcn(fraction, message);
                 if isempty(dialog) || ~isvalid(dialog)
                     return
                 end
@@ -319,7 +327,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                 dialog.Value = fraction;
                 dialog.Message = char(message + remaining);
                 drawnow;
-                continueRun = ~dialog.CancelRequested;
+                continueRun = continueRun && ~dialog.CancelRequested;
             end
         end
 
@@ -340,8 +348,12 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             legend(ax, 'off');
             data = table();
             study = app.MarkLayoutStudy;
-            if isempty(study) || height(study.evaluation) == 0
+            if isempty(study)
                 c.markOptChartInfo.Text = c.markOptChartInfo.UserData;
+                return
+            end
+            if height(study.evaluation) == 0
+                c.markOptChartInfo.Text = '途中で止めたので、制御残差はありません。';
                 return
             end
             [column, statisticLabel] = chartColumn(string(c.markOptChartStatistic.Value), ...
@@ -378,17 +390,16 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             end
             hold(ax, 'off');
             xlim(ax, [0, 105]);
-            xlabel(ax, 'I 効率 [%]（すべての候補の Mark を計測したとき = 100%）');
+            xlabel(ax, 'I 効率 [%]');
             ylabel(ax, "制御残差 " + statisticLabel + " [nm]");
-            title(ax, sprintf('Mark の数ごとの I 最適な配置（%d〜%d 点。点の横の数が Mark の数）', study.counts(1), ...
-                study.counts(end)), 'Interpreter', 'none');
+            title(ax, sprintf('Mark の数ごとの I 最適な配置（%d〜%d 点）', study.counts(1), study.counts(end)), ...
+                'Interpreter', 'none');
             grid(ax, 'on');
             box(ax, 'on');
             legend(ax, 'Location', 'northeast', 'Interpreter', 'none');
             styleAxes(app, ax, app.AXES_FONT_SIZE);
             data = table(x.count, x.efficiency, x.(column), y.(column), 'VariableNames', ["count", "efficiency", "X", "Y"]);
-            info = sprintf("%d 通りの Mark の数を %.0f 秒で計算しました（%s。%s）。", numel(study.counts), ...
-                study.seconds, study.sourceText, study.options.description);
+            info = sprintf("%d 通りの Mark の数を %.0f 秒で計算しました。", numel(study.counts), study.seconds);
             if ~isequaln(study.snapshot, markLayoutSnapshot(app))
                 info = "⚠ 計算の後に入力・候補の Mark・設定を変えました。「配置を最適化する」で計算し直してください" + ...
                     "（下は前の結果）。" + info;
@@ -414,7 +425,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             legend(ax, 'off');
             input = app.MarkLayoutInput;
             if isempty(input)
-                c.markOptMapInfo.Text = c.markOptMapInfo.UserData;
+                c.markOptMapInfo.Text = '';
                 return
             end
             candidates = input.candidates;
@@ -459,7 +470,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             box(ax, 'on');
             legend(ax, 'Location', 'northoutside', 'Orientation', 'horizontal', 'Interpreter', 'none');
             styleAxes(app, ax, app.AXES_FONT_SIZE);
-            info = "Mark をクリックすると、必ず計測する・しないが切り替わります（どの数の配置にも入れます）。";
+            info = "Mark をクリックで必ず計測を切り替え";
             if sameCandidates
                 info = sprintf("計測する Mark：%s。", strjoin(string(candidates.no(selected)), "・")) + info;
             end
@@ -479,7 +490,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             shapes = [];
             input = app.MarkLayoutInput;
             if isempty(input)
-                c.markOptShapeInfo.Text = '入力を選ぶと、候補の Mark の位置に乱数の形を描きます。';
+                c.markOptShapeInfo.Text = '';
                 return
             end
             readMarkLayoutControls(app);
@@ -544,10 +555,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
         function buildMarkLayoutTab(app)
             MAX_PENALTY_ORDER = 6;   % 正則化をかけられる次数の上限（alignest.markLayoutOptions と同じ）
             RANDOM_ORDERS = 6;       % 乱数の形の項の次数の数（0〜5次）
-            grid = uigridlayout(app.Tabs.markLayout, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 12, 'RowSpacing', 8);
-            label(grid, ['Shot 高次補正の計測 Mark の配置を、Mark の数（最低数から1点ずつ）ごとに I 最適計画で選び、選んだ配置で' ...
-                '補正した制御残差を I 効率と比べます。左で入力・補正の式・回帰・配置の選び方を決め、右の「候補の Mark」で必ず' ...
-                '計測する Mark を選んで、「配置を最適化する」を押してください。実測値の無い座標は、乱数の Shot の形で評価します。'], 1, 1);
+            grid = uigridlayout(app.Tabs.markLayout, [1, 1], 'Padding', 12);
             body = uigridlayout(grid, [1, 2], 'ColumnWidth', {600, '1x'}, 'Padding', 0, 'ColumnSpacing', 14);
             registerResponsiveColumn(app, body, 1);
             left = uigridlayout(body, [10, 1], 'RowHeight', {'fit', 'fit', 'fit', '1x', 'fit', 'fit', 'fit', 'fit', ...
@@ -582,7 +590,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                 'Padding', 0);
             place(modelGrid, 6, 1);
             label(modelGrid, '補正の式', 1, 1);
-            c.markOptMaker = uidropdown(modelGrid, 'Items', {'ASML', 'Canon', 'Nikon', 'カスタム（k1〜k38）'}, ...
+            c.markOptMaker = uidropdown(modelGrid, 'Items', {'ASML', 'Canon', 'Nikon', 'カスタム'}, ...
                 'ItemsData', {'asml', 'canon', 'nikon', 'custom'}, 'ValueChangedFcn', onSetting, 'Tooltip', ['Overlay 計測' ...
                 'ルールの Shot 高次補正の式（「7. Shot高次補正」と同じ）。カスタム：k1〜k38 から使う項を右の「使う項と VIF」で' ...
                 '選びます。「7. Shot高次補正」で保存した項の組み合わせも選べます。式は「9. ヘルプ」。']);
@@ -611,7 +619,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             place(regression, 8, 1);
             regressionHeading = label(regression, '③ 回帰', 1, 1);
             regressionHeading.FontWeight = 'bold';
-            c.markOptLoss = uidropdown(regression, 'Items', {'最小二乗', 'Huber（ロバスト）', 'LAD（ロバスト）'}, ...
+            c.markOptLoss = uidropdown(regression, 'Items', {'最小二乗', 'Huber', 'LAD'}, ...
                 'ItemsData', {'ols', 'huber', 'lad'}, 'ValueChangedFcn', onSetting, 'Tooltip', ['制御残差を求めるときの' ...
                 '当てはめ（「7. Shot高次補正」と同じ）。Huber・LAD：残差の大きい点（飛び値）ほど影響を小さくします。' ...
                 '配置の選び方（I 最適計画）は最小二乗の予測の分散で決めます。']);
@@ -621,8 +629,8 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                 'ValueChangedFcn', onSetting, 'Tooltip', '残差が c × 尺度 を超える点の重みを下げます（1.345 で効率 95%）。');
             place(c.markOptHuber, 1, 4);
             label(regression, '正則化', 2, 1);
-            c.markOptRegularization = uidropdown(regression, 'Items', {'なし', 'L2（係数を小さくする）', ...
-                'L1（効かない項を 0 にする）'}, 'ItemsData', {'none', 'l2', 'l1'}, 'ValueChangedFcn', onSetting, ...
+            c.markOptRegularization = uidropdown(regression, 'Items', {'なし', 'L2', ...
+                'L1'}, 'ItemsData', {'none', 'l2', 'l1'}, 'ValueChangedFcn', onSetting, ...
                 'Tooltip', '選んだ次数の項の係数に罰則をかけます（定数 k1・k2 にはかけない。「7. Shot高次補正」と同じ）。');
             place(c.markOptRegularization, 2, 2);
             label(regression, 'λ', 2, 3);
@@ -660,8 +668,9 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                 'やすくなりますが、時間がかかります。']);
             place(c.markOptStarts, 2, 6);
             label(design, '評価に使う値', 3, 1);
-            c.markOptValues = uidropdown(design, 'Items', {'実測値', '乱数の Shot の形（右の「乱数の Shot の形」）'}, ...
-                'ItemsData', {'measured', 'random'}, 'ValueChangedFcn', onSetting, 'Tooltip', ['実測値：Shot ごとに、選んだ' ...
+            c.markOptValues = uidropdown(design, 'Items', {'実測値', '乱数の Shot の形'}, ...
+                'ItemsData', {'measured', 'random'}, 'ValueChangedFcn', @(~, ~) app.onMarkLayoutValuesChanged(), ...
+                'Tooltip', ['実測値：Shot ごとに、選んだ' ...
                 'Mark の実測値で補正し、値のあるすべての Mark の制御残差（実測値 − 補正量）を求めます。乱数の Shot の形：' ...
                 '形に計測のばらつきと飛び値を足した値で補正し、足す前の形との差を制御残差にします（座標だけの入力はこちら）。']);
             place(c.markOptValues, 3, [2, 6]);
@@ -695,8 +704,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                 'RowName', {}, 'ColumnEditable', [false, false, false, true], 'ColumnWidth', {90, 'auto', 50, 180}, ...
                 'Data', cell(0, 4), 'Tooltip', '「ファイルの列」をクリックして、項目に使う列を選びます（使わない項目は「（なし）」）。');
             place(c.markOptMappingTable, 2, 1);
-            c.markOptMappingStatus = uilabel(columnGrid, 'WordWrap', 'on', 'Text', ['入力を Excel・CSV にするときは、' ...
-                '左の「Excel・CSV を読み込む…」で表を選んでください（列の名前は自由。読んだ後でここで列を選びます）。']);
+            c.markOptMappingStatus = uilabel(columnGrid, 'WordWrap', 'on', 'Text', '「Excel・CSV を読み込む…」で表を選んでください。');
             place(c.markOptMappingStatus, 3, 1);
             % 候補の Mark
             candidateTab = uitab(outputs, 'Title', '候補の Mark');
@@ -784,11 +792,6 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             c.markOptNoise = uieditfield(shapeControls, 'numeric', 'Limits', [0, Inf], 'ValueChangedFcn', onShape, ...
                 'Tooltip', '計測のばらつき：各点に足す正規乱数の標準偏差 [nm]。');
             place(c.markOptNoise, 3, 5);
-            seedNote = label(shapeControls, '乱数の種：メニュー「設定」', 3, [6, 8]);
-            seedNote.FontColor = app.Palette.muted;
-            seedNote.UserData = "muted";
-            seedNote.Tooltip = ['同じ種なら同じ形になります（配置を探すときの乱数の始め方にも使います）。メニュー「設定」→' ...
-                '「乱数の種…」で変えます（学習 Shot の選び方と共通）。'];
             label(shapeControls, '飛び値', 4, 1);
             label(shapeControls, '割合 [%]', 4, 2);
             c.markOptOutlierPercent = uieditfield(shapeControls, 'numeric', 'Limits', [0, 50], 'ValueChangedFcn', onShape, ...
@@ -833,7 +836,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                 'ButtonPushedFcn', @(source, ~) app.onCopyFigure("markLayoutChart", source));
             place(c.markOptCopyChart, 1, 6);
             c.markOptChartAxes = axesInPanel(chartGrid, 2);
-            chartEmpty = '「配置を最適化する」を押すと、Mark の数ごとの配置の制御残差を I 効率に対して描きます。';
+            chartEmpty = '「配置を最適化する」で描きます。';
             c.markOptChartInfo = uilabel(chartGrid, 'WordWrap', 'on', 'Text', chartEmpty, 'UserData', chartEmpty);
             place(c.markOptChartInfo, 3, 1);
             % 配置
@@ -842,7 +845,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             mapGrid = uigridlayout(mapTab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 6, 'RowSpacing', 4);
             mapControls = uigridlayout(mapGrid, [1, 4], 'ColumnWidth', {'fit', '1x', 'fit', 'fit'}, 'Padding', 0);
             label(mapControls, 'Mark の数', 1, 1);
-            c.markOptMapCount = uidropdown(mapControls, 'Items', {'—（計算の前）'}, 'ItemsData', {0}, 'Enable', 'off', ...
+            c.markOptMapCount = uidropdown(mapControls, 'Items', {'—'}, 'ItemsData', {0}, 'Enable', 'off', ...
                 'ValueChangedFcn', @(~, ~) app.drawMarkLayoutMap());
             place(c.markOptMapCount, 1, 2);
             c.markOptSaveMap = uibutton(mapControls, 'Text', '図を画像で保存…', 'ButtonPushedFcn', ...
@@ -852,21 +855,14 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                 'ButtonPushedFcn', @(source, ~) app.onCopyFigure("markLayoutMap", source));
             place(c.markOptCopyMap, 1, 4);
             c.markOptMapAxes = axesInPanel(mapGrid, 2);
-            mapEmpty = '入力を選ぶと、候補の Mark を描きます。';
-            c.markOptMapInfo = uilabel(mapGrid, 'WordWrap', 'on', 'Text', mapEmpty, 'UserData', mapEmpty);
+            c.markOptMapInfo = uilabel(mapGrid, 'WordWrap', 'on', 'Text', '');
             place(c.markOptMapInfo, 3, 1);
             % 表
             tableTab = uitab(outputs, 'Title', '表');
             c.markOptTableTab = tableTab;
-            tableGrid = uigridlayout(tableTab, [2, 1], 'RowHeight', {'1x', 'fit'}, 'Padding', 6, 'RowSpacing', 4);
+            tableGrid = uigridlayout(tableTab, [1, 1], 'Padding', 6);
             c.markOptResultTable = uitable(tableGrid, 'RowName', {}, 'Data', table());
             place(c.markOptResultTable, 1, 1);
-            note = label(tableGrid, ['制御残差：選んだ Mark の値で補正の式を当てはめた後に残る値（実測値なら 実測値 − 補正量、' ...
-                '乱数の形なら 計測のばらつき・飛び値を足す前の形 − 補正量）[nm]。最後の行は、すべての候補の Mark を計測' ...
-                'したとき。入れ替えた Mark：1つ少ない数の配置に無かった Mark の数（数ごとに解き直すため、足すだけでなく' ...
-                '入れ替わることがあります）。'], 2, 1);
-            note.FontColor = app.Palette.muted;
-            note.UserData = "muted";
             outputs.SelectedTab = candidateTab;
             app.Controls = mergeStruct(app.Controls, c);
             refreshMarkLayoutChoices(app);
@@ -906,6 +902,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             c.markOptNoise.Value = options.noiseNm;
             c.markOptOutlierPercent.Value = options.outlierPercent;
             c.markOptOutlierSize.Value = options.outlierNm;
+            app.MarkLayoutValuesAuto = false;
             updateMarkLayoutEnabled(app);
             refreshMarkLayoutInput(app);
         end
@@ -963,7 +960,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             % 補正の式の選択肢：ASML・Canon・Nikon・カスタムと、「7. Shot高次補正」で保存した項の組み合わせ
             c = app.Controls;
             sets = termSetTable(fieldOr(app.Settings.highOrder, "termSets", strings(0, 1)));
-            items = ["ASML", "Canon", "Nikon", "カスタム（k1〜k38）", ...
+            items = ["ASML", "Canon", "Nikon", "カスタム", ...
                 reshape("組み合わせ：" + sets.name + "（" + sets.makerLabel + "・" + sets.count + " 項）", 1, [])];
             values = ["asml", "canon", "nikon", "custom", reshape(app.MARK_SET_PREFIX + sets.name, 1, [])];
             setChoices(c.markOptMaker, items, cellstr(values));
@@ -988,13 +985,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                     end
             end
             if isempty(labels)
-                text = "—";
-                if source == "highOrder"
-                    text = "—（「7. Shot高次補正」で選んでいる Wafer を使います）";
-                elseif source == "manual"
-                    text = "—（画面で入力する座標）";
-                end
-                setListChoices(c.markOptWafer, text, {0});
+                setListChoices(c.markOptWafer, "—", {0});
             else
                 setListChoices(c.markOptWafer, labels, num2cell(1:numel(labels)));
             end
@@ -1014,16 +1005,13 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                 input = app.MarkLayoutInput;
                 text = input.text + sprintf("：候補の Mark %d 点", height(input.candidates));
                 if isempty(input.shots.label)
-                    text = text + "（実測値なし。乱数の Shot の形で評価します）";
+                    text = text + "（実測値なし）";
                 else
                     text = text + sprintf("・実測値 %d Shot", numel(input.shots.label));
                 end
                 c.markOptInputInfo.Text = char(text + "。");
                 c.markOptInputInfo.FontColor = app.Palette.muted;
-                if isempty(input.shots.label) && string(c.markOptValues.Value) == "measured"
-                    c.markOptValues.Value = 'random';   % 座標だけの入力は乱数の形で評価する
-                    app.Settings.markLayout.values = "random";
-                end
+                matchMarkLayoutValues(app, ~isempty(input.shots.label));
             catch err
                 c.markOptInputInfo.Text = char("⚠ " + err.message);
                 c.markOptInputInfo.FontColor = app.Palette.error;
@@ -1038,6 +1026,22 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             showMarkLayoutMessages(app);
         end
 
+        function matchMarkLayoutValues(app, hasValues)
+            % 座標だけの入力は乱数の形で評価する。値のある入力に戻したら、自動で変えたときだけ実測値に戻す
+            c = app.Controls;
+            target = "";
+            if ~hasValues && string(c.markOptValues.Value) == "measured"
+                target = "random";
+            elseif hasValues && app.MarkLayoutValuesAuto
+                target = "measured";
+            end
+            if target ~= ""
+                c.markOptValues.Value = char(target);
+                app.Settings.markLayout.values = target;
+                app.MarkLayoutValuesAuto = target == "random";
+            end
+        end
+
         function input = buildMarkLayoutInput(app)
             % 入力の候補の Mark（alignest.markCandidates）と、入力の説明
             c = app.Controls;
@@ -1048,8 +1052,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                 case "manual"
                     coordinates = [reshape(settings.coordinateXmm, [], 1), reshape(settings.coordinateYmm, [], 1)];
                     if isempty(coordinates)
-                        error('alignest:markLayout', ['候補の Mark の座標がありません。右の「候補の Mark」で「格子で置く」か' ...
-                            '「行を足す」で座標を入れてください。']);
+                        error('alignest:markLayout', '候補の Mark がありません。「候補の Mark」で座標を入れてください。');
                     end
                     [candidates, shots] = alignest.markCandidates([], coordinates, required);
                     text = "画面で入力した座標";
@@ -1100,9 +1103,11 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             input = app.MarkLayoutInput;
             table_ = c.markOptCandidateTable;
             removeStyle(table_);
+            table_.Selection = [];
+            app.MarkLayoutSelection = zeros(0, 1);   % 表を作り直すと行が並び変わるので、前の選択は使わない
             if isempty(input)
                 table_.Data = cell(0, 5);
-                c.markOptCandidateInfo.Text = '入力を選ぶと、候補の Mark を出します。';
+                c.markOptCandidateInfo.Text = '';
                 return
             end
             candidates = input.candidates;
@@ -1112,12 +1117,8 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                 addStyle(table_, uistyle('FontColor', app.MARK_REQUIRED_COLOR, 'FontWeight', 'bold'), 'row', ...
                     find(candidates.required));
             end
-            text = sprintf("候補の Mark %d 点（必ず計測 %d 点）。「必ず計測」をチェックした Mark は、どの数の配置にも入れます" + ...
-                "（「配置」の図の Mark をクリックしても切り替わります）。", height(candidates), nnz(candidates.required));
-            if input.source == "manual"
-                text = text + "画面で入力する座標は、X・Y を直接書き換えられます（同じ位置はまとめます）。";
-            end
-            c.markOptCandidateInfo.Text = char(text);
+            c.markOptCandidateInfo.Text = sprintf('候補の Mark %d 点（必ず計測 %d 点）', height(candidates), ...
+                nnz(candidates.required));
             updateMarkLayoutEnabled(app);
         end
 
@@ -1135,7 +1136,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             end
             terms = alignest.highOrderTerms(options.maker, options.excludedTerms);
             input = app.MarkLayoutInput;
-            vifText_ = "入力を選ぶと、候補の Mark の位置で VIF を出します。";
+            vifText_ = "";
             if isempty(input)
                 [terms.vifAll, terms.vifUsed] = deal(nan(height(terms), 1));
             else
@@ -1168,8 +1169,8 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             end
             nX = nnz(terms.used & terms.axis == "dx");
             nY = nnz(terms.used & terms.axis == "dy");
-            text = sprintf("使う項：dx %d / %d・dy %d / %d（右の「使う項と VIF」で選べます）。最低数は %d 点以上です。", nX, ...
-                nnz(terms.axis == "dx"), nY, nnz(terms.axis == "dy"), max(nX, nY));
+            text = sprintf("使う項：dx %d / %d・dy %d / %d（最低数 %d 点）", nX, nnz(terms.axis == "dx"), nY, ...
+                nnz(terms.axis == "dy"), max(nX, nY));
             c.markOptTermInfo.Text = char(text);
             c.markOptVifInfo.Text = char(vifText_);
         end
@@ -1241,30 +1242,25 @@ classdef (Abstract) MarkLayoutTab < appui.Core
         end
 
         function snapshot = markLayoutSnapshot(app)
-            % 計算の後に変えたかを見る入力・設定（設定・入力・Wafer・候補の Mark の位置）
+            % 計算の後に変えたかを見る入力・設定（設定・入力・Wafer・候補の Mark の位置。実測値で評価するときは Shot ごとの値も）
             input = app.MarkLayoutInput;
             positions = [];
+            values = [];
             if ~isempty(input)
                 positions = [input.candidates.xMm, input.candidates.yMm, input.candidates.required];
+                if string(app.Settings.markLayout.values) == "measured"
+                    values = struct("label", input.shots.label, "x", input.shots.valueX, "y", input.shots.valueY);
+                end
             end
             snapshot = struct("settings", app.Settings.markLayout, "seed", app.Settings.sampling.seed, "source", ...
-                string(app.Controls.markOptSource.Value), "selection", {app.Controls.markOptWafer.Value}, "positions", positions);
+                string(app.Controls.markOptSource.Value), "selection", {app.Controls.markOptWafer.Value}, "positions", positions, ...
+                "values", values);
         end
 
         function showMarkLayoutStudy(app)
             % 結果の図・配置の選択肢・表・知らせを出す
             c = app.Controls;
             study = app.MarkLayoutStudy;
-            if isempty(study)
-                setChoices(c.markOptMapCount, "—（計算の前）", {0});
-                c.markOptMapCount.Enable = 'off';
-                c.markOptResultTable.Data = table();
-                c.markOptExport.Enable = 'off';
-                drawMarkLayoutChart(app);
-                drawMarkLayoutMap(app);
-                showMarkLayoutMessages(app);
-                return
-            end
             items = compose("%d 点（I 効率 %.1f%%）", study.counts, study.layouts.efficiency);
             setChoices(c.markOptMapCount, items, num2cell(study.counts));
             c.markOptMapCount.Enable = 'on';
@@ -1358,6 +1354,11 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                 drawMarkLayoutChart(app);
             end
             showMarkLayoutMessages(app);
+        end
+
+        function onMarkLayoutValuesChanged(app)
+            app.MarkLayoutValuesAuto = false;   % 自分で選んだ値は、入力を変えても戻さない
+            onMarkLayoutSettingsChanged(app);
         end
 
         function onMarkLayoutShapeChanged(app)
@@ -1576,6 +1577,10 @@ end
 function data = resultTable(study)
 % 結果の表：配置ごとの I 効率・制御残差（X・Y）・補正しなかった Shot・入れ替えた Mark・計測する Mark
 evaluation = study.evaluation;
+if height(evaluation) == 0
+    data = layoutOnlyTable(study);
+    return
+end
 layouts = evaluation.layout(evaluation.axis == "X");
 x = evaluation(evaluation.axis == "X", :);
 y = evaluation(evaluation.axis == "Y", :);
@@ -1598,4 +1603,17 @@ data = table(x.layoutType, x.count, round(x.efficiency, 1), round(x.meanPlus3Sig
     "X ｜平均｜+3σ [nm]", "Y ｜平均｜+3σ [nm]", "X 95% 点 [nm]", "Y 95% 点 [nm]", ...
     "計測しなかった Mark の|X ｜平均｜+3σ [nm]", "計測しなかった Mark の|Y ｜平均｜+3σ [nm]", "補正しなかった|Shot", ...
     "入れ替えた|Mark", "計測する Mark の番号"]);
+end
+
+function data = layoutOnlyTable(study)
+% 配置を選ぶ途中で止めたときの表：選んだ配置だけ（制御残差は求めていない）
+nLayouts = numel(study.counts);
+changed = study.layouts.changed;
+changed(1) = NaN;   % 最初の数は比べる配置が無い
+marks = strings(nLayouts, 1);
+for k = 1:nLayouts
+    marks(k) = strjoin(string(study.candidates.no(study.layouts.selected(:, k))), "・");
+end
+data = table(repmat("I 最適", nLayouts, 1), study.counts, round(study.layouts.efficiency, 1), changed, marks, ...
+    'VariableNames', ["配置", "Mark の数", "I 効率 [%]", "入れ替えた|Mark", "計測する Mark の番号"]);
 end

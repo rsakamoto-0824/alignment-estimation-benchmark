@@ -1,0 +1,6 @@
+function labels = shortMetricLabels(labels)
+% 指標の選択肢に出す短い名前（alignest.metricNames の名前は Excel の列名でも使うので変えない）
+labels = replace(string(labels), ["（平均値を推定値にした場合）", "（平均値に対する RMSE の減少）", "（平均値に対する）", ...
+    "（中央値を推定値にした場合）", "（中央値に対する RMSE の減少）", "（中央値に対する）"], ...
+    ["（平均値）", "（平均値比）", "（平均値比）", "（中央値）", "（中央値比）", "（中央値比）"]);
+end

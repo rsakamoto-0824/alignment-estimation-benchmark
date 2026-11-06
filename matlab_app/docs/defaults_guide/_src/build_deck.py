@@ -257,7 +257,7 @@ def build(output: Path, reference: Path):
             ["+alignest/estimateRunSeconds.m", "時間の目安（1条件 2 秒、ν を指定した Matérn は 3 倍）", "SECONDS_PER_RUN = 2"],
             ["+alignest/exchangeSecondsGuide.m", "交換法の時間の目安（初期配置1つ × 学習 Shot 1つ）", "0.01 秒"],
             ["+alignest/siteDefaults.m", "既定の設定ファイル（手順 B）を読む", DEFAULTS_FILE],
-            ["help/help.html", "「9. ヘルプ」の説明（用語・カーネル・補正の式）", "手法を足したら説明も足す"]]
+            ["help/help.html", "「9. ヘルプ」の説明（機能編・技術編）", "手法を足したら説明も足す"]]
     table(s, 0.6, 1.5, [3.6, 5.2, 3.33], rows, size=12, row_h=0.56, bold_first=True)
     point_bar(s, 6.2, "設定ファイルの項目の名前は、defaultSettings.m の settings.〈グループ〉.〈項目〉 と同じ",
               icon="i", icon_color=BODY, h=0.6, size=13.5)
@@ -384,7 +384,7 @@ def build(output: Path, reference: Path):
              "unit・λ・回帰・保存した組み合わせは「補正の比較」でまとめて並べて比べられる。outerMaker を none 以外にすると、"
              "外周の Shot だけその式で補正する（保存した組み合わせを選ぶと、その使わない項 outerExcludedTerms と名前 outerName も入る）。"
              "既定の設定ファイルにも書ける。"
-             "計算の方法と式は「9. ヘルプ」の「Shot 高次補正の評価」。")
+             "計算の方法と式は「9. ヘルプ」の技術編。")
 
     # 15. markLayout（Mark 配置の最適化）
     s = deck.body("03　設定の項目と初期値", "設定の項目⑦：markLayout（8. Mark配置の最適化）")
@@ -410,7 +410,7 @@ def build(output: Path, reference: Path):
              "どちらも「設定を保存…」の JSON に入る（必ず計測する Mark は座標で覚えるので、入力を変えても同じ位置なら残る）。"
              "values が random のとき、0〜5次の項に orderSigmaNm の大きさの正規乱数の係数を掛けた形に、noiseNm のばらつきと、"
              "outlierPercent の割合の点に outlierNm の飛び値を足して補正し、足す前の形で制御残差を求める。"
-             "既定の設定ファイルにも書ける。計算の方法と式は「9. ヘルプ」の「Mark 配置の最適化」。")
+             "既定の設定ファイルにも書ける。計算の方法と式は「9. ヘルプ」の技術編。")
 
     # 16. options と画面の定数
     s = deck.body("03　設定の項目と初期値", "手法の細かい設定（methods.options）と画面の定数")
@@ -527,7 +527,7 @@ def build(output: Path, reference: Path):
     related = [("README.md", "設定の項目・使い方の全体"),
                ("docs/admin_guide/admin_guide.html", "アプリの構成と保守の作業"),
                ("docs/windows_guide/windows_guide.html", "画面の使い方・exe を作る・配る"),
-               ("「9. ヘルプ」タブ", "用語・カーネル・補正の式")]
+               ("「9. ヘルプ」タブ", "機能編（使い方）・技術編（式）")]
     for index, (name, body) in enumerate(related):
         y = 2.5 + index * 0.98
         circle(s, 8.35, y + 0.08, 0.4, LIGHT, str(index + 1), label_color=INK, size=12)

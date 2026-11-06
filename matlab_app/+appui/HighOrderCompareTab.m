@@ -218,7 +218,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             colors = lines(max(numel(labels), 1));
             if view == "residual"
                 statistic = string(c.highOrderWaferStatistic.Value);
-                [names, waferOrderText] = residualStageNames(run.result.options);
+                names = residualStageNames(run.result.options);
                 formulaAxes = ["dx", "dy"];
                 parts = cell(2, 1);
                 for k = 1:2
@@ -238,10 +238,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
                     parts{k} = part;
                 end
                 data = vertcat(parts{:});
-                c.highOrderWaferInfo.Text = char("残差は、高次補正と Shot ごとの1次の補正の両方ができた点で求めます" + ...
-                    "（|残差| の 95% 点・中央値は残差の大きさ）。Wafer 高次補正だけ：Shot 中心の座標の多項式（" + waferOrderText + ...
-                    "、定数を含む）を当てはめた残差。Wafer 高次補正＋Shot 共通補正：それに Wafer 内の Shot で共通の1組の k" + ...
-                    "（外周の式を分けるときは内周・外周の2組）を一緒に当てはめた残差。どれも同じ損失関数・正則化です。");
+                c.highOrderWaferInfo.Text = '';
             else
                 [data, termNames] = coefficientsByWafer(run, labels, axisName, view);
                 hold(ax, 'on');
@@ -321,8 +318,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             c.highOrderPairInfo.FontColor = app.Palette.text;
             comparison = app.HighOrderComparison;
             if isempty(comparison) || ~isfield(comparison, 'results') || numel(comparison.results) < 2
-                c.highOrderPairInfo.Text = ['「補正の比較」で条件を2つ以上足して「すべて計算して比べる」を押すと、2つの条件の' ...
-                    '残差を並べます（左が基準）。'];
+                c.highOrderPairInfo.Text = '「補正の比較」で2つ以上の条件を計算すると並べます。';
                 return
             end
             first = c.highOrderPairReference.Value;
@@ -430,11 +426,11 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             c.highOrderCompare = primaryButton(app, buttons, 'すべて計算して比べる', @(~, ~) app.onCompareHighOrder());
             place(c.highOrderCompare, 1, 5);
             sweep = uigridlayout(controls, [1, 4], 'ColumnWidth', {'fit', '1x', 'fit', 'fit'}, 'Padding', 0);
-            label(sweep, 'λ（空白で区切る）', 1, 1);
+            label(sweep, 'λ', 1, 1);
             c.highOrderSweepLambda = uieditfield(sweep, 'text', 'Value', '0 0.01 0.1 1', 'Tooltip', ...
                 '正則化の強さ λ を空白で区切って入れます（0 は正則化なし）。');
             place(c.highOrderSweepLambda, 1, 2);
-            c.highOrderSweepButton = uibutton(sweep, 'Text', 'λ ごとに足す（スイープ）', 'ButtonPushedFcn', ...
+            c.highOrderSweepButton = uibutton(sweep, 'Text', 'λ ごとに足す', 'ButtonPushedFcn', ...
                 @(~, ~) app.onAddHighOrderConditions("lambda"), 'Tooltip', ['今の設定で、λ だけを左の値に変えた条件を' ...
                 '足します（今の正則化の種類と次数。正則化なしなら L2。λ ごとの残差を比べられます）。']);
             place(c.highOrderSweepButton, 1, 3);
@@ -696,7 +692,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             c = app.Controls;
             conditions = app.HighOrderConditions;
             if isempty(conditions)
-                c.highOrderConditionList.Items = {'（条件はまだありません。上のボタンで足してください）'};
+                c.highOrderConditionList.Items = {'（条件はまだありません）'};
                 c.highOrderConditionList.ItemsData = {0};
                 c.highOrderConditionList.Value = {};
             else
@@ -749,8 +745,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             end
             stale = staleComparisonText(app);
             if stale == ""
-                c.highOrderCompareInfo.Text = sprintf(['%d 条件を比べました（すべての Wafer の点。軸ごとに高次補正の ' ...
-                    '|平均|+3σ が最も小さい行を太字）。'], numel(comparison.conditions));
+                c.highOrderCompareInfo.Text = sprintf('%d 条件を比べました。', numel(comparison.conditions));
                 c.highOrderCompareInfo.FontColor = app.Palette.text;
             else
                 c.highOrderCompareInfo.Text = char(stale);
@@ -932,14 +927,14 @@ data = [table(labels, repmat(axisName, numel(labels), 1), 'VariableNames', ["Waf
     "Shot ごとの1次", "高次補正"])];
 end
 
-function [names, orderText] = residualStageNames(options)
-% 「Wafer の比較」の残差の棒の名前（凡例）と、Wafer 成分の次数の説明
+function names = residualStageNames(options)
+% 「Wafer の比較」の残差の棒の名前（凡例）
 orderText = sprintf("%d次", options.waferOrder);
 if options.waferOrder == 0
     orderText = "0次：平均だけ";
 end
 names = ["補正前", "Wafer 高次補正だけ（" + orderText + "）", "Wafer 高次補正＋Shot 共通補正", ...
-    "Shot ごとの1次（k1〜k6）", "高次補正（" + unitLabel(options) + "）"];
+    "Shot ごとの1次", "高次補正（" + unitLabel(options) + "）"];
 end
 
 function value = statisticOf(values, statistic)

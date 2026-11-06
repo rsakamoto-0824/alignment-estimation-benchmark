@@ -182,8 +182,7 @@ classdef (Abstract) TargetTab < appui.Core
                 cla(c.targetResidualAxes, 'reset');
                 legend(c.targetResidualAxes, 'off');
                 set([c.targetResidualSave, c.targetResidualCopy], 'Enable', 'off');
-                c.targetResidualInfo.Text = ['推定した後に「重ね合わせ補正値を計算する」を押すと、補正後の残差を Wafer 上の' ...
-                    'ベクトルで描きます（四角は実測値の点、◇ は未知の座標の点）。'];
+                c.targetResidualInfo.Text = '「重ね合わせ補正値を計算する」で残差を描きます。';
                 return
             end
             unit = app.Data.units(run.unitIndex(position));
@@ -227,15 +226,12 @@ classdef (Abstract) TargetTab < appui.Core
         % ================= 6. 未知の座標の推定 =================
         function buildTargetTab(app)
             % 左：推定する点（未知の座標）の表と、その作り方。右：推定の条件・メッセージ・図・推定値の表
-            grid = uigridlayout(app.Tabs.target, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 12, 'RowSpacing', 8);
-            label(grid, ['学習データ（計測値）から、計測していない座標（新しい Mark の位置・Wafer 上の任意の点）の値を推定します。' ...
-                '左の表で点を決め（Excel・CSV から読み込むか、画面で入力・作成）、右で Wafer・学習データ・手法を選んで' ...
-                '「推定する」を押します。学習点の範囲の外（外挿）になる点は、右のメッセージと表・図で知らせます。'], 1, 1);
+            grid = uigridlayout(app.Tabs.target, [1, 1], 'Padding', 12);
             % 左の幅は狭めない（点を作るボタン・欄が横に並んでいて、狭めると右の方が隠れるため）
             body = uigridlayout(grid, [1, 2], 'ColumnWidth', {610, '1x'}, 'Padding', 0, 'ColumnSpacing', 14);
             left = uigridlayout(body, [6, 1], 'RowHeight', {'fit', 'fit', 'fit', '1x', 'fit', 'fit'}, ...
                 'Padding', 0, 'RowSpacing', 6);
-            place(uilabel(left, 'Text', '① 推定する点（未知の座標）', 'FontWeight', 'bold'), 1, 1);
+            place(uilabel(left, 'Text', '① 推定する点', 'FontWeight', 'bold'), 1, 1);
             buttons = uigridlayout(left, [1, 4], 'ColumnWidth', {'fit', 'fit', 'fit', 'fit'}, 'Padding', 0);
             c.targetLoad = uibutton(buttons, 'Text', 'Excel・CSV から読み込む…', 'ButtonPushedFcn', @(~, ~) app.onLoadTargets(), ...
                 'Tooltip', ['1行目が見出し（Xmm・Ymm は必須。markXmm・markYmm・markNo・shotNo・Direction・名前 は任意）の表を' ...
@@ -290,14 +286,14 @@ classdef (Abstract) TargetTab < appui.Core
             place(uilabel(right, 'Text', '② 推定の条件と結果', 'FontWeight', 'bold'), 1, 1);
             controls = uigridlayout(right, [3, 3], 'ColumnWidth', {'1x', '1.2x', '1.6x'}, ...
                 'RowHeight', {'fit', app.TARGET_LIST_HEIGHT, 'fit'}, 'Padding', 0);
-            label(controls, 'Wafer（複数選べる）', 1, 1);
-            label(controls, '学習データ（複数選べる）', 1, 2);
+            label(controls, 'Wafer', 1, 1);
+            label(controls, '学習データ', 1, 2);
             label(controls, '手法', 1, 3);
             c.targetWafer = uilistbox(controls, 'Items', {'—'}, 'ItemsData', {1}, 'Multiselect', 'on', 'Value', {1}, ...
                 'Tooltip', ['推定する Wafer（Ctrl・Shift を押しながらクリックで複数。Ctrl + A ですべて）。' ...
                 '選んだ Wafer × 学習データの組み合わせごとに、まとめて推定します。']);
             place(c.targetWafer, 2, 1);
-            c.targetTraining = uilistbox(controls, 'Items', {'計測値のある全 Mark（全 Shot）'}, ...
+            c.targetTraining = uilistbox(controls, 'Items', {'全 Mark'}, ...
                 'ItemsData', {char(app.TARGET_ALL_TRAINING)}, 'Multiselect', 'on', 'Value', {char(app.TARGET_ALL_TRAINING)}, ...
                 'Tooltip', ['計測値のある全 Mark：読み込んだ計測値をすべて学習に使います。学習パターン：評価で選んだ ' ...
                 'Shot（Mark）だけを学習に使います（「3. 実行」で評価した後に選べます）。複数選ぶと、まとめて推定します。']);
@@ -323,7 +319,7 @@ classdef (Abstract) TargetTab < appui.Core
             combinationGrid = uigridlayout(right, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
             place(combinationGrid, 4, 1);
             label(combinationGrid, '図・補正に出す組み合わせ', 1, 1);
-            c.targetCombination = uidropdown(combinationGrid, 'Items', {'—（推定すると選べます）'}, 'ItemsData', {1}, ...
+            c.targetCombination = uidropdown(combinationGrid, 'Items', {'—'}, 'ItemsData', {1}, ...
                 'Enable', 'off', 'ValueChangedFcn', @(~, ~) app.showTargetCombination(), ...
                 'Tooltip', '推定した Wafer × 学習データの組み合わせ。図と「重ね合わせ補正」のタブに、選んだ組み合わせを出します。');
             place(c.targetCombination, 1, 2);
@@ -333,7 +329,7 @@ classdef (Abstract) TargetTab < appui.Core
             figureGrid = uigridlayout(figureTab, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 6, 'RowSpacing', 4);
             figureControls = uigridlayout(figureGrid, [1, 4], 'ColumnWidth', {'fit', 140, 'fit', 'fit'}, 'Padding', 0);
             label(figureControls, '表示', 1, 1);
-            c.targetMode = uidropdown(figureControls, 'Items', {'ベクトル（矢印）', 'X（色）', 'Y（色）'}, ...
+            c.targetMode = uidropdown(figureControls, 'Items', {'ベクトル', 'X（色）', 'Y（色）'}, ...
                 'ItemsData', {'vector', 'X', 'Y'}, 'ValueChangedFcn', @(~, ~) app.drawTargetMap());
             place(c.targetMode, 1, 2);
             c.targetSaveFigure = uibutton(figureControls, 'Text', '図を画像で保存…', ...
@@ -351,11 +347,6 @@ classdef (Abstract) TargetTab < appui.Core
             modelTab = uitab(outputs, 'Title', '補正のモデル');
             modelGrid = uigridlayout(modelTab, [6, 3], 'RowHeight', repmat({'fit'}, 1, 6), 'ColumnWidth', {'1x', '1x', '1x'}, ...
                 'Padding', 6, 'RowSpacing', 4);
-            modelNote = label(modelGrid, ['重ね合わせ補正値を求める補正モデル（Wafer 成分 + Shot 共通成分 + Shot ごとの成分）。' ...
-                '「2. 評価の設定」の Overlay 補正と同じ設定です（どちらで変えても同じ。評価の Overlay 補正の評価にも使う）。' ...
-                '式の書き方は「9. ヘルプ」。'], 1, [1, 3]);
-            modelNote.FontColor = app.Palette.muted;
-            modelNote.UserData = "muted";
             label(modelGrid, 'Wafer 成分', 2, 1);
             label(modelGrid, 'Shot 共通成分', 2, 2);
             label(modelGrid, 'Shot ごとの成分', 2, 3);
@@ -385,8 +376,7 @@ classdef (Abstract) TargetTab < appui.Core
             overlayTab = uitab(outputs, 'Title', '補正値');
             overlayGrid = uigridlayout(overlayTab, [3, 1], 'RowHeight', {'fit', '1x', '1.4x'}, 'Padding', 6, 'RowSpacing', 6);
             overlayHeader = uigridlayout(overlayGrid, [1, 2], 'ColumnWidth', {'1x', 'fit'}, 'Padding', 0);
-            c.targetOverlayInfo = uilabel(overlayHeader, 'WordWrap', 'on', 'Text', ['推定した後に「重ね合わせ補正値を計算する」を' ...
-                '押すと、選んだ組み合わせの補正値（係数）と補正後の残差を出します。']);
+            c.targetOverlayInfo = uilabel(overlayHeader, 'WordWrap', 'on', 'Text', '「重ね合わせ補正値を計算する」で補正値と残差を出します。');
             c.targetOverlayExport = uibutton(overlayHeader, 'Text', '補正値を Excel に書き出す…', ...
                 'ButtonPushedFcn', @(~, ~) app.onExportTargets(), 'Tooltip', ['推定値と、すべての組み合わせの重ね合わせ' ...
                 '補正値（係数・補正の残差・補正に使った点、推定値の表の補正量・補正後の残差）を1つの Excel に書き出します' ...
@@ -412,7 +402,7 @@ classdef (Abstract) TargetTab < appui.Core
                 'estimated'}, 'ValueChangedFcn', onResidual);
             place(c.targetResidualSource, 1, 4);
             label(residualControls, '表示', 1, 5);
-            c.targetResidualMode = uidropdown(residualControls, 'Items', {'ベクトル（矢印）', 'X（色）', 'Y（色）'}, ...
+            c.targetResidualMode = uidropdown(residualControls, 'Items', {'ベクトル', 'X（色）', 'Y（色）'}, ...
                 'ItemsData', {'vector', 'X', 'Y'}, 'ValueChangedFcn', onResidual);
             place(c.targetResidualMode, 1, 6);
             c.targetResidualSave = uibutton(residualControls, 'Text', '画像で保存…', ...
@@ -424,8 +414,7 @@ classdef (Abstract) TargetTab < appui.Core
             c.targetResidualPanel = uipanel(residualGrid, 'BorderType', 'none');
             place(c.targetResidualPanel, 2, 1);
             c.targetResidualAxes = uiaxes(uigridlayout(c.targetResidualPanel, [1, 1], 'Padding', 0));
-            c.targetResidualInfo = uilabel(residualGrid, 'WordWrap', 'on', 'Text', ['推定した後に「重ね合わせ補正値を計算する」を' ...
-                '押すと、補正後の残差を Wafer 上のベクトルで描きます（四角は実測値の点、◇ は未知の座標の点）。']);
+            c.targetResidualInfo = uilabel(residualGrid, 'WordWrap', 'on', 'Text', '「重ね合わせ補正値を計算する」で残差を描きます。');
             place(c.targetResidualInfo, 3, 1);
             set([c.targetRun, c.targetExport, c.targetSaveFigure, c.targetCopyFigure, c.targetAddShots, c.targetOverlayButton, ...
                 c.targetOverlayRecompute, c.targetResidualSave, c.targetResidualCopy, c.targetOverlayExport], 'Enable', 'off');
@@ -457,7 +446,7 @@ classdef (Abstract) TargetTab < appui.Core
             else
                 setListChoices(c.targetWafer, "—（データを読み込んでください）", {1});
             end
-            trainingItems = "計測値のある全 Mark（全 Shot）";
+            trainingItems = "全 Mark";
             trainingData = {char(app.TARGET_ALL_TRAINING)};
             if ~isempty(app.Results) && ~isImportedResults(app.Results) && isfield(app.Results, 'plans')
                 planLabels = unique(string({app.Results.plans.label}), 'stable');
@@ -522,9 +511,7 @@ classdef (Abstract) TargetTab < appui.Core
             % 表を変えたら、点の数と入力の誤りを出す（前の推定値は残すが、推定し直すよう伝える）
             c = app.Controls;
             n = size(c.targetTable.Data, 1);
-            c.targetInfo.Text = sprintf(['%d 点。Xmm・Ymm：Shot 中心の Wafer 上の座標 [mm]（markXmm・markYmm が 0 なら点そのもの）、' ...
-                'markXmm・markYmm：Shot 中心から見た位置 [mm]。markNo・shotNo・Direction は空欄でもよい' ...
-                '（推定のとき、点を含む Shot から Scan 方向を補います）。'], n);
+            c.targetInfo.Text = sprintf('%d 点', n);
             c.targetError.Text = '';
             if n > 0
                 try
@@ -621,7 +608,7 @@ classdef (Abstract) TargetTab < appui.Core
             % 学習データ：計測値のある全 Mark（全 Shot）、または評価の学習パターン（その Wafer のもの）
             if training == app.TARGET_ALL_TRAINING
                 plan = 1:numel(app.Data.units(unitIndex).shots.shotNo);
-                text = "計測値のある全 Mark（全 Shot）";
+                text = "全 Mark";
                 return
             end
             plans = app.Results.plans;
@@ -772,7 +759,7 @@ classdef (Abstract) TargetTab < appui.Core
             if isempty(correction)
                 c.targetOverlaySummary.Data = table();
                 c.targetOverlayTable.Data = table();
-                c.targetOverlayInfo.Text = '「重ね合わせ補正値を計算する」を押すと、この組み合わせの補正値（係数）と補正後の残差を出します。';
+                c.targetOverlayInfo.Text = '「重ね合わせ補正値を計算する」で補正値と残差を出します。';
                 return
             end
             summary = correction.summary;
@@ -804,12 +791,11 @@ classdef (Abstract) TargetTab < appui.Core
                 c.targetResidualSave, c.targetResidualCopy, c.targetOverlayExport], 'Enable', 'off');
             cla(c.targetResidualAxes, 'reset');
             legend(c.targetResidualAxes, 'off');
-            c.targetResidualInfo.Text = ['推定した後に「重ね合わせ補正値を計算する」を押すと、補正後の残差を Wafer 上の' ...
-                'ベクトルで描きます（四角は実測値の点、◇ は未知の座標の点）。'];
-            setChoices(c.targetCombination, "—（推定すると選べます）", {1});
+            c.targetResidualInfo.Text = '「重ね合わせ補正値を計算する」で残差を描きます。';
+            setChoices(c.targetCombination, "—", {1});
             c.targetOverlaySummary.Data = table();
             c.targetOverlayTable.Data = table();
-            c.targetOverlayInfo.Text = '推定した後に「重ね合わせ補正値を計算する」を押すと、補正値（係数）と補正後の残差を出します。';
+            c.targetOverlayInfo.Text = '「重ね合わせ補正値を計算する」で補正値と残差を出します。';
             c.targetMessage.Value = {'左の表に推定する点を決めてから「推定する」を押してください。'};
             c.targetMessage.FontColor = app.Palette.text;
         end

@@ -78,7 +78,7 @@ if options.maxMarks > 0 && options.minMarks > options.maxMarks
 end
 mustBeCount(options.starts, 1, MAX_STARTS, "配置を探す始め方の数");
 mustBeCount(options.shapes, 1, MAX_SHAPES, "乱数の Shot の形の数");
-mustBeCount(options.seed, 0, 2 ^ 32 - 1, "乱数の種");
+alignest.checkRandomSeed(options.seed);
 if numel(options.orderSigmaNm) ~= RANDOM_ORDERS || any(~isfinite(options.orderSigmaNm) | options.orderSigmaNm < 0)
     error('alignest:markLayout', '乱数の形の項の大きさは、0〜5次の %d つの 0 以上の数 [nm] にしてください。', RANDOM_ORDERS);
 end

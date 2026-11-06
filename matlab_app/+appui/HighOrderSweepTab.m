@@ -133,15 +133,10 @@ classdef (Abstract) HighOrderSweepTab < appui.Core
                 row = find(data.("λ") == best.lambda & data.("c") == best.huberTuning, 1);
                 addStyle(c.highOrderTuneTable, uistyle('FontWeight', 'bold'), 'row', row);
             end
-            % 説明は短くし（図の高さを取るため）、詳しい見方は「9. ヘルプ」
-            howToRead = "λ・c は破線（1点抜きの予測の誤差）で選びます（実線の当てはめた残差は λ が小さいほど小さく見える）。";
-            if sweep.parameter == "both"
-                howToRead = "色は 1点抜きの予測の誤差（★ が最小。当てはめた残差は「表」）。";
-            end
             info = sprintf("%d 通りを %.0f 秒で計算しました%s。", sweep.nRuns, sweep.seconds, ...
-                ternary(sweep.cancelled, "（途中で止めました）", "")) + bestText + howToRead;
+                ternary(sweep.cancelled, "（途中で止めました）", "")) + bestText;
             if ~isequaln(sweep.snapshot, highOrderSweepSnapshot(app))
-                info = "⚠ スイープの後に入力・Wafer・設定（λ・c・正則化の種類・損失関数のほか）を変えました。" + ...
+                info = "⚠ スイープの後に入力・Wafer・設定を変えました。" + ...
                     "スイープし直してください（下は前の結果）。" + info;
             end
             c.highOrderTuneInfo.Text = char(info);
@@ -248,8 +243,7 @@ classdef (Abstract) HighOrderSweepTab < appui.Core
             tableTab = uitab(results, 'Title', '表');
             c.highOrderTuneTable = uitable(uigridlayout(tableTab, [1, 1], 'Padding', 4), 'RowName', {}, ...
                 'Data', table());
-            emptyText = ['λ・c の範囲と刻みを決めて「スイープを実行する」を押すと、今の入力・Wafer・設定で値ごとに計算し、' ...
-                '補正残差の推移を出します。'];
+            emptyText = '「スイープを実行する」で補正残差の推移を描きます。';
             c.highOrderTuneInfo = uilabel(grid, 'WordWrap', 'on', 'Text', emptyText, 'UserData', emptyText);
             place(c.highOrderTuneInfo, 3, 1);
             app.Controls = mergeStruct(app.Controls, c);

@@ -14,7 +14,7 @@ classdef (Abstract) SettingsTab < appui.Core
                 settings.sampling = alignest.upgradeLayoutSettings(settings.sampling);   % 以前の手動・ファイルの優先順
             end
             defaults = alignest.defaultSettings();
-            for group = ["data", "factors", "sampling", "evaluation", "overlay", "display", "highOrder"]
+            for group = ["data", "factors", "sampling", "evaluation", "overlay", "display", "highOrder", "markLayout"]
                 if ~isfield(settings, group)
                     settings.(group) = defaults.(group);
                 end
@@ -24,6 +24,7 @@ classdef (Abstract) SettingsTab < appui.Core
                     end
                 end
             end
+            alignest.checkRandomSeed(settings.sampling.seed);   % 画面を変える前に確かめる（途中で止まらないように）
             settings.data.coordinateUnits = alignest.coordinateUnits(settings.data.coordinateUnits);
             settings.data.directionRule = string(settings.data.directionRule);
             settings.sampling = alignest.syncShotCounts(settings.sampling);
@@ -62,13 +63,13 @@ classdef (Abstract) SettingsTab < appui.Core
                 'ColumnWidth', {'1x', '1.45x'}, 'Padding', 12, 'ColumnSpacing', 12);
             onChange = @(~, ~) app.onSettingsChanged();
 
-            samplingPanel = uipanel(grid, 'Title', '学習に使う Shot（この Shot の計測値で、残りの Shot を推定する）');
+            samplingPanel = uipanel(grid, 'Title', '学習に使う Shot');
             s = uigridlayout(samplingPanel, [43, 2], 'RowHeight', repmat({'fit'}, 1, 43), 'ColumnWidth', {'1x', '1x'}, ...
                 'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
-            label(s, '選び方（Ctrl・Shift で複数選ぶと、選び方どうしを同じ評価の中で比べる）', 1, [1, 2]);
-            c.samplingMethod = uilistbox(s, 'Items', {'制約付き I 最適（前回の評価と同じ）', '制約付き D 最適', ...
-                '制約つきランダム', 'Excel ファイルで指定（人が決めたパターン・優先順。Mark 単位も）', ...
-                'Mark 単位の I 最適（計測する Mark を選ぶ）', 'Mark 単位の D 最適（計測する Mark を選ぶ）'}, ...
+            label(s, '選び方', 1, [1, 2]);
+            c.samplingMethod = uilistbox(s, 'Items', {'制約付き I 最適', '制約付き D 最適', ...
+                '制約つきランダム', 'Excel ファイルで指定', ...
+                'Mark 単位の I 最適', 'Mark 単位の D 最適'}, ...
                 'ItemsData', {'ioptimal', 'doptimal', 'random', 'excel', 'mark', 'markd'}, ...
                 'Multiselect', 'on', 'Value', {'ioptimal'}, 'ValueChangedFcn', onChange, ...
                 'Tooltip', ['D 最適：I 最適と同じ制約で det(M) を大きくする組。Mark 単位：計測する Shot ではなく Mark を選ぶ' ...
@@ -76,7 +77,7 @@ classdef (Abstract) SettingsTab < appui.Core
                 '「計測配置の比較」で選び方どうしを比べられます。']);
             place(c.samplingMethod, 2, [1, 2]);
             s.RowHeight{2} = 160;
-            label(s, '学習 Shot 数（開始から終了まで、刻みごとに増やして比べる）', 3, 1);
+            label(s, '学習 Shot 数', 3, 1);
             c.countBy = uidropdown(s, 'Items', {'Shot 数で決める', '計測率 [%] で決める'}, 'ItemsData', {'shots', 'rate'}, ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['計測率は、Wafer の計測値のある Shot（候補）に対する学習 Shot の' ...
                 '割合です。Wafer ごとに 候補 Shot 数 × 計測率 を四捨五入した数の Shot を学習に使います。']);
@@ -86,7 +87,7 @@ classdef (Abstract) SettingsTab < appui.Core
             place(sweep, 4, [1, 2]);
             label(sweep, '開始', 1, 2);
             label(sweep, '終了', 1, 3);
-            label(sweep, '刻み（スイープ幅）', 1, 4);
+            label(sweep, '刻み', 1, 4);
             label(sweep, 'Shot 数', 2, 1);
             c.nShotsStart = shotCountSpinner(sweep, onChange);
             place(c.nShotsStart, 2, 2);
@@ -105,12 +106,9 @@ classdef (Abstract) SettingsTab < appui.Core
             place(c.nShotsList, 5, [1, 2]);
             c.nShotsError = errorLabel(app, s, 6, [1, 2]);
             label(s, 'ランダムの繰り返し回数', 7, 1);
-            seedNote = label(s, '乱数の種はメニュー「設定」→「乱数の種…」', 7, 2);
-            seedNote.FontColor = app.Palette.muted;
-            seedNote.UserData = "muted";
             c.randomRepeats = uispinner(s, 'Limits', [1, 1000], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
             place(c.randomRepeats, 8, 1);
-            label(s, 'Excel ファイルで指定（パターン・優先順。markNo の列で Mark 単位）', 9, 1);
+            label(s, 'Excel ファイルで指定', 9, 1);
             c.loadLayouts = uibutton(s, 'Text', 'Excel ファイルを読み込む…', 'ButtonPushedFcn', @(~, ~) app.onLoadLayouts(), ...
                 'Tooltip', ['1行目が見出しの表。shotNo の列（Mark 単位なら markNo の列も）と、名前を見出しにした列を並べます。' ...
                 '1・0 だけの列はパターン（1 を計測する）、1・2・3… の列は優先順（1 = 必ず計測、その次から順に。0 = 計測' ...
@@ -121,20 +119,20 @@ classdef (Abstract) SettingsTab < appui.Core
             place(c.layoutPlanInfo, 10, [1, 2]);
             s.RowHeight{10} = 90;
             c.layoutPlanError = errorLabel(app, s, 11, [1, 2]);
-            heading(s, '必ず計測する Shot（I 最適・ランダム。残りの Shot を選ぶ）', 14);
-            label(s, '必ず計測する shotNo（空白またはカンマで区切る）', 15, [1, 2]);
+            heading(s, '必ず計測する Shot', 14);
+            label(s, '必ず計測する shotNo', 15, [1, 2]);
             c.requiredShots = uieditfield(s, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['ここに書いた Shot を' ...
                 '必ず学習に入れ、残りを I 最適（またはランダム）で選びます（拡張 I 最適計画）。']);
             place(c.requiredShots, 16, [1, 2]);
-            c.requireOuter = uicheckbox(s, 'Text', '最外周の Shot をすべて必ず計測する（上下左右のどこかに隣の Shot が無い Shot）', ...
+            c.requireOuter = uicheckbox(s, 'Text', '最外周の Shot をすべて必ず計測する', ...
                 'ValueChangedFcn', onChange);
             place(c.requireOuter, 17, [1, 2]);
             c.requiredInfo = uilabel(s, 'WordWrap', 'on', 'Text', '');
             place(c.requiredInfo, 18, [1, 2]);
             c.requiredError = errorLabel(app, s, 19, [1, 2]);
-            heading(s, '制約（I 最適・ランダム）', 20);
+            heading(s, '制約', 20);
             radiusMm = app.Settings.data.waferRadiusMm;
-            label(s, sprintf('同心円の区切り：Shot 中心の半径 [mm]（Wafer 半径 %g mm が前提。空白区切り）', radiusMm), 21, [1, 2]);
+            label(s, '同心円の区切り [mm]', 21, [1, 2]);
             c.zoneEdges = uieditfield(s, 'text', 'ValueChangedFcn', onChange, 'Tooltip', sprintf(['Shot 中心の Wafer 中心からの' ...
                 '距離 [mm] で区画を分け、区画ごとの Shot 数をそろえます（例：67.5 105 → 0〜67.5・67.5〜105・105 mm 以上の' ...
                 '3区画）。0 より大きく %g mm より小さい値。使わないなら空欄。'], radiusMm));
@@ -144,13 +142,13 @@ classdef (Abstract) SettingsTab < appui.Core
             place(c.quadrants, 24, [1, 2]);
             c.scanConstraint = uicheckbox(s, 'Text', 'Scan 方向ごとの Shot 数をそろえる', 'ValueChangedFcn', onChange);
             place(c.scanConstraint, 25, [1, 2]);
-            label(s, '許容幅（各区画の Shot 数の ±）', 26, 1);
-            label(s, 'I 最適の基準モデル（XY 多項式の次数）', 26, 2);
+            label(s, '許容幅', 26, 1);
+            label(s, 'I 最適の基準モデル', 26, 2);
             c.slack = uispinner(s, 'Limits', [0, 10], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
             place(c.slack, 27, 1);
             c.designOrder = uispinner(s, 'Limits', [1, 8], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
             place(c.designOrder, 27, 2);
-            label(s, '交換法の初期配置の数（多いほど良い組が見つかるが遅い。時間は数にほぼ比例）', 28, [1, 2]);
+            label(s, '交換法の初期配置の数', 28, [1, 2]);
             % 入力欄と時間の目安（目安の文が長くても入力欄が縦に伸びないように、小さな格子に入れる）と、Mark 単位の計画
             exchangeGrid = uigridlayout(s, [7, 2], 'ColumnWidth', {'1x', '1x'}, 'RowHeight', repmat({'fit'}, 1, 7), ...
                 'Padding', 0, 'RowSpacing', 2);
@@ -162,8 +160,7 @@ classdef (Abstract) SettingsTab < appui.Core
             place(c.exchangeStarts, 1, 1);
             c.exchangeInfo = uilabel(exchangeGrid, 'WordWrap', 'on', 'Text', '');
             place(c.exchangeInfo, 2, [1, 2]);
-            markLabel = label(exchangeGrid, ['Mark 単位の I・D 最適：1 Shot あたりの計測 Mark 数（空白区切りで複数。' ...
-                '1 = Shot 数と同じ数。上で「計測率」を選ぶと、代わりに計測率でスイープ）'], 3, [1, 2]);
+            markLabel = label(exchangeGrid, '1 Shot あたりの計測 Mark 数', 3, [1, 2]);
             markLabel.FontWeight = 'bold';
             c.markPerShot = uieditfield(exchangeGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['計測する Mark の数 = ' ...
                 'この値 × 候補 Shot 数（四捨五入）。計測率で決めるときは、計測率 × 候補の全 Mark の数（上の計測率の開始・' ...
@@ -185,23 +182,23 @@ classdef (Abstract) SettingsTab < appui.Core
             place(c.markMinPerShot, 1, 3);
             c.markError = errorLabel(app, exchangeGrid, 7, [1, 2]);
             heading(s, '評価', 30);
-            label(s, sprintf('外周とみなす Mark の半径 [mm]（この半径以上を外周。Wafer 半径 %g mm が前提）', radiusMm), 31, [1, 2]);
+            label(s, '外周とみなす Mark の半径 [mm]', 31, [1, 2]);
             c.outerRadius = uieditfield(s, 'numeric', 'Limits', [0, radiusMm], 'ValueDisplayFormat', '%.1f', ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['Mark の Wafer 中心からの距離 [mm]。結果一覧の「外周の RMSE」' ...
                 '「内側の RMSE」と、散布図の色分け「外周・内側」の境目です。']);
             place(c.outerRadius, 32, 1);
             c.removeLinear = uicheckbox(s, 'ValueChangedFcn', onChange, ...
-                'Text', 'XY 1次（並進・倍率・回転・直交度）を除いてから推定する');
+                'Text', 'XY 1次を除いてから推定する');
             place(c.removeLinear, 33, [1, 2]);
             outlierGrid = uigridlayout(s, [2, 3], 'ColumnWidth', {'1x', 'fit', 70}, 'RowHeight', {'fit', 'fit'}, 'Padding', 0, ...
                 'RowSpacing', 2);
             place(outlierGrid, 34, [1, 2]);
             c.excludeOutliers = uicheckbox(outlierGrid, 'ValueChangedFcn', onChange, ...
-                'Text', '学習データの異常値を除いて推定する（下の判定のしかたと n）', ...
+                'Text', '学習データの異常値を除いて推定する', ...
                 'Tooltip', ['Wafer・学習パターンごとに、学習点の中心とばらつきを X・Y 別に求め、|値 − 中心| が n × ばらつき' ...
                 'を超える軸が1つでもある Mark を、X・Y の両方の学習データから除きます。']);
             place(c.excludeOutliers, 1, [1, 3]);
-            c.outlierMethod = uidropdown(outlierGrid, 'Items', {'平均と σ（nσ）', '中央値と MAD（n × 1.4826 × MAD）'}, ...
+            c.outlierMethod = uidropdown(outlierGrid, 'Items', {'平均と σ', '中央値と MAD'}, ...
                 'ItemsData', {'sigma', 'mad'}, 'ValueChangedFcn', onChange, 'Tooltip', ['MAD = 中央値からの差の絶対値の中央値。' ...
                 '1.4826 を掛けると正規分布では σ と同じ大きさになり、外れ値に引きずられにくい判定になります。']);
             place(c.outlierMethod, 2, 1);
@@ -210,17 +207,17 @@ classdef (Abstract) SettingsTab < appui.Core
                 'ValueDisplayFormat', '%g', 'ValueChangedFcn', onChange);
             place(c.outlierSigma, 2, 3);
             c.recordTiming = uicheckbox(s, 'ValueChangedFcn', onChange, ...
-                'Text', '条件ごとの処理時間を記録する（1 枚あたりの推定時間）', ...
+                'Text', '処理時間を記録する', ...
                 'Tooltip', ['手法 × 学習パターンごとに、1 枚（X・Y）の推定にかかった秒数を集計し、「4. 結果一覧」の指標と' ...
                 'Excel の「処理時間」シートに出します。各手法の初回は予備の推定を1回して、読み込みの時間を除きます。']);
             place(c.recordTiming, 35, [1, 2]);
-            heading(s, 'Overlay 補正の評価（推定誤差で Overlay 残差がどれだけ増えるか）', 36);
-            label(s, 'Wafer 成分（Shot 中心の座標の多項式、または式）', 37, 1);
-            label(s, 'Shot 共通成分（全 Shot で同じ Shot 内の補正）', 37, 2);
-            c.overlayWafer = uidropdown(s, 'Items', {'なし', '1次（並進・倍率・回転・直交度）', '2次', '3次', '4次', '5次', ...
+            heading(s, 'Overlay 補正の評価', 36);
+            label(s, 'Wafer 成分', 37, 1);
+            label(s, 'Shot 共通成分', 37, 2);
+            c.overlayWafer = uidropdown(s, 'Items', {'なし', '1次', '2次', '3次', '4次', '5次', ...
                 '式を入力'}, 'ItemsData', {0, 1, 2, 3, 4, 5, app.FORMULA_CHOICE}, 'ValueChangedFcn', onChange);
             place(c.overlayWafer, 38, 1);
-            c.overlayShotCommon = uidropdown(s, 'Items', {'なし', '1次（k1〜k6）', '式を入力'}, ...
+            c.overlayShotCommon = uidropdown(s, 'Items', {'なし', '1次', '式を入力'}, ...
                 'ItemsData', {'none', 'linear', 'formula'}, 'ValueChangedFcn', onChange, ...
                 'Tooltip', ['1次：Shot 内の座標（markXmm・markYmm）の1次の補正（k1〜k6：並進・倍率・回転・直交度）。' ...
                 '式を入力：下の dx・dy の式。どちらも全 Shot で同じ補正量にします。']);
@@ -232,7 +229,7 @@ classdef (Abstract) SettingsTab < appui.Core
             [c.overlayShotDx, c.overlayShotDy] = formulaFields(s, 39, 2, onChange, ['x・y は Shot 内の座標' ...
                 '（markXmm・markYmm、Shot 中心から）。' formulaHelp]);
             label(s, 'Shot ごとの成分', 40, 1);
-            c.overlayPerShot = uidropdown(s, 'Items', {'なし', '並進（k1・k2）', '1次（k1〜k6）', '式を入力'}, ...
+            c.overlayPerShot = uidropdown(s, 'Items', {'なし', '並進', '1次', '式を入力'}, ...
                 'ItemsData', {'none', 'translation', 'linear', 'formula'}, 'ValueChangedFcn', onChange, ...
                 'Tooltip', '式を入力：下の dx・dy の式の係数を、Shot ごとに別々に求めます（x・y は Shot 内の座標）。');
             place(c.overlayPerShot, 41, 1);
@@ -248,14 +245,14 @@ classdef (Abstract) SettingsTab < appui.Core
                 'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
             presetGrid = uigridlayout(m, [1, 4], 'Padding', 0, 'ColumnWidth', {'fit', 'fit', 'fit', 'fit'});
             place(presetGrid, 1, [1, 4]);
-            uibutton(presetGrid, 'Text', '初期設定（GPR だけ）', 'ButtonPushedFcn', @(~, ~) app.onPreset("default"), ...
+            uibutton(presetGrid, 'Text', '初期設定', 'ButtonPushedFcn', @(~, ~) app.onPreset("default"), ...
                 'Tooltip', 'アプリの初期設定の手法（ガウス過程回帰だけ）に戻します。');
             uibutton(presetGrid, 'Text', '推奨の組み合わせ', 'ButtonPushedFcn', @(~, ~) app.onPreset("recommended"), ...
                 'Tooltip', ['前回の模擬データの評価で各系統の代表になった手法（GPR・TPS・Kriging・GAM・XY 5次多項式・' ...
                 'RT モデル）を選びます。']);
             uibutton(presetGrid, 'Text', 'すべて選ぶ', 'ButtonPushedFcn', @(~, ~) app.onPreset("all"));
             uibutton(presetGrid, 'Text', 'すべて外す', 'ButtonPushedFcn', @(~, ~) app.onPreset("none"));
-            label(m, '説明変数（GPR・TPS・RBF・Kriging・GAM に共通）', 2, [1, 4]);
+            label(m, '説明変数', 2, [1, 4]);
             c.featureXY = uicheckbox(m, 'Text', 'X, Y', 'ValueChangedFcn', onChange);
             place(c.featureXY, 3, 1);
             c.featureXYR = uicheckbox(m, 'Text', 'X, Y, 半径', 'ValueChangedFcn', onChange);
@@ -263,8 +260,7 @@ classdef (Abstract) SettingsTab < appui.Core
             factorGrid = uigridlayout(m, [6, 5], 'Padding', 0, 'RowSpacing', 4, ...
                 'RowHeight', {'fit', 'fit', 'fit', 'fit', 72, 'fit'}, 'ColumnWidth', {'fit', 'fit', 'fit', 'fit', '1x'});
             place(factorGrid, 4, [1, 4]);
-            label(factorGrid, ['質的変数（GPR・GAM と、TPS・RBF・Kriging の Backfitting で使う。' ...
-                'ANOVA では選ばなくても Scan・Mark・Shot 行を調べる）'], 1, [1, 5]);
+            label(factorGrid, '質的変数', 1, [1, 5]);
             label(factorGrid, 'X 成分', 2, 1);
             c.factorScan = uicheckbox(factorGrid, 'Text', 'Scan 方向', 'ValueChangedFcn', onChange, ...
                 'Tooltip', 'Direction の列、または「Scan 方向が無い行に付ける値」で付けた値。値が無い Wafer では使いません。');
@@ -288,7 +284,7 @@ classdef (Abstract) SettingsTab < appui.Core
             place(c.shotRowParityY, 3, 4);
             columnsTooltip = ['選んだ列の値（文字・数字）を水準とする質的変数。値が空の Mark がある Wafer では、その列を使いません。' ...
                 '一覧はデータを読み込むと出ます。'];
-            c.factorColumnsLabel = label(factorGrid, 'その他の列：X 成分（標準の項目に対応づけなかった列。Ctrl・Shift で複数）', ...
+            c.factorColumnsLabel = label(factorGrid, 'その他の列：X 成分', ...
                 4, [1, 4]);
             label(factorGrid, 'その他の列：Y 成分', 4, 5);
             c.factorColumns = uilistbox(factorGrid, 'Items', {}, 'Multiselect', 'on', 'ValueChangedFcn', onChange, ...
@@ -304,16 +300,17 @@ classdef (Abstract) SettingsTab < appui.Core
                 'ときだけ足します。手法の数が増えるので、評価の時間も増えます。']);
             place(c.factorSingles, 6, [1, 5]);
             c.factorColumnsError = errorLabel(app, m, 5, [1, 4]);
-            c.gpr = uicheckbox(m, 'Text', 'GPR（ガウス過程回帰）', 'ValueChangedFcn', onChange);
+            c.gpr = uicheckbox(m, 'Text', 'GPR', 'ValueChangedFcn', onChange);
             place(c.gpr, 6, [1, 4]);
-            label(m, 'カーネル（Ctrl・Shift で複数選ぶ）', 7, [1, 2]);
-            label(m, '質的変数の扱い（上で選んだ質的変数）', 7, [3, 4]);
+            label(m, 'カーネル', 7, [1, 2]);
+            label(m, '質的変数の扱い', 7, [3, 4]);
             [kernelNames, kernelLabels] = alignest.models.gprKernelChoices();
             c.kernels = uilistbox(m, 'Items', cellstr(kernelLabels), 'ItemsData', cellstr(kernelNames), 'Multiselect', 'on', ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['periodic（周期）：説明変数ごとに、周期 p で同じ形をくり返す' ...
                 'カーネル（p も長さスケールと一緒に推定する）。ardperiodic は長さスケールが説明変数ごと。式は「9. ヘルプ」。']);
             place(c.kernels, 8, [1, 2]);
             [modeNames, modeLabels] = alignest.models.gprFactorModes();
+            modeLabels = plainLabels(modeLabels);
             modeGrid = uigridlayout(m, [numel(modeNames), 1], 'Padding', 0, 'RowSpacing', 2, ...
                 'RowHeight', repmat({'fit'}, 1, numel(modeNames)));
             place(modeGrid, 8, [3, 4]);
@@ -323,21 +320,21 @@ classdef (Abstract) SettingsTab < appui.Core
                     'ValueChangedFcn', onChange);
             end
             m.RowHeight{8} = 300;
-            label(m, 'Matérn の ν（matern・ardmatern を選んだとき。空白区切り）', 9, [1, 2]);
+            label(m, 'Matérn の ν', 9, [1, 2]);
             c.maternNu = uieditfield(m, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['Matérn カーネルの次数 ν' ...
                 '（0 より大きく 50 以下）。大きいほど滑らか。0.5・1.5・2.5 は exponential・matern32・matern52 と同じ。' ...
                 '複数入れると ν ごとに比べます（例：0.75 1 2 3.5）。']);
             place(c.maternNu, 9, [3, 4]);
             c.maternNuError = errorLabel(app, m, 10, [1, 4]);
-            c.tps = uicheckbox(m, 'Text', 'TPS（薄板スプライン）', 'ValueChangedFcn', onChange);
+            c.tps = uicheckbox(m, 'Text', 'TPS', 'ValueChangedFcn', onChange);
             place(c.tps, 11, [1, 2]);
             c.tpsFactors = spatialFactorDropdown(m, onChange);
             place(c.tpsFactors, 11, [3, 4]);
-            c.rbf = uicheckbox(m, 'Text', 'RBF（ガウス型・平滑化つき）', 'ValueChangedFcn', onChange);
+            c.rbf = uicheckbox(m, 'Text', 'RBF', 'ValueChangedFcn', onChange);
             place(c.rbf, 12, [1, 2]);
             c.rbfFactors = spatialFactorDropdown(m, onChange);
             place(c.rbfFactors, 12, [3, 4]);
-            c.ordinaryKriging = uicheckbox(m, 'Text', 'Kriging（通常）', 'ValueChangedFcn', onChange);
+            c.ordinaryKriging = uicheckbox(m, 'Text', 'Kriging', 'ValueChangedFcn', onChange);
             place(c.ordinaryKriging, 13, [1, 2]);
             c.ordinaryFactors = spatialFactorDropdown(m, onChange);
             place(c.ordinaryFactors, 13, [3, 4]);
@@ -345,7 +342,7 @@ classdef (Abstract) SettingsTab < appui.Core
             place(c.universalKriging, 14, [1, 2]);
             c.universalFactors = spatialFactorDropdown(m, onChange);
             place(c.universalFactors, 14, [3, 4]);
-            label(m, 'バリオグラム（通常・Universal 共通）', 15, [1, 4]);
+            label(m, 'バリオグラム', 15, [1, 4]);
             variograms = ["linear", "gaussian", "power", "exponential", "spherical"];
             variogramGrid = uigridlayout(m, [1, numel(variograms)], 'Padding', 0, ...
                 'ColumnWidth', repmat({'1x'}, 1, numel(variograms)));
@@ -356,12 +353,12 @@ classdef (Abstract) SettingsTab < appui.Core
                     'ValueChangedFcn', onChange);
             end
             c.variograms(end).Tooltip = '球形モデル（range より遠い点の相関は 0）。説明変数（X,Y・X,Y,半径）は3次元までなので正定値が保証されます。';
-            c.gam = uicheckbox(m, 'Text', 'GAM（一般化加法モデル。選んだ質的変数を含む）', 'ValueChangedFcn', onChange);
+            c.gam = uicheckbox(m, 'Text', 'GAM', 'ValueChangedFcn', onChange);
             place(c.gam, 17, [1, 4]);
             % 形状関数は項（X・Y、半径）ごとに1行、カーネルは2行に並べる（画面の幅が狭くても切れないように）
             [termNames, termLabels] = alignest.models.gamTerms("XYR");
             [gamKernelNames, gamKernelLabels] = alignest.models.gamKernelChoices();
-            kernelColumns = 2;   % カーネルの名前が長いので2列（rationalquadratic（α = 1）が切れないように）
+            kernelColumns = 2;   % カーネルの名前が長いので2列（rationalquadratic が切れないように）
             nShapeRows = numel(termNames) + ceil(numel(gamKernelNames) / kernelColumns) + 1;
             shapeGrid = uigridlayout(m, [nShapeRows, kernelColumns + 1], 'Padding', 0, 'RowSpacing', 2, ...
                 'ColumnWidth', [{'fit'}, repmat({'1x'}, 1, kernelColumns)], 'RowHeight', repmat({'fit'}, 1, nShapeRows));
@@ -394,8 +391,8 @@ classdef (Abstract) SettingsTab < appui.Core
             nuGrid = uigridlayout(shapeGrid, [1, 2], 'ColumnWidth', {'fit', 120}, 'Padding', 0);
             kernelRows = ceil(numel(gamKernelNames) / kernelColumns);
             place(nuGrid, kernelRow + kernelRows, [1, kernelColumns + 1]);
-            label(nuGrid, 'matern（ν を指定）の ν =', 1, 1);
-            c.gamMaternNu = uieditfield(nuGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['matern（ν を指定）' ...
+            label(nuGrid, 'matern の ν =', 1, 1);
+            c.gamMaternNu = uieditfield(nuGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['matern' ...
                 'の ν。空白で区切ると ν ごとに比べます（例：1 2.5）。']);
             place(c.gamMaternNu, 1, 2);
             c.polynomial = uicheckbox(m, 'Text', 'XY 多項式　次数：', 'ValueChangedFcn', onChange);
@@ -893,9 +890,7 @@ classdef (Abstract) SettingsTab < appui.Core
             c.rt.Enable = onOff(~scalar);
             c.rtOrders.Enable = onOff(c.rt.Value && ~scalar);
             c.overlayHelp.Text = char(ternary(scalar, "1変数の推定（「1. データの読み込み」の「推定する値」）では、" + ...
-                "Overlay 補正の評価と RT モデルは使いません（X・Y の2成分が要るため）。", ...
-                "すべて「なし」なら評価しません。結果一覧の指標「OVL …」と、Wafer ごとのマップの「Overlay 補正」で" + ...
-                "見られます。補正の式は「9. ヘルプ」にまとめています。「6. 未知の座標の推定」の「補正のモデル」でも変えられます。"));
+                "Overlay 補正の評価と RT モデルは使いません（X・Y の2成分が要るため）。", ""));
             syncTargetOverlayControls(app);   % 「6. 未知の座標の推定」の「補正のモデル」も同じ値にする
         end
 

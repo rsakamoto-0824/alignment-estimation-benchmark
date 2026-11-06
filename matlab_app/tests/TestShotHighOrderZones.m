@@ -258,8 +258,8 @@ classdef TestShotHighOrderZones < matlab.unittest.TestCase
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
             app.applyMapping();
             app.setHighOrderSource("data");
-            testCase.verifyEqual(string(c.highOrderOuterFormula.Items(1:4)), ["分けない", "ASML（全項）", ...
-                "Canon（全項）", "Nikon（全項）"]);
+            testCase.verifyEqual(string(c.highOrderOuterFormula.Items(1:4)), ["分けない", "ASML", ...
+                "Canon", "Nikon"]);
             testCase.verifyEqual(c.highOrderWaferOrder.ItemsData{end}, 5);
             app.setHighOrderSettings(unit="shot");
             testCase.verifyEqual(string(c.highOrderWaferOrder.Enable), "on", "Shot ごとでも Wafer 成分を選べる");
