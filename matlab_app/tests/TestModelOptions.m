@@ -191,9 +191,33 @@ classdef TestModelOptions < matlab.unittest.TestCase
             testCase.verifyEqual(string({alignest.buildMethodList(legacy).id}), ...
                 string({alignest.buildMethodList(alignest.recommendedMethods()).id}));
             allIds = string({alignest.buildMethodList(alignest.recommendedMethods("all")).id});
-            testCase.verifyTrue(all(ismember(["GPR_ardmatern_nu2_XYR_mixed_int", "UK_spherical_XYR_backfit"], allIds)));
+            testCase.verifyTrue(all(ismember(["GPR_ardmatern_nu2_XYR_additive_int", "UK_spherical_XYR_backfit"], allIds)));
             testCase.verifyFalse(any(contains(allIds, "XYRT")));
             % 以前の設定の XYRT（方位角 T）は除き、何も残らなければ X,Y,半径 にする
+            old = alignest.recommendedMethods("none");
+            old.gpr.enabled = true;
+            old.gpr.factorModes = ["none", "mixed", "mixed_int"];
+            testCase.verifyEqual(alignest.completeMethodSettings(old).gpr.factorModes, "none", "廃止した混合は除く");
+            testCase.verifyFalse(any(contains(alignest.models.gprFactorModes(), "mixed")));
+            % TPS の平滑化：GCV・なし・指定の λ を手法として並べる
+            methods = alignest.recommendedMethods("none");
+            methods.tps.enabled = true;
+            methods.tps.smoothing = ["gcv", "none", "fixed"];
+            methods.tps.log10Lambda = -2;
+            list = alignest.buildMethodList(methods);
+            testCase.verifyEqual(string({list.id}), ["TPS_XYR", "TPS_XYR_interpolation", "TPS_XYR_lambda-2"]);
+            testCase.verifyEqual(string({list.variant}), ["tps", "interpolation", "lambda:-2"]);
+            % 平滑化なしは学習点を通り、λ を大きくすると滑らか（学習点の残差が増える）
+            points = [(0:9).', mod((0:9).' * 3, 7)];
+            values = sin((0:9).') + points(:, 2);
+            passing = alignest.models.tpsFitPredict(alignest.models.tpsSetup(points, points, -12), values);
+            testCase.verifyEqual(passing.prediction, values, 'AbsTol', 1e-6);
+            smooth = alignest.models.tpsFitPredict(alignest.models.tpsSetup(points, points, 2), values);
+            testCase.verifyGreaterThan(norm(smooth.prediction - values), 0.1);
+            badSmoothing = alignest.recommendedMethods("none");
+            badSmoothing.tps.enabled = true;
+            badSmoothing.tps.smoothing = strings(1, 0);
+            testCase.verifyError(@() alignest.buildMethodList(badSmoothing), 'alignest:tpsSmoothing');
             legacy.featureSets = ["XY", "XYRT"];
             testCase.verifyEqual(alignest.completeMethodSettings(legacy).featureSets, "XY");
             legacy.featureSets = "XYRT";

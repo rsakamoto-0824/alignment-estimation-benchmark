@@ -173,7 +173,7 @@ classdef TestEvaluation < matlab.unittest.TestCase
             data = testCase.Data;
             data.units = data.units(1);
             results = alignest.runEvaluation(data, settings);
-            testCase.verifyEqual(height(results.table), 2 * (2 * 8 + 1 + 8 + 1) + 3);
+            testCase.verifyEqual(height(results.table), 2 * (2 * 6 + 1 + 8 + 1) + 3);
             failed = results.table(results.table.note ~= "", ["methodId", "note"]);
             testCase.verifyEmpty(failed, "推定できなかった手法がある");
             testCase.verifyTrue(all(isfinite(results.table.RMSE_XY)));
@@ -219,17 +219,17 @@ classdef TestEvaluation < matlab.unittest.TestCase
 
         function summaryExportAndSettingsRoundTrip(testCase)
             settings = alignest.defaultSettings();
-            settings.methods = alignest.recommendedMethods("recommended");   % 推奨の組み合わせ（9 手法）で確かめる
+            settings.methods = alignest.recommendedMethods("recommended");   % 推奨の組み合わせ（8 手法）で確かめる
             settings.sampling.nShots = [10, 20];
             data = testCase.Data;
             data.units = data.units(1:3);
             results = alignest.runEvaluation(data, settings);
             summary = alignest.summarizeResults(results, "RMSE_XY", "mean");
-            testCase.verifyEqual(size(summary.values), [9, 2]);
+            testCase.verifyEqual(size(summary.values), [8, 2]);
             manual = mean(results.table.RMSE_XY(results.table.methodIndex == 1 & results.table.group == "20 Shot"));
             testCase.verifyEqual(summary.values(1, 2), manual, 'AbsTol', 1e-12);
             comparison = alignest.pairedComparison(results, "GPR_matern52_XYR_basis", "RMSE_XY");
-            testCase.verifyEqual(height(comparison), 8 * 2);
+            testCase.verifyEqual(height(comparison), 7 * 2);
             testCase.verifyFalse(any(contains(comparison.method, "同時推定")));
             file = [tempname, '.xlsx'];
             cleanup = onCleanup(@() deleteIfExists(file));

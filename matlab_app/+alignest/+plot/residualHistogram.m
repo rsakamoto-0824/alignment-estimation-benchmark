@@ -6,7 +6,8 @@ function residualHistogram(ax, residuals, titleText, unit, names, options)
 %   前の手法と同じ値の手法は破線にし、凡例に「＝ 〇〇と同じ」と書く（線が重なって数が減ったように見えないように）。
 %   名前と値の組（省略可）：xLabelText（横軸の名前。既定は「残差 [unit]（計測値 − 推定値）」）、seriesWord（題名の
 %   「手法 n 個」の「手法」）、finestBins（true なら、区間の幅を、それぞれの値だけで決めた幅のうち最も細かい幅にする。
-%   補正前の値と残差のように、広がりの違う値を重ねるとき、狭い分布の形がつぶれないように）。
+%   補正前の値と残差のように、広がりの違う値を重ねるとき、狭い分布の形がつぶれないように）、legendLocation（重ねるときの凡例の位置）、
+%   compactLegend（true なら凡例は名前だけ。図が狭いとき）。
 arguments
     ax
     residuals
@@ -16,6 +17,8 @@ arguments
     options.xLabelText (1, 1) string = ""
     options.seriesWord (1, 1) string = "手法"
     options.finestBins (1, 1) logical = false
+    options.legendLocation (1, 1) string = ""
+    options.compactLegend (1, 1) logical = false
 end
 if options.xLabelText == ""
     options.xLabelText = "残差 [" + unit + "]（計測値 − 推定値）";
@@ -91,6 +94,9 @@ for k = 1:numel(values)
         continue
     end
     label = sprintf('%s（平均 %.2f、σ %.2f）', names(k), mean(values{k}), std(values{k}));
+    if options.compactLegend
+        label = names(k);
+    end
     style = '-';
     same = find(cellfun(@(other) isequal(sort(other), sort(values{k})), values(1:k - 1)), 1);
     if ~isempty(same)
@@ -106,7 +112,11 @@ ylabel(ax, '確率密度');
 title(ax, sprintf("%s（%s %d 個）", titleText, options.seriesWord, numel(values)), 'Interpreter', 'none');
 grid(ax, 'on');
 box(ax, 'on');
-legend(ax, 'Location', 'northeast', 'Box', 'off', 'FontSize', 9, 'Interpreter', 'none');
+location = "northeast";
+if options.legendLocation ~= ""
+    location = options.legendLocation;
+end
+legend(ax, 'Location', location, 'Box', 'off', 'FontSize', 9, 'Interpreter', 'none');
 end
 
 function width = binWidth(values)

@@ -99,9 +99,9 @@ classdef TestShotHighOrderOutputs < matlab.unittest.TestCase
             testCase.verifyTrue(contains(alignest.highOrderOptions(empty).description, "正則化なし"));
             % 以前の設定（L2 のオン・オフ）：画面の外から渡しても、設定ファイルから読んでも同じ意味
             old = struct("highOrder", struct("l2", false));
-            testCase.verifyEqual(alignest.highOrderOptions(old).regularization, "none");
+            testCase.verifyEqual(alignest.highOrderOptions(old).regularization, ["none", "none"]);
             old.highOrder.l2 = true;
-            testCase.verifyEqual(alignest.highOrderOptions(old).regularization, "l2");
+            testCase.verifyEqual(alignest.highOrderOptions(old).regularization, ["l2", "l2"]);
             file = [tempname, '.json'];
             fileId = fopen(file, 'w', 'n', 'UTF-8');
             fwrite(fileId, '{"highOrder": {"l2": false, "lambda": 0.3}}', 'char');
@@ -197,16 +197,17 @@ classdef TestShotHighOrderOutputs < matlab.unittest.TestCase
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
             c = app.Controls;
-            testCase.verifyEqual(c.highOrderRegularization.Value, 'l2');
-            testCase.verifyEqual(find([c.highOrderPenaltyOrders.Value]), 2:6, "初期値は2次以上");
+            regression = c.highOrderRegression;
+            testCase.verifyEqual(regression.regularization(1).Value, 'l2');
+            testCase.verifyEqual(find([regression.orders(1, :).Value]), 2:6, "初期値は2次以上");
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
             app.applyMapping();
             app.setHighOrderSource("data");
             app.setHighOrderSettings(regularization="none");
-            testCase.verifyEqual(string(c.highOrderLambda.Enable), "off");
-            testCase.verifyEqual(string(c.highOrderPenaltyOrders(1).Enable), "off");
+            testCase.verifyEqual(string(regression.lambda(1).Enable), "off");
+            testCase.verifyEqual(string(regression.orders(1, 1).Enable), "off");
             app.setHighOrderSettings(regularization="l1", penaltyOrders=[1, 3], lambda=0.05);
-            testCase.verifyEqual(string(c.highOrderLambda.Enable), "on");
+            testCase.verifyEqual(string(regression.lambda(1).Enable), "on");
             result = app.computeHighOrder(0);
             testCase.verifyTrue(contains(result.description, "L1 正則化（1・3次の項、λ = 0.05）"));
             testCase.verifyEqual(app.Settings.highOrder.penaltyOrders, [1, 3]);
@@ -258,8 +259,8 @@ classdef TestShotHighOrderOutputs < matlab.unittest.TestCase
             loaded.highOrder.penaltyOrders = [2, 4];
             loaded.highOrder.regularization = "l2";
             app.setSettings(loaded);
-            testCase.verifyEqual(find([c.highOrderPenaltyOrders.Value]), [2, 4]);
-            testCase.verifyEqual(c.highOrderRegularization.Value, 'l2');
+            testCase.verifyEqual(find([regression.orders(1, :).Value]), [2, 4]);
+            testCase.verifyEqual(regression.regularization(1).Value, 'l2');
         end
     end
 end

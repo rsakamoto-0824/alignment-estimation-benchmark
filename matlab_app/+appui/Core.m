@@ -102,12 +102,15 @@ classdef (Abstract) Core < handle
         HighOrderCheck = []     % 「7. Shot高次補正」の計算の前の確かめ（今の設定・入力で点が足りない k の組。alignest.shotHighOrder の
                                 %  checkOnly。入力が無ければ []）
         HighOrderConditions = struct("label", {}, "highOrder", {})  % 「7. Shot高次補正」の補正の比較の条件（名前と settings.highOrder）
+        HighOrderConditionSelection = zeros(1, 0)  % 「補正の比較」の条件の表で選んでいる行
         HighOrderComparison = []  % 「7. Shot高次補正」の補正の比較の結果（compareHighOrderConditionsNow。表・条件ごとの結果と、比べた条件・入力）
         MarkLayoutFile = []     % 「8. Mark配置の最適化」で読み込んだ Excel・CSV（raw・info：alignest.readHighOrderFile、mapping、
                                 %  wafers・coordinates・dataInfo：選んだ列で整理した入力（alignest.markLayoutFileData。まだなら dataInfo は []））
         MarkLayoutInput = []    % 「8. Mark配置の最適化」の今の入力の候補の Mark と Shot ごとの値（alignest.markCandidates。入力が無ければ []）
         MarkLayoutStudy = []    % 「8. Mark配置の最適化」で最後に計算した結果（alignest.markLayoutStudy と、計算したときの入力・設定）
         MarkLayoutSelection = zeros(0, 1)  % 「候補の Mark」の表で選んでいる行（「選んだ行を消す」で使う）
+        MarkLayoutShapes = []   % 「乱数で Shot を生成する」で作った形（shapes：alignest.randomShotShapes、key：作ったときの条件）
+        HelpWindow = []         % ヘルプの窓（メニュー「ヘルプ」で開く。閉じていれば []）
         MarkLayoutValuesAuto = false       % 座標だけの入力のため「評価に使う値」を自動で乱数にした（値のある入力で実測値に戻す）
     end
 
@@ -129,6 +132,9 @@ classdef (Abstract) Core < handle
             if ~isempty(app.ScreenTimer) && isvalid(app.ScreenTimer)
                 stop(app.ScreenTimer);
                 delete(app.ScreenTimer);
+            end
+            if ~isempty(app.HelpWindow) && isvalid(app.HelpWindow)
+                delete(app.HelpWindow);
             end
             if ~isempty(app.Figure) && isvalid(app.Figure)
                 delete(app.Figure);
@@ -164,7 +170,6 @@ classdef (Abstract) Core < handle
             app.Tabs.target = uitab(app.TabGroup, 'Title', '6. 未知の座標の推定');
             app.Tabs.highOrder = uitab(app.TabGroup, 'Title', '7. Shot高次補正');
             app.Tabs.markLayout = uitab(app.TabGroup, 'Title', '8. Mark配置の最適化');
-            app.Tabs.help = uitab(app.TabGroup, 'Title', '9. ヘルプ');
             app.TabGroup.SelectionChangedFcn = @(~, event) app.onTabChanged(event);
             buildDataTab(app);
             buildSettingsTab(app);
@@ -174,9 +179,7 @@ classdef (Abstract) Core < handle
             buildTargetTab(app);
             buildHighOrderTab(app);
             buildMarkLayoutTab(app);
-            buildHelpTab(app);
-            % 設定のメニュー：ライトモード・ダークモードの切り替え、文字の大きさ、凡例の位置、Scan 方向の向きと色、乱数の種と、
-            % ヘルプを開く
+            % 設定のメニュー：ライトモード・ダークモードの切り替え、文字の大きさ、凡例の位置、Scan 方向の向きと色、乱数の種
             viewMenu = uimenu(app.Figure, 'Text', '設定');
             app.Controls.settingsMenu = viewMenu;
             app.Controls.themeLight = uimenu(viewMenu, 'Text', 'ライトモード', 'Checked', 'on', ...
@@ -222,8 +225,8 @@ classdef (Abstract) Core < handle
             % 乱数の種（学習 Shot の選び方と Mark 配置の最適化で共通。設定 sampling.seed。結果が変わる設定）
             app.Controls.randomSeedItem = uimenu(viewMenu, 'Text', '乱数の種…', 'Separator', 'on', ...
                 'MenuSelectedFcn', @(~, ~) app.onPickRandomSeed());
-            uimenu(viewMenu, 'Text', 'ヘルプを開く', 'Separator', 'on', ...
-                'MenuSelectedFcn', @(~, ~) set(app.TabGroup, 'SelectedTab', app.Tabs.help));
+            % ヘルプは「設定」の右隣のメニューから別の窓で開く（機能編・技術編）
+            app.Controls.helpMenu = uimenu(app.Figure, 'Text', 'ヘルプ', 'MenuSelectedFcn', @(~, ~) app.openHelp());
             set(findall(app.Figure, '-property', 'FontSize'), 'FontSize', app.FONT_SIZE);
             set(findall(app.Figure, 'Type', 'axes'), 'FontSize', app.AXES_FONT_SIZE);
             set(fontTables(app), 'FontSize', app.TABLE_FONT_SIZE);
@@ -539,12 +542,10 @@ classdef (Abstract) Core < handle
                     items = [c.highOrderPairAxes, c.highOrderPairAxes2];   % 基準（左）と比べる条件（右）
                 case "highOrderHistogram"
                     items = c.highOrderHistogramAxes;
-                case "highOrderDecomposition"
-                    items = c.highOrderDecompositionAxes;
                 case "markLayoutChart"
                     items = c.markOptChartAxes;
                 case "markLayoutMap"
-                    items = c.markOptMapAxes;
+                    items = [c.markOptMapAxes, c.markOptStackAxes];
                 case "markLayoutShape"
                     items = c.markOptShapeAxes;
                 otherwise

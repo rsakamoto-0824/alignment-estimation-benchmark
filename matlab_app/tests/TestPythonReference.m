@@ -264,6 +264,9 @@ classdef TestPythonReference < matlab.unittest.TestCase
 end
 
 function items = withoutT(items)
-% 削除した説明変数の組 XYRT（方位角 T）の基準値を除く
+% 削除した説明変数の組 XYRT（方位角 T）と、廃止した質的変数の扱い（混合）の基準値を除く
 items = items(string({items.feature_set}) ~= "XYRT");
+if isfield(items, "mode")
+    items = items(~ismember(string({items.mode}), ["mixed", "mixed_int"]));
+end
 end

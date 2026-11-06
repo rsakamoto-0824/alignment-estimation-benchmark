@@ -1,7 +1,8 @@
 function config = completeMethodSettings(config)
 %COMPLETEMETHODSETTINGS 以前の設定構造体にも追加項目の初期値を補う。
 %   使わなくなった説明変数の組 XYRT（方位角 T）は除く（残りが無ければ XYR にする）。廃止した手法 RBFe（rbfe と
-%   options の rbfeOverlap・rbfeMinPoints）の項目は除く（以前の設定ファイルも読める）。
+%   options の rbfeOverlap・rbfeMinPoints）の項目は除く（以前の設定ファイルも読める）。廃止した GPR の質的変数の扱い
+%   mixed・mixed_int も除く（何も残らなければ none）。
 defaults = alignest.recommendedMethods();
 featureSets = string(config.featureSets);
 featureSets = featureSets(featureSets ~= "XYRT");
@@ -26,4 +27,10 @@ for group = ["gpr", "rbf", "tps", "kriging", "gam", "zernike", "options"]
         end
     end
 end
+modes = reshape(string(config.gpr.factorModes), 1, []);
+modes = modes(~ismember(modes, ["mixed", "mixed_int"]));
+if isempty(modes)
+    modes = "none";
+end
+config.gpr.factorModes = modes;
 end

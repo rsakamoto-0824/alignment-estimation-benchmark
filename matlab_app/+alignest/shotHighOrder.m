@@ -88,13 +88,8 @@ zoneSplit = options.outerMaker ~= "none";
 for w = 1:numel(wafers)
     wafers(w).points = withGroupColumns(wafers(w).points, options.outerRadiusMm);
 end
-% 正則化：強さ λ（なしなら 0）と、かける項の次数。種類（L2・L1）は回帰の設定に渡す
-penalty = struct("lambda", options.lambda * (options.regularization ~= "none"), "orders", options.penaltyOrders);
-penaltyType = "l2";
-if options.regularization == "l1"
-    penaltyType = "l1";
-end
-fitOptions = {'loss', options.loss, 'huberTuning', options.huberTuning, 'penalty', penaltyType};
+% 軸ごとの回帰の条件：損失関数・正則化の種類（回帰の設定に渡す）と、強さ λ（なしなら 0）・かける項の次数
+axisFits = alignest.axisFitOptions(options);
 noPenalty = struct("lambda", 0, "orders", zeros(1, 0));
 zoneTerms = {alignest.highOrderTerms(options.maker, options.excludedTerms)};
 if zoneSplit
@@ -160,6 +155,8 @@ for w = 1:numel(wafers)
     [correction, linearCorrection, weights, waferOnlyCorrection, commonCorrection, looResidual] = deal(nan(nPoints, 2));
     [fitted, skipped] = deal(zeros(2, 3));
     for a = 1:2
+        fitOptions = axisFits(a).options;
+        penalty = struct("lambda", axisFits(a).lambda, "orders", axisFits(a).orders);
         rows = find(isfinite(values(:, a)) & isfinite(points.shotNo) & isfinite(groupKey));
         axisTerms = cellfun(@(terms) terms(terms.axis == FORMULA_AXES(a) & terms.used, :), zoneTerms, ...
             'UniformOutput', false);   % 式の範囲（内周・外周）ごとの使う項
@@ -221,7 +218,7 @@ for w = 1:numel(wafers)
                 parts{end + 1} = coefficientRows(label, fitUnits(u), FORMULA_AXES(a), groupTerms, fitWaferPowers, ...
                     fit, zoneSplit); %#ok<AGROW>
                 counts.notConverged = counts.notConverged + ~fit.converged;
-                counts.noRobust = counts.noRobust + (options.loss ~= "ols" && ~fit.robust);
+                counts.noRobust = counts.noRobust + (options.loss(a) ~= "ols" && ~fit.robust);
                 counts.waferDropped = counts.waferDropped + any(~fit.waferDetermined);
                 for g = find(fit.ok)
                     names = termNames(groupTerms{g});
@@ -959,7 +956,7 @@ if any(counts.skipped > 0)
     if options.shortage == "skip"
         messages(end) = messages(end) + "「点が足りない Shot」を「全体の項を減らす」か「その Shot（組）だけ項を減らす」に" + ...
             "すると、決められる項で補正します。";
-    elseif options.regularization == "none" || options.lambda == 0
+    elseif all(options.regularization == "none" | options.lambda == 0)
         messages(end) = messages(end) + "「VIF で選ぶ」でその項を外すか、その次数の項に正則化（L2・L1）をかけてください" + ...
             "（正則化をかけた次数の項は、点が少なくても決まります）。";
     else

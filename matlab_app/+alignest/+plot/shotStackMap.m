@@ -6,8 +6,11 @@ function summary = shotStackMap(ax, local, values, options)
 %   options.mode = "X"・"Y"：点ごとの値を色で描き（同じ位置の点は少しずつ横にずらす）、位置ごとの平均を
 %   黒い枠の四角で描く。Shot の外形（options.shotSizeMm）を破線で描く。
 %   options.scaleMmPerNm：矢印の倍率 [mm/nm]（0 なら値の大きさの95%点が Shot の短い辺の ARROW_RATIO 倍になる）。
+%   options.ellipseSigma：矢印の図で、位置ごとの Shot 間のばらつきの共分散楕円の大きさ（σ の何倍か。0 なら描かない。平均の矢印の
+%   先を中心に、矢印と同じ倍率で描く。alignest.plot.covarianceEllipses）。矢印の図には長さの目安の矢印（凡例のベクトル）を描く。
 %   options.colorLimit：色の範囲 ±[nm]（0 を中心に青・白・赤）、options.colorRange：[最小, 最大] を渡すと parula で描く
-%   （1変数の計測値・推定値）。summary は位置ごとの点数・平均・標準偏差の表（localX・localY・n・meanX・meanY・stdX・stdY）。
+%   （1変数の計測値・推定値）。summary は位置ごとの点数・平均・標準偏差・共分散の表（localX・localY・n・meanX・meanY・stdX・stdY・
+%   covXY）。
 arguments
     ax
     local double
@@ -21,6 +24,7 @@ arguments
     options.titleText (1, 1) string = ""
     options.markerSize (1, 1) double {mustBePositive} = 30
     options.showLegend (1, 1) logical = true
+    options.ellipseSigma (1, 1) double {mustBeNonnegative} = 0
 end
 ARROW_RATIO = 0.18;            % 自動の倍率：大きさの95%点の矢印が Shot の短い辺のこの割合
 ROUND_DIGITS = 3;              % 同じ Mark の位置とみなす Shot 内の座標の桁（mm の小数点以下）
@@ -29,6 +33,8 @@ SHOT_EDGE_COLOR = [0.45, 0.45, 0.45];
 EACH_COLOR = [0.42, 0.62, 0.85];
 MEAN_COLOR = [0.05, 0.20, 0.45];
 MARGIN_RATIO = 0.12;
+REFERENCE_RATIO = 0.25;         % 長さの目安の矢印：Shot の短い辺に対する長さの上限
+REFERENCE_COLOR = [0.85, 0.33, 0.10];
 local = double(local);
 values = double(values);
 column = 1 + (options.mode == "Y");
@@ -65,6 +71,19 @@ if options.mode == "vector"
         'DisplayName', sprintf('Mark の位置ごとの平均（%d 位置）', height(summary)));
     plot(ax, summary.localX, summary.localY, 'o', 'MarkerSize', 4, 'MarkerFaceColor', MEAN_COLOR, ...
         'MarkerEdgeColor', MEAN_COLOR, 'HandleVisibility', 'off');
+    if options.ellipseSigma > 0 && any(summary.n >= 2)
+        multiple = summary.n >= 2;
+        tips = [summary.localX(multiple) + summary.meanX(multiple) * scale, ...
+            summary.localY(multiple) + summary.meanY(multiple) * scale];
+        ellipses = alignest.plot.covarianceEllipses(ax, tips, [summary.stdX(multiple) .^ 2, ...
+            summary.stdY(multiple) .^ 2, summary.covXY(multiple)], options.ellipseSigma * scale);
+        if ~isempty(ellipses)
+            ellipses.DisplayName = sprintf('Shot 間のばらつき（%gσ 楕円）', options.ellipseSigma);
+            items(end + 1) = ellipses;
+        end
+    end
+    alignest.plot.referenceArrow(ax, [half(1) - min(sizeMm) * REFERENCE_RATIO, -half(2) - MARGIN_RATIO * max(sizeMm) * 0.35], ...
+        scale, min(sizeMm) * REFERENCE_RATIO, REFERENCE_COLOR);
     xlabel(ax, sprintf('Shot 内の X [mm]（矢印 1 nm = %.3g mm）', scale));
 else
     % 同じ位置の点は、位置ごとの順番で少しずつ横にずらす（重なって見えなくならないように）
@@ -116,8 +135,8 @@ end
 function summary = positionSummary(local, values, digits)
 % Mark の位置（丸めた Shot 内の座標）ごとの点数・平均・標準偏差
 if isempty(local)
-    summary = table(zeros(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), ...
-        'VariableNames', ["localX", "localY", "n", "meanX", "meanY", "stdX", "stdY"]);
+    summary = table(zeros(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), ...
+        'VariableNames', ["localX", "localY", "n", "meanX", "meanY", "stdX", "stdY", "covXY"]);
     return
 end
 [positions, ~, index] = unique(round(local, digits), 'rows');
@@ -126,8 +145,16 @@ meanX = accumarray(index, values(:, 1), [], @(v) mean(v, 'omitnan'));
 meanY = accumarray(index, values(:, 2), [], @(v) mean(v, 'omitnan'));
 stdX = accumarray(index, values(:, 1), [], @(v) std(v, 'omitnan'));
 stdY = accumarray(index, values(:, 2), [], @(v) std(v, 'omitnan'));
-summary = table(positions(:, 1), positions(:, 2), n, meanX, meanY, stdX, stdY, 'VariableNames', ...
-    ["localX", "localY", "n", "meanX", "meanY", "stdX", "stdY"]);
+covXY = zeros(numel(n), 1);
+for p = 1:numel(n)
+    both = index == p & all(isfinite(values), 2);
+    if nnz(both) >= 2
+        covariance = cov(values(both, 1), values(both, 2));
+        covXY(p) = covariance(1, 2);
+    end
+end
+summary = table(positions(:, 1), positions(:, 2), n, meanX, meanY, stdX, stdY, covXY, 'VariableNames', ...
+    ["localX", "localY", "n", "meanX", "meanY", "stdX", "stdY", "covXY"]);
 end
 
 function scale = autoScale(values, targetMm)

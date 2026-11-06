@@ -4,7 +4,6 @@ function [gp, basisTrain, basisTest, factorTrain, factorTest] = gprModeSetup(tra
 %   col_<列名>：ファイルのその他の列）。並びは alignest.factorNames の順。
 %   basisTrain / basisTest は平均の基底関数（定数と、固定効果にする質的変数の効果コード）。
 %   factorTrain / factorTest は全質的変数の効果コード（Backfitting で使う）。
-%   混合（mixed）は Mark 番号を変量効果（加法カーネル）、それ以外の質的変数を固定効果（基底関数）にする。
 %   水準が学習点に1つしかない質的変数は推定できないので使わない（その扱い方は「使わない」と同じ式になる）。
 if nargin < 7
     maxIterations = 300;
@@ -34,12 +33,6 @@ switch factorMode
     case "additive_int"
         [basisTrain, basisTest] = deal(onesTrain, onesTest);
         categorical = [design.mainComponents; design.interactionComponents];
-    case "mixed"
-        [basisTrain, basisTest] = withIntercept(design.fixedTrain, design.fixedTest);
-        categorical = design.markComponent;
-    case "mixed_int"
-        [basisTrain, basisTest] = withIntercept(design.fixedTrain, design.fixedTest);
-        categorical = [design.markComponent; design.interactionComponents];
 end
 [factorTrain, factorTest] = withIntercept(design.mainTrain, design.mainTest);
 factorTrain = factorTrain(:, 2:end);
@@ -70,11 +63,6 @@ end
 design.mainTrain = [zeros(nTrain, 0), codesTrain{:}];
 design.mainTest = [zeros(nTest, 0), codesTest{:}];
 design.mainComponents = vertcat(empty, components{:});
-% 混合モデルでは Mark を変量効果、それ以外（Scan・行の奇偶・その他の列）を固定効果にする。
-isMark = names == "mark";
-design.fixedTrain = [zeros(nTrain, 0), codesTrain{~isMark}];
-design.fixedTest = [zeros(nTest, 0), codesTest{~isMark}];
-design.markComponent = vertcat(empty, components{isMark});
 % 交互作用ありの場合は有効な質的変数の全ペアを加える（3変数の積は加えない）。
 design.interactionTrain = zeros(nTrain, 0);
 design.interactionTest = zeros(nTest, 0);

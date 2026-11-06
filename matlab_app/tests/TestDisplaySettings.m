@@ -49,7 +49,7 @@ classdef TestDisplaySettings < matlab.unittest.TestCase
             testCase.verifyEqual(texts(1).FontSize, textSize * scale, 'AbsTol', 1e-9, "図の中の文字");
             testCase.verifyEqual(c.layoutAxes(1).Legend.FontSize, legendSize * scale, 'AbsTol', 1e-9);
             testCase.verifyEqual(fixed.grid.(fixed.property){fixed.index}, round(fixed.size * scale), "決まった大きさの欄");
-            testCase.verifyEqual(c.helpView.Data.fontScale, scale);
+            testCase.verifyEqual(app.openHelp().Data.fontScale, scale);
             testCase.verifyEqual(string({c.fontSizeItems([c.fontSizeItems.UserData] == 20).Checked}), "on");
             % 描き直した図も今の文字の大きさで描く
             app.applyMapping();

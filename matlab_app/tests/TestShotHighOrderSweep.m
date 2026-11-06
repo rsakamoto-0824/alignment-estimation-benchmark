@@ -54,7 +54,7 @@ classdef TestShotHighOrderSweep < matlab.unittest.TestCase
             wafer = struct("label", "W1", "points", points);
             lambdas = [0, 0.1, 1, 10, 100];
             sweep = alignest.sweepHighOrder(wafer, settings, lambda=lambdas);
-            testCase.verifyEqual([sweep.parameter, sweep.regularization, sweep.loss], ["lambda", "l2", "ols"]);
+            testCase.verifyEqual([sweep.parameter, sweep.regularization, sweep.loss], ["lambda", "l2", "l2", "ols", "ols"]);
             testCase.verifyEqual(height(sweep.table), 2 * numel(lambdas));
             x = sweep.table(sweep.table.axis == "X", :);
             testCase.verifyEqual(x.lambda, lambdas.');
@@ -64,16 +64,59 @@ classdef TestShotHighOrderSweep < matlab.unittest.TestCase
             testCase.verifyEqual(x.n, repmat(height(points), numel(lambdas), 1));
             % Huber の c：損失関数を Huber にする。λ と c の組み合わせはすべての組
             tuning = alignest.sweepHighOrder(wafer, settings, huberTuning=[0.5, 1, 2]);
-            testCase.verifyEqual([tuning.parameter, tuning.loss], ["huberTuning", "huber"]);
+            testCase.verifyEqual([tuning.parameter, tuning.loss], ["huberTuning", "huber", "huber"]);
             testCase.verifyEqual(unique(tuning.table.huberTuning).', [0.5, 1, 2]);
             both = alignest.sweepHighOrder(wafer, settings, lambda=[0, 1], huberTuning=[1, 2]);
             testCase.verifyEqual(both.parameter, "both");
             testCase.verifyEqual(height(both.table), 2 * 4);
-            % 途中で止める
+            % 途中で止めて、続きから再開すると、止めずに計算したときと同じ
             stopped = alignest.sweepHighOrder(wafer, settings, lambda=lambdas, progressFcn=@(done, ~, ~) done < 2);
             testCase.verifyTrue(stopped.cancelled);
             testCase.verifyEqual(stopped.nRuns, 2);
             testCase.verifyEqual(height(stopped.table), 2 * 2);
+            resumed = alignest.sweepHighOrder(wafer, settings, lambda=lambdas, resume=stopped.state);
+            testCase.verifyFalse(resumed.cancelled);
+            testCase.verifyEqual(resumed.table.fitRms, sweep.table.fitRms, 'AbsTol', 1e-12);
+            testCase.verifyEqual(resumed.table.looRms, sweep.table.looRms, 'AbsTol', 1e-12);
+            testCase.verifyError(@() alignest.sweepHighOrder(wafer, settings, lambda=[0, 1], resume=stopped.state), ...
+                'alignest:highOrderSweep', "値の並びが違う");
+            % c = 0 は LAD と同じ
+            lad = settings;
+            lad.highOrder.loss = "lad";
+            ladResult = alignest.shotHighOrder(wafer, lad, stages=false);
+            zeroTuning = alignest.sweepHighOrder(wafer, settings, huberTuning=[0, 1]);
+            ladRows = zeroTuning.table(zeroTuning.table.huberTuning == 0 & zeroTuning.table.axis == "X", :);
+            testCase.verifyEqual(ladRows.fitRms, sqrt(mean(ladResult.points.residualX .^ 2)), 'RelTol', 1e-9);
+            % 基準（最小二乗・正則化なし）：λ = 0 の最小二乗と同じ。Wafer ごとの値もある
+            testCase.verifyEqual(sweep.baseline.fitRms, sweep.table.fitRms(sweep.table.lambda == 0), 'AbsTol', 1e-9);
+            testCase.verifyEqual(height(sweep.perWafer), 2 * numel(lambdas));
+            % X・Y で別の回帰：dx は最小二乗、dy は Huber
+            separate = settings;
+            separate.highOrder.loss = ["ols", "huber"];
+            separate.highOrder.regularization = ["none", "l2"];
+            separate.highOrder.lambda = [0, 0.5];
+            separate.highOrder.penaltyOrders = 2;
+            separate.highOrder.penaltyOrdersY = 2:3;
+            both_ = alignest.shotHighOrder(wafer, separate, stages=false);
+            onlyX = settings;
+            testCase.verifyEqual(both_.points.residualX, alignest.shotHighOrder(wafer, onlyX, stages=false).points.residualX, ...
+                'AbsTol', 1e-9, "X は Y の設定に左右されない");
+            onlyY = settings;
+            onlyY.highOrder.loss = "huber";
+            onlyY.highOrder.regularization = "l2";
+            onlyY.highOrder.lambda = 0.5;
+            onlyY.highOrder.penaltyOrders = 2:3;
+            testCase.verifyEqual(both_.points.residualY, alignest.shotHighOrder(wafer, onlyY, stages=false).points.residualY, ...
+                'AbsTol', 1e-9, "Y は Y の設定で求める");
+            testCase.verifyTrue(contains(both_.description, "X は") && contains(both_.description, "Y は"));
+            % 設定ファイルに X・Y 別の値が残る
+            file = [tempname, '.json'];
+            alignest.saveSettings(separate, file);
+            loaded = alignest.loadSettings(file);
+            delete(file);
+            testCase.verifyEqual(loaded.highOrder.loss, ["ols", "huber"]);
+            testCase.verifyEqual(loaded.highOrder.lambda, [0, 0.5]);
+            testCase.verifyEqual(loaded.highOrder.penaltyOrdersY, 2:3);
             % 誤り
             testCase.verifyError(@() alignest.sweepHighOrder(wafer, settings), 'alignest:highOrderSweep');
             testCase.verifyError(@() alignest.sweepHighOrder(wafer, settings, lambda=-1), 'alignest:highOrderSweep');
@@ -87,36 +130,53 @@ classdef TestShotHighOrderSweep < matlab.unittest.TestCase
             cleanup = onCleanup(@() delete(app));
             c = app.Controls;
             testCase.verifyEqual([c.highOrderTuneLambdaStart.Value, c.highOrderTuneLambdaEnd.Value, ...
-                c.highOrderTuneLambdaStep.Value], [0.001, 10, 0.25]);
-            testCase.verifyTrue(startsWith(string(c.highOrderTuneCount.Text), "λ 17 通り（0.001〜10）"));
+                c.highOrderTuneLambdaPoints.Value], [0, 1, 11]);
+            testCase.verifyTrue(startsWith(string(c.highOrderTuneCount.Text), "λ 11 通り（0〜1）"));
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
             app.applyMapping();
             app.setHighOrderSource("data");
             app.setHighOrderSettings(unit="common", lambda=0.1);
             c.highOrderWafer.Value = {1, 2};
-            sweep = app.sweepHighOrderParameters("lambda", lambdaRange=[0.01, 1, 1], lambdaScale="log");
+            sweep = app.sweepHighOrderParameters("lambda", lambdaRange=[0.01, 1, 3], lambdaScale="log");
             testCase.verifyEqual(sweep.lambda, [0.01, 0.1, 1]);
-            testCase.verifyEqual(height(c.highOrderTuneTable.Data), 3);
-            testCase.verifyEqual(c.highOrderTuneTable.Data.("λ"), [0.01; 0.1; 1]);
+            testCase.verifyEqual(height(c.highOrderTuneTable.Data), 4, "基準の行＋3つの値");
+            testCase.verifyEqual(c.highOrderTuneTable.Data.("λ")(2:end), [0.01; 0.1; 1]);
+            testCase.verifyEqual(c.highOrderTuneTable.Data.("メモ")(1), "基準（最小二乗・正則化なし）");
             testCase.verifyEqual(numel(findobj(c.highOrderTuneAxes(1), 'Type', 'line')), 3, "当てはめ・1点抜き・最小");
+            testCase.verifyEqual(numel(findobj(c.highOrderTuneAxes(1), 'Type', 'constantline')), 2, "基準の線");
+            c.highOrderTuneErrorBar.Value = 'sd';
+            app.drawHighOrderSweep();
+            testCase.verifyEqual(numel(findobj(c.highOrderTuneAxes(1), 'Type', 'errorbar')), 2, "エラーバー");
+            c.highOrderTuneErrorBar.Value = 'none';
             testCase.verifyEqual(string(c.highOrderTuneAxes(1).XScale), "log");
             testCase.verifyTrue(contains(string(c.highOrderTuneInfo.Text), "1点抜きの予測の誤差の |平均|+3σ が最小"));
             best = app.applyHighOrderSweepBest();
-            testCase.verifyTrue(ismember(best.lambda, sweep.lambda));
-            testCase.verifyEqual(app.Settings.highOrder.lambda, best.lambda);
-            % 等間隔の刻みは終了も入れる。対数で 0 から始めると知らせる
-            app.sweepHighOrderParameters("huberTuning", tuningRange=[1, 2, 0.4]);
-            testCase.verifyEqual(app.HighOrderSweep.huberTuning, [1, 1.4, 1.8, 2]);
+            testCase.verifyTrue(all(ismember([best.lambda], sweep.lambda)));
+            testCase.verifyEqual([c.highOrderRegression.lambda.Value], [best.lambda], "X・Y それぞれ");
+            % 評価数で等しく分ける。c = 0 を含められる（LAD）。対数で 0 から始めると知らせる
+            app.sweepHighOrderParameters("huberTuning", tuningRange=[0, 3, 4]);
+            testCase.verifyEqual(app.HighOrderSweep.huberTuning, [0, 1, 2, 3]);
             testCase.verifyEqual(app.Settings.highOrder.loss, "huber");
+            % 一時中断と続きから再開
+            stopped = app.sweepHighOrderParameters("lambda", lambdaRange=[0, 1, 5], lambdaScale="linear", ...
+                progressFcn=@(done, ~, ~) done < 2);
+            testCase.verifyTrue(stopped.cancelled);
+            testCase.verifyEqual(string(c.highOrderTuneResume.Enable), "on");
+            finished = app.resumeHighOrderSweep();
+            testCase.verifyFalse(finished.cancelled);
+            testCase.verifyEqual(finished.nRuns, 5);
+            testCase.verifyEqual(string(c.highOrderTuneResume.Enable), "off");
+            testCase.verifyError(@() app.resumeHighOrderSweep(), 'alignest:highOrderSweep');
             c.highOrderTuneParameter.Value = 'lambda';
+            c.highOrderTuneLambdaScale.Value = 'log';
             c.highOrderTuneLambdaStart.Value = 0;
             c.highOrderTuneLambdaStart.ValueChangedFcn(c.highOrderTuneLambdaStart, []);
             testCase.verifyTrue(startsWith(string(c.highOrderTuneCount.Text), "⚠"));
             testCase.verifyError(@() app.sweepHighOrderParameters("lambda"), 'alignest:highOrderSweep');
             % λ と c の組み合わせは色の図
-            app.sweepHighOrderParameters("both", lambdaRange=[0, 1, 1], lambdaScale="linear", tuningRange=[1, 2, 1]);
+            app.sweepHighOrderParameters("both", lambdaRange=[0, 1, 2], lambdaScale="linear", tuningRange=[1, 2, 2]);
             testCase.verifyNotEmpty(findobj(c.highOrderTuneAxes(2), 'Type', 'image'));
-            testCase.verifyEqual(height(c.highOrderTuneTable.Data), 4);
+            testCase.verifyEqual(height(c.highOrderTuneTable.Data), 5);
             % 入力・設定を変えた後は、スイープし直す知らせ
             app.setHighOrderSettings(unit="shot");
             app.drawHighOrderSweep();

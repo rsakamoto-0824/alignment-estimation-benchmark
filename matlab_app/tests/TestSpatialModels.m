@@ -108,10 +108,10 @@ classdef TestSpatialModels < matlab.unittest.TestCase
             testCase.verifyEqual(alignest.loadSettings(file), settings);
             settings.methods = alignest.recommendedMethods('all');
             methods = alignest.buildMethodList(settings.methods);
-            % 説明変数 X,Y・X,Y,半径 の2組 ×（GPR 14カーネル（周期カーネル2つを含む）× 8扱い、TPS・RBF・通常 Kriging
+            % 説明変数 X,Y・X,Y,半径 の2組 ×（GPR 14カーネル（周期カーネル2つを含む）× 6扱い、TPS・RBF・通常 Kriging
             % （5バリオグラム）・Universal Kriging の質的変数なし／Backfitting、GAM）
             % ＋ XY5・RT4・RT5 ＋ Fringe Zernike（次数 3・4・5 の質的変数なし／Backfitting）
-            testCase.verifyEqual(numel(methods), 2 * (14 * 8 + 2 + 2 + 10 + 10 + 1) + 3 + 3 * 2);
+            testCase.verifyEqual(numel(methods), 2 * (14 * 6 + 2 + 2 + 10 + 10 + 1) + 3 + 3 * 2);
             testCase.verifyEqual(numel(unique(string({methods.id}))), numel(methods));
             testCase.verifyTrue(all(ismember(["RBF_gaussian_XY", "TPS_XY_backfit", "GPR_periodic_XYR_none", ...
                 "OK_linear_XY_backfit", "UK_linear_XY_backfit", "GPR_matern_nu2_XY_none", "OK_spherical_XYR_backfit", ...
@@ -194,7 +194,7 @@ classdef TestSpatialModels < matlab.unittest.TestCase
             settings.factors.columns = "Chuck";
             settings.methods = alignest.recommendedMethods('none');
             settings.methods.gpr.enabled = true;
-            settings.methods.gpr.factorModes = ["basis", "mixed"];
+            settings.methods.gpr.factorModes = ["basis", "additive"];
             settings.methods.tps.enabled = true;
             settings.methods.tps.factorModes = "backfit";
             settings.methods.rbf.enabled = true;

@@ -257,7 +257,7 @@ def build(output: Path, reference: Path):
             ["+alignest/estimateRunSeconds.m", "時間の目安（1条件 2 秒、ν を指定した Matérn は 3 倍）", "SECONDS_PER_RUN = 2"],
             ["+alignest/exchangeSecondsGuide.m", "交換法の時間の目安（初期配置1つ × 学習 Shot 1つ）", "0.01 秒"],
             ["+alignest/siteDefaults.m", "既定の設定ファイル（手順 B）を読む", DEFAULTS_FILE],
-            ["help/help.html", "「9. ヘルプ」の説明（機能編・技術編）", "手法を足したら説明も足す"]]
+            ["help/help.html", "メニュー「ヘルプ」の説明（機能編・技術編）", "手法を足したら説明も足す"]]
     table(s, 0.6, 1.5, [3.6, 5.2, 3.33], rows, size=12, row_h=0.56, bold_first=True)
     point_bar(s, 6.2, "設定ファイルの項目の名前は、defaultSettings.m の settings.〈グループ〉.〈項目〉 と同じ",
               icon="i", icon_color=BODY, h=0.6, size=13.5)
@@ -336,16 +336,16 @@ def build(output: Path, reference: Path):
         widths=(3.85, 1.95, 4.68, 1.65), row_h=0.41)
     point_bar(s, 6.3, "Overlay 補正をすべて「なし」（waferOrder 0・shotCommon none・perShot none）にすると補正の評価をしない",
               icon="i", icon_color=BODY, h=0.55, size=13)
-    notes(s, "補正の式の書き方と、すべての補正の式は「9. ヘルプ」にまとめている。")
+    notes(s, "補正の式の書き方と、すべての補正の式はメニュー「ヘルプ」にまとめている。")
 
     # 13. methods
     s = deck.body("03　設定の項目と初期値", "設定の項目⑤：methods（比べる手法）")
     settings_table(s, [
         ["methods.featureSets", "\"XYR\"", "説明変数（XY：X,Y、XYR：X,Y,半径）", "2. 説明変数"],
         ["methods.gpr.enabled ・ kernels", "true ・ \"matern52\"", "GPR とカーネル（fitrgp の10種類、matern・ardmatern、periodic・ardperiodic）", "2. GPR"],
-        ["methods.gpr.factorModes", "none・basis・additive・mixed", "質的変数の扱い（8通りから）", "2. GPR"],
+        ["methods.gpr.factorModes", "none・basis・additive", "質的変数の扱い（6通りから）", "2. GPR"],
         ["methods.gpr.maternNu", "2", "matern・ardmatern の ν（複数なら ν ごと）", "2. ν"],
-        ["methods.tps・rbf", "false ・ false", "TPS・RBF（factorModes：none・backfit）", "2. TPS・RBF"],
+        ["methods.tps・rbf", "false ・ false", "TPS・RBF（factorModes：none・backfit。tps.smoothing：gcv・none・fixed）", "2. TPS・RBF"],
         ["methods.kriging", "通常 false・Universal false", "Kriging（variograms：\"exponential\"）", "2. Kriging"],
         ["methods.gam", "false（スプライン）", "GAM（shapes・gpKernels・gpMaternNu）", "2. GAM"],
         ["methods.polynomial ・ rt", "false（5次）・false（K=5）", "XY 多項式の次数（1〜8）・RT モデルの次数", "2. 多項式・RT"],
@@ -354,8 +354,8 @@ def build(output: Path, reference: Path):
     point_bar(s, 6.2, "初期値は GPR だけ（recommendedMethods.m の \"default\" の部分）。「推奨の組み合わせ」は \"recommended\"、"
               "「すべて選ぶ」は \"all\" の部分",
               icon="i", icon_color=BODY, h=0.6, size=13)
-    notes(s, "初期設定（default）：GPR matern52（X,Y,半径）× 質的変数（使わない・同時推定・加法カーネル・混合）の 4 手法だけ。"
-             "推奨の組み合わせ（recommended）：それに TPS、Kriging exponential、GAM、XY 5次多項式、RT モデル K=5 を足した 9 手法。"
+    notes(s, "初期設定（default）：GPR matern52（X,Y,半径）× 質的変数（使わない・同時推定・加法カーネル）の 3 手法だけ。"
+             "推奨の組み合わせ（recommended）：それに TPS、Kriging exponential、GAM、XY 5次多項式、RT モデル K=5 を足した 8 手法。"
              "RBFe は廃止（以前の設定ファイルの methods.rbfe は読み飛ばす）。")
 
     # 14. highOrder（Shot 高次補正）
@@ -384,7 +384,7 @@ def build(output: Path, reference: Path):
              "unit・λ・回帰・保存した組み合わせは「補正の比較」でまとめて並べて比べられる。outerMaker を none 以外にすると、"
              "外周の Shot だけその式で補正する（保存した組み合わせを選ぶと、その使わない項 outerExcludedTerms と名前 outerName も入る）。"
              "既定の設定ファイルにも書ける。"
-             "計算の方法と式は「9. ヘルプ」の技術編。")
+             "計算の方法と式はメニュー「ヘルプ」の技術編。")
 
     # 15. markLayout（Mark 配置の最適化）
     s = deck.body("03　設定の項目と初期値", "設定の項目⑦：markLayout（8. Mark配置の最適化）")
@@ -396,8 +396,8 @@ def build(output: Path, reference: Path):
         ["markLayout.minMarks ・ maxMarks", "0 ・ 0", "Mark の数の最低数・最大数（0 = 使う項の数・すべての候補）", "8. 最低数・最大数"],
         ["markLayout.starts", "5", "Mark の数ごとに配置を探す始め方の数（1〜50）", "8. 探す回数"],
         ["markLayout.values", "\"measured\"", "制御残差を求める値（measured：実測値・random：乱数の形）", "8. 評価に使う値"],
-        ["markLayout.shapes", "200", "乱数の Shot の形の数（1〜1000。乱数の種は sampling.seed と共通）", "8. 形の数"],
-        ["markLayout.orderSigmaNm", "[3,3,1.5,1,0.5,0.3]", "乱数の形の 0〜5次の項の大きさ（Shot の端の標準偏差 [nm]）", "8. 項の大きさ"],
+        ["markLayout.shapes", "200", "乱数 Shot の形の数（1〜1000。乱数の種は sampling.seed と共通）", "8. 形の数"],
+        ["markLayout.orderSigmaNm", "[3,3,1.5,1,0.5,0.3,0,0]", "乱数の形の 0〜7次の項の大きさ（Shot の端の標準偏差 [nm]。0 の次数は使わない）", "8. 項の大きさ"],
         ["markLayout.noiseNm ・ outlierPercent ・ outlierNm", "0.5 ・ 0 ・ 10", "計測のばらつき [nm]・飛び値の割合 [%]・大きさ [nm]", "8. ばらつき・飛び値"],
         ["markLayout.coordinateXmm/Ymm ・ requiredXmm/Ymm", "[]（なし）", "画面で入力した座標・必ず計測する Mark の座標 [mm]", "8. 候補の Mark"]],
         widths=(3.75, 1.75, 4.65, 1.98), row_h=0.33)
@@ -408,9 +408,9 @@ def build(output: Path, reference: Path):
              "制御残差を I 効率と比べる。excludedTerms は「VIF で選ぶ」・表の「使う」で変わる。coordinateXmm・coordinateYmm は"
              "画面で入力した候補の Mark の座標（「格子で置く」で作る）、requiredXmm・requiredYmm は必ず計測する Mark の座標で、"
              "どちらも「設定を保存…」の JSON に入る（必ず計測する Mark は座標で覚えるので、入力を変えても同じ位置なら残る）。"
-             "values が random のとき、0〜5次の項に orderSigmaNm の大きさの正規乱数の係数を掛けた形に、noiseNm のばらつきと、"
+             "values が random のとき、0〜7次の項を乱数で選び、orderSigmaNm の大きさの正規乱数の重みを掛けた形に、noiseNm のばらつきと、"
              "outlierPercent の割合の点に outlierNm の飛び値を足して補正し、足す前の形で制御残差を求める。"
-             "既定の設定ファイルにも書ける。計算の方法と式は「9. ヘルプ」の技術編。")
+             "既定の設定ファイルにも書ける。計算の方法と式はメニュー「ヘルプ」の技術編。")
 
     # 16. options と画面の定数
     s = deck.body("03　設定の項目と初期値", "手法の細かい設定（methods.options）と画面の定数")
@@ -527,7 +527,7 @@ def build(output: Path, reference: Path):
     related = [("README.md", "設定の項目・使い方の全体"),
                ("docs/admin_guide/admin_guide.html", "アプリの構成と保守の作業"),
                ("docs/windows_guide/windows_guide.html", "画面の使い方・exe を作る・配る"),
-               ("「9. ヘルプ」タブ", "機能編（使い方）・技術編（式）")]
+               ("メニュー「ヘルプ」", "機能編（使い方）・技術編（式）")]
     for index, (name, body) in enumerate(related):
         y = 2.5 + index * 0.98
         circle(s, 8.35, y + 0.08, 0.4, LIGHT, str(index + 1), label_color=INK, size=12)

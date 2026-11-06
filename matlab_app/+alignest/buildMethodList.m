@@ -5,6 +5,7 @@ function methods = buildMethodList(config)
 %   GAM_<説明変数>、XY<次数>、RT<次数>、FringeZ_k<次数>（Fringe Zernike。Z1〜Z(k+1)²。質的変数の Backfitting は
 %   _backfit）。
 %   RBF_gaussian_<説明変数> を追加。TPS・RBF・OK・UK の Backfitting は既存 id に _backfit を付ける。
+%   TPS の平滑化（config.tps.smoothing）：gcv はそのまま、none（補間）は _interpolation、fixed は _lambda<log10 λ> を付ける。
 %   GPR のカーネル matern・ardmatern は config.gpr.maternNu の ν ごとに matern_nu<ν>・ardmatern_nu<ν> にする。
 %   GAM の形状関数にガウス過程回帰の項があれば、id に _gp-<項>（例：GAM_XYR_gp-xy-r）を付ける。
 %   config.gam.shapes は項（xy・r）ごとに選んだ形状関数（spline・gp。1つ以上）で、その組み合わせをすべて並べる。
@@ -26,8 +27,11 @@ for featureSet = string(config.featureSets(:)).'
         end
     end
     if config.tps.enabled
-        for mode = spatialModes(config.tps.factorModes)
-            methods(end + 1) = spatialItem("TPS_" + featureSet, "TPS", featureSet, "tps", mode, "TPS｜" + featureLabel); %#ok<AGROW>
+        for smoothing = tpsSmoothing(config.tps)
+            for mode = spatialModes(config.tps.factorModes)
+                methods(end + 1) = spatialItem("TPS_" + featureSet + smoothing.id, "TPS", featureSet, smoothing.variant, mode, ...
+                    "TPS｜" + featureLabel + smoothing.label); %#ok<AGROW>
+            end
         end
     end
     if config.rbf.enabled
@@ -90,6 +94,30 @@ if config.rt.enabled
     for order = config.rt.orders(:).'
         methods(end + 1) = item(sprintf("RT%d", order), "RT", "-", sprintf("order%d", order), "none", ...
             sprintf("RT モデル K=%d", order)); %#ok<AGROW>
+    end
+end
+end
+
+function choices = tpsSmoothing(tps)
+% TPS の平滑化の選択肢：id の後ろに付ける名前・手法の variant・手法の名前の後ろに付ける説明
+names = unique(string(tps.smoothing(:)).', 'stable');
+if isempty(names) || any(~ismember(names, ["gcv", "none", "fixed"]))
+    error('alignest:tpsSmoothing', 'TPS の平滑化は gcv・none・fixed のいずれか、または複数を選んでください。');
+end
+if ~isscalar(tps.log10Lambda) || ~isfinite(tps.log10Lambda)
+    error('alignest:tpsSmoothing', 'TPS の λ の常用対数は数を1つ入れてください。');
+end
+choices = struct("id", {}, "variant", {}, "label", {});
+for name = names
+    switch name
+        case "gcv"
+            choices(end + 1) = struct("id", "", "variant", "tps", "label", ""); %#ok<AGROW>
+        case "none"
+            choices(end + 1) = struct("id", "_interpolation", "variant", "interpolation", "label", "｜平滑化なし"); %#ok<AGROW>
+        otherwise
+            text = sprintf("%g", tps.log10Lambda);
+            choices(end + 1) = struct("id", "_lambda" + text, "variant", "lambda:" + text, "label", ...
+                "｜log10 λ=" + text); %#ok<AGROW>
     end
 end
 end
