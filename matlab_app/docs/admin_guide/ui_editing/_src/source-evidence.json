@@ -1,6 +1,6 @@
 {
   "date": "2026-10-30",
-  "baseCommit": "4f869e2bdebccf6fb2eb7e2ea1bce8137d748a9e",
+  "baseCommit": "29f5b9362c902faabe8da7b502a181378fb7a7c4",
   "note": "作業中のソース（main に、画面をタブごとのファイルに分けた変更を加えたもの）から作成",
   "sourceSha256": {
     "AlignmentEstimationApp.m": "305ed7b240026c35985335a3e15f4c39eea68c6607674e8922ac6c385635162e",

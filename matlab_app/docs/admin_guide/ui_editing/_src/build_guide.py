@@ -189,7 +189,7 @@ table(['調整したいもの','主な場所','注意'],[
 ('表の列幅','ColumnWidth / METHOD_COLUMN_WIDTH等','長い手法名と数値の両方が読める幅。'),
 ('図の文字・凡例の位置','AXES_FONT_SIZE / SMALL_AXES_FONT_SIZE / styleAxes','グラフ再描画後にも適用されるか。凡例の位置は利用者が「設定」→「凡例の位置」と図の右クリックで選ぶ。'),
 ('ウィンドウの初期サイズ','FIGURE_SIZE / figurePosition / fitToScreen','本PCの確認画像は1600×1000指定。既定は1440×900で、小さい画面に合わせて調整される。'),
-('ヘルプ本文','help/help.html / buildHelpTab','UIの名称を変えたらヘルプ内の説明も合わせる。'),
+('ヘルプ本文','help/help.html / openHelp','UIの名称を変えたらヘルプ内の説明も合わせる。'),
 ]) + note('色の設定を変えると利用者全体の見た目が変わります', 'themePaletteの共通色はアプリ全体に使われます。1個のエラー文だけのつもりで共通色を変更しないようにし、ライト・ダークの両方で表・図・警告を見直します。')))
 
 parts.append(section('verification', steps([
