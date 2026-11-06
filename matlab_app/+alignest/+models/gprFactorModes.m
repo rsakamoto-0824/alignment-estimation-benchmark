@@ -6,11 +6,9 @@ function [modes, labels] = gprFactorModes()
 %   basis_int    : basis に Scan方向 × Mark番号 の交互作用の列を加える
 %   additive     : 加法カーネル k = k_空間 + τ_s²[Scan方向が同じ] + τ_m²[Mark番号が同じ]（変量効果）
 %   additive_int : additive に τ_sm²[Scan方向と Mark番号の両方が同じ] を加える
-%   mixed        : 混合。Mark番号は加法カーネル（変量効果）、それ以外の質的変数は基底関数（固定効果）
-%   mixed_int    : mixed に交互作用の項を加える
-%   Shot行奇偶・その他の列も、basis/backfit は固定効果、additive は変量効果、mixed は固定効果。
+%   Shot行奇偶・その他の列も、basis/backfit は固定効果、additive は変量効果。
 %   *_int は有効な質的変数の全ペアの交互作用を含む。
-modes = ["none", "basis", "backfit", "basis_int", "additive", "additive_int", "mixed", "mixed_int"];
+modes = ["none", "basis", "backfit", "basis_int", "additive", "additive_int"];
 labels = ["使わない", "同時推定（基底関数）", "Backfitting", "同時推定＋交互作用", ...
-    "加法カーネル", "加法カーネル＋交互作用", "混合（Mark変量／他は固定）", "混合＋交互作用"];
+    "加法カーネル", "加法カーネル＋交互作用"];
 end

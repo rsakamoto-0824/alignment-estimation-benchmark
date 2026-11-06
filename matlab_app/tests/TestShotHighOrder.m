@@ -488,7 +488,7 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             cleanup = onCleanup(@() delete(app));
             c = app.Controls;
             testCase.verifyEqual(app.Tabs.highOrder.Title, '7. Shot高次補正');
-            testCase.verifyEqual(app.Tabs.help.Title, '9. ヘルプ');
+            testCase.verifyFalse(isfield(app.Tabs, 'help'), "ヘルプはメニュー");
             testCase.verifyEqual(string(c.highOrderCompute.Enable), "off", "データが無いうちは計算できない");
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
             app.applyMapping();
@@ -559,7 +559,7 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             testCase.verifyError(@() app.setHighOrderTermUsed(3, false), 'alignest:highOrderTerms');
             app.setHighOrderSettings(unit="shot", loss="lad");
             perShot = app.computeHighOrder(1);
-            testCase.verifyEqual(perShot.options.loss, "lad");
+            testCase.verifyEqual(perShot.options.loss, ["lad", "lad"]);
             testCase.verifyEqual(string(c.highOrderCoefficientWafer.Enable), "on");
             testCase.verifyEqual(height(c.highOrderCoefficientTable.Data), 99, "Shot ごと：Shot ごとに1行");
             testCase.verifyTrue(contains(perShot.reduction(1).reference, "の Shot"), "Shot ごとは Mark の最も少ない Shot が基準");
@@ -567,8 +567,8 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             app.exportHighOrderTo(file);
             sheets = string(sheetnames(file));
             delete(file);
-            testCase.verifyEqual(sheets.', ["説明", "補正の評価", "補正値", "Shotごとの補正値", "項とVIF", "残差の成分", ...
-                "残差の成分の項", "点ごとの値"]);
+            testCase.verifyEqual(sheets.', ["説明", "補正の評価", "補正値", "Shotごとの補正値", "項とVIF", ...
+                "点ごとの値"]);
             % 未知の座標の推定値（Wafer の外の点は使わない）と、学習に使った Mark の実測値
             app.addTargetPoints("shots", 6, 8, NaN);
             app.addTargetPoints("shots", -6, -8, NaN);
@@ -628,7 +628,7 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             app.addHighOrderConditions("units");
             app.addHighOrderConditions("lambda", [0, 0.5]);
             testCase.verifyError(@() app.addHighOrderConditions("lambda", -1), 'alignest:highOrderLambda');
-            testCase.verifyEqual(numel(c.highOrderConditionList.Items), 6);
+            testCase.verifyEqual(size(c.highOrderConditionTable.Data, 1), 6);
             comparison = app.compareHighOrderConditionsNow();
             testCase.verifyEqual(height(comparison), 12);
             testCase.verifyEqual(c.highOrderOutputs.SelectedTab, c.highOrderCompareTab);
@@ -674,7 +674,7 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             settings.highOrder.termSets = strings(0, 1);
             app.setSettings(settings);
             testCase.verifyEqual(c.highOrderMaker.Value, 'canon');
-            testCase.verifyEqual(c.highOrderLambda.Value, 0.4);
+            testCase.verifyEqual([c.highOrderRegression.lambda.Value], [0.4, 0.4]);
             testCase.verifyEqual(size(c.highOrderTermTable.Data, 1), 16, "Canon の dx 8 項・dy 8 項");
             testCase.verifyEqual(app.Settings.highOrder.termSets, "k37 なし|custom|" + strjoin(string([1:2:35, 2:2:38]), " "));
             app.deleteHighOrderTermSet("k37 なし");

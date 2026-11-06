@@ -45,9 +45,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
                         error('alignest:highOrderLambda', 'λ は 0 以上の数を空白で区切って入れてください（例：0 0.01 0.1 1）。');
                     end
                     kind = options.regularization;
-                    if kind == "none"
-                        kind = "l2";   % 正則化なしのときは L2 で λ を変える
-                    end
+                    kind(kind == "none") = "l2";   % 正則化なしの軸は L2 で λ を変える
                     for lambda = unique(lambdas, 'stable')
                         variant = base;
                         variant.lambda = lambda;
@@ -59,7 +57,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
                             variant = rmfield(variant, "l2");
                         end
                         added(end + 1) = condition(sprintf("λ = %g（%s）｜%s", lambda, ...
-                            regularizationLabel(variant.regularization), unitLabel(options)), variant); %#ok<AGROW>
+                            regularizationLabel(variant.regularization(1)), unitLabel(options)), variant); %#ok<AGROW>
                     end
                 case "termSet"
                     sets = termSetTable(base.termSets);
@@ -91,9 +89,9 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
         end
 
         function removeHighOrderConditions(app, indices)
-            %REMOVEHIGHORDERCONDITIONS 「補正の比較」の条件を消す（indices を省くと、一覧で選んでいる条件。"all" ならすべて）。
+            %REMOVEHIGHORDERCONDITIONS 「補正の比較」の条件を消す（indices を省くと、表で選んでいる条件。"all" ならすべて）。
             if nargin < 2
-                indices = cell2mat(app.Controls.highOrderConditionList.Value);
+                indices = app.HighOrderConditionSelection;
             end
             if isequal(string(indices), "all")
                 indices = 1:numel(app.HighOrderConditions);
@@ -108,8 +106,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             %   waferChoice：一覧の番号（複数可。0 = すべて）。省略すると画面で選んでいるもの。
             c = app.Controls;
             if isempty(app.HighOrderConditions)
-                error('alignest:highOrderCondition', ['比べる条件がありません。「今の設定を足す」「4つのくくりを足す」' ...
-                    '「λ ごとに足す」で条件を足してください。']);
+                error('alignest:highOrderCondition', '比べる条件がありません。「条件を足す」で条件を足してください。');
             end
             refreshHighOrderChoices(app);
             if nargin >= 2
@@ -313,6 +310,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
                 colorbar(ax, 'off');
             end
             c.highOrderPairTable.Data = table();
+            c.highOrderPairConditions.Data = table();
             removeStyle(c.highOrderPairTable);
             set([c.highOrderPairSave, c.highOrderPairCopy], 'Enable', 'off');
             c.highOrderPairInfo.FontColor = app.Palette.text;
@@ -375,8 +373,17 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
                     plot(ax, parts{k}.x(outliers), parts{k}.y(outliers), 'o', 'MarkerSize', 6, 'LineWidth', 1, 'Color', ...
                         app.Palette.text, 'LineStyle', 'none', 'HandleVisibility', 'off');
                 end
+                % 基準の図には、比べる条件が外れ値とみなした点も ◇ で示す（基準が最小二乗でも、どの点かが分かるように）
+                if k == 1
+                    others = outlierPoints(parts{2}, axisName) & ~outliers;
+                    if any(others)
+                        plot(ax, parts{2}.x(others), parts{2}.y(others), 'd', 'MarkerSize', 7, 'LineWidth', 1, 'Color', ...
+                            app.Palette.text, 'LineStyle', 'none', 'HandleVisibility', 'off');
+                    end
+                end
                 hold(ax, 'off');
             end
+            c.highOrderPairConditions.Data = conditionDetails(referenceResult.options, otherResult.options);
             styleAxes(app, axesList, app.AXES_FONT_SIZE);
             set([c.highOrderPairSave, c.highOrderPairCopy], 'Enable', 'on');
             % Shot ごとの表（改善の大きい順）
@@ -406,52 +413,40 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
     methods (Access = {?appui.Core})
         % ================= 7. Shot高次補正：補正の比較・Wafer の比較・項の組み合わせ =================
         function buildHighOrderCompareTab(app, outputs)
-            % 「補正の比較」のタブ：条件の一覧（足す・消す）、すべて計算して比べる、結果の表と図
+            % 「補正の比較」のタブ：足す条件を選んで足す、条件の表（消す）、すべて計算して比べる、結果の表と図
             c = struct();
             tab = uitab(outputs, 'Title', '補正の比較');
             c.highOrderCompareTab = tab;
-            grid = uigridlayout(tab, [4, 1], 'RowHeight', {'fit', 70, '1x', 'fit'}, 'Padding', 6, 'RowSpacing', 4);
-            % 条件を足す・消す・計算するボタン（1行目）、λ のスイープ（2行目）、保存した組み合わせ（3行目）
-            controls = uigridlayout(grid, [3, 1], 'RowHeight', {'fit', 'fit', 'fit'}, 'Padding', 0, 'RowSpacing', 4);
-            buttons = uigridlayout(controls, [1, 5], 'ColumnWidth', {'fit', 'fit', '1x', 'fit', 'fit'}, 'Padding', 0);
-            uibutton(buttons, 'Text', '今の設定を足す', 'ButtonPushedFcn', ...
-                @(~, ~) app.onAddHighOrderConditions("current"), 'Tooltip', ['左の補正の式・使う項・くくり・回帰の設定を' ...
-                '条件として足します。設定を変えて何回か押すと、補正の内容をまとめて比べられます。']);
-            uibutton(buttons, 'Text', '4つのくくりを足す', 'ButtonPushedFcn', ...
-                @(~, ~) app.onAddHighOrderConditions("units"), 'Tooltip', ['今の設定で、くくりだけを Wafer 内で共通・' ...
-                'Scan 方向ごと・行の偶奇ごと・Shot ごとに変えた4つの条件を足します。']);
-            c.highOrderConditionRemove = uibutton(buttons, 'Text', '選んだ条件を消す', 'ButtonPushedFcn', ...
-                @(~, ~) app.onRemoveHighOrderConditions(), 'Tooltip', '一覧で何も選んでいなければ、すべての条件を消します。');
-            place(c.highOrderConditionRemove, 1, 4);
-            c.highOrderCompare = primaryButton(app, buttons, 'すべて計算して比べる', @(~, ~) app.onCompareHighOrder());
-            place(c.highOrderCompare, 1, 5);
-            sweep = uigridlayout(controls, [1, 4], 'ColumnWidth', {'fit', '1x', 'fit', 'fit'}, 'Padding', 0);
-            label(sweep, 'λ', 1, 1);
-            c.highOrderSweepLambda = uieditfield(sweep, 'text', 'Value', '0 0.01 0.1 1', 'Tooltip', ...
+            grid = uigridlayout(tab, [4, 1], 'RowHeight', {'fit', 120, '1x', 'fit'}, 'Padding', 6, 'RowSpacing', 4);
+            % 何を変えた条件を足すかを1つ選び、足す。左の②③の今の設定をもとにする
+            controls = uigridlayout(grid, [1, 6], 'ColumnWidth', {'fit', 150, '1x', 'fit', 'fit', 'fit'}, 'Padding', 0);
+            label(controls, '足す条件', 1, 1);
+            c.highOrderConditionKind = uidropdown(controls, 'Items', {'今の設定', 'くくりを変える', '損失関数を変える', ...
+                'λ を変える', '項の組み合わせ'}, 'ItemsData', {'current', 'units', 'loss', 'lambda', 'termSet'}, ...
+                'ValueChangedFcn', @(~, ~) app.refreshHighOrderConditionKind(), 'Tooltip', ['左の②③の今の設定をもとに、' ...
+                '選んだ項目だけを変えた条件を足します。今の設定：そのまま1つ。くくり：4通り。損失関数：最小二乗・Huber・LAD の3通り。' ...
+                'λ：右に入れた値ごと。項の組み合わせ：右で選んだ保存した組み合わせ。']);
+            place(c.highOrderConditionKind, 1, 2);
+            c.highOrderSweepLambda = uieditfield(controls, 'text', 'Value', '0 0.01 0.1 1', 'Visible', 'off', 'Tooltip', ...
                 '正則化の強さ λ を空白で区切って入れます（0 は正則化なし）。');
-            place(c.highOrderSweepLambda, 1, 2);
-            c.highOrderSweepButton = uibutton(sweep, 'Text', 'λ ごとに足す', 'ButtonPushedFcn', ...
-                @(~, ~) app.onAddHighOrderConditions("lambda"), 'Tooltip', ['今の設定で、λ だけを左の値に変えた条件を' ...
-                '足します（今の正則化の種類と次数。正則化なしなら L2。λ ごとの残差を比べられます）。']);
-            place(c.highOrderSweepButton, 1, 3);
-            c.highOrderLossButton = uibutton(sweep, 'Text', '3つの回帰を足す', 'ButtonPushedFcn', ...
-                @(~, ~) app.onAddHighOrderConditions("loss"), 'Tooltip', ['今の設定で、回帰だけを最小二乗・Huber・LAD に' ...
-                '変えた3つの条件を足します（「2つの条件を並べる」で、ロバスト回帰が最小二乗よりよかった Shot が分かります）。']);
-            place(c.highOrderLossButton, 1, 4);
-            sets = uigridlayout(controls, [1, 3], 'ColumnWidth', {'fit', '1x', 'fit'}, 'Padding', 0);
-            label(sets, '保存した組み合わせ', 1, 1);
-            c.highOrderCompareTermSet = uidropdown(sets, 'Items', {'（保存した組み合わせはありません）'}, ...
-                'ItemsData', {''}, 'Enable', 'off');
-            place(c.highOrderCompareTermSet, 1, 2);
-            c.highOrderCompareTermSetAdd = uibutton(sets, 'Text', 'この組み合わせを足す', 'Enable', 'off', ...
-                'ButtonPushedFcn', @(~, ~) app.onAddHighOrderConditions("termSet"), 'Tooltip', ['「使う項と VIF」で' ...
-                '保存した項の組み合わせを、今のくくり・回帰の設定で条件として足します。']);
-            place(c.highOrderCompareTermSetAdd, 1, 3);
-            c.highOrderConditionList = uilistbox(grid, 'Items', {'（条件はまだありません）'}, 'ItemsData', {0}, ...
-                'Multiselect', 'on', 'Value', {}, 'ValueChangedFcn', @(~, ~) app.onHighOrderConditionsSelected(), ...
-                'Tooltip', ['比べる条件（Ctrl・Shift で複数選んで消せます。比べた後に2つ選ぶと、「2つの条件を並べる」の' ...
-                '基準（番号の小さい方）と比べる条件になります）。']);
-            place(c.highOrderConditionList, 2, 1);
+            place(c.highOrderSweepLambda, 1, 3);
+            c.highOrderCompareTermSet = uidropdown(controls, 'Items', {'（保存した組み合わせはありません）'}, ...
+                'ItemsData', {''}, 'Enable', 'off', 'Visible', 'off');
+            place(c.highOrderCompareTermSet, 1, 3);
+            c.highOrderConditionAdd = uibutton(controls, 'Text', '条件を足す', 'ButtonPushedFcn', ...
+                @(~, ~) app.onAddHighOrderConditions());
+            place(c.highOrderConditionAdd, 1, 4);
+            c.highOrderConditionRemove = uibutton(controls, 'Text', '消す', 'ButtonPushedFcn', ...
+                @(~, ~) app.onRemoveHighOrderConditions(), 'Tooltip', ['下の表で選んだ行の条件を消します。何も選んでいなければ' ...
+                'すべての条件を消します。']);
+            place(c.highOrderConditionRemove, 1, 5);
+            c.highOrderCompare = primaryButton(app, controls, 'すべて計算して比べる', @(~, ~) app.onCompareHighOrder());
+            place(c.highOrderCompare, 1, 6);
+            c.highOrderConditionTable = uitable(grid, 'RowName', {}, 'ColumnName', {'No', '条件', '補正の式', 'くくり', ...
+                'Wafer 成分', 'X の回帰', 'Y の回帰'}, 'ColumnWidth', {30, 170, 60, 100, 56, 190, 190}, 'Data', cell(0, 7), ...
+                'CellSelectionCallback', @(~, event) app.onHighOrderConditionsSelected(event), 'Tooltip', ...
+                '比べる条件。セルをクリックして選びます（Shift・Ctrl で複数）。比べた後に2つ選ぶと、「2つの条件を並べる」に出ます。');
+            place(c.highOrderConditionTable, 2, 1);
             % 結果：表と図（中のタブで切り替える。狭い画面でも図の高さを取れるように）
             results = uitabgroup(grid, 'SelectionChangedFcn', @(~, ~) app.drawHighOrderComparisonChart());
             place(results, 3, 1);
@@ -474,6 +469,15 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             c.highOrderCompareInfo = uilabel(grid, 'WordWrap', 'on', 'Text', '');
             place(c.highOrderCompareInfo, 4, 1);
             app.Controls = mergeStruct(app.Controls, c);
+            refreshHighOrderConditionKind(app);
+        end
+
+        function refreshHighOrderConditionKind(app)
+            % 足す条件の種類に合わせて、右の欄（λ の値・項の組み合わせ）を切り替える
+            c = app.Controls;
+            kind = string(c.highOrderConditionKind.Value);
+            c.highOrderSweepLambda.Visible = onOff(kind == "lambda");
+            c.highOrderCompareTermSet.Visible = onOff(kind == "termSet");
         end
 
         function buildHighOrderPairTab(app, outputs)
@@ -531,6 +535,9 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             tableTab = uitab(views, 'Title', 'Shot ごとの表');
             c.highOrderPairTable = uitable(uigridlayout(tableTab, [1, 1], 'Padding', 4), 'RowName', {}, 'Data', table(), ...
                 'ColumnWidth', {60, 50, 90, 110, 140, 50, 70, 130, 130});
+            conditionTab = uitab(views, 'Title', '条件の内容');
+            c.highOrderPairConditions = uitable(uigridlayout(conditionTab, [1, 1], 'Padding', 4), 'RowName', {}, ...
+                'Data', table(), 'ColumnWidth', {170, 'auto', 'auto'});
             c.highOrderPairInfo = uilabel(grid, 'WordWrap', 'on', 'Text', '');
             place(c.highOrderPairInfo, 3, 1);
             app.Controls = mergeStruct(app.Controls, c);
@@ -568,10 +575,11 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             set(lists, 'Enable', onOff(numel(labels) >= 2));
         end
 
-        function onHighOrderConditionsSelected(app)
-            % 比べた後に条件を2つ選んだら、番号の小さい方を基準（左）にして並べる（条件を変えた後は前の結果の番号と違うので使わない）
-            c = app.Controls;
-            selected = sort(cell2mat(c.highOrderConditionList.Value));
+        function onHighOrderConditionsSelected(app, event)
+            % 条件の表で選んだ行を覚える。比べた後に2つ選んだら、番号の小さい方を基準（左）にして並べる（条件を変えた後は前の
+            % 結果の番号と違うので使わない）
+            selected = unique(event.Indices(:, 1)).';
+            app.HighOrderConditionSelection = selected;
             if numel(selected) ~= 2 || isempty(app.HighOrderComparison) || ~isfield(app.HighOrderComparison, 'results') || ...
                     ~isequaln(app.HighOrderComparison.conditions, app.HighOrderConditions)
                 return
@@ -682,31 +690,25 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
                     list.ItemsData = {''};
                 end
             end
-            set([c.highOrderTermSetList, c.highOrderTermSetApply, c.highOrderTermSetDelete, c.highOrderCompareTermSet, ...
-                c.highOrderCompareTermSetAdd], 'Enable', onOff(has));
+            set([c.highOrderTermSetList, c.highOrderTermSetApply, c.highOrderTermSetDelete, c.highOrderCompareTermSet], ...
+                'Enable', onOff(has));
             refreshHighOrderOuterChoices(app);   % 外周の式にも保存した組み合わせを出す
         end
 
         function refreshHighOrderConditions(app)
-            % 「補正の比較」の条件の一覧
+            % 「補正の比較」の条件の表
             c = app.Controls;
             conditions = app.HighOrderConditions;
-            if isempty(conditions)
-                c.highOrderConditionList.Items = {'（条件はまだありません）'};
-                c.highOrderConditionList.ItemsData = {0};
-                c.highOrderConditionList.Value = {};
-            else
-                details = strings(1, numel(conditions));
-                for k = 1:numel(conditions)
-                    settings = app.Settings;
-                    settings.highOrder = conditions(k).highOrder;
-                    details(k) = alignest.highOrderOptions(settings).description;
-                end
-                c.highOrderConditionList.Items = cellstr(compose("%d. ", (1:numel(conditions)).') + ...
-                    reshape(string({conditions.label}), [], 1) + "　（" + details(:) + "）");
-                c.highOrderConditionList.ItemsData = num2cell(1:numel(conditions));
-                c.highOrderConditionList.Value = {};
+            data = cell(numel(conditions), 7);
+            for k = 1:numel(conditions)
+                settings = app.Settings;
+                settings.highOrder = conditions(k).highOrder;
+                options = alignest.highOrderOptions(settings);
+                data(k, :) = {k, char(conditions(k).label), char(makerLabel(options)), char(unitLabel(options)), ...
+                    char(waferOrderLabel(options)), char(axisRegressionLabel(options, 1)), char(axisRegressionLabel(options, 2))};
             end
+            c.highOrderConditionTable.Data = data;
+            app.HighOrderConditionSelection = zeros(1, 0);
             set([c.highOrderConditionRemove, c.highOrderCompare], 'Enable', onOff(~isempty(conditions)));
             showHighOrderComparison(app);
         end
@@ -820,8 +822,9 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             end
         end
 
-        function onAddHighOrderConditions(app, kind)
+        function onAddHighOrderConditions(app)
             c = app.Controls;
+            kind = string(c.highOrderConditionKind.Value);
             values = [];
             if kind == "lambda"
                 [values, ok] = parseNumbers(c.highOrderSweepLambda.Value);
@@ -836,7 +839,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
         end
 
         function onRemoveHighOrderConditions(app)
-            if isempty(app.Controls.highOrderConditionList.Value)
+            if isempty(app.HighOrderConditionSelection)
                 removeHighOrderConditions(app, "all");
             else
                 removeHighOrderConditions(app);
@@ -874,11 +877,78 @@ end
 function text = conditionLabel(options)
 % 条件の名前（補正の式・くくり・回帰・λ）
 text = makerLabel(options) + "・" + unitLabel(options);
-if options.regularization ~= "none" && options.lambda > 0
-    text = text + sprintf("・%s λ = %g", upper(options.regularization), options.lambda);
-else
+regularized = options.regularization ~= "none" & options.lambda > 0;
+if ~any(regularized)
     text = text + "・正則化なし";
+elseif all(regularized) && options.regularization(1) == options.regularization(2) && options.lambda(1) == options.lambda(2)
+    text = text + sprintf("・%s λ = %g", upper(options.regularization(1)), options.lambda(1));
+else
+    text = text + sprintf("・λ X %g・Y %g", options.lambda .* regularized);
 end
+end
+
+function text = waferOrderLabel(options)
+% Wafer 成分の説明
+text = "なし";
+if options.waferOrder > 0
+    text = sprintf("%d次", options.waferOrder);
+end
+end
+
+function text = axisRegressionLabel(options, a)
+% 軸の回帰の説明（例："Huber c = 1.35・L2 λ = 0.1"）
+names = struct("ols", "最小二乗", "huber", "Huber", "lad", "LAD");
+text = string(names.(options.loss(a)));
+if options.loss(a) == "huber"
+    text = text + sprintf(" c = %g", options.huberTuning(a));
+end
+if options.regularization(a) == "none" || options.lambda(a) == 0
+    text = text + "・正則化なし";
+else
+    text = text + sprintf("・%s λ = %g", upper(options.regularization(a)), options.lambda(a));
+end
+end
+
+function data = conditionDetails(first, second)
+% 「2つの条件を並べる」の条件の内容：Wafer レベル・Shot 共通・Shot ごとの補正の内容と、回帰のハイパーパラメータ
+items = ["Wafer レベルの補正"; "Shot 共通の補正"; "Shot ごとの補正"; "補正のくくり"; "外周の式"; "使う項（dx）"; "使う項（dy）"; ...
+    "X の損失関数"; "Y の損失関数"; "X の Huber の c"; "Y の Huber の c"; "X の正則化"; "Y の正則化"; "X の λ"; "Y の λ"; ...
+    "X の正則化の次数"; "Y の正則化の次数"];
+data = table(items, conditionValues(first), conditionValues(second), 'VariableNames', ["項目", "基準（左）", "比べる条件（右）"]);
+end
+
+function values = conditionValues(options)
+% 1つの条件の内容（conditionDetails の項目の順）
+perShot = options.unit == "shot";
+wafer = "なし";
+if options.waferOrder > 0
+    wafer = sprintf("%d次の多項式", options.waferOrder);
+end
+common = makerLabel(options);
+shotText = "なし";
+if perShot
+    common = "なし";
+    shotText = makerLabel(options);
+end
+outer = "分けない";
+if options.outerMaker ~= "none"
+    outer = sprintf("%s（半径 %g mm 以上）", makerLabel(options), options.outerRadiusMm);
+end
+terms = alignest.highOrderTerms(options.maker, options.excludedTerms);
+counts = arrayfun(@(name) sprintf("%d / %d 項", nnz(terms.used & terms.axis == name), nnz(terms.axis == name)), ["dx", "dy"]);
+lossNames = struct("ols", "最小二乗", "huber", "Huber", "lad", "LAD");
+[lossText, tuningText, regularizationText, lambdaText, orderText] = deal(strings(1, 2));
+orders = {options.penaltyOrders, options.penaltyOrdersY};
+for a = 1:2
+    lossText(a) = lossNames.(options.loss(a));
+    tuningText(a) = ternary(options.loss(a) == "huber", sprintf("%g", options.huberTuning(a)), "—");
+    regularized = options.regularization(a) ~= "none";
+    regularizationText(a) = ternary(regularized, upper(options.regularization(a)), "なし");
+    lambdaText(a) = ternary(regularized, sprintf("%g", options.lambda(a)), "—");
+    orderText(a) = ternary(regularized, strjoin(string(orders{a}), "・") + "次", "—");
+end
+values = [wafer; common; shotText; unitLabel(options); outer; counts(:); lossText(:); tuningText(:); regularizationText(:); ...
+    lambdaText(:); orderText(:)];
 end
 
 function text = regularizationLabel(kind)
@@ -1033,8 +1103,8 @@ count = @(table_, verdict) nnz(table_.verdict == verdict);
 outer = mine(mine.zone == "外周", :);
 inner = mine(mine.zone == "内周", :);
 text = sprintf("左：条件 %d、右：条件 %d。", first, second) + statisticText(axisName, statistic, tolerance) + ...
-    "右の図の Shot の枠：青の実線 = 改善、橙の破線 = 悪化。○ = 外れ値とみなした点（ロバスト回帰が、残差が大きいため" + ...
-    "影響を半分未満に弱めた点）。" + ...
+    "右の図の Shot の枠：青の実線 = 改善、橙の破線 = 悪化。○ = 外れ値とみなした点、◇（左の図）= 比べる条件だけが外れ値と" + ...
+    "みなした点。" + ...
     sprintf("%s：改善 %d・悪化 %d・同じ %d Shot（外周 %d / %d、内周 %d / %d）。", waferLabel, count(mine, "改善"), ...
     count(mine, "悪化"), count(mine, "同じ"), count(outer, "改善"), count(outer, "悪化"), count(inner, "改善"), ...
     count(inner, "悪化")) + sprintf("すべての Wafer：改善 %d・悪化 %d・同じ %d Shot。", count(shots, "改善"), ...

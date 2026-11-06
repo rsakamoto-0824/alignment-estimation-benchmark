@@ -17,11 +17,13 @@ function options = highOrderOptions(settings)
 %                     点の数が最も少ない組に合わせて、すべての組で使う項を k の小さい順に減らす）・"reduceGroup"（その組だけ
 %                     項を減らす）・"skip"（その組は補正しない）。どれでも k1〜k6 も決まらない組は補正しない
 %   options.vifThreshold：「VIF で選ぶ」のしきい値（すべての項の VIF がこの値より小さくなるまで高次項を外す）
+%   回帰の設定は X（dx の式）・Y（dy の式）で別にできる（loss・huberTuning・regularization・lambda は [X, Y] の並び。1つなら
+%   X・Y で同じ。結果は 1 × 2 に揃える。正則化をかける次数は penaltyOrders が X、penaltyOrdersY が Y。-1 なら X と同じ）
 %   options.loss："ols"（最小二乗）・"huber"（Huber の M 推定）・"lad"（最小絶対偏差）。Huber・LAD はロバスト回帰
 %   options.huberTuning：Huber の定数 c（残差が c × 尺度 を超える点の重みを下げる）
 %   options.regularization：正則化の種類。"none"（なし）・"l2"（係数の二乗に罰則。係数を小さくする）・"l1"（係数の絶対値に
 %                           罰則。効かない項の係数を 0 にする）。以前の設定の l2（true・false）は "l2"・"none" と読む
-%   options.penaltyOrders：正則化をかける項の次数（1〜6 の行ベクトル。定数 k1・k2 と Wafer 成分にはかけない）
+%   options.penaltyOrders・penaltyOrdersY：正則化をかける項の次数（1〜6 の行ベクトル。定数 k1・k2 と Wafer 成分にはかけない）
 %   options.lambda：正則化の強さ λ（列をそろえた係数に対して）
 %   options.description：画面・Excel に出す説明
 %   以前の設定（highOrder が無い・項目が足りない）は、alignest.defaultSettings の値を使う。
@@ -57,9 +59,15 @@ if isfield(source, "l2") && isscalar(source.l2)
 end
 options.maker = lower(string(options.maker));
 options.unit = string(options.unit);
-options.loss = lower(string(options.loss));
-options.regularization = lower(string(options.regularization));
+options.loss = axisPair(lower(string(options.loss)));
+options.regularization = axisPair(lower(string(options.regularization)));
+options.huberTuning = axisPair(options.huberTuning);
+options.lambda = axisPair(options.lambda);
 options.penaltyOrders = reshape(double(options.penaltyOrders), 1, []);
+if isequal(options.penaltyOrdersY, -1)
+    options.penaltyOrdersY = options.penaltyOrders;
+end
+options.penaltyOrdersY = reshape(double(options.penaltyOrdersY), 1, []);
 options.excludedTerms = reshape(double(options.excludedTerms), 1, []);
 options.termSets = reshape(string(options.termSets), [], 1);
 options.outerMaker = lower(string(options.outerMaker));
@@ -84,27 +92,30 @@ end
 if ~isscalar(options.vifThreshold) || ~isfinite(options.vifThreshold) || options.vifThreshold <= 1
     error('alignest:highOrderVif', 'VIF のしきい値は 1 より大きい数にしてください（よく使う値は 5〜10）。');
 end
-if ~isscalar(options.loss) || ~any(options.loss == LOSS_NAMES)
+if numel(options.loss) ~= 2 || ~all(ismember(options.loss, LOSS_NAMES))
     error('alignest:highOrderLoss', '回帰の損失関数は %s のいずれかです: %s', strjoin(LOSS_NAMES, "・"), ...
         strjoin(options.loss, "・"));
 end
-if ~isscalar(options.huberTuning) || ~isfinite(options.huberTuning) || options.huberTuning <= 0
+if ~isnumeric(options.huberTuning) || numel(options.huberTuning) ~= 2 || any(~isfinite(options.huberTuning) | options.huberTuning <= 0)
     error('alignest:highOrderHuber', 'Huber の定数 c は正の数にしてください（よく使う値は 1.345）。');
 end
-if ~isscalar(options.lambda) || ~isfinite(options.lambda) || options.lambda < 0
+if ~isnumeric(options.lambda) || numel(options.lambda) ~= 2 || any(~isfinite(options.lambda) | options.lambda < 0)
     error('alignest:highOrderLambda', '正則化の強さ λ は 0 以上の数にしてください。');
 end
-if ~isscalar(options.regularization) || ~any(options.regularization == REGULARIZATION_NAMES)
+if numel(options.regularization) ~= 2 || ~all(ismember(options.regularization, REGULARIZATION_NAMES))
     error('alignest:highOrderRegularization', '正則化は none（なし）・l2・l1 のいずれかです: %s', ...
         strjoin(options.regularization, "・"));
 end
-orders = options.penaltyOrders;
-if any(~isfinite(orders) | orders ~= round(orders) | orders < 1 | orders > MAX_PENALTY_ORDER)
-    error('alignest:highOrderPenaltyOrders', '正則化をかける次数は 1〜%d の整数にしてください。', MAX_PENALTY_ORDER);
-end
-options.penaltyOrders = unique(orders);
-if options.regularization ~= "none" && isempty(options.penaltyOrders)
-    error('alignest:highOrderPenaltyOrders', '正則化をかける次数を1つ以上選んでください（かけないときは正則化を「なし」に）。');
+orderFields = ["penaltyOrders", "penaltyOrdersY"];
+for a = 1:2
+    orders = options.(orderFields(a));
+    if any(~isfinite(orders) | orders ~= round(orders) | orders < 1 | orders > MAX_PENALTY_ORDER)
+        error('alignest:highOrderPenaltyOrders', '正則化をかける次数は 1〜%d の整数にしてください。', MAX_PENALTY_ORDER);
+    end
+    options.(orderFields(a)) = unique(orders);
+    if options.regularization(a) ~= "none" && isempty(orders)
+        error('alignest:highOrderPenaltyOrders', '正則化をかける次数を1つ以上選んでください（かけないときは正則化を「なし」に）。');
+    end
 end
 for terms = {options.excludedTerms, options.outerExcludedTerms}
     if any(~isfinite(terms{1}) | terms{1} < 1 | terms{1} ~= round(terms{1}))
@@ -134,19 +145,36 @@ elseif options.unit == "shot" && options.waferOrder > 0
 elseif options.waferOrder > 0
     unitText = unitText + sprintf("（Wafer 成分 %d 次は Wafer で共通にして一緒に求める）", options.waferOrder);
 end
-lossText = LOSS_LABELS(LOSS_NAMES == options.loss);
-if options.loss == "huber"
-    lossText = lossText + sprintf("（c = %.4g）", options.huberTuning);
+regressionText = strings(1, 2);
+for a = 1:2
+    lossText = LOSS_LABELS(LOSS_NAMES == options.loss(a));
+    if options.loss(a) == "huber"
+        lossText = lossText + sprintf("（c = %.4g）", options.huberTuning(a));
+    end
+    l2Text = "正則化なし";
+    if options.regularization(a) ~= "none" && options.lambda(a) > 0
+        l2Text = sprintf("%s 正則化（%sの項、λ = %.4g）", upper(options.regularization(a)), ...
+            orderText(options.(orderFields(a))), options.lambda(a));
+    end
+    regressionText(a) = lossText + "、" + l2Text;
 end
-l2Text = "正則化なし";
-if options.regularization ~= "none" && options.lambda > 0
-    l2Text = sprintf("%s 正則化（%sの項、λ = %.4g）", upper(options.regularization), ...
-        orderText(options.penaltyOrders), options.lambda);
+if regressionText(1) == regressionText(2)
+    regressionText = regressionText(1);
+else
+    regressionText = "X は " + regressionText(1) + "、Y は " + regressionText(2);
 end
-options.description = formulaText + "、" + unitText + "、" + lossText + "、" + l2Text;
+options.description = formulaText + "、" + unitText + "、" + regressionText;
 if options.shortage ~= "reduceAll"
     % 初期の扱い（全体の項を減らす）は、以前の説明と同じにするため書かない
     options.description = options.description + "、点が足りない組：" + SHORTAGE_LABELS(SHORTAGE_NAMES == options.shortage);
+end
+end
+
+function values = axisPair(values)
+% 回帰の設定を [X, Y] の並びにする（1つなら X・Y で同じ）
+values = reshape(values, 1, []);
+if isscalar(values)
+    values = [values, values];
 end
 end
 

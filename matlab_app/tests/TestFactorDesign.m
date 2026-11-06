@@ -22,16 +22,12 @@ classdef TestFactorDesign < matlab.unittest.TestCase
                         testCase.verifyEqual(size(basis, 2), 5);
                     case "basis_int"
                         testCase.verifyEqual(size(basis, 2), 10);
-                    case {"mixed", "mixed_int"}
-                        testCase.verifyEqual(size(basis, 2), 3);
                 end
                 if mode == "additive_int"
                     testCase.verifyEqual(string({gp.categorical.name}), ...
                         ["scan", "mark", "row", "scan_mark", "scan_row", "mark_row"]);
                     expected = double(mark(:) == mark(:).' & row(:) == row(:).');
                     testCase.verifyEqual(gp.categorical(6).trainSame, expected);
-                elseif mode == "mixed_int"
-                    testCase.verifyEqual(string({gp.categorical.name}), ["mark", "scan_mark", "scan_row", "mark_row"]);
                 end
             end
         end

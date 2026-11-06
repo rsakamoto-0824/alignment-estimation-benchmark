@@ -1,5 +1,5 @@
 classdef (Abstract) Display < appui.Core
-    %DISPLAY 「9. ヘルプ」タブとメニュー「設定」：画面の色（ライト・ダーク）、文字の大きさ、凡例の位置、Scan 方向の向きと色、
+    %DISPLAY メニュー「ヘルプ」とメニュー「設定」：画面の色（ライト・ダーク）、文字の大きさ、凡例の位置、Scan 方向の向きと色、
     %   画面（モニター）の大きさに合わせる窓、乱数の種。
     %   AlignmentEstimationApp（画面の本体）の一部。画面の部品は Controls、データ・結果は Core のプロパティに持つ。
     %   ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
@@ -180,6 +180,28 @@ classdef (Abstract) Display < appui.Core
             setScanStyle(app, scan1Up=defaults.scan1Up, scan1Color=defaults.scan1Color, scan2Color=defaults.scan2Color);
         end
 
+        function view = openHelp(app)
+            %OPENHELP メニュー「ヘルプ」：ヘルプ（help/help.html。機能編・技術編。exe にも入れる）を別の窓で開く（開いていれば
+            %   前に出す）。view はヘルプを出している画面の部品。
+            WINDOW_SIZE = [1040, 720];
+            if isempty(app.HelpWindow) || ~isvalid(app.HelpWindow)
+                corner = app.Figure.Position(1:2) + (app.Figure.Position(3:4) - WINDOW_SIZE) / 2;
+                app.HelpWindow = uifigure('Name', 'ヘルプ', 'Position', [max(corner, 1), WINDOW_SIZE], ...
+                    'Color', app.Palette.background, 'Visible', app.Figure.Visible);
+                grid = uigridlayout(app.HelpWindow, [1, 1], 'Padding', 0);
+                % help フォルダは、このファイルのある +appui の1つ上（アプリのフォルダ）にある
+                helpFile = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'help', 'help.html');
+                app.Controls.helpView = uihtml(grid, 'HTMLSource', helpFile, 'Data', helpData(app));
+                if ~isfile(helpFile)
+                    app.Controls.helpView.HTMLSource = ['<p style="font-family:sans-serif">ヘルプのファイルが見つかりません：', ...
+                        char(helpFile), '</p>'];
+                end
+            elseif app.Figure.Visible == "on"
+                figure(app.HelpWindow);
+            end
+            view = app.Controls.helpView;
+        end
+
         function captureTab(app, tabName, filePath)
             %CAPTURETAB タブを表示して画面の画像を保存する（説明資料・動作確認用）。
             % 画面の配置が描き終わるまで少し待ってから保存する（すぐ保存すると古い配置の絵になることがある）
@@ -193,18 +215,13 @@ classdef (Abstract) Display < appui.Core
     end
 
     methods (Access = {?appui.Core})
-        % ================= 9. ヘルプ =================
-        function buildHelpTab(app)
-            % 用語・推定の手法・カーネル・Overlay 補正の式の説明（help/help.html。exe にも入れる）を出す
-            grid = uigridlayout(app.Tabs.help, [1, 1], 'Padding', 0);
-            % help フォルダは、このファイルのある +appui の1つ上（アプリのフォルダ）にある
-            helpFile = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'help', 'help.html');
-            c.helpView = uihtml(grid, 'HTMLSource', helpFile, 'Data', helpData(app));
-            if ~isfile(helpFile)
-                c.helpView.HTMLSource = ['<p style="font-family:sans-serif">ヘルプのファイルが見つかりません：', ...
-                    char(helpFile), '</p>'];
+        % ================= ヘルプ =================
+        function updateHelpView(app)
+            % 開いているヘルプの窓の色と文字の大きさを、今の表示の設定に合わせる
+            if ~isempty(app.HelpWindow) && isvalid(app.HelpWindow)
+                app.HelpWindow.Color = app.Palette.background;
+                app.Controls.helpView.Data = helpData(app);
             end
-            app.Controls = mergeStruct(app.Controls, c);
         end
 
         % ================= 画面の色（ライト・ダーク） =================
@@ -250,10 +267,9 @@ classdef (Abstract) Display < appui.Core
                         object.ForegroundColor = new.text;
                     case 'axes'
                         themeAxes(object, old, new);
-                    case 'uihtml'
-                        object.Data = helpData(app);
                 end
             end
+            updateHelpView(app);
             % 色に依存する表の印（座標の単位の警告・各列の最良）を付け直す
             fillUnitTable(app);
             if ~isempty(app.Results)
@@ -310,7 +326,7 @@ classdef (Abstract) Display < appui.Core
             grid = uigridlayout(dialog, [3, 3], 'RowHeight', {'fit', 'fit', 'fit'}, 'ColumnWidth', {'fit', '1x', 'fit'}, ...
                 'Padding', 14, 'RowSpacing', 10, 'BackgroundColor', palette.background);
             note = label(grid, ['学習 Shot の選び方（ランダム・I 最適・D 最適・Mark 単位の交換法の始め方）と、' ...
-                '「8. Mark配置の最適化」（乱数の Shot の形・配置を探す始め方）で使う乱数の種。同じ種なら同じ結果になります。'], ...
+                '「8. Mark配置の最適化」（乱数 Shot・配置を探す始め方）で使う乱数の種。同じ種なら同じ結果になります。'], ...
                 1, [1, 3]);
             note.FontColor = palette.text;
             seedLabel = label(grid, '乱数の種', 2, 1);
@@ -447,7 +463,7 @@ classdef (Abstract) Display < appui.Core
             end
             applyResponsiveLayout(app);
             styleAxes(app, findall(app.Figure, 'Type', 'axes'));
-            app.Controls.helpView.Data = helpData(app);
+            updateHelpView(app);
         end
 
         function refreshTabFonts(app, tab)

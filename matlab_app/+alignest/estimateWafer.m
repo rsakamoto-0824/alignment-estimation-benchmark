@@ -124,8 +124,7 @@ switch method.family
                     out.converged = out.converged && result.optimizerConverged && result.backfitConverged;
                     out.extra = addGprExtra(out.extra, result, axisNames(k));
                 case "TPS"
-                    grid = linspace(options.tpsLog10Lambda(1), options.tpsLog10Lambda(2), options.tpsLog10Lambda(3));
-                    model = alignest.models.tpsSetup(features(train, :), features(test, :), grid);
+                    model = alignest.models.tpsSetup(features(train, :), features(test, :), tpsLambdaGrid(method.variant, options));
                     fitSpatial = @(values) alignest.models.tpsFitPredict(model, values, returnSmoother=method.factorMode == "backfit");
                     result = fitWithFactors(fitSpatial, unit, train, test, y, method, settings, axisNames(k));
                     out.aux(k) = result.log10Lambda;
@@ -193,6 +192,18 @@ out.outlierIndex = find(outlier);
 out.seconds = toc(timer);
 out.timing = struct("outliers", outlierSeconds, "model", modelSeconds, ...
     "prepare", max(out.seconds - outlierSeconds - modelSeconds, 0));
+end
+
+function grid = tpsLambdaGrid(variant, options)
+% TPS の平滑化の候補（nλ の常用対数）：GCV で選ぶ・なし（補間）・指定した λ
+INTERPOLATION_LOG10 = -12;   % 平滑化なし：固有値の平均のこの倍率（0 にすると計算が不安定な点の組があるので、ごく小さくする）
+if variant == "tps"
+    grid = linspace(options.tpsLog10Lambda(1), options.tpsLog10Lambda(2), options.tpsLog10Lambda(3));
+elseif variant == "interpolation"
+    grid = INTERPOLATION_LOG10;
+else
+    grid = str2double(extractAfter(variant, "lambda:"));
+end
 end
 
 function result = fitWithFactors(fitSpatial, unit, train, test, y, method, settings, axisName)

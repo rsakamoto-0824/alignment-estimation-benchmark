@@ -223,12 +223,12 @@ classdef TestShotHighOrderLevels < matlab.unittest.TestCase
             testCase.verifyNotEmpty(app.HighOrderCheck.shortage(1).dropped);
             app.setHighOrderSettings(unit="shot", shortage="reduceGroup", outerMaker="asml");
             testCase.verifyEqual(app.Settings.highOrder.shortage, "reduceGroup");
-            % 外周の式を分けると、表に内周・外周の項を並べ、外周の項も選べる
-            testCase.verifyEqual(c.highOrderTermTable.ColumnName{2}, '範囲');
-            zones = string(c.highOrderTermTable.Data(:, 2));
-            testCase.verifyEqual(unique(zones, 'stable').', ["内周", "外周"]);
-            outerRow = find(zones == "外周" & string(c.highOrderTermTable.Data(:, 4)) == "k9", 1);
-            c.highOrderTermTable.CellEditCallback(c.highOrderTermTable, struct("Indices", [outerRow, 1], ...
+            % 外周の式を分けると、使う項のチェックを内周・外周の列に分ける（範囲の列は無い）
+            testCase.verifyEqual(c.highOrderTermTable.ColumnName(1:2).', {'内周', '外周'});
+            testCase.verifyFalse(any(strcmp(c.highOrderTermTable.ColumnName, '範囲')));
+            terms = c.highOrderTermTable.UserData;
+            outerRow = find(terms.kOuter == 9, 1);
+            c.highOrderTermTable.CellEditCallback(c.highOrderTermTable, struct("Indices", [outerRow, 2], ...
                 "NewData", false));
             testCase.verifyEqual(app.Settings.highOrder.outerExcludedTerms, 9);
             testCase.verifyEqual(app.Settings.highOrder.excludedTerms, zeros(1, 0), "内周の式は変わらない");
@@ -243,6 +243,22 @@ classdef TestShotHighOrderLevels < matlab.unittest.TestCase
             testCase.verifyError(@() app.setHighOrderTermUsed(9, false, "outer"), 'alignest:highOrderTerms');
             result = app.computeHighOrder(1:2);
             testCase.verifyTrue(contains(result.description, "その組だけ項を減らす"));
+            % マップ：Shot を重ねる図の共分散楕円・長さの目安、グリッドの補正前の値・残差、1つの Shot
+            c.highOrderMapEllipse.Value = 2;
+            app.drawHighOrderMap(1, "stack", "residual", "vector", "", "single");
+            testCase.verifyNotEmpty(findobj(c.highOrderAxes, 'Type', 'patch'), "共分散楕円");
+            testCase.verifyTrue(any(contains(string(get(findobj(c.highOrderAxes, 'Type', 'text'), 'String')), " nm")), "長さの目安");
+            for name = ["value", "residual"]
+                summary = app.drawHighOrderMap(1, "stack", name, "grid", "", "single");
+                testCase.verifyGreaterThan(summary.n, 0);
+            end
+            shotNo = c.highOrderMapShot.ItemsData{2};
+            summary = app.drawHighOrderMap(1, "shot", "residual", "vector", "", "side", shotNo);
+            testCase.verifyEqual(string(c.highOrderMapShot.Enable), "on");
+            testCase.verifyEqual(summary.valueLabel, "補正前の値");
+            testCase.verifyTrue(contains(string(c.highOrderAxes.Title.String), "補正前の値"));
+            testCase.verifyNotEmpty(c.highOrderAxes3.Children, "補正前・補正量・残差を並べる");
+            app.drawHighOrderMap(1, "wafer", "residual", "vector", "", "single");
             % 補正の評価：残差の列であることを名前に書く
             names = string(c.highOrderSummaryTable.Data.Properties.VariableNames);
             testCase.verifyEqual(names(3:6), ["補正前の値|｜平均｜+3σ [nm]", "Shot ごとの1次の残差|｜平均｜+3σ [nm]", ...

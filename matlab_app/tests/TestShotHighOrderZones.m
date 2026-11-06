@@ -168,59 +168,6 @@ classdef TestShotHighOrderZones < matlab.unittest.TestCase
             testCase.verifyTrue(all(isfinite(comparison.highOrderInner) & isfinite(comparison.highOrderOuter)));
         end
 
-        function residualDecompositionAddsUp(testCase)
-            % 残差 = Wafer 線形（0.5 + 0.004·Xc）+ Shot 共通（0.003·x·y）+ Shot ごとの並進 + 雑音：成分と項の分を取り戻し、
-            % 成分を足すと残差、二乗和の割合を足すと 100%
-            points = waferFrom(testCase, struct("dx", zeros(0, 2), "dy", zeros(0, 2)));
-            points.wafer = repmat("W1", height(points), 1);
-            Xc = points.Xc;
-            clean = 0.5 + 0.004 * Xc + 0.003 * points.localX .* points.localY;
-            points.residualX = clean;
-            points.residualY = 0.002 * points.localY;
-            decomposition = alignest.decomposeHighOrderResidual(points);
-            terms = decomposition.terms(decomposition.terms.wafer == "W1" & decomposition.terms.axis == "X", :);
-            coefficient = @(level, k) terms.coefficient(terms.level == level & terms.k == k);
-            testCase.verifyEqual(coefficient("Wafer 線形", 1), 0.5, 'AbsTol', 1e-9);
-            testCase.verifyEqual(coefficient("Wafer 線形", 3), 0.004, 'AbsTol', 1e-12);
-            testCase.verifyEqual(coefficient("Shot 共通", 9), 0.003, 'AbsTol', 1e-12);
-            levels = decomposition.levels(decomposition.levels.wafer == "W1" & decomposition.levels.axis == "X", :);
-            testCase.verifyEqual(levels.level.', ["Wafer 線形", "Shot 共通", "Shot", "残り"]);
-            testCase.verifyEqual(sum(levels.share), 100, 'AbsTol', 1e-9);
-            testCase.verifyLessThan(levels.share(3) + levels.share(4), 1e-9);
-            yTerms = decomposition.terms(decomposition.terms.wafer == "W1" & decomposition.terms.axis == "Y" & ...
-                decomposition.terms.level == "Shot 共通", :);
-            testCase.verifyEqual(yTerms.share(yTerms.k == 4), 100, 'AbsTol', 1e-9, "dy の k4（y）");
-            % Shot ごとの並進と雑音：Shot 成分は k1、残りは雑音
-            rng(3);
-            shift = randn(max(points.shotNo), 1);
-            points.residualX = clean + shift(points.shotNo) + 0.05 * randn(height(points), 1);
-            noisy = alignest.decomposeHighOrderResidual(points);
-            components = noisy.components;
-            total = components.waferLinear + components.common + components.shot + components.rest;
-            testCase.verifyEqual(total(:, 1), points.residualX, 'AbsTol', 1e-9);
-            shotTerms = noisy.terms(noisy.terms.axis == "X" & noisy.terms.level == "Shot" & noisy.terms.wafer == "W1", :);
-            testCase.verifyEqual(shotTerms.k.', [1, 3, 5], "Shot 成分の項は k1〜k6（dx は k1・k3・k5）");
-            [~, largest] = max(shotTerms.share);
-            testCase.verifyEqual(shotTerms.k(largest), 1);
-            noisyLevels = noisy.levels(noisy.levels.wafer == "W1" & noisy.levels.axis == "X", :);
-            testCase.verifyEqual(noisyLevels.rms(4), 0.05, 'RelTol', 0.15, "残りは雑音の大きさ");
-            testCase.verifyTrue(startsWith(shotTerms.largest(largest), "Shot "));
-            % 「すべての Wafer」は Wafer ごとの二乗和の合計
-            two = [points; points];
-            two.wafer(height(points) + 1:end) = "W2";
-            pair = alignest.decomposeHighOrderResidual(two);
-            all_ = pair.levels(pair.levels.wafer == "すべての Wafer" & pair.levels.axis == "X", :);
-            testCase.verifyEqual(all_.ss, 2 * noisyLevels.ss, 'RelTol', 1e-9);
-            % Shot 成分の項は Shot の点の数より少なくする（4点の Shot では 3項まで。残りが残る）
-            four = points(ismember(points.localX, [-12, 12]) & ismember(points.localY, [-15, 15]), :);
-            limited = alignest.decomposeHighOrderResidual(four, shotTerms="same");
-            used = limited.terms(limited.terms.wafer == "W1" & limited.terms.level == "Shot" & ...
-                limited.terms.axis == "X" & limited.terms.nUnits > 0, :);
-            testCase.verifyLessThanOrEqual(height(used), 3);
-            fourLevels = limited.levels(limited.levels.wafer == "W1" & limited.levels.axis == "X", :);
-            testCase.verifyGreaterThan(fourLevels.share(4), 0);
-        end
-
         function overlaidHistogramsKeepTheNarrowShape(testCase)
             % 広がりの違う値を重ねるとき、区間の幅を最も狭い分布に合わせる（狭い分布の形がつぶれない）。横軸の名前・題名
             figureHandle = figure('Visible', 'off');
@@ -248,9 +195,9 @@ classdef TestShotHighOrderZones < matlab.unittest.TestCase
             testCase.verifyEqual(string(single.DisplayName), "高次補正の残差");
         end
 
-        function appShowsZonesPairsHistogramsAndDecomposition(testCase)
+        function appShowsZonesPairsAndHistograms(testCase)
             % 画面：外周の式（式の全項・保存した項の組み合わせ）、Wafer 成分5次と Shot ごと、内周・外周に分けた表、くくりの選択、
-            % 残差の成分のマップと外周の境界の円、ヒストグラム、残差の成分分解、3つの回帰の条件、2つの条件を並べる（一覧で
+            % 外周の境界の円、ヒストグラム、3つの回帰の条件、2つの条件を並べる（一覧で
             % 2つ選ぶ）、書き出し、設定ファイル
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
@@ -274,25 +221,22 @@ classdef TestShotHighOrderZones < matlab.unittest.TestCase
             testCase.verifyTrue(contains(string(c.highOrderSummaryZoneInfo.Text), "120 mm"));
             testCase.verifyEqual(height(c.highOrderCoefficientTable.Data), 10, "Wafer × 内周・外周");
             testCase.verifyEqual(string(c.highOrderMapGroup.Items), ["すべての点", "内周", "外周"]);
-            summary = app.drawHighOrderMap(1, "wafer", "decompShot", "vector", "", "single");
+            summary = app.drawHighOrderMap(1, "wafer", "residual", "vector", "", "single");
             testCase.verifyGreaterThan(summary.n, 0);
             testCase.verifyNotEmpty(findall(c.highOrderAxes, 'Type', 'line', 'LineStyle', '-.'), "外周の境界の円");
             testCase.verifyTrue(contains(string(c.highOrderMapInfo.Text), "外周の境界"));
             % ヒストグラム：外周の Shot の補正前の値・Shot ごとの1次・高次補正の残差（どちらの補正もできた点）
-            histogram_ = app.drawHighOrderHistogram("run", "X", 0, "外周");
+            histogram_ = app.drawHighOrderHistogram("run", 0, "外周");
             outerPoints = result.points(result.points.zone == "外周", :);
-            testCase.verifyEqual(histogram_.n, repmat(nnz(isfinite(outerPoints.residualX + ...
-                outerPoints.linearResidualX)), 3, 1));
-            testCase.verifyEqual(histogram_.name.', ["補正前の値", "Shot ごとの1次の残差", "高次補正の残差"]);
-            one = app.drawHighOrderHistogram("run", "Y", 2, "all", 3);
-            testCase.verifyEqual(height(one), 1);
-            % 残差の成分分解
-            decomposition = app.showHighOrderDecomposition(0, "dx", "custom", "linear");
-            testCase.verifyNotEmpty(decomposition);
-            testCase.verifyEqual(string(c.highOrderDecompositionTable.Data{1, 1}), "Wafer 線形（計）");
-            testCase.verifyNotEmpty(c.highOrderDecompositionAxes.Children);
-            formula = app.showHighOrderDecomposition(1, "dy", "formula", "same");
-            testCase.verifyNotEmpty(formula.terms);
+            histogramX = histogram_(histogram_.axis == "X", :);
+            testCase.verifyEqual(histogramX.n, repmat(nnz(isfinite(outerPoints.residualX + ...
+                outerPoints.linearResidualX)), 5, 1));
+            testCase.verifyEqual(histogramX.name.', ["補正前の値", "Shot ごとの1次の残差", "Wafer 高次補正だけの残差", ...
+                "Wafer 高次補正＋Shot 共通補正の残差", "高次補正の残差"]);
+            testCase.verifyEqual(unique(histogram_.axis).', ["X", "Y"], "X・Y を並べる");
+            testCase.verifyNotEmpty(c.highOrderHistogramAxes(2).Children);
+            one = app.drawHighOrderHistogram("run", 2, "all", 3);
+            testCase.verifyEqual(height(one), 2);
             % Shot ごと + Wafer 成分（先に引く）
             app.setHighOrderSettings(unit="shot", waferOrder=2, outerMaker="none");
             perShot = app.computeHighOrder(1);
@@ -325,18 +269,20 @@ classdef TestShotHighOrderZones < matlab.unittest.TestCase
             testCase.verifyNotEmpty(c.highOrderPairAxes2.Children);
             app.drawHighOrderPair(2, 2);
             testCase.verifyTrue(contains(string(c.highOrderPairInfo.Text), "違う条件"));
-            c.highOrderConditionList.Value = {3, 2};
-            c.highOrderConditionList.ValueChangedFcn(c.highOrderConditionList, []);   % 一覧で選んだときと同じ
+            c.highOrderConditionTable.CellSelectionCallback([], struct("Indices", [3, 2; 2, 2]));   % 表で選んだときと同じ
             testCase.verifyEqual([c.highOrderPairReference.Value, c.highOrderPairOther.Value], [2, 3], ...
-                "一覧で2つ選ぶと、番号の小さい方が基準");
-            fromConditions = app.drawHighOrderHistogram("comparison", "X", 0, "all");
-            testCase.verifyEqual(height(fromConditions), 3);
+                "表で2つ選ぶと、番号の小さい方が基準");
+            details = c.highOrderPairConditions.Data;
+            testCase.verifyEqual(string(details.Properties.VariableNames), ["項目", "基準（左）", "比べる条件（右）"]);
+            testCase.verifyTrue(all(ismember(["Wafer レベルの補正", "Shot 共通の補正", "Shot ごとの補正", "X の λ", "Y の Huber の c"], details.("項目"))));
+            fromConditions = app.drawHighOrderHistogram("comparison", 0, "all");
+            testCase.verifyEqual(height(fromConditions), 6);
             file = [tempname, '.xlsx'];
             app.exportHighOrderTo(file);
             sheets = string(sheetnames(file));
             delete(file);
             testCase.verifyEqual(sheets.', ["説明", "補正の評価", "補正の比較", "Shotごとの比較", "補正値", ...
-                "Shotごとの補正値", "項とVIF", "残差の成分", "残差の成分の項", "点ごとの値"]);
+                "Shotごとの補正値", "項とVIF", "点ごとの値"]);
             % 設定ファイル：外周の設定が残り、読むと欄も変わる。組み合わせを消しても外周の式の設定は残す
             settingsFile = [tempname, '.json'];
             alignest.saveSettings(app.Settings, settingsFile);

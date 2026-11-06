@@ -160,21 +160,21 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyEqual(numel(app.Controls.previewWafer.Items), 5 + 1, ...
                 "はじめは全 Wafer の平均（ほかの単位は「平均・楕円の単位」で選ぶ）");
             settings = app.Settings;
-            settings.methods = alignest.recommendedMethods("recommended");   % 推奨の組み合わせ（9 手法。初期設定は GPR だけ）
+            settings.methods = alignest.recommendedMethods("recommended");   % 推奨の組み合わせ（8 手法。初期設定は GPR だけ）
             settings.sampling.nShots = [10, 20];   % 並びだけを変えた設定も、開始・終了・刻みに直して表示する
             app.setSettings(settings);
             testCase.verifyEqual([app.Controls.nShotsStart.Value, app.Controls.nShotsEnd.Value, ...
                 app.Controls.nShotsStep.Value], [10, 20, 10]);
             testCase.verifyTrue(contains(app.Controls.nShotsList.Text, "10, 20（2 通り）"));
-            testCase.verifyTrue(contains(app.Controls.countLabel.Text, "90 回"));
+            testCase.verifyTrue(contains(app.Controls.countLabel.Text, "80 回"));
             results = app.runEvaluationNow(false);
-            testCase.verifyEqual(height(results.table), 5 * 2 * 9);
-            testCase.verifyEqual(size(app.Controls.summaryTable.Data), [9, 3]);
-            testCase.verifyEqual(size(app.Controls.comparisonTable.Data, 1), 8 * 2);
+            testCase.verifyEqual(height(results.table), 5 * 2 * 8);
+            testCase.verifyEqual(size(app.Controls.summaryTable.Data), [8, 3]);
+            testCase.verifyEqual(size(app.Controls.comparisonTable.Data, 1), 7 * 2);
             testCase.verifyTrue(any(contains(string(app.Controls.summaryTable.Data(:)), "★")));
             app.showMap(2, "I最適 20 Shot", 3, "vector");
             testCase.verifyTrue(contains(app.Controls.mapInfo.Text, "RMSE"));
-            app.showMap(1, "I最適 10 Shot", 5, "Y");
+            app.showMap(1, "I最適 10 Shot", 4, "Y");
             testCase.verifyTrue(contains(app.Controls.mapInfo.Text, "TPS"));
             file = [tempname, '.xlsx'];
             cleanup = onCleanup(@() delete(file));
@@ -1157,6 +1157,7 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyEqual(app.Figure.Color, [0.13, 0.14, 0.16]);
             testCase.verifyEqual(app.Controls.mapAxes(1).Color, [0.10, 0.11, 0.13]);
             testCase.verifyEqual(string(app.Controls.themeDark.Checked), "on");
+            app.openHelp();
             testCase.verifyEqual(app.Controls.helpView.Data.theme, "dark");
             app.showMap(2, "D最適 15 Shot", 1, "X", "estimate");
             testCase.verifyEqual(app.Controls.mapAxes(2).Color, [0.10, 0.11, 0.13], "描き直してもダークモードの色");
@@ -1164,7 +1165,8 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyEqual(app.Controls.mapAxes(1).Color, [1, 1, 1]);
             testCase.verifyError(@() app.setTheme("blue"), 'alignest:theme');
             testCase.verifyTrue(endsWith(string(app.Controls.helpView.HTMLSource), "help.html"));
-            testCase.verifyEqual(app.Tabs.help.Title, '9. ヘルプ');
+            testCase.verifyEqual(string(app.Controls.helpMenu.Text), "ヘルプ");
+            testCase.verifyFalse(isfield(app.Tabs, 'help'));
         end
     end
 end

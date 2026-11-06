@@ -1,20 +1,23 @@
-function [candidates, shots] = markCandidates(wafers, coordinates, required)
+function [candidates, shots] = markCandidates(wafers, coordinates, required, excluded)
 %MARKCANDIDATES 「8. Mark配置の最適化」の候補の Mark（Shot 内の位置）と、Shot ごとの値を作る。
 %   [candidates, shots] = alignest.markCandidates(wafers)                 % 計測データの点から
 %   [candidates, shots] = alignest.markCandidates([], coordinates)        % 座標だけ（画面で入力した座標。値は無い）
 %   [candidates, shots] = alignest.markCandidates(..., required)          % 必ず計測する Mark の座標（点の数 × 2 [mm]）
+%   [candidates, shots] = alignest.markCandidates(..., required, excluded)  % 計測しない Mark の座標（残差の評価には使う）
 %   wafers：alignest.shotHighOrder と同じ Wafer ごとの構造体の配列（label・points。points は localX・localY（Shot 内の座標
 %   [mm]）・shotNo・valueX・valueY（値の無い点は NaN）の列を使う）。coordinates：候補の Mark の Shot 内の座標（点の数 × 2 [mm]）。
 %   同じ位置（Shot 内の座標を mm の小数点以下 POSITION_DIGITS 桁で丸めて同じ）は1つの候補にまとめる（同じ Shot で同じ位置の
 %   点が2つ以上あれば値は平均）。候補の番号は、上の行（Y の大きい方）から、左（X の小さい方）から順に付ける。
 %   candidates：候補ごとの表。no（番号）・xMm・yMm（Shot 内の座標 [mm]）・nShots（X か Y の値がある Shot の数。座標だけなら 0）・
-%   required（必ず計測する Mark。required の座標と同じ位置）。
+%   required（必ず計測する Mark。required の座標と同じ位置）・excluded（計測しない Mark。excluded の座標と同じ位置で、必ず計測する
+%   Mark でないもの）。
 %   shots：Shot ごとの値。label（"Wafer の名前 Shot 番号"。Shot の数 × 1）・wafer・shotNo・valueX・valueY（候補の数 × Shot の数
 %   [nm]。値の無い点は NaN）。X・Y のどちらの値も無い Shot は除く。座標だけなら Shot は 0。
 arguments
     wafers
     coordinates double = zeros(0, 2)
     required double = zeros(0, 2)
+    excluded double = zeros(0, 2)
 end
 POSITION_DIGITS = 4;   % 同じ位置とみなす Shot 内の座標の桁（mm の小数点以下。0.1 µm。alignest.highOrderVif と同じ）
 shots = struct("label", strings(0, 1), "wafer", strings(0, 1), "shotNo", zeros(0, 1), "valueX", zeros(0, 0), ...
@@ -52,6 +55,10 @@ isRequired = false(n, 1);
 if ~isempty(required)
     isRequired = ismember(positions, round(required, POSITION_DIGITS), 'rows');
 end
+isExcluded = false(n, 1);
+if ~isempty(excluded)
+    isExcluded = ismember(positions, round(excluded, POSITION_DIGITS), 'rows') & ~isRequired;
+end
 nShots = zeros(n, 1);
 if ~isempty(rowLabels)
     % Shot（Wafer と shotNo の組）ごとの値。同じ Shot・同じ位置の点は平均
@@ -68,8 +75,8 @@ if ~isempty(rowLabels)
     shots.valueY = valueY(:, hasValue);
     nShots = sum(isfinite(shots.valueX) | isfinite(shots.valueY), 2);
 end
-candidates = table((1:n).', positions(:, 1), positions(:, 2), nShots, isRequired, 'VariableNames', ...
-    ["no", "xMm", "yMm", "nShots", "required"]);
+candidates = table((1:n).', positions(:, 1), positions(:, 2), nShots, isRequired, isExcluded, 'VariableNames', ...
+    ["no", "xMm", "yMm", "nShots", "required", "excluded"]);
 end
 
 function means = meanByCell(position, shot, values, nPositions, nShots)

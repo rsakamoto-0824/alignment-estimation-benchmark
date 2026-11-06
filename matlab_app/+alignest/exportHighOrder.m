@@ -1,23 +1,21 @@
-function exportHighOrder(filePath, result, notes, comparison, decomposition, pair)
+function exportHighOrder(filePath, result, notes, comparison, pair)
 %EXPORTHIGHORDER Shot 高次補正の評価（alignest.shotHighOrder の結果）を Excel ファイル（.xlsx）に書き出す。
 %   alignest.exportHighOrder(filePath, result)
 %   alignest.exportHighOrder(filePath, result, notes)   % notes：「説明」シートに足す行（[項目, 内容] の2列の文字列）
 %   alignest.exportHighOrder(filePath, result, notes, comparison)   % 補正の比較（alignest.compareHighOrderConditions）も書く
-%   alignest.exportHighOrder(..., decomposition)   % 残差の成分分解（alignest.decomposeHighOrderResidual）も書く
 %   alignest.exportHighOrder(..., pair)   % 2つの条件の Shot ごとの比較（shots：alignest.compareHighOrderShots）も書く
 %   シート：「説明」（作成日時・補正の式と回帰の設定・外周の Shot・画面のメッセージ・notes）、「補正の評価」（Wafer・軸・
 %   範囲（すべて・内周・外周）ごとの |平均|+3σ と高次補正の |残差| の 95% 点・中央値）、「補正の比較」（comparison がある
 %   とき）、「Shotごとの比較」（pair があるとき）、「補正値」（Wafer 成分の係数と k パラメータを、Wafer 低次・Wafer 高次・
 %   Shot 共通 低次・Shot 共通 高次・Shot 毎 低次・Shot 毎 高次の順に。alignest.highOrderLevels）、「Shotごとの補正値」（1行 =
-%   1 Shot に同じ順で横に並べた表。alignest.highOrderShotTable）、「項とVIF」（補正の式の項・使ったか・VIF）、「残差の成分」
-%   「残差の成分の項」（decomposition があるとき）、「点ごとの値」（値・k の組・内周か外周か・補正量・残差（高次補正・Shot
+%   1 Shot に同じ順で横に並べた表。alignest.highOrderShotTable）、「項とVIF」（補正の式の項・使ったか・VIF）、
+%   「点ごとの値」（値・k の組・内周か外周か・補正量・残差（高次補正・Shot
 %   ごとの1次・Wafer 高次補正だけ・Wafer 高次補正＋Shot 共通補正）・1点抜きの予測の誤差・重み）。
 arguments
     filePath (1, 1) string
     result struct
     notes (:, 2) string = strings(0, 2)
     comparison = []
-    decomposition = []
     pair = []
 end
 [~, ~, extension] = fileparts(filePath);
@@ -97,17 +95,6 @@ writetable(table(terms.zone, terms.axis, terms.k, terms.term, terms.order, terms
     terms.vifUsed, terms.vifRemoved, terms.removalOrder, 'VariableNames', ["式の範囲", "式", "k", "項", "次数", "使う", ...
     "外さない項(k1〜k6)", "VIF(式のすべての項)", "VIF(使う項)", "VIFで選ぶと外れる項のVIF", "外れる順番"]), ...
     filePath, 'Sheet', '項とVIF');
-if ~isempty(decomposition)
-    levels = decomposition.levels;
-    writetable(table(levels.wafer, levels.axis, levels.level, levels.n, levels.ss, levels.rms, levels.share, ...
-        'VariableNames', ["Wafer", "軸", "成分", "点の数", "二乗和[nm^2]", "RMS[nm]", "割合[%]"]), filePath, ...
-        'Sheet', '残差の成分');
-    parts = decomposition.terms(decomposition.terms.nUnits > 0, :);   % 点の配置で決まらない項は書かない
-    writetable(table(parts.wafer, parts.axis, parts.level, parts.k, parts.term, parts.coefficient, parts.spread, ...
-        parts.nUnits, parts.ss, parts.rms, parts.share, parts.largest, 'VariableNames', ["Wafer", "軸", "成分", "k", ...
-        "項", "係数(平均)", "係数の標準偏差", "係数を求めた数(Wafer・Shot)", "二乗和[nm^2]", "RMS[nm]", "割合[%]", ...
-        "その項の分が最も大きいShot"]), filePath, 'Sheet', '残差の成分の項');
-end
 points = result.points;
 writetable(table(points.wafer, points.source, points.name, points.shotNo, points.direction, points.rowParity, ...
     points.group, points.shotRadius, points.zone, points.x, points.y, points.localX, points.localY, points.valueX, ...

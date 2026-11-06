@@ -1,7 +1,7 @@
 function methods = recommendedMethods(selection)
 %RECOMMENDEDMETHODS 比べる手法の選び方。selection = "recommended"（既定）・"default"・"all"・"none"。
 %   recommended：前回の模擬データ1000枚の評価で各系統の代表になった設定と、GPR の質的変数の主な扱い方
-%     GPR matern52（X,Y,半径）× 質的変数（使わない・同時推定・加法カーネル・混合）、TPS、Kriging exponential、
+%     GPR matern52（X,Y,半径）× 質的変数（使わない・同時推定・加法カーネル）、TPS、Kriging exponential、
 %     GAM、XY5次多項式、RT モデル K=5。説明変数は X,Y,半径。
 %   default：アプリの初期設定（alignest.defaultSettings）。GPR だけ（recommended の GPR と同じ設定。ほかの手法は外す）。
 if nargin < 1
@@ -10,10 +10,12 @@ end
 methods.featureSets = "XYR";
 methods.gpr.enabled = true;
 methods.gpr.kernels = "matern52";
-methods.gpr.factorModes = ["none", "basis", "additive", "mixed"];
+methods.gpr.factorModes = ["none", "basis", "additive"];
 methods.gpr.maternNu = 2;  % カーネル matern・ardmatern（ν を指定）を選んだときの ν（複数なら ν ごとに比べる）
 methods.tps.enabled = true;
 methods.tps.factorModes = "none";
+methods.tps.smoothing = "gcv";      % 平滑化：gcv（GCV で λ を選ぶ）・none（なし＝補間）・fixed（log10Lambda の λ）。複数なら比べる
+methods.tps.log10Lambda = 0;         % smoothing = fixed の λ の常用対数（固有値の平均に対する倍率）
 methods.rbf.enabled = false;
 methods.rbf.factorModes = "none";   % none（質的変数なし）・backfit（Backfitting）、両方なら比べる
 methods.kriging.ordinary = true;

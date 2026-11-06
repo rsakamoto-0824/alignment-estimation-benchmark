@@ -68,9 +68,16 @@ classdef TestMarkLayout < matlab.unittest.TestCase
             testCase.verifyEqual(jump(~b.outlier), zeros(nnz(~b.outlier), 1), 'AbsTol', 1e-12);
             testCase.verifyEqual(a.halfSizeMm, [12, 15]);
             % 大きさ：1次だけ（u・v）なら、形は端で係数の大きさ
-            d = alignest.randomShotShapes(x, y, shapes=200, seed=1, orderSigmaNm=[0, 2, 0, 0, 0, 0], noiseNm=0);
+            d = alignest.randomShotShapes(x, y, shapes=200, seed=1, orderSigmaNm=[0, 2, 0, 0, 0, 0, 0, 0], noiseNm=0);
             corner = x == 12 & y == 15;
-            testCase.verifyEqual(std(d.trueX(corner, :)), 2 * sqrt(2), 'RelTol', 0.15);
+            testCase.verifyEqual(std(d.trueX(corner, :)), sqrt(5), 'RelTol', 0.15, "選ばれる項の数の平均は 1.25");
+            testCase.verifyTrue(all(any(d.coefficientsX ~= 0, 1)), "どの形にも項がある");
+            testCase.verifyTrue(all(d.coefficientsX(d.powers(:, 1) + d.powers(:, 2) ~= 1, :) == 0, 'all'), "大きさ 0 の次数は使わない");
+            testCase.verifyTrue(any(sum(d.coefficientsX ~= 0, 1) == 1) && any(sum(d.coefficientsX ~= 0, 1) == 2), "項を乱数で選ぶ");
+            [fieldX, ~] = alignest.randomShapeField(a, 3, x, y);
+            testCase.verifyEqual(fieldX, a.trueX(:, 3), 'AbsTol', 1e-9, "ヒートマップは形と同じ値");
+            seven = alignest.randomShotShapes(x, y, shapes=5, seed=1, orderSigmaNm=[0, 0, 0, 0, 0, 0, 0, 1]);
+            testCase.verifyEqual(unique(sum(seven.powers, 2)).', 0:7, "7次まで");
             testCase.verifyEqual(d.measuredX, d.trueX);
         end
 
@@ -181,7 +188,7 @@ classdef TestMarkLayout < matlab.unittest.TestCase
             cleanup = onCleanup(@() delete(app));
             c = app.Controls;
             testCase.verifyEqual(app.Tabs.markLayout.Title, '8. Mark配置の最適化');
-            testCase.verifyEqual(app.Tabs.help.Title, '9. ヘルプ');
+            testCase.verifyFalse(isfield(app.Tabs, 'help'), "ヘルプはメニュー");
             testCase.verifyTrue(startsWith(string(c.markOptInputInfo.Text), "⚠"), "座標が無いと知らせる");
             candidates = app.makeMarkLayoutGrid([24, 30], [5, 7]);
             testCase.verifyEqual(height(candidates), 35);
@@ -192,7 +199,15 @@ classdef TestMarkLayout < matlab.unittest.TestCase
             app.setMarkLayoutSettings(maker="canon", loss="ols", regularization="none", maxMarks=12, shapes=20, ...
                 outlierPercent=5);
             testCase.verifyEqual(app.Settings.markLayout.outlierPercent, 5);
+            testCase.verifyError(@() app.optimizeMarkLayout(), 'alignest:markLayoutShapes', "生成の前は計算しない");
+            generated = app.generateMarkLayoutShapes();
+            testCase.verifyEqual(c.markOptShapeIndex.Value, generated.representative);
+            testCase.verifyEqual(c.markOptOutputs.SelectedTab, c.markOptShapeTab);
+            testCase.verifyNotEmpty(findobj(c.markOptShapeAxes(2), 'Type', 'image'), "X 成分のヒートマップ");
+            testCase.verifyNotEmpty(findobj(c.markOptShapeAxes(3), 'Type', 'image'), "Y 成分のヒートマップ");
+            testCase.verifyNotEmpty(findobj(c.markOptShapeAxes(1), 'Type', 'quiver'), "ベクトル場");
             study = app.optimizeMarkLayout();
+            testCase.verifyEqual(study.shapes.trueX, generated.trueX, "生成した形で評価する");
             testCase.verifyEqual(study.counts, (8:12).');
             testCase.verifyEqual(numel(findobj(c.markOptChartAxes, 'Type', 'line')), 4, "X・Y の線と ★ 2つ");
             testCase.verifyEqual(height(c.markOptResultTable.Data), 6);
@@ -300,15 +315,18 @@ classdef TestMarkLayout < matlab.unittest.TestCase
             testCase.verifyFalse(isfield(app.Settings.markLayout, "seed"));
             app.makeMarkLayoutGrid([24, 30], [5, 7]);
             app.setMarkLayoutSettings(values="random", shapes=3, maker="canon", loss="ols", maxMarks=9);
+            app.generateMarkLayoutShapes();
             study = app.optimizeMarkLayout();
             app.setRandomSeed(7);
             testCase.verifyEqual(app.Settings.sampling.seed, 7);
             testCase.verifyTrue(contains(string(c.randomSeedItem.Text), "7"));
             testCase.verifyTrue(startsWith(string(c.markOptChartInfo.Text), "⚠"), "種を変えたら計算し直す知らせ");
+            testCase.verifyError(@() app.optimizeMarkLayout(), 'alignest:markLayoutShapes', "種を変えたら生成し直す");
+            app.generateMarkLayoutShapes();
             shapes = app.drawMarkLayoutShape(2);
             expected = alignest.randomShotShapes(app.MarkLayoutInput.candidates.xMm, app.MarkLayoutInput.candidates.yMm, ...
                 shapes=2, seed=7, noiseNm=app.Settings.markLayout.noiseNm);
-            testCase.verifyEqual(shapes.trueX, expected.trueX, "図の形も同じ種");
+            testCase.verifyEqual(shapes.trueX(:, 1:2), expected.trueX, "図の形も同じ種");
             again = app.optimizeMarkLayout();
             testCase.verifyEqual(again.options.seed, 7);
             testCase.verifyNotEqual(again.evaluation.meanPlus3Sigma, study.evaluation.meanPlus3Sigma);
@@ -329,6 +347,7 @@ classdef TestMarkLayout < matlab.unittest.TestCase
             c = app.Controls;
             app.makeMarkLayoutGrid([24, 30], [5, 7]);
             app.setMarkLayoutSettings(maker="canon", loss="ols", regularization="none", maxMarks=12, shapes=5);
+            app.generateMarkLayoutShapes();
             study = app.optimizeMarkLayout(@(~, ~) false);
             testCase.verifyTrue(study.cancelled);
             testCase.verifyEqual(study.counts, 8);
@@ -473,6 +492,108 @@ classdef TestMarkLayout < matlab.unittest.TestCase
             table_.CellSelectionCallback([], struct("Indices", [3, 1]));
             c.markOptDeleteRows.ButtonPushedFcn([], []);
             testCase.verifyEqual(size(table_.Data, 1), 34);
+        end
+
+        function unmeasuredMarksAreEvaluatedButNotChosen(testCase)
+            % 計測しない Mark は配置に選ばないが、残差の評価には使う。I 効率の 100% は計測できる Mark をすべて計測したとき
+            [gx, gy] = meshgrid(linspace(-12, 12, 5), linspace(-15, 15, 5));
+            [candidates, shots] = alignest.markCandidates([], [gx(:), gy(:)], [0, 0], [12, 15; -12, 15]);
+            testCase.verifyEqual(nnz(candidates.excluded), 2);
+            settings = alignest.defaultSettings();
+            settings.markLayout = struct("maker", "canon", "loss", "ols", "regularization", "none", "values", "random", ...
+                "shapes", 5, "starts", 2);
+            study = alignest.markLayoutStudy(candidates, shots, settings);
+            testCase.verifyFalse(any(study.layouts.selected(candidates.excluded, :), 'all'));
+            testCase.verifyEqual(study.counts(end), 23);
+            testCase.verifyEqual(study.layouts.efficiency(end), 100, 'AbsTol', 1e-6);
+            testCase.verifyEqual(study.layouts.dEfficiency(end), 100, 'AbsTol', 1e-6);
+            testCase.verifyEqual(study.evaluation.count(end), 23);
+            testCase.verifyTrue(all(study.maps.count(candidates.excluded, :) > 0, 'all'), "残差の評価には使う");
+            testCase.verifyTrue(any(contains(study.messages, "計測しない Mark 2 点")));
+            testCase.verifyTrue(all(diff(study.layouts.dCriterion) < 0), "Mark を増やすと D 基準は下がる");
+            % 必ず計測の指定が優先
+            [both, ~] = alignest.markCandidates([], [gx(:), gy(:)], [0, 0], [0, 0]);
+            testCase.verifyFalse(any(both.excluded));
+            % 画面：表のチェック・図のクリック・右の図・表のチェックは片方だけ
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            c = app.Controls;
+            app.makeMarkLayoutGrid([24, 30], [5, 5]);
+            testCase.verifyEqual(string(c.markOptCandidateTable.ColumnName{4}), "計測済み|Shot 数");
+            testCase.verifyEqual(string(c.markOptCandidateTable.Data{1, 4}), "—");
+            testCase.verifyNotEmpty(findobj(c.markOptCandidateAxes, 'Type', 'scatter'), "右の図");
+            app.setMarkLayoutRequired(3, true);
+            app.setMarkLayoutExcluded([1, 3], true);
+            input = app.MarkLayoutInput;
+            testCase.verifyEqual(find(input.candidates.excluded).', [1, 3], "計測しないにすると必ず計測は外れる");
+            testCase.verifyFalse(input.candidates.required(3));
+            table_ = c.markOptCandidateTable;
+            data = table_.Data;
+            data{5, 5} = true;
+            table_.Data = data;
+            table_.CellEditCallback([], struct("Indices", [5, 5], "NewData", true));
+            testCase.verifyTrue(app.MarkLayoutInput.candidates.required(5));
+            data = table_.Data;
+            data{5, 6} = true;
+            table_.Data = data;
+            table_.CellEditCallback([], struct("Indices", [5, 6], "NewData", true));
+            candidates = app.MarkLayoutInput.candidates;
+            testCase.verifyEqual([candidates.required(5), candidates.excluded(5)], [false, true], "両方は選べない");
+            % クリックで 候補 → 必ず計測 → 計測しない → 候補
+            click = struct("IntersectionPoint", [candidates.xMm(10), candidates.yMm(10), 0]);
+            markers = findobj(c.markOptCandidateAxes, 'Type', 'scatter', 'DisplayName', '候補の Mark');
+            markers.ButtonDownFcn([], click);
+            testCase.verifyTrue(app.MarkLayoutInput.candidates.required(10));
+            markers = findobj(c.markOptCandidateAxes, 'Type', 'scatter', 'DisplayName', '候補の Mark');
+            markers.ButtonDownFcn([], click);
+            testCase.verifyTrue(app.MarkLayoutInput.candidates.excluded(10));
+            markers = findobj(c.markOptCandidateAxes, 'Type', 'scatter', 'DisplayName', '候補の Mark');
+            markers.ButtonDownFcn([], click);
+            testCase.verifyFalse(app.MarkLayoutInput.candidates.excluded(10));
+            app.setMarkLayoutSettings(maker="canon", loss="ols", regularization="none", maxMarks=10, shapes=5);
+            app.generateMarkLayoutShapes();
+            study = app.optimizeMarkLayout();
+            testCase.verifyEqual(height(study.candidates), 25);
+            % 横軸を変える。配置の図の右に Shot スタックマップ。選んだ配置の書き出し
+            for name = ["efficiency", "criterionI", "count", "efficiencyD", "criterionD"]
+                data = app.drawMarkLayoutChart("rms", "all", name);
+                testCase.verifyEqual(height(data), numel(study.counts));
+            end
+            testCase.verifyEqual(data.xValue, study.layouts.dCriterion);
+            testCase.verifyEqual(string(c.markOptChartAxes.XLabel.String), "D 基準");
+            app.drawMarkLayoutMap(9);
+            testCase.verifyNotEmpty(findobj(c.markOptStackAxes, 'Type', 'quiver'));
+            testCase.verifyNotEmpty(findobj(c.markOptStackAxes, 'Type', 'patch'), "共分散楕円");
+            file = [tempname, '.xlsx'];
+            app.exportMarkSelectionTo(file, 9);
+            fileCleanup = onCleanup(@() delete(file));
+            testCase.verifyEqual(string(sheetnames(file)).', ["配置", "説明"]);
+            testCase.verifyEqual(height(readtable(file, 'Sheet', '配置', 'VariableNamingRule', 'preserve')), 9);
+        end
+
+        function regressionCanDifferByAxis(testCase)
+            % X・Y で別の回帰。「7. の式を写す」も軸ごと
+            [gx, gy] = meshgrid(linspace(-12, 12, 5), linspace(-15, 15, 5));
+            [candidates, shots] = alignest.markCandidates([], [gx(:), gy(:)]);
+            settings = alignest.defaultSettings();
+            settings.markLayout = struct("maker", "canon", "loss", ["ols", "huber"], "regularization", ["none", "l2"], ...
+                "lambda", [0, 0.2], "penaltyOrders", 2, "penaltyOrdersY", 2:3, "values", "random", "shapes", 5, ...
+                "starts", 2, "maxMarks", 10);
+            options = alignest.markLayoutOptions(settings);
+            testCase.verifyEqual(options.loss, ["ols", "huber"]);
+            testCase.verifyTrue(contains(options.description, "X は") && contains(options.description, "Y は"));
+            study = alignest.markLayoutStudy(candidates, shots, settings);
+            testCase.verifyNotEmpty(study.evaluation);
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            c = app.Controls;
+            app.setHighOrderSettings(loss=["ols", "lad"], lambda=[0.1, 0.3], penaltyOrders=2:4, penaltyOrdersY=[3, 5]);
+            testCase.verifyEqual(string({c.highOrderRegression.loss.Value}), ["ols", "lad"]);
+            testCase.verifyEqual(app.Settings.highOrder.penaltyOrdersY, [3, 5]);
+            app.copyHighOrderFormula();
+            testCase.verifyEqual(app.Settings.markLayout.lambda, [0.1, 0.3]);
+            testCase.verifyEqual(app.Settings.markLayout.penaltyOrdersY, [3, 5]);
+            testCase.verifyEqual(string({c.markOptRegression.loss.Value}), ["ols", "lad"]);
         end
     end
 end

@@ -140,9 +140,9 @@ end
 if height(interacting) > 0
     pairs = unique(interacting.factorA + " × " + interacting.factorB, 'stable');
     lines(end + 1, 1) = "⚠ 交互作用あり：" + strjoin(pairs, "、") + " → GPR の質的変数の扱いで「同時推定＋交互作用」" + ...
-        "「加法カーネル＋交互作用」「混合＋交互作用」も比べてください（交互作用の無い扱いでは組み合わせの差が残ります）。";
+        "「加法カーネル＋交互作用」も比べてください（交互作用の無い扱いでは組み合わせの差が残ります）。";
 else
-    lines(end + 1, 1) = "交互作用はみられません → 交互作用の無い扱い（同時推定・加法カーネル・混合・Backfitting・GAM）で" + ...
+    lines(end + 1, 1) = "交互作用はみられません → 交互作用の無い扱い（同時推定・加法カーネル・Backfitting・GAM）で" + ...
         "足りる見込みです。";
 end
 unclear = tests(tests.verdict == "調べられない", :);
