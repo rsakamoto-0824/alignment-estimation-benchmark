@@ -242,8 +242,8 @@ classdef (Abstract) ResultsTab < appui.Core
             c.timingTable.ColumnName = cellstr(["手法", "合計 [秒]", breakdown.labels + " [秒]"]);
             c.timingTable.ColumnWidth = [{scaledPixels(app, app.METHOD_COLUMN_WIDTH), scaledPixels(app, 90)}, ...
                 repmat({'auto'}, 1, numel(breakdown.stages))];
-            c.timingInfo.Text = sprintf("%s｜%s｜学習点 X %d・Y %d、評価点 X %d・Y %d｜", unit.label, spec(1).label, ...
-                breakdown.nTrain, breakdown.nTest) + c.timingInfo.UserData;
+            c.timingInfo.Text = sprintf("%s｜%s｜学習点 X %d・Y %d、評価点 X %d・Y %d", unit.label, spec(1).label, ...
+                breakdown.nTrain, breakdown.nTest);
         end
 
         function summary = drawScatter(app, methodIndex, group, unitIndex, colorBy)
@@ -282,8 +282,7 @@ classdef (Abstract) ResultsTab < appui.Core
                     categories, "Y");
             end
             styleAxes(app, c.scatterAxes, app.AXES_FONT_SIZE);
-            c.scatterInfo.Text = sprintf(['%s｜%s｜Wafer %d 枚｜色：%s。破線は y = x、赤い線は回帰直線' ...
-                '（推定値 = a + b·実測値）、r は相関係数。'], app.Results.methods(selection.methodIndex).label, ...
+            c.scatterInfo.Text = sprintf('%s｜%s｜Wafer %d 枚｜色：%s。', app.Results.methods(selection.methodIndex).label, ...
                 selection.groups, numel(unitIndex), string(c.scatterColor.Items{strcmp(c.scatterColor.ItemsData, ...
                 c.scatterColor.Value)})) + filterNote(app);
         end
@@ -360,7 +359,7 @@ classdef (Abstract) ResultsTab < appui.Core
             end
             scopeText = sprintf("%s｜%s｜Wafer %d 枚", app.Results.methods(selection.methodIndex).label, selection.groups, ...
                 numel(unitIndex));
-            note = scopeText + filterNote(app) + "。" + c.residualVariableInfo.UserData;
+            note = scopeText + filterNote(app) + "。";
             if ~isempty(strong)
                 note = note + sprintf(" ⚠ |r| ≥ %.1f の説明変数（表の色付きの行）は、残差に傾向が残っています（その" + ...
                     "説明変数を加える・手法を変えることを検討）。", app.RESIDUAL_CORRELATION_NOTICE);
@@ -544,7 +543,7 @@ classdef (Abstract) ResultsTab < appui.Core
             c.compareLayoutTable.Data = rows;
             c.compareLayoutTable.ColumnName = cellstr(["選び方", "列", "学習 Shot 数", "計測 Mark 数", labels(names == metric), ...
                 "標準偏差", "I 基準", "D 基準", "I 効率", "D 効率"]);
-            note = string(c.compareLayoutInfo.UserData);
+            note = "";
             if comparison.Properties.UserData.nTypes < 2
                 note = "⚠ この評価の選び方は1つです。" + note;
             end
@@ -582,11 +581,11 @@ classdef (Abstract) ResultsTab < appui.Core
             registerResponsiveColumn(app, controls, 1);
             registerResponsiveColumn(app, controls, 2);
             label(controls, '指標', 1, 1);
-            label(controls, '集計（Wafer 間）', 1, 2);
-            label(controls, '基準の手法（「基準の手法との比較」で比べる相手）', 1, 3);
+            label(controls, '集計', 1, 2);
+            label(controls, '基準の手法', 1, 3);
             [names, labels] = alignest.metricNames();
             onChange = @(~, ~) app.refreshResults();
-            c.metric = uidropdown(controls, 'Items', cellstr(labels), 'ItemsData', cellstr(names), 'Value', 'RMSE_XY', ...
+            c.metric = uidropdown(controls, 'Items', cellstr(shortMetricLabels(labels)), 'ItemsData', cellstr(names), 'Value', 'RMSE_XY', ...
                 'ValueChangedFcn', onChange);
             place(c.metric, 2, 1);
             [statistics, statisticLabels] = alignest.statisticNames();
@@ -625,11 +624,8 @@ classdef (Abstract) ResultsTab < appui.Core
 
             % 表・グラフ・比較・誤差の分布は、それぞれ画面の幅いっぱいに出す（手法の名前が切れないように）
             c.resultTabs = uitabgroup(grid, 'SelectionChangedFcn', @(~, event) app.onResultTabChanged(event));
-            tableTab = uitab(c.resultTabs, 'Title', '表（手法 × 学習パターン）');
-            tableGrid = uigridlayout(tableTab, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 8);
-            c.tableNote = uilabel(tableGrid, 'WordWrap', 'on', ...
-                'Text', ['各列で最も良い手法に「★」を付け、背景も色づけしています。集計の「ワースト値」は最も悪い Wafer の値、' ...
-                '「95%値」は 95% の Wafer がそれより良い値（誤差は大きい側、R²・改善率は小さい側）です。']);
+            tableTab = uitab(c.resultTabs, 'Title', '表');
+            tableGrid = uigridlayout(tableTab, [1, 1], 'Padding', 8);
             c.summaryTable = uitable(tableGrid, 'RowName', {}, 'ColumnName', {'手法'});
             c.chartTab = uitab(c.resultTabs, 'Title', 'グラフ');
             chartGrid = uigridlayout(c.chartTab, [2, 2], 'RowHeight', {'fit', '1x'}, 'ColumnWidth', {'1x', 380}, 'Padding', 8);
@@ -637,18 +633,18 @@ classdef (Abstract) ResultsTab < appui.Core
             chartControls = uigridlayout(chartGrid, [1, 5], 'ColumnWidth', {'fit', 380, 'fit', 190, 'fit'}, 'Padding', 0);
             place(chartControls, 1, 1);
             label(chartControls, '横軸', 1, 1);
-            c.chartXAxis = uidropdown(chartControls, 'Items', {'学習 Shot 数（学習パターン）', ...
-                'I 基準と D 基準（I 最適計画の評価指標。2つ並べる）'}, 'ItemsData', {'plan', 'criteria'}, ...
+            c.chartXAxis = uidropdown(chartControls, 'Items', {'学習 Shot 数', ...
+                'I 基準と D 基準'}, 'ItemsData', {'plan', 'criteria'}, ...
                 'Tooltip', ['学習 Shot の組の I 基準 tr(M⁻¹) と D 基準 det(M)^(−1/p)（XY 多項式の基準モデル）に対する推定誤差。' ...
                 '点は学習パターンの列ごとの Wafer の集計。基準は Wafer の平均。'], 'ValueChangedFcn', @(~, ~) app.drawChart());
             place(c.chartXAxis, 1, 2);
             label(chartControls, 'エラーバー', 1, 3);
-            c.chartErrorBars = uidropdown(chartControls, 'Items', {'なし', '±1σ（Wafer 間）', '95% 区間（平均）'}, ...
+            c.chartErrorBars = uidropdown(chartControls, 'Items', {'なし', '±1σ', '95% 区間'}, ...
                 'ItemsData', {'none', 'sd', 'ci'}, 'ValueChangedFcn', @(~, ~) app.drawChart(), ...
                 'Tooltip', ['±1σ：Wafer ごとの値（ランダムのくり返しは平均）の標準偏差。95% 区間：Wafer の平均の区間' ...
                 '（± 1.96σ/√Wafer 数）。点の値（平均・中央値など、上の「集計」）を中心に描きます。']);
             place(c.chartErrorBars, 1, 4);
-            c.chartPoints = uicheckbox(chartControls, 'Text', 'Wafer ごとの点（I・D 基準）', ...
+            c.chartPoints = uicheckbox(chartControls, 'Text', 'Wafer ごとの点', ...
                 'ValueChangedFcn', @(~, ~) app.drawChart());
             place(c.chartPoints, 1, 5);
             c.chartPanel = uipanel(chartGrid, 'BorderType', 'none');
@@ -656,7 +652,7 @@ classdef (Abstract) ResultsTab < appui.Core
             c.chartAxesGrid = uigridlayout(c.chartPanel, [1, 2], 'ColumnWidth', {'1x', 0}, 'Padding', 0, 'ColumnSpacing', 8);
             c.chartAxes = uiaxes(c.chartAxesGrid);
             c.chartAxes2 = uiaxes(c.chartAxesGrid, 'Visible', 'off');
-            label(chartGrid, 'グラフに描く手法（Ctrl・Shift で複数選ぶ）', 1, 2);
+            label(chartGrid, 'グラフに描く手法', 1, 2);
             c.chartMethods = uilistbox(chartGrid, 'Items', {}, 'Multiselect', 'on', 'ValueChangedFcn', @(~, ~) app.drawChart());
             place(c.chartMethods, 2, 2);
             compareTab = uitab(c.resultTabs, 'Title', '基準の手法との比較');
@@ -677,7 +673,7 @@ classdef (Abstract) ResultsTab < appui.Core
             place(c.compareLayoutMethod, 1, 2);
             label(layoutControls, '横軸', 1, 3);
             c.compareLayoutXAxis = uidropdown(layoutControls, 'Items', {'計測する Mark の数', '学習 Shot 数', ...
-                'D 効率（全計測に対する）', 'I 効率（全計測に対する）'}, 'ItemsData', {'marks', 'shots', 'efficiencyD', ...
+                'D 効率', 'I 効率'}, 'ItemsData', {'marks', 'shots', 'efficiencyD', ...
                 'efficiencyI'}, 'Enable', 'off', 'ValueChangedFcn', @(~, ~) app.drawLayoutComparison(), ...
                 'Tooltip', ['計測する Mark の数：Shot 単位と Mark 単位の計画を同じ計測の手間で比べる。学習 Shot 数：Shot 単位の' ...
                 '計画どうしを比べる（Mark 単位の計画は全 Shot を計測するので右端に寄る）。D 効率・I 効率：全計測に対する' ...
@@ -685,7 +681,7 @@ classdef (Abstract) ResultsTab < appui.Core
             place(c.compareLayoutXAxis, 1, 4);
             label(layoutControls, 'エラーバー', 1, 5);
             [errorKinds, errorLabels] = alignest.errorBarKinds();
-            c.compareLayoutErrorBar = uidropdown(layoutControls, 'Items', cellstr(errorLabels), ...
+            c.compareLayoutErrorBar = uidropdown(layoutControls, 'Items', cellstr(plainLabels(errorLabels)), ...
                 'ItemsData', cellstr(errorKinds), 'Enable', 'off', 'ValueChangedFcn', @(~, ~) app.drawLayoutComparison(), ...
                 'Tooltip', ['評価点ごとに、Wafer ごとの値のばらつきを縦の線で描きます。標準偏差：Wafer 間のばらつき。' ...
                 '95% 信頼区間：平均の確からしさ（正規近似。集計が平均以外のときも同じ幅を目安として描く）。' ...
@@ -697,9 +693,7 @@ classdef (Abstract) ResultsTab < appui.Core
                 '計測 Mark 数', '指標', '標準偏差', 'I 基準', 'D 基準', 'I 効率', 'D 効率'}, ...
                 'ColumnWidth', {110, 140, 75, 75, 'auto', 70, 65, 65, 60, 60});
             place(c.compareLayoutTable, 2, 2);
-            layoutNote = ['「2. 評価の設定」の選び方を2つ以上選んで評価すると、選び方ごとの線（Excel で指定したパターンは点）で比べられます' ...
-                '（指標と Wafer の集計は上の「指標」「集計」）。I 基準・D 基準は小さいほど良い計画（Wafer の平均）。'];
-            c.compareLayoutInfo = uilabel(layoutGrid, 'WordWrap', 'on', 'Text', layoutNote, 'UserData', string(layoutNote));
+            c.compareLayoutInfo = uilabel(layoutGrid, 'WordWrap', 'on', 'Text', '');
             place(c.compareLayoutInfo, 3, [1, 2]);
 
             analysisTab = uitab(c.resultTabs, 'Title', '推定値と誤差の分布');
@@ -708,8 +702,8 @@ classdef (Abstract) ResultsTab < appui.Core
             analysisControls = uigridlayout(analysisGrid, [2, 6], 'ColumnWidth', {'1x', 150, 220, 'fit', 300, 'fit'}, ...
                 'RowHeight', {'fit', app.ANALYSIS_METHOD_LIST_HEIGHT}, 'Padding', 0);
             arrayfun(@(column) registerResponsiveColumn(app, analysisControls, column), [2, 3, 5]);
-            label(analysisControls, '手法（複数選ぶと並べて比べる）', 1, 1);
-            label(analysisControls, '学習パターン（列）', 1, 2);
+            label(analysisControls, '手法', 1, 1);
+            label(analysisControls, '学習パターン', 1, 2);
             label(analysisControls, 'Wafer', 1, 3);
             label(analysisControls, 'Excel に書き出す範囲', 1, 5);
             c.analysisMethod = uilistbox(analysisControls, 'Items', {'—'}, 'Multiselect', 'on', 'Tooltip', ...
@@ -723,7 +717,7 @@ classdef (Abstract) ResultsTab < appui.Core
             c.analyze = uibutton(analysisControls, 'Text', '分析する', 'ButtonPushedFcn', @(~, ~) app.onAnalyze());
             place(c.analyze, 2, 4);
             c.estimateScope = uidropdown(analysisControls, 'Items', {'左で選んだ手法・学習パターン・Wafer', ...
-                'すべての手法・学習パターン・Wafer（行が多い）'}, 'ItemsData', {'selected', 'all'});
+                'すべての手法・学習パターン・Wafer'}, 'ItemsData', {'selected', 'all'});
             place(c.estimateScope, 2, 5);
             c.exportEstimates = uibutton(analysisControls, 'Text', '推定値を Excel に書き出す…', ...
                 'ButtonPushedFcn', @(~, ~) app.onExportEstimates());
@@ -732,20 +726,18 @@ classdef (Abstract) ResultsTab < appui.Core
             c.histogramAxes = [uiaxes(c.histogramGrid), uiaxes(c.histogramGrid)];
             c.normalityTable = uitable(analysisGrid, 'RowName', {}, 'ColumnName', {'手法', '軸', '点数', '平均 [nm]', ...
                 '標準偏差 [nm]', '歪度', '尖度（過剰）', 'Shapiro–Wilk W', 'p 値', 'Anderson–Darling A²', 'p 値', ...
-                'Jarque–Bera', 'p 値', '判定（5%）'}, ...
+                'Jarque–Bera', 'p 値', '判定'}, ...
                 'ColumnWidth', {150, 40, 60, 80, 105, 60, 90, 170, 70, 170, 70, 100, 70, 'auto'});
             c.anovaTable = uitable(analysisGrid, 'RowName', {}, 'ColumnName', {'手法', '軸', '質的変数', ...
                 '水準ごとの平均残差 [nm]（点数）', 'F（一元配置）', 'p 値', 'η²', 'F（ほかの変数で調整）', 'p 値', ...
-                '判定（一元配置、5%）・メモ'}, 'ColumnWidth', {150, 40, 125, 340, 100, 70, 55, 150, 70, 'auto'});
-            noteText = ['残差 = 計測値 − 推定値（評価点）。p 値 < 0.05 なら、正規分布から外れている（ANOVA は水準で残差の' ...
-                '平均が違う）と判断。点数が多いと小さなずれでも p 値が小さくなるので、ヒストグラムと合わせて見てください。'];
-            c.analysisNote = uilabel(analysisGrid, 'WordWrap', 'on', 'Text', noteText, 'UserData', string(noteText), ...
+                '判定・メモ'}, 'ColumnWidth', {150, 40, 125, 340, 100, 70, 55, 150, 70, 'auto'});
+            c.analysisNote = uilabel(analysisGrid, 'WordWrap', 'on', 'Text', '', ...
                 'Tooltip', ['評価点は学習しなかった Shot の有効な Mark。選んだ Wafer の評価点をまとめて検定します。' ...
                 'Shapiro–Wilk は 3〜5000 点のときだけ計算し、判定に使います（超えるときは Anderson–Darling）。' ...
                 '計算しなかったときは、表の W の欄に理由（点数など）を出します。' ...
                 '「ほかの変数で調整」は、ほかの質的変数の効果を差し引いた主効果（交互作用なし、Type II）の検定です。']);
             % 残差の箱ひげ図：「推定値と誤差の分布」で分析した残差を、質的変数の水準ごとに X・Y 別に描く（ANOVA の中身を見る）
-            c.boxTab = uitab(c.resultTabs, 'Title', '残差の箱ひげ図（ANOVA）');
+            c.boxTab = uitab(c.resultTabs, 'Title', '残差の箱ひげ図');
             boxGrid = uigridlayout(c.boxTab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 8, 'RowSpacing', 8);
             boxControls = uigridlayout(boxGrid, [1, 3], 'ColumnWidth', {'fit', 260, '1x'}, 'Padding', 0);
             label(boxControls, '質的変数', 1, 1);
@@ -753,9 +745,6 @@ classdef (Abstract) ResultsTab < appui.Core
                 'ValueChangedFcn', @(~, ~) app.onDrawResidualBoxplot(), 'Tooltip', ['「推定値と誤差の分布」の ANOVA と同じ' ...
                 '質的変数（Scan 方向・Mark 番号・Shot 行の奇偶・工程・装置・ロット・その他の列）。']);
             place(c.boxFactor, 1, 2);
-            boxHelp = label(boxControls, ['「推定値と誤差の分布」で「分析する」を押した残差を描きます。箱は四分位範囲、中の線は' ...
-                '中央値、ひげは箱から 1.5 × 四分位範囲まで、外の点は外れ値、◆ は平均（ANOVA は水準の平均の違いを調べる）。'], 1, 3);
-            boxHelp.FontColor = app.Palette.muted;
             boxAxesGrid = uigridlayout(boxGrid, [1, 2], 'Padding', 0, 'ColumnSpacing', 12);
             c.boxAxes = [uiaxes(boxAxesGrid), uiaxes(boxAxesGrid)];
             set(c.boxAxes, 'Visible', 'off');
@@ -765,7 +754,7 @@ classdef (Abstract) ResultsTab < appui.Core
             scatterControls = uigridlayout(scatterGrid, [2, 5], 'ColumnWidth', {'1x', 150, 220, 240, 'fit'}, ...
                 'RowHeight', {'fit', 'fit'}, 'Padding', 0);
             label(scatterControls, '手法', 1, 1);
-            label(scatterControls, '学習パターン（列）', 1, 2);
+            label(scatterControls, '学習パターン', 1, 2);
             label(scatterControls, 'Wafer', 1, 3);
             label(scatterControls, '色分け', 1, 4);
             c.scatterMethod = uidropdown(scatterControls, 'Items', {'—'});
@@ -782,8 +771,7 @@ classdef (Abstract) ResultsTab < appui.Core
             place(c.drawScatterButton, 2, 5);
             c.scatterAxesGrid = uigridlayout(scatterGrid, [1, 2], 'Padding', 0, 'ColumnSpacing', 12);
             c.scatterAxes = [uiaxes(c.scatterAxesGrid), uiaxes(c.scatterAxesGrid)];
-            c.scatterInfo = uilabel(scatterGrid, 'WordWrap', 'on', 'Text', ['評価点（学習しなかった Shot の有効な Mark）の' ...
-                '実測値と推定値。破線は y = x、赤い線は回帰直線（推定値 = a + b·実測値）。r は相関係数。']);
+            c.scatterInfo = uilabel(scatterGrid, 'WordWrap', 'on', 'Text', '');
             % 残差と説明変数：評価点の残差に、説明変数（座標・半径・方位角・Shot 内の位置）の傾向が残っていないかを見る
             c.residualVariableTab = uitab(c.resultTabs, 'Title', '残差と説明変数');
             variableGrid = uigridlayout(c.residualVariableTab, [4, 1], 'RowHeight', {'fit', '1x', 118, 'fit'}, ...
@@ -791,9 +779,9 @@ classdef (Abstract) ResultsTab < appui.Core
             variableControls = uigridlayout(variableGrid, [2, 5], 'ColumnWidth', {'1x', 150, 220, 250, 'fit'}, ...
                 'RowHeight', {'fit', 'fit'}, 'Padding', 0);
             label(variableControls, '手法', 1, 1);
-            label(variableControls, '学習パターン（列）', 1, 2);
+            label(variableControls, '学習パターン', 1, 2);
             label(variableControls, 'Wafer', 1, 3);
-            label(variableControls, '説明変数（横軸）', 1, 4);
+            label(variableControls, '説明変数', 1, 4);
             c.residualVariableMethod = uidropdown(variableControls, 'Items', {'—'});
             place(c.residualVariableMethod, 2, 1);
             c.residualVariableGroup = uidropdown(variableControls, 'Items', {'—'});
@@ -815,11 +803,7 @@ classdef (Abstract) ResultsTab < appui.Core
             set(c.residualVariableAxes, 'Visible', 'off');
             c.residualVariableTable = uitable(variableGrid, 'RowName', {}, 'ColumnName', {'説明変数', 'X の残差：r', ...
                 'p 値', 'Y の残差：r', 'p 値', '点数'}, 'ColumnWidth', {220, 110, 90, 110, 90, 'auto'});
-            variableNote = ['評価点の残差（計測値 − 推定値）と説明変数の散布図。赤い線は回帰直線、黒い線は区間ごとの平均' ...
-                '（曲がった傾向）。r は相関係数（0 に近いほど、その説明変数の傾向は残っていない）、p 値 < 0.05 なら相関がある' ...
-                'と判断。点が多いと小さな相関でも p 値が小さくなるので、r の大きさと図を合わせて見てください。'];
-            c.residualVariableInfo = uilabel(variableGrid, 'WordWrap', 'on', 'Text', variableNote, ...
-                'UserData', string(variableNote));
+            c.residualVariableInfo = uilabel(variableGrid, 'WordWrap', 'on', 'Text', '');
             % 分布の比較：Wafer 全面・学習データ・予測対象の計測値と、予測対象の実測値と推定値
             c.distributionTab = uitab(c.resultTabs, 'Title', '分布の比較');
             distributionGrid = uigridlayout(c.distributionTab, [4, 1], 'RowHeight', {'fit', '1.5x', '1x', 'fit'}, ...
@@ -827,7 +811,7 @@ classdef (Abstract) ResultsTab < appui.Core
             distributionControls = uigridlayout(distributionGrid, [2, 5], 'ColumnWidth', {'1x', 150, 220, 90, 'fit'}, ...
                 'RowHeight', {'fit', 'fit'}, 'Padding', 0);
             label(distributionControls, '手法', 1, 1);
-            label(distributionControls, '学習パターン（列）', 1, 2);
+            label(distributionControls, '学習パターン', 1, 2);
             label(distributionControls, 'Wafer', 1, 3);
             label(distributionControls, '軸', 1, 4);
             c.distributionMethod = uidropdown(distributionControls, 'Items', {'—'});
@@ -851,11 +835,7 @@ classdef (Abstract) ResultsTab < appui.Core
                 'ColumnWidth', {35, 150, 55, 80, 100, 85, 80, 80, 'auto'});
             c.jsTable = uitable(tableGrid, 'RowName', {}, 'ColumnName', {'軸', '比べる分布', 'JS ダイバージェンス', ...
                 '見ること'}, 'ColumnWidth', {35, 270, 120, 'auto'});
-            distributionNote = ['左：Wafer 全面・学習データ・予測対象（学習しなかった Shot の有効な Mark）の計測値。' ...
-                '右：予測対象の実測値と推定値。ヒストグラムは4つに共通の区間の割合。JS ダイバージェンス（Jensen–Shannon、' ...
-                '底 2）は分布の一致性で、0 なら同じ、1 なら重なりなし（同じ区間で求める）。'];
-            c.distributionInfo = uilabel(distributionGrid, 'WordWrap', 'on', 'Text', distributionNote, ...
-                'UserData', string(distributionNote));
+            c.distributionInfo = uilabel(distributionGrid, 'WordWrap', 'on', 'Text', '');
             % 処理時間の内訳：1つの条件の処理を段階（学習パターンの作成・異常値の判定・学習・推論など）に分けて測る
             c.timingTab = uitab(c.resultTabs, 'Title', '処理時間の内訳');
             timingGrid = uigridlayout(c.timingTab, [4, 1], 'RowHeight', {'fit', '1x', 120, 'fit'}, 'Padding', 8, ...
@@ -864,7 +844,7 @@ classdef (Abstract) ResultsTab < appui.Core
                 'RowHeight', {'fit', 66}, 'Padding', 0);
             label(timingControls, 'Wafer', 1, 1);
             label(timingControls, '学習パターン', 1, 2);
-            label(timingControls, '手法（Ctrl・Shift で複数選ぶ）', 1, 3);
+            label(timingControls, '手法', 1, 3);
             label(timingControls, '測る回数', 1, 4);
             c.timingWafer = uidropdown(timingControls, 'Items', {'—'}, 'Enable', 'off');
             place(c.timingWafer, 2, 1);
@@ -882,11 +862,7 @@ classdef (Abstract) ResultsTab < appui.Core
             c.timingAxes = [uiaxes(timingAxesGrid), uiaxes(timingAxesGrid)];
             set(c.timingAxes, 'Visible', 'off');
             c.timingTable = uitable(timingGrid, 'RowName', {}, 'ColumnName', {'手法'});
-            timingNote = ['選んだ Wafer・学習パターン・手法の1回分の処理（学習パターンの作成 → 異常値の判定 → 推定の準備 → ' ...
-                '学習 → 推論 → 評価指標・Overlay 補正の評価）を、評価と同じ関数で測ります（評価の結果は変えません）。' ...
-                '学習と推論は、全評価点を推定した時間と評価点を1点にした時間の差を推論としています。評価では学習パターンを' ...
-                '同じ配置の Wafer・手法で使い回すので、評価全体に占める作成の割合はこれより小さくなります。'];
-            c.timingInfo = uilabel(timingGrid, 'WordWrap', 'on', 'Text', timingNote, 'UserData', string(timingNote));
+            c.timingInfo = uilabel(timingGrid, 'WordWrap', 'on', 'Text', '');
             app.Controls = mergeStruct(app.Controls, c);
         end
 
@@ -992,11 +968,11 @@ classdef (Abstract) ResultsTab < appui.Core
             end
             set([c.boxAxes, c.distributionAxes, c.residualVariableAxes], 'Visible', 'off');
             c.residualVariableTable.Data = {};
-            c.residualVariableInfo.Text = c.residualVariableInfo.UserData;
+            c.residualVariableInfo.Text = '';
             c.boxFactor.Items = {'—'};
             c.boxFactor.Enable = 'off';
             c.boxInfo.Text = '';
-            c.analysisNote.Text = c.analysisNote.UserData;
+            c.analysisNote.Text = '';
         end
 
         function onDrawResidualBoxplot(app)
@@ -1017,7 +993,7 @@ classdef (Abstract) ResultsTab < appui.Core
             [metricList, metricLabels] = alignest.metricNames(isfield(results, "timingRecorded") && results.timingRecorded, ...
                 isfield(results, "overlayEvaluated") && results.overlayEvaluated, resultSpec(app));
             current = string(c.metric.Value);
-            c.metric.Items = cellstr(metricLabels);
+            c.metric.Items = cellstr(shortMetricLabels(metricLabels));
             c.metric.ItemsData = cellstr(metricList);
             c.metric.Value = char(ternary(any(metricList == current), current, "RMSE_XY"));
             c.reference.Items = cellstr(labels);
@@ -1197,9 +1173,7 @@ classdef (Abstract) ResultsTab < appui.Core
             c.comparisonTable.ColumnName = {'手法', '列', ...
                 char("基準との差（" + ternary(unitText == "%", "割合", "差") + "）"), '95% 区間', '基準より良かった割合', 'Wafer 数'};
             c.comparisonTable.ColumnWidth = num2cell(scaledPixels(app, [app.METHOD_COLUMN_WIDTH, 120, 200, 230, 210, 100]));
-            c.comparisonNote.Text = sprintf(['基準の手法：%s。同じ Wafer・同じ学習パターンどうしで比べた差の平均（%s）、' ...
-                'その 95%% 区間、基準より良かった Wafer の割合。'], comparison.Properties.UserData.referenceLabel, ...
-                ternary(unitText == "%", "誤差の差の割合。負なら基準より良い", "差。正なら基準より良い"));
+            c.comparisonNote.Text = sprintf('基準の手法：%s', comparison.Properties.UserData.referenceLabel);
             drawChart(app);
             drawLayoutComparison(app);
         end
@@ -1476,7 +1450,7 @@ classdef (Abstract) ResultsTab < appui.Core
             selection = app.Analysis.selection;
             scopeText = sprintf("%s｜%s｜Wafer %d 枚", methodScopeText(results, selection), selection.groups, ...
                 numel(selection.unitIndex));
-            note = "分析した範囲：" + scopeText + filterNote(app) + "。" + c.analysisNote.UserData;
+            note = "分析した範囲：" + scopeText + filterNote(app) + "。";
             if height(normality) > 0 && any(~isfinite(normality.swW))
                 % Shapiro–Wilk が空欄になる理由（点数は選んだ Wafer の評価点の合計なので、Wafer を絞ると計算できることがある）
                 note = note + " Shapiro–Wilk W が「—」の行は、近似が使える 3〜5000 点の範囲外（または値がすべて同じ）" + ...

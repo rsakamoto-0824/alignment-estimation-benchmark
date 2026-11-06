@@ -161,10 +161,7 @@ classdef (Abstract) Display < appui.Core
             %SETRANDOMSEED 「設定」→「乱数の種…」：乱数の種（0〜2^32−1 の整数）を変える。学習 Shot の選び方（ランダム・I 最適・
             %   D 最適・Mark 単位の交換法の始め方）と、「8. Mark配置の最適化」（乱数の Shot の形・配置を探す始め方）で共通に使う
             %   （設定 sampling.seed。同じ種なら同じ結果。評価の結果が変わるので、評価し直す）。
-            MAX_SEED = 2 ^ 32 - 1;
-            if ~isnumeric(seed) || ~isscalar(seed) || ~isfinite(seed) || seed ~= round(seed) || seed < 0 || seed > MAX_SEED
-                error('alignest:randomSeed', '乱数の種は 0〜%d の整数にしてください。', MAX_SEED);
-            end
+            alignest.checkRandomSeed(seed);
             app.Settings.sampling.seed = double(seed);
             refreshSeedMenu(app);
             refreshRunSummary(app);

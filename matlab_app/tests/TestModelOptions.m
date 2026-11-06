@@ -102,7 +102,7 @@ classdef TestModelOptions < matlab.unittest.TestCase
             testCase.verifyLessThan(errors.periodic, errors.squaredexponential / 5);
             testCase.verifyLessThan(errors.ardperiodic, errors.squaredexponential / 5);
             [names, labels] = alignest.models.gprKernelChoices();
-            testCase.verifyEqual(labels(names == "periodic"), "periodic（周期）");
+            testCase.verifyEqual(labels(names == "periodic"), "periodic");
             % 評価の流れで推定でき、周期がハイパーパラメータに残る
             settings = alignest.defaultSettings();
             settings.methods = alignest.recommendedMethods('none');

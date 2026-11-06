@@ -215,7 +215,7 @@ classdef (Abstract) RunTab < appui.Core
     methods (Access = {?appui.Core})
         % ================= 3. 実行 =================
         function buildRunTab(app)
-            grid = uigridlayout(app.Tabs.run, [4, 1], 'RowHeight', {'fit', 'fit', 'fit', '1x'}, 'Padding', 12, ...
+            grid = uigridlayout(app.Tabs.run, [3, 1], 'RowHeight', {'fit', 'fit', '1x'}, 'Padding', 12, ...
                 'RowSpacing', 10);
             c.runSummary = uilabel(grid, 'WordWrap', 'on', 'Text', '');
             buttonGrid = uigridlayout(grid, [1, 4], 'ColumnWidth', {240, 200, 280, '1x'}, 'Padding', 0);
@@ -223,21 +223,17 @@ classdef (Abstract) RunTab < appui.Core
             c.resumeRun = uibutton(buttonGrid, 'Text', '続きから再開', 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~, ~) app.onResumeRun(), 'Tooltip', ['「一時中断」で止めた評価の残りを計算します' ...
                 '（中断の後に設定を変えると再開できません）。']);
-            c.extendRun = uibutton(buttonGrid, 'Text', '条件を追加して評価（評価済みに足す）', 'Enable', 'off', ...
+            c.extendRun = uibutton(buttonGrid, 'Text', '条件を追加して評価', 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~, ~) app.onExtendRun(), 'Tooltip', ['評価の後に「2. 評価の設定」で手法や学習 Shot 数' ...
                 '（計測率）を増やしてから押すと、増えた組み合わせだけを計算して今の結果に加えます。データ・質的変数・制約・' ...
                 '評価の条件などを変えたときは追加できません（「評価を始める」で計算し直してください）。']);
             c.runStatus = uilabel(buttonGrid, 'WordWrap', 'on', 'Text', '');
-            uilabel(grid, 'WordWrap', 'on', 'Text', ['評価の考え方：学習 Shot の計測値で推定し、学習しなかった Shot の計測値と比べます。' ...
-                '実データには計測ノイズが含まれるので、誤差は模擬データの評価（真の値と比べた値）より少し大きく出ます。' ...
-                '計算中は「一時中断」で途中までの結果を残して止め、「続きから再開」で残りを計算できます。' ...
-                '評価の後に手法や学習 Shot 数を増やしたときは「条件を追加して評価」で、増えた分だけを計算して結果に足せます。']);
             lower = uigridlayout(grid, [1, 2], 'ColumnWidth', {'1x', '2.4x'}, 'Padding', 0, 'ColumnSpacing', 12);
             logGrid = uigridlayout(lower, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 0);
-            label(logGrid, '記録（データの確認・学習パターン・推定できなかった組み合わせ）');
+            label(logGrid, '記録');
             c.log = uitextarea(logGrid, 'Editable', 'off', 'Value', {''});
             % 計測マップ：評価の前に、学習に使う（計測する）Shot を Wafer 上で確かめる
-            mapPanel = uipanel(lower, 'Title', '計測マップ（学習に使う Shot。評価の前に確かめられます）');
+            mapPanel = uipanel(lower, 'Title', '計測マップ');
             mapGrid = uigridlayout(mapPanel, [4, 1], 'RowHeight', {'fit', 'fit', '1x', 90}, 'Padding', 8, 'RowSpacing', 6);
             choose = uigridlayout(mapGrid, [2, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1.4x'}, 'RowHeight', {66, 'fit'}, ...
                 'Padding', 0);
@@ -249,11 +245,11 @@ classdef (Abstract) RunTab < appui.Core
             label(choose, '学習パターン', 1, 3);
             c.measurePlan = uilistbox(choose, 'Items', {'—'}, 'Multiselect', 'on', 'Tooltip', multiTip);
             place(c.measurePlan, 1, 4);
-            c.measureScan = uicheckbox(choose, 'Text', 'Scan 方向を色で示す（▲ 上・▼ 下の印つき）', 'Value', true, ...
+            c.measureScan = uicheckbox(choose, 'Text', 'Scan 方向を色で示す', 'Value', true, ...
                 'ValueChangedFcn', onMeasure, 'Tooltip', ['Shot の内側の枠の色と ▲・▼ で Scan 方向を示します' ...
                 '（Scan 方向の制約で Shot 数がそろっているかを確かめる）。色と向きは「2. 評価の設定」の表示で変えられます。']);
             place(c.measureScan, 2, [1, 2]);
-            c.measureRings = uicheckbox(choose, 'Text', '同心円の区切り（制約）を描く', 'Value', true, ...
+            c.measureRings = uicheckbox(choose, 'Text', '同心円の区切りを描く', 'Value', true, ...
                 'ValueChangedFcn', onMeasure, 'Tooltip', ['I 最適・ランダムで同心円の制約を使うとき、区切りの半径（Shot 中心' ...
                 'の半径）を橙の一点鎖線で描きます。']);
             place(c.measureRings, 2, [3, 4]);
@@ -423,9 +419,9 @@ classdef (Abstract) RunTab < appui.Core
             styleAxes(app, c.distributionAxes, app.AXES_FONT_SIZE);
             note = "";
             if isfield(app.Distribution, "note") && app.Distribution.note ~= ""
-                note = "⚠ " + app.Distribution.note + "｜";
+                note = "｜⚠ " + app.Distribution.note;
             end
-            c.distributionInfo.Text = app.Distribution.title + "｜" + note + string(c.distributionInfo.UserData);
+            c.distributionInfo.Text = app.Distribution.title + note;
         end
 
         function onDrawMeasurementMap(app)
@@ -482,11 +478,9 @@ classdef (Abstract) RunTab < appui.Core
                 return
             end
             nCandidates = 99;
-            source = "候補 99 Shot として";
             if ~isempty(app.Data)
                 unit = app.Data.units(1);
                 nCandidates = nnz(unit.shots.nValidX + unit.shots.nValidY > 0);
-                source = sprintf("%s の候補 %d Shot で", unit.label, nCandidates);
             end
             try
                 if string(c.countBy.Value) == "rate"
@@ -499,8 +493,8 @@ classdef (Abstract) RunTab < appui.Core
                 return   % 学習 Shot 数の欄が正しくないとき（欄の下に理由が出る）
             end
             seconds = alignest.exchangeSecondsGuide(counts, c.exchangeStarts.Value, nCandidates);
-            text = sprintf("→ 目安（%s）：学習パターン1つ 約 %s〜%s、全 %d 個で 約 %s（配置が同じ Wafer は使い回す）", ...
-                source, durationText(min(seconds)), durationText(max(seconds)), numel(counts), durationText(sum(seconds)));
+            text = sprintf("→ 目安：学習パターン1つ 約 %s〜%s、全 %d 個で 約 %s", durationText(min(seconds)), ...
+                durationText(max(seconds)), numel(counts), durationText(sum(seconds)));
         end
 
         function text = requiredText(app)

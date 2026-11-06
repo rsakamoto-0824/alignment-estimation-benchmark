@@ -321,5 +321,158 @@ classdef TestMarkLayout < matlab.unittest.TestCase
             testCase.verifyTrue(contains(string(c.randomSeedItem.Text), "42"));
             testCase.verifyEqual(alignest.markLayoutOptions(settings).seed, 42);
         end
+
+        function stoppingDuringSearchShowsLayouts(testCase)
+            % 配置を選ぶ途中で止めても、選んだ配置は表・配置の図・書き出しに出る（制御残差は無い）
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            c = app.Controls;
+            app.makeMarkLayoutGrid([24, 30], [5, 7]);
+            app.setMarkLayoutSettings(maker="canon", loss="ols", regularization="none", maxMarks=12, shapes=5);
+            study = app.optimizeMarkLayout(@(~, ~) false);
+            testCase.verifyTrue(study.cancelled);
+            testCase.verifyEqual(study.counts, 8);
+            testCase.verifyEqual(height(study.evaluation), 0);
+            testCase.verifyEqual(height(c.markOptResultTable.Data), 1);
+            testCase.verifyEqual(c.markOptOutputs.SelectedTab, c.markOptMapTab);
+            testCase.verifyTrue(contains(string(c.markOptChartInfo.Text), "途中で止めた"));
+            file = [tempname, '.xlsx'];
+            app.exportMarkLayoutTo(file);
+            fileCleanup = onCleanup(@() delete(file));
+            testCase.verifyEqual(string(sheetnames(file)).', ["説明", "配置", "候補のMark", "項とVIF"]);
+        end
+
+        function markLayoutSettingsDoNotBlockResume(testCase)
+            % 「8. Mark配置の最適化」の設定を変えても、評価の続きから再開できる
+            settings = alignest.defaultSettings();
+            changed = settings;
+            changed.markLayout.maxMarks = 12;
+            testCase.verifyTrue(alignest.sameRunSettings(settings, changed));
+        end
+
+        function wrongSeedInSettingsIsRejected(testCase)
+            % 使えない乱数の種の設定は読まない（今の設定のまま）。既定の設定ファイルはエラーにして、アプリは初期設定で開く
+            for seed = [1.5, 2 ^ 32]
+                text = string(jsonencode(struct("sampling", struct("seed", seed))));
+                testCase.verifyError(@() alignest.loadSettings(text, "text"), 'alignest:randomSeed');
+            end
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            app.setMarkLayoutSettings(shapes=33);
+            settings = alignest.defaultSettings();
+            settings.sampling.seed = 1.5;
+            testCase.verifyError(@() app.setSettings(settings), 'alignest:randomSeed');
+            testCase.verifyEqual(app.Settings.sampling.seed, alignest.defaultSettings().sampling.seed);
+            testCase.verifyEqual(app.Settings.markLayout.shapes, 33, "読めなかった種で Mark 配置の設定を消さない");
+        end
+
+        function settingsWithoutMarkLayoutUseDefaults(testCase)
+            % markLayout の無い以前の設定でも、「8. Mark配置の最適化」は初期値で動く
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            settings = rmfield(alignest.defaultSettings(), "markLayout");
+            app.setSettings(settings);
+            testCase.verifyEqual(app.Settings.markLayout, alignest.defaultSettings().markLayout);
+            testCase.verifyEqual(height(app.makeMarkLayoutGrid([24, 30], [3, 3])), 9);
+        end
+
+        function measuredValuesReturnAfterCoordinateInput(testCase)
+            % 座標だけの入力で自動で乱数にしたときは、値のある入力に戻すと実測値に戻る。自分で選んだ乱数は戻さない
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            c = app.Controls;
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
+            app.applyMapping();
+            app.setMarkLayoutSource("data");
+            testCase.verifyEqual(string(c.markOptValues.Value), "measured");
+            app.makeMarkLayoutGrid([24, 30], [5, 7]);
+            testCase.verifyEqual(string(c.markOptValues.Value), "random", "座標だけなら乱数の形");
+            app.setMarkLayoutSource("data");
+            testCase.verifyEqual(string(c.markOptValues.Value), "measured");
+            testCase.verifyEqual(app.Settings.markLayout.values, "measured");
+            app.setMarkLayoutSettings(values="random");
+            app.makeMarkLayoutGrid([24, 30], [5, 7]);
+            app.setMarkLayoutSource("data");
+            testCase.verifyEqual(string(c.markOptValues.Value), "random", "自分で選んだ乱数のまま");
+        end
+
+        function changedMeasurementsMarkResultsOld(testCase)
+            % 座標と設定が同じでも、実測値が変われば計算し直す知らせを出す（乱数の形で評価した結果は実測値に左右されない）
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            c = app.Controls;
+            sample = fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv');
+            app.loadFile(sample);
+            app.applyMapping();
+            app.setMarkLayoutSource("data");
+            app.setMarkLayoutSettings(maker="custom", loss="ols", regularization="none", minMarks=0, maxMarks=0);
+            app.selectMarkLayoutTermsByVif(10);
+            app.optimizeMarkLayout();
+            testCase.verifyFalse(any(startsWith(string(c.markOptMessage.Value), "⚠")));
+            rows = readtable(sample, 'VariableNamingRule', 'preserve');
+            rows.measX = rows.measX + 1;
+            file = [tempname, '.csv'];
+            writetable(rows, file);
+            fileCleanup = onCleanup(@() delete(file));
+            app.loadFile(file);
+            app.applyMapping();
+            app.setMarkLayoutSource("data");
+            testCase.verifyTrue(any(startsWith(string(c.markOptMessage.Value), "⚠")), "実測値が変わった");
+            testCase.verifyTrue(startsWith(string(c.markOptChartInfo.Text), "⚠"));
+        end
+
+        function marksWithoutValuesAreNotChosen(testCase)
+            % 実測値で評価するときは、値の無い候補の Mark は選ばない（必ず計測する Mark は残す）。乱数の形なら候補のまま
+            [gx, gy] = meshgrid(linspace(-12, 12, 5), linspace(-15, 15, 5));
+            localX = repmat(gx(:), 3, 1);
+            localY = repmat(gy(:), 3, 1);
+            shotNo = reshape(repmat(1:3, numel(gx), 1), [], 1);
+            valueX = 2 + 0.1 * localX + 0.01 * shotNo;
+            valueY = -1 + 0.2 * localY;
+            noValue = localX == 0 & localY == 0;
+            valueX(noValue) = NaN;
+            valueY(noValue) = NaN;
+            wafer = struct("label", "W1", "points", table(localX, localY, shotNo, valueX, valueY));
+            [candidates, shots] = alignest.markCandidates(wafer);
+            center = find(candidates.nShots == 0);
+            testCase.verifyEqual(numel(center), 1);
+            settings = alignest.defaultSettings();
+            settings.markLayout = struct("maker", "canon", "loss", "ols", "regularization", "none", "starts", 2, ...
+                "values", "measured");
+            study = alignest.markLayoutStudy(candidates, shots, settings);
+            testCase.verifyEqual(size(study.layouts.selected, 1), 25);
+            testCase.verifyFalse(any(study.layouts.selected(center, :)));
+            testCase.verifyEqual(study.counts(end), 24);
+            testCase.verifyEqual(study.evaluation.count(end), 24, "すべての Mark は選べる Mark すべて");
+            testCase.verifyEqual(study.layouts.efficiency(end), 100, 'AbsTol', 1e-6);
+            testCase.verifyTrue(any(contains(study.messages, "値の無い候補の Mark 1 点")));
+            [required, requiredShots] = alignest.markCandidates(wafer, zeros(0, 2), [0, 0]);
+            study = alignest.markLayoutStudy(required, requiredShots, settings);
+            testCase.verifyTrue(all(study.layouts.selected(center, :)), "必ず計測する Mark は残す");
+            settings.markLayout.values = "random";
+            settings.markLayout.shapes = 3;
+            study = alignest.markLayoutStudy(candidates, shots, settings);
+            testCase.verifyEqual(study.counts(end), 25, "乱数の形なら候補のまま");
+        end
+
+        function reorderedTableForgetsSelectedRows(testCase)
+            % 表を作り直して行が並び変わったら、前に選んだ行では消さない
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            c = app.Controls;
+            app.makeMarkLayoutGrid([24, 30], [5, 7]);
+            table_ = c.markOptCandidateTable;
+            table_.CellSelectionCallback([], struct("Indices", [3, 1]));
+            data = table_.Data;
+            data{1, 3} = -99;
+            table_.Data = data;
+            table_.CellEditCallback([], struct("Indices", [1, 3], "NewData", -99));
+            testCase.verifyEqual(table_.Data{35, 3}, -99, "下の行へ並び変わる");
+            c.markOptDeleteRows.ButtonPushedFcn([], []);
+            testCase.verifyEqual(size(table_.Data, 1), 35, "前の選択では消さない");
+            table_.CellSelectionCallback([], struct("Indices", [3, 1]));
+            c.markOptDeleteRows.ButtonPushedFcn([], []);
+            testCase.verifyEqual(size(table_.Data, 1), 34);
+        end
     end
 end

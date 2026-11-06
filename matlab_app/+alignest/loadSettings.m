@@ -22,6 +22,7 @@ if nargin >= 2 && source == "text"
     end
     settings.sampling = alignest.syncShotCounts(settings.sampling);
     settings.methods = alignest.completeMethodSettings(settings.methods);
+    alignest.checkRandomSeed(settings.sampling.seed);
     return
 end
 if ~isfile(filePath)

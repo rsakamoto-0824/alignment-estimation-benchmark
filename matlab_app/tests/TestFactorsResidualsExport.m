@@ -147,7 +147,7 @@ classdef TestFactorsResidualsExport < matlab.unittest.TestCase
             marks = app.Data.units(1).marks;
             expected = alignest.stats.correlationTest(marks.markXmm(estimates.markIndex), estimates.residualX);
             testCase.verifyEqual(summary.X.r, expected.r, 'AbsTol', 1e-12);
-            testCase.verifyEqual(string(c.residualVariableAxes(1).XLabel.String), "Shot 内の X [mm]（markXmm）");
+            testCase.verifyEqual(string(c.residualVariableAxes(1).XLabel.String), "Shot 内の X [mm]");
             % Shot スタックマップ：計測値・推定値・残差を Scan 方向ごとに並べる（2 段 × 3 列）
             c.mapView.Value = 'stack';
             c.mapStackBy.Value = 'scan';

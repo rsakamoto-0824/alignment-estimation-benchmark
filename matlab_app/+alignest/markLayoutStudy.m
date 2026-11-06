@@ -7,7 +7,8 @@ function study = markLayoutStudy(candidates, shots, settings, progressFcn)
 %   手順：
 %   1. 補正の式の使う項（alignest.highOrderTerms。外した項を除く）と、候補の Mark の位置での VIF（alignest.highOrderVif）
 %   2. Mark の数（最低数〜最大数。最低数は使う項の数と必ず計測する Mark の数より少なくしない）ごとに、I 最適計画の配置
-%      （alignest.iOptimalMarks。I は dx・dy の式の予測の分散の和。必ず計測する Mark はどの数にも入れる）
+%      （alignest.iOptimalMarks。I は dx・dy の式の予測の分散の和。必ず計測する Mark はどの数にも入れる）。実測値で評価するとき
+%      は、どの Shot にも値の無い候補の Mark は選ばない（必ず計測する Mark は残す。I 効率の 100% も選べる Mark すべて）
 %   3. 制御残差を求める値：実測値（Shot ごと）、または乱数の Shot の形（alignest.randomShotShapes。制御残差は計測のばらつき・
 %      飛び値を足す前の形で求める）
 %   4. 配置ごと（とすべての候補を計測したとき）に、選んだ Mark の値で補正の式を当てはめ（ロバスト回帰・正則化。
@@ -25,8 +26,20 @@ end
 DESIGN_SHARE = 0.5;   % 進み具合のうち、配置を選ぶ分の割合（残りは制御残差）
 options = alignest.markLayoutOptions(settings);
 messages = strings(0, 1);
+if options.values == "measured" && isempty(shots.label)
+    error('alignest:markLayout', ['実測値がありません（座標だけの入力）。制御残差を求める値を「乱数の Shot の形」に' ...
+        'してください。']);
+end
 n = height(candidates);
 local = [candidates.xMm, candidates.yMm];
+selectable = true(n, 1);
+if options.values == "measured"
+    selectable = candidates.nShots > 0 | candidates.required;
+end
+nSelectable = nnz(selectable);
+if nSelectable < n
+    messages(end + 1) = sprintf("値の無い候補の Mark %d 点は選びません。", n - nSelectable);
+end
 % 1. 補正の式の使う項と VIF（候補の Mark の位置で）
 terms = alignest.highOrderTerms(options.maker, options.excludedTerms);
 [terms, vifInfo] = alignest.highOrderVif(terms, local, true(n, 2), options.vifThreshold);
@@ -38,7 +51,7 @@ for a = 1:2
     designs{a} = local(:, 1) .^ (mine.xPower.') .* local(:, 2) .^ (mine.yPower.');
     penalized{a} = ismember(mine.order, options.penaltyOrders) & options.regularization ~= "none";
     nTerms(a) = height(mine);
-    undetermined = mine.term(~independent(designs{a}));
+    undetermined = mine.term(~independent(designs{a}(selectable, :)));
     if ~isempty(undetermined)
         error('alignest:markLayout', ['候補の Mark の位置では、%s の式の項 %s が決まりません（候補の Mark が足りないか、' ...
             '並びが一直線など）。「VIF で選ぶ」か表で項を外すか、候補の Mark を足してください。'], axisNames(a), ...
@@ -52,13 +65,13 @@ if options.minMarks > 0 && minimum > options.minMarks
     messages(end + 1) = sprintf(['計測する Mark の最低数を %d にしました（入れた %d では、使う項（dx %d・dy %d 項）か' ...
         '必ず計測する Mark（%d 点）より少ないため）。'], minimum, options.minMarks, nTerms(1), nTerms(2), nRequired);
 end
-maximum = n;
+maximum = nSelectable;
 if options.maxMarks > 0
-    maximum = min(options.maxMarks, n);
+    maximum = min(options.maxMarks, nSelectable);
 end
-if minimum > n
+if minimum > nSelectable
     error('alignest:markLayout', ['候補の Mark（%d 点）が、使う項（dx %d・dy %d 項）か必ず計測する Mark（%d 点）より' ...
-        '少ないです。候補の Mark を足すか、項を外してください。'], n, nTerms(1), nTerms(2), nRequired);
+        '少ないです。候補の Mark を足すか、項を外してください。'], nSelectable, nTerms(1), nTerms(2), nRequired);
 end
 if maximum < minimum
     messages(end + 1) = sprintf('計測する Mark の最大数を %d にしました（最低数より少ないため）。', minimum);
@@ -66,9 +79,13 @@ if maximum < minimum
 end
 counts = (minimum:maximum).';
 cancelled = false;
-layouts = alignest.iOptimalMarks(designs, candidates.required, counts, starts=options.starts, seed=options.seed, ...
+layouts = alignest.iOptimalMarks(cellfun(@(F) F(selectable, :), designs, 'UniformOutput', false), ...
+    candidates.required(selectable), counts, starts=options.starts, seed=options.seed, ...
     progressFcn=@(done, total, text) report(DESIGN_SHARE * done / total, "I 最適計画で配置を選んでいます：" + text + ...
     sprintf("（%d / %d）", done, total)));
+chosen = false(n, size(layouts.selected, 2));
+chosen(selectable, :) = layouts.selected;
+layouts.selected = chosen;   % 行はすべての候補の Mark に戻す
 if layouts.cancelled
     cancelled = true;
     counts = layouts.counts;
@@ -77,10 +94,6 @@ end
 % 3. 制御残差を求める値
 shapes = [];
 valueSource = options.values;
-if valueSource == "measured" && isempty(shots.label)
-    error('alignest:markLayout', ['実測値がありません（座標だけの入力）。制御残差を求める値を「乱数の Shot の形」に' ...
-        'してください。']);
-end
 if valueSource == "random"
     shapes = alignest.randomShotShapes(candidates.xMm, candidates.yMm, shapes=options.shapes, seed=options.seed, ...
         orderSigmaNm=options.orderSigmaNm, noiseNm=options.noiseNm, outlierPercent=options.outlierPercent, ...
@@ -99,7 +112,7 @@ if options.regularization == "l1"
 end
 fitOptions = {'loss', options.loss, 'huberTuning', options.huberTuning, 'lambda', ...
     options.lambda * (options.regularization ~= "none"), 'penalty', penaltyType};
-selected = [layouts.selected, true(n, 1)];
+selected = [layouts.selected, selectable];
 evaluation = table();
 if ~cancelled
     evaluation = alignest.evaluateMarkLayouts(designs, selected, values, penalized, fitOptions, ...
@@ -111,7 +124,7 @@ if ~cancelled
     end
 end
 if height(evaluation) > 0
-    allCounts = [counts; n];
+    allCounts = [counts; nSelectable];
     efficiencies = [layouts.efficiency; 100];
     types = [repmat("I 最適", numel(counts), 1); "すべての Mark"];
     evaluation.count = allCounts(evaluation.layout);
@@ -123,13 +136,11 @@ if height(evaluation) > 0
         messages(end + 1) = sprintf(['値の無い Mark があって使う項が決まらない Shot は補正していません（配置ごとに多い' ...
             'ときで %d Shot。表の「補正しなかった Shot」）。'], max(skipped));
     end
-end
-if valueSource == "random"
-    messages(end + 1) = sprintf(['乱数の Shot の形 %d 通り（種 %d）で評価しました。制御残差は、計測のばらつき（%g nm）・' ...
-        '飛び値（%g%%、%g nm）を足す前の形から補正量を引いた値です。'], nShots, options.seed, options.noiseNm, ...
-        options.outlierPercent, options.outlierNm);
-else
-    messages(end + 1) = sprintf("実測値の %d Shot で評価しました（制御残差 = 実測値 − 補正量。値のある Mark すべて）。", nShots);
+    if valueSource == "random"
+        messages(end + 1) = sprintf("乱数の Shot の形 %d 通り（種 %d）で評価しました。", nShots, options.seed);
+    else
+        messages(end + 1) = sprintf("実測値の %d Shot で評価しました。", nShots);
+    end
 end
 study = struct("options", options, "candidates", candidates, "terms", terms, "vifInfo", vifInfo, "counts", counts, ...
     "layouts", layouts, "evaluation", evaluation, "valueSource", valueSource, "nShots", nShots, "shapes", shapes, ...

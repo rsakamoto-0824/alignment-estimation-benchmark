@@ -4,5 +4,5 @@ function [names, labels] = gprKernelChoices()
 %   matern・ardmatern は、設定の methods.gpr.maternNu の値ごとに matern_nu<ν>・ardmatern_nu<ν> に展開する。
 fixed = alignest.models.gprKernelNames();
 names = [fixed, "matern", "ardmatern", "periodic", "ardperiodic"];
-labels = [fixed, "matern（ν を指定）", "ardmatern（ν を指定）", "periodic（周期）", "ardperiodic（周期・ARD）"];
+labels = [fixed, "matern", "ardmatern", "periodic", "ardperiodic"];
 end

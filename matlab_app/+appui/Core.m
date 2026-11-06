@@ -108,6 +108,7 @@ classdef (Abstract) Core < handle
         MarkLayoutInput = []    % 「8. Mark配置の最適化」の今の入力の候補の Mark と Shot ごとの値（alignest.markCandidates。入力が無ければ []）
         MarkLayoutStudy = []    % 「8. Mark配置の最適化」で最後に計算した結果（alignest.markLayoutStudy と、計算したときの入力・設定）
         MarkLayoutSelection = zeros(0, 1)  % 「候補の Mark」の表で選んでいる行（「選んだ行を消す」で使う）
+        MarkLayoutValuesAuto = false       % 座標だけの入力のため「評価に使う値」を自動で乱数にした（値のある入力で実測値に戻す）
     end
 
     properties (Dependent)
@@ -221,7 +222,7 @@ classdef (Abstract) Core < handle
             % 乱数の種（学習 Shot の選び方と Mark 配置の最適化で共通。設定 sampling.seed。結果が変わる設定）
             app.Controls.randomSeedItem = uimenu(viewMenu, 'Text', '乱数の種…', 'Separator', 'on', ...
                 'MenuSelectedFcn', @(~, ~) app.onPickRandomSeed());
-            uimenu(viewMenu, 'Text', 'ヘルプ（用語・補正の式・カーネル）を開く', 'Separator', 'on', ...
+            uimenu(viewMenu, 'Text', 'ヘルプを開く', 'Separator', 'on', ...
                 'MenuSelectedFcn', @(~, ~) set(app.TabGroup, 'SelectedTab', app.Tabs.help));
             set(findall(app.Figure, '-property', 'FontSize'), 'FontSize', app.FONT_SIZE);
             set(findall(app.Figure, 'Type', 'axes'), 'FontSize', app.AXES_FONT_SIZE);
@@ -352,9 +353,9 @@ classdef (Abstract) Core < handle
             cla(c.compareLayoutAxes, 'reset');
             legend(c.compareLayoutAxes, 'off');
             c.compareLayoutTable.Data = {};
-            c.compareLayoutInfo.Text = c.compareLayoutInfo.UserData;
+            c.compareLayoutInfo.Text = '';
             c.timingTable.Data = {};
-            c.timingInfo.Text = c.timingInfo.UserData;
+            c.timingInfo.Text = '';
             c.chartAxes2.Visible = 'off';
             set([c.export, c.saveChart, c.copyChart, c.mapWafer, c.mapPlan, c.mapMethod, c.mapContent, c.mapMode, c.mapScale, ...
                 c.mapMarkerSize, c.mapMarkerShape, c.mapEllipse, c.mapEllipseOnly, c.mapShotFrames, c.saveMap, c.copyMap, c.analysisMethod, ...
@@ -383,7 +384,7 @@ classdef (Abstract) Core < handle
             c.resultSource.Text = '';
             c.resultControls.RowHeight{3} = 0;
             c.importEstimates.Enable = 'off';
-            c.analysisNote.Text = c.analysisNote.UserData;
+            c.analysisNote.Text = '';
         end
 
         function onResultTabChanged(app, event)

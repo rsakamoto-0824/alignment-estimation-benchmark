@@ -146,7 +146,7 @@ parts.append(section('add-label', '''<p>説明文だけを追加する例です�
 figure('07_after.png','作業用コピーでの変更後：ボタン名・列幅・説明行','① 「計測ファイルを選ぶ…」へ変更し、1列目を300pxに設定。② 7行目に注意文を追加。これは説明用コピーの変更結果で、配布中アプリを変更した画像ではありません。',[(1,2,21),(2,2,36)]) +
 note('後から書き換える部品はControlsへ登録する', '表示だけならローカル変数で足ります。別の関数から文字やEnableを変更する場合は <code>c.adminNote</code> として作り、build関数末尾の <code>app.Controls = mergeStruct(app.Controls, c)</code> に含めて参照します。名前を他の部品と重複させないでください。')))
 
-parts.append(section('settings', '''<h3>選択肢の「表示名」と「内部値」を区別する</h3><p>例として、学習Shotの選び方は表示を <code>Items</code>、処理へ渡すキーを <code>ItemsData</code> で定義しています。以下は既存7項目のうち、先頭2項目の対応です。元の7項目を2項目に置き換える手順ではありません。</p>'''+table(['Itemsの表示名','同じ位置のItemsData'],[('制約付き I 最適（前回の評価と同じ）','ioptimal'),('制約付き D 最適','doptimal')]) +
+parts.append(section('settings', '''<h3>選択肢の「表示名」と「内部値」を区別する</h3><p>例として、学習Shotの選び方は表示を <code>Items</code>、処理へ渡すキーを <code>ItemsData</code> で定義しています。以下は既存7項目のうち、先頭2項目の対応です。元の7項目を2項目に置き換える手順ではありません。</p>'''+table(['Itemsの表示名','同じ位置のItemsData'],[('制約付き I 最適','ioptimal'),('制約付き D 最適','doptimal')]) +
 steps([
     '<strong>表示名だけを変える場合</strong><p>該当する <code>Items</code> の文字だけを変えます。並び順・要素数と、対応する <code>ItemsData</code> をそろえます。内部値 <code>ioptimal</code> などを日本語へ変えないでください。</p>',
     '<strong>新しい選択肢を増やす場合</strong><p>画面へ選択肢を足すだけでは計算できません。ItemsData、controlsToSettings、設定の既定値、検証、+alignestの分岐・手法一覧・書き出し・テストまで対応させます。</p>',
