@@ -1,9 +1,10 @@
 function levels = highOrderLevels(result)
-%HIGHORDERLEVELS Shot 高次補正の補正値（係数）を、補正の段階ごとに Wafer 低次・Wafer 高次・Shot 共通 低次・Shot 共通 高次・
+%HIGHORDERLEVELS Shot 高次補正の補正値（係数）を、補正の段階ごとに Wafer 低次・Wafer 高次・Wafer RT・Shot 共通 低次・Shot 共通 高次・
 %   Shot 毎 低次・Shot 毎 高次の順に並べた表にする（「7. Shot高次補正」の書き出し）。
 %   levels = alignest.highOrderLevels(result)
 %   result：alignest.shotHighOrder の結果。低次は定数と1次の項（Shot は k1〜k6、Wafer 成分は Xc・Yc の1次）、高次は2次以上の項。
 %   - Wafer：Wafer 成分（Shot 中心の座標 Xc・Yc の多項式。定数は Shot 共通の k1・k2 に含む）
+%   - Wafer RT：RT モデルの係数（X・Y で共通。axis = "dx・dy"。Wafer 半径で割った座標での値）。使うときだけ
 %   - Shot 共通：くくりが Shot ごとなら、Wafer 成分と一緒に Wafer 内の Shot で共通に求めた k（result.commonCoefficients。
 %     外周の式を分けるときは内周・外周の2組）。ほかのくくりは k の組の k（Wafer 内で共通・Scan 方向ごと・行の偶奇ごと）
 %   - Shot 毎：くくりが Shot ごとのときだけ。Shot ごとの k − Shot 共通の k（Shot 共通に足すと、その Shot に当てる k）。
@@ -13,20 +14,23 @@ function levels = highOrderLevels(result)
 arguments
     result struct
 end
-LEVEL_NAMES = ["Wafer 低次", "Wafer 高次", "Shot 共通 低次", "Shot 共通 高次", "Shot 毎 低次", "Shot 毎 高次"];
+LEVEL_NAMES = ["Wafer 低次", "Wafer 高次", "Wafer RT", "Shot 共通 低次", "Shot 共通 高次", "Shot 毎 低次", "Shot 毎 高次"];
+COMMON_LEVEL = 4;   % LEVEL_NAMES の「Shot 共通 低次」の位置
 HIGH_ORDER = 2;   % これ以上の次数を「高次」とする
 coefficients = result.coefficients;
 waferRows = coefficients(coefficients.component == "Wafer 成分", :);
 shotRows = coefficients(coefficients.component == "Shot 高次補正", :);
 waferRows.level = levelName(waferRows, 1, LEVEL_NAMES, HIGH_ORDER);
+rtRows = coefficients(coefficients.component == "Wafer RT", :);
+rtRows.level = repmat("Wafer RT", height(rtRows), 1);
 if result.options.unit ~= "shot"
-    shotRows.level = levelName(shotRows, 3, LEVEL_NAMES, HIGH_ORDER);
-    parts = {waferRows, shotRows};
+    shotRows.level = levelName(shotRows, COMMON_LEVEL, LEVEL_NAMES, HIGH_ORDER);
+    parts = {waferRows, rtRows, shotRows};
 else
     common = result.commonCoefficients;
     deviation = perShotDeviation(shotRows, common, LEVEL_NAMES, HIGH_ORDER);
-    common.level = levelName(common, 3, LEVEL_NAMES, HIGH_ORDER);
-    parts = {waferRows, common, deviation};
+    common.level = levelName(common, COMMON_LEVEL, LEVEL_NAMES, HIGH_ORDER);
+    parts = {waferRows, rtRows, common, deviation};
 end
 levels = vertcat(parts{:});
 levels.component = [];
@@ -38,8 +42,9 @@ shotOrder(isnan(shotOrder)) = -Inf;   % Shot 共通・Wafer 成分（Shot の番
 axisOrder = double(levels.axis == "dy") .* isnan(levels.k);   % Wafer 成分だけ dx・dy の順（k は dx・dy が交互の番号）
 kOrder = levels.k;
 kOrder(isnan(kOrder)) = 0;
-[~, order] = sortrows([waferOrder, levelOrder, shotOrder, axisOrder, kOrder, levels.xPower + levels.yPower, ...
-    (1:height(levels)).']);
+powerOrder = levels.xPower + levels.yPower;
+powerOrder(isnan(powerOrder)) = 0;   % Wafer RT（べきなし）は表の元の順
+[~, order] = sortrows([waferOrder, levelOrder, shotOrder, axisOrder, kOrder, powerOrder, (1:height(levels)).']);
 levels = levels(order, ["wafer", "level", "shotNo", "group", "zone", "axis", "k", "term", "value", "unit", "note", ...
     "xPower", "yPower"]);
 end
@@ -83,5 +88,5 @@ for s = 1:height(shotGroups)
 end
 rows = [rows; vertcat(extra{:})];
 rows.component(:) = "Shot 毎";
-rows.level = levelName(rows, 5, levelNames, highOrder);
+rows.level = levelName(rows, numel(levelNames) - 1, levelNames, highOrder);
 end

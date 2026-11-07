@@ -3,8 +3,9 @@ function [dx, dy] = highOrderModelAt(coefficients, unit, waferLabel, shots, loca
 %   （Shot の形のグリッド、2次以上の項だけの補正量）。
 %   [dx, dy] = alignest.highOrderModelAt(coefficients, unit, waferLabel, shots, local, part)
 %   unit：補正のくくり（"common"・"scan"・"row"・"shot"。result.options.unit）、waferLabel：Wafer の名前、
-%   shots：Shot ごとの表（shotNo・Xc・Yc（Shot 中心 [mm]）・group（その Shot の k の組の名前。result.points.group））、
-%   local：Shot 内の位置 [mm]（位置の数 × 2）、part："all"（すべての項と Wafer 成分）・"highOrder"（2次以上の項だけ）。
+%   shots：Shot ごとの表（shotNo・Xc・Yc（Shot 中心 [mm]）・group（その Shot の k の組の名前。result.points.group）。Wafer RT を
+%   使うときは waferRtUsed・waferRtX・waferRtY（result.points の同じ列。RT で補正する Shot は Wafer 成分の代わりに RT の補正量））、
+%   local：Shot 内の位置 [mm]（位置の数 × 2）、part："all"（すべての項と Wafer 成分・Wafer RT）・"highOrder"（2次以上の項だけ）。
 %   dx・dy：Shot の数 × 位置の数 [nm]。補正しなかった Shot（係数の無い Shot）は NaN。
 arguments
     coefficients table
@@ -20,6 +21,8 @@ nShots = height(shots);
 nPoints = size(local, 1);
 [dx, dy] = deal(nan(nShots, nPoints));
 axisNames = ["dx", "dy"];
+rtColumns = ["waferRtX", "waferRtY"];
+hasRt = ismember("waferRtUsed", string(shots.Properties.VariableNames));
 for a = 1:2
     axisRows = rows(rows.axis == axisNames(a), :);
     shotTerms = axisRows(axisRows.component == "Shot 高次補正", :);
@@ -44,7 +47,10 @@ for a = 1:2
         if isempty(mine)
             value = zeros(nPoints, 1);
         end
-        if ~isempty(waferTerms)
+        rtShot = hasRt && shots.waferRtUsed(s);
+        if rtShot && part == "all"
+            value = value + shots.(rtColumns(a))(s);
+        elseif ~rtShot && ~isempty(waferTerms)
             value = value + sum(waferTerms.value .* shots.Xc(s) .^ waferTerms.xPower .* shots.Yc(s) .^ waferTerms.yPower);
         end
         values(s, :) = value.';

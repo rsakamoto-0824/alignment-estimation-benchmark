@@ -124,6 +124,60 @@ classdef TestShotHighOrderSweep < matlab.unittest.TestCase
                 'alignest:highOrderSweep', "値の組が多すぎる");
         end
 
+        function regressionReportsRSquared(testCase)
+            % 決定係数と自由度調整済決定係数：最小二乗は定義どおり（p は項の数）。L2 の自由度は項の数より小さい。Shot ごと・Wafer 成分
+            points = noisyWafer(testCase, 7);
+            wafer = struct("label", "W1", "points", points);
+            settings = alignest.defaultSettings();
+            settings.highOrder = struct("maker", "custom", "excludedTerms", 13:38, "unit", "common", "waferOrder", 0, ...
+                "loss", "ols", "regularization", "none");
+            result = alignest.shotHighOrder(wafer, settings, stages=false);
+            terms = result.terms(result.terms.axis == "dx" & result.terms.used, :);
+            p = height(terms);
+            y = points.valueX;
+            n = numel(y);
+            design = points.localX .^ (terms.xPower.') .* points.localY .^ (terms.yPower.');
+            residual = y - design * (design \ y);
+            expected = 1 - sum(residual .^ 2) / sum((y - mean(y)) .^ 2);
+            row = result.summary(result.summary.axis == "X" & result.summary.wafer == "W1", :);
+            testCase.verifyEqual(row.rSquared, expected, 'AbsTol', 1e-9);
+            testCase.verifyEqual(row.adjustedRSquared, 1 - (1 - expected) * (n - 1) / (n - p), 'AbsTol', 1e-9);
+            testCase.verifyLessThan(row.adjustedRSquared, row.rSquared);
+            testCase.verifyEqual(sum(result.points.leverageX), p, 'AbsTol', 1e-6, "最小二乗の自由度は項の数");
+            regularized = settings;
+            regularized.highOrder.regularization = "l2";
+            regularized.highOrder.lambda = 1;
+            regularized.highOrder.penaltyOrders = 2:4;
+            shrunk = alignest.shotHighOrder(wafer, regularized, stages=false);
+            testCase.verifyLessThan(sum(shrunk.points.leverageX), p, "L2 は有効自由度");
+            perShot = settings;
+            perShot.highOrder.unit = "shot";
+            eachShot = alignest.shotHighOrder(wafer, perShot, stages=false);
+            nShots = numel(unique(points.shotNo));
+            testCase.verifyEqual(sum(eachShot.points.leverageX), p * nShots, 'AbsTol', 1e-6, "Shot ごとは項の数 × Shot の数");
+            perShot.highOrder.waferOrder = 1;
+            withWafer = alignest.shotHighOrder(wafer, perShot);
+            testCase.verifyEqual(sum(withWafer.points.leverageX), p * nShots + 2, 'AbsTol', 1e-6, "先に引く Wafer 成分の2項も数える");
+            testCase.verifyTrue(all(isfinite(result.regionSummary.rSquared)), "内周・外周の行にも出す");
+            % 点の数と自由度が同じ・値がすべて同じ
+            [first, second] = alignest.highOrderRSquared([1; 2; 4], [0; 0; 0], [1; 1; 1]);
+            testCase.verifyEqual(first, 1);
+            testCase.verifyTrue(isnan(second));
+            [first, second] = alignest.highOrderRSquared([2; 2; 2], [0; 0; 0], [0.5; 0.5; 0.5]);
+            testCase.verifyTrue(isnan(first) && isnan(second));
+            % 値のある点だけを使う。ロバスト回帰では 0 より小さくなることがある
+            [first, ~] = alignest.highOrderRSquared([1; 2; NaN; 3], [0.1; -0.1; 5; NaN], [0.5; 0.5; 0.5; 0.5]);
+            testCase.verifyEqual(first, 1 - 0.02 / 0.5, 'AbsTol', 1e-12);
+            [first, ~] = alignest.highOrderRSquared([1; 2; 3], [2; -2; 2], [0.5; 0.5; 0.5]);
+            testCase.verifyLessThan(first, 0);
+            % 表と Excel
+            sheet = alignest.highOrderShotTable(eachShot);
+            testCase.verifyTrue(all(ismember(["決定係数R2X", "自由度調整済決定係数Y"], string(sheet.Properties.VariableNames))));
+            mine = eachShot.points(eachShot.points.shotNo == 3, :);
+            testCase.verifyEqual(sheet.("決定係数R2X")(sheet.shotNo == 3), alignest.highOrderRSquared(mine.valueX, ...
+                mine.residualX, mine.leverageX), 'AbsTol', 1e-12, "Shot ごとは Shot の回帰");
+        end
+
         function screenSweepsAndAppliesBest(testCase)
             % 画面：範囲と刻み（対数・等間隔）、計算する数、スイープの図と表、最もよい値を使う、設定を変えた後の知らせ
             app = AlignmentEstimationApp(false);

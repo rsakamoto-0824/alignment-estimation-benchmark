@@ -5,8 +5,8 @@ function result = rtFitPredict(trainU, trainV, testU, testV, measuredU, measured
 %   並進2項・非対称倍率・直交度の4項を加える（Python 版の RT K次と同じ定義）。XY に換算した最大次数は K+1。
 %   trainU / testU は X の計測値がある点、trainV / testV は Y の計測値がある点（X と Y で点が違ってもよい）。
 PINV_RELATIVE_TOLERANCE = 1e-10;
-designTrain = [rtRows(trainU, order, "u"); rtRows(trainV, order, "v")];
-designTest = [rtRows(testU, order, "u"); rtRows(testV, order, "v")];
+designTrain = [rowsOf(trainU, order, 1); rowsOf(trainV, order, 2)];
+designTest = [rowsOf(testU, order, 1); rowsOf(testV, order, 2)];
 singularValues = svd(designTrain);
 tolerance = 0;
 if ~isempty(singularValues)
@@ -23,21 +23,11 @@ result.edfV = trace(hat(nU + 1:end, nU + 1:end));
 result.nCoef = size(designTrain, 2);
 end
 
-function rows = rtRows(points, order, component)
-% RT の基底を XY 変位の片方（u = X 方向、v = Y 方向）で書いた行
-x = points(:, 1);
-y = points(:, 2);
-ones_ = ones(size(x));
-zeros_ = zeros(size(x));
-zernike = alignest.basis.zernikeMatrix(x, y, alignest.basis.zernikeModes(order));
-if component == "u"
-    fixed = [ones_, zeros_, x, y];   % 並進x、並進y、非対称倍率、直交度
-    radial = x .* zernike;           % R = ρ·Z → (u, v) = Z·(x, y)
-    tangential = -y .* zernike;      % T = ρ·Z → (u, v) = Z·(−y, x)
-else
-    fixed = [zeros_, ones_, -y, x];
-    radial = y .* zernike;
-    tangential = x .* zernike;
+function rows = rowsOf(points, order, component)
+% RT の基底（alignest.basis.rtDesign）の X 方向（1）か Y 方向（2）の行
+[rowsU, rowsV] = alignest.basis.rtDesign(points, order);
+rows = rowsU;
+if component == 2
+    rows = rowsV;
 end
-rows = [fixed, radial, tangential];
 end

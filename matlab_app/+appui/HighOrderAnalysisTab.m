@@ -354,8 +354,9 @@ classdef (Abstract) HighOrderAnalysisTab < appui.Core
             if kind == "shots"
                 data = alignest.highOrderShotTable(run.result);
                 notes = [notes; "値", "Shot ごとの補正値。Wafer 低次・高次（Wafer 成分を Shot 中心で求めた並進 [nm]）、" + ...
+                    "Wafer RT（使うとき。Shot の並進 [nm]）、" + ...
                     "Shot 共通 低次（k1〜k6）・高次、Shot 毎 低次・高次（Shot ごとのときだけ。Shot ごとの k − Shot 共通の k）の" + ...
-                    "順。合計はその Shot に当てる k（Shot 共通 + Shot 毎。k1・k2 には Wafer 成分の並進も足す）"];
+                    "順。合計はその Shot に当てる k（Shot 共通 + Shot 毎。k1・k2 には Wafer 成分・Wafer RT の並進も足す）"];
             else
                 data = alignest.highOrderMeasurementTable(run.result, run.wafers, value);
                 notes = [notes; "値", "measX・measY = " + valueLabel + " [nm]"];
