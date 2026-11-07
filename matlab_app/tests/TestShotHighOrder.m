@@ -562,6 +562,8 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             testCase.verifyEqual(perShot.options.loss, ["lad", "lad"]);
             testCase.verifyEqual(string(c.highOrderCoefficientWafer.Enable), "on");
             testCase.verifyEqual(height(c.highOrderCoefficientTable.Data), 99, "Shot ごと：Shot ごとに1行");
+            testCase.verifyTrue(all(ismember(["決定係数 R²", "自由度調整済 R²"], string(c.highOrderCoefficientTable.Data.Properties.VariableNames))));
+            testCase.verifyTrue(all(ismember(["決定係数|R²", "自由度調整済|R²"], string(c.highOrderSummaryTable.Data.Properties.VariableNames))));
             testCase.verifyTrue(contains(perShot.reduction(1).reference, "の Shot"), "Shot ごとは Mark の最も少ない Shot が基準");
             file = [tempname, '.xlsx'];
             app.exportHighOrderTo(file);
@@ -633,6 +635,7 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             testCase.verifyEqual(height(comparison), 12);
             testCase.verifyEqual(c.highOrderOutputs.SelectedTab, c.highOrderCompareTab);
             testCase.verifyEqual(height(c.highOrderCompareTable.Data), 12);
+            testCase.verifyTrue(all(isfinite(comparison.rSquared)), "補正の比較にも決定係数");
             testCase.verifyEqual(comparison.lambda(contains(comparison.label, "λ = 0（")), [0; 0]);
             testCase.verifyNotEmpty(c.highOrderCompareAxes.Children);
             exported = [tempname, '.xlsx'];

@@ -443,7 +443,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             c.highOrderCompare = primaryButton(app, controls, 'すべて計算して比べる', @(~, ~) app.onCompareHighOrder());
             place(c.highOrderCompare, 1, 6);
             c.highOrderConditionTable = uitable(grid, 'RowName', {}, 'ColumnName', {'No', '条件', '補正の式', 'くくり', ...
-                'Wafer 成分', 'X の回帰', 'Y の回帰'}, 'ColumnWidth', {30, 170, 60, 100, 56, 190, 190}, 'Data', cell(0, 7), ...
+                'Wafer レベル', 'X の回帰', 'Y の回帰'}, 'ColumnWidth', {30, 170, 60, 100, 190, 190, 190}, 'Data', cell(0, 7), ...
                 'CellSelectionCallback', @(~, event) app.onHighOrderConditionsSelected(event), 'Tooltip', ...
                 '比べる条件。セルをクリックして選びます（Shift・Ctrl で複数）。比べた後に2つ選ぶと、「2つの条件を並べる」に出ます。');
             place(c.highOrderConditionTable, 2, 1);
@@ -453,7 +453,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             c.highOrderCompareResults = results;
             c.highOrderCompareTableTab = uitab(results, 'Title', '表');
             c.highOrderCompareTable = uitable(uigridlayout(c.highOrderCompareTableTab, [1, 1], 'Padding', 4), ...
-                'RowName', {}, 'Data', table(), 'ColumnWidth', {170, 40, 90, 90, 90, 90, 90, 90, 90, 60, 60, 60, 70, 'auto'});
+                'RowName', {}, 'Data', table(), 'ColumnWidth', {170, 40, 90, 90, 90, 90, 90, 90, 90, 76, 90, 60, 60, 60, 70, 'auto'});
             c.highOrderCompareChartTab = uitab(results, 'Title', '図');
             chartGrid = uigridlayout(c.highOrderCompareChartTab, [2, 3], 'RowHeight', {'fit', '1x'}, 'ColumnWidth', ...
                 {'fit', 260, '1x'}, 'Padding', 4, 'RowSpacing', 2);
@@ -734,9 +734,10 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             t = comparison.table;
             c.highOrderCompareTable.Data = table(t.label, t.axis, round(t.highOrder, 3), round(t.highOrderP95, 3), ...
                 round(t.highOrderMedian, 3), round(t.highOrderInner, 3), round(t.highOrderOuter, 3), round(t.linear, 3), ...
-                round(t.before, 3), t.nTerms, t.kSets, t.skipped, t.nCorrected, t.note, 'VariableNames', ["条件", "軸", ...
+                round(t.before, 3), round(t.rSquared, 4), round(t.adjustedRSquared, 4), t.nTerms, t.kSets, t.skipped, ...
+                t.nCorrected, t.note, 'VariableNames', ["条件", "軸", ...
                 "高次補正 |平均|+3σ [nm]", "|残差| 95% 点 [nm]", "|残差| 中央値 [nm]", "内周 |平均|+3σ [nm]", ...
-                "外周 |平均|+3σ [nm]", "Shot ごとの1次 [nm]", "補正前 [nm]", "項の数", "k の組の数", "補正しなかった組", ...
+                "外周 |平均|+3σ [nm]", "Shot ごとの1次 [nm]", "補正前 [nm]", "決定係数 R²", "自由度調整済 R²", "項の数", "k の組の数", "補正しなかった組", ...
                 "比べた点", "メモ"]);
             for axisName = ["X", "Y"]
                 rows = find(t.axis == axisName & isfinite(t.highOrder));
@@ -888,10 +889,15 @@ end
 end
 
 function text = waferOrderLabel(options)
-% Wafer 成分の説明
+% Wafer レベルの補正の短い説明（例："1次"・"RT 3次"・"外周 RT 3次・内周 1次"）
 text = "なし";
 if options.waferOrder > 0
     text = sprintf("%d次", options.waferOrder);
+end
+if options.waferRtRange == "all"
+    text = sprintf("RT %d次", options.waferRtOrder);
+elseif options.waferRtRange == "outer"
+    text = sprintf("外周 RT %d次・内周 %s", options.waferRtOrder, text);
 end
 end
 
@@ -923,6 +929,11 @@ perShot = options.unit == "shot";
 wafer = "なし";
 if options.waferOrder > 0
     wafer = sprintf("%d次の多項式", options.waferOrder);
+end
+if options.waferRtRange == "all"
+    wafer = sprintf("RT モデル %d次", options.waferRtOrder);
+elseif options.waferRtRange == "outer"
+    wafer = sprintf("外周（半径 %g mm 以上）は RT モデル %d次、内周は %s", options.outerRadiusMm, options.waferRtOrder, wafer);
 end
 common = makerLabel(options);
 shotText = "なし";
@@ -999,8 +1010,8 @@ end
 
 function names = residualStageNames(options)
 % 「Wafer の比較」の残差の棒の名前（凡例）
-orderText = sprintf("%d次", options.waferOrder);
-if options.waferOrder == 0
+orderText = waferOrderLabel(options);
+if options.waferOrder == 0 && options.waferRtRange == "none"
     orderText = "0次：平均だけ";
 end
 names = ["補正前", "Wafer 高次補正だけ（" + orderText + "）", "Wafer 高次補正＋Shot 共通補正", ...

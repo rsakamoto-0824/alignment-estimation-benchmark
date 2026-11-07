@@ -7,7 +7,8 @@ function [comparison, results] = compareHighOrderConditions(wafers, settings, co
 %   comparison：行は条件 × 軸（X、Y の順に、条件の順）。label・axis・description（補正の説明）・maker・unit・loss・
 %   regularization（正則化の種類 none・l2・l1）・lambda（使った λ。正則化なしは 0）・nTerms（使った項の数。項数を絞った後。外周の式を分けるときは内周の式）・kSets・skipped・
 %   nCorrected・before・linear（Shot ごとの1次）・highOrder・improvement・highOrderP95・highOrderMedian（|残差| の 95% 点・
-%   中央値）・highOrderInner・highOrderOuter（内周・外周の Shot だけの高次補正の |平均|+3σ）・note（絞った項・求められなかった
+%   中央値）・highOrderInner・highOrderOuter（内周・外周の Shot だけの高次補正の |平均|+3σ）・rSquared・adjustedRSquared（回帰の
+%   決定係数と自由度調整済決定係数）・note（絞った項・求められなかった
 %   理由）。求められない条件（Scan 方向が分からないなど）の行は NaN。
 %   results：条件ごとの alignest.shotHighOrder の結果（points・options・description。求められない条件は []）。2つの条件の
 %   Shot ごとの比較（alignest.compareHighOrderShots）に使う。
@@ -31,10 +32,11 @@ for c = 1:numel(conditions)
     rows = table(repmat(string(conditions(c).label), 2, 1), AXES.', repmat(options.description, 2, 1), ...
         repmat(options.maker, 2, 1), repmat(options.unit, 2, 1), options.loss.', ...
         options.regularization.', lambda, nan(2, 1), nan(2, 1), nan(2, 1), nan(2, 1), ...
-        nan(2, 1), nan(2, 1), nan(2, 1), nan(2, 1), nan(2, 1), nan(2, 1), nan(2, 1), nan(2, 1), strings(2, 1), ...
+        nan(2, 1), nan(2, 1), nan(2, 1), nan(2, 1), nan(2, 1), nan(2, 1), nan(2, 1), nan(2, 1), nan(2, 1), nan(2, 1), ...
+        strings(2, 1), ...
         'VariableNames', ["label", "axis", "description", "maker", "unit", "loss", "regularization", "lambda", ...
         "nTerms", "kSets", "skipped", "nCorrected", "before", "linear", "highOrder", "improvement", "highOrderP95", ...
-        "highOrderMedian", "highOrderInner", "highOrderOuter", "note"]);
+        "highOrderMedian", "highOrderInner", "highOrderOuter", "rSquared", "adjustedRSquared", "note"]);
     try
         result = alignest.shotHighOrder(wafers, conditionSettings);
         results{c} = struct("points", result.points, "options", result.options, "description", result.description);
@@ -45,7 +47,7 @@ for c = 1:numel(conditions)
         for a = 1:2
             rows.nTerms(a) = nnz(main.used & main.axis == FORMULA_AXES(a));
             for name = ["kSets", "skipped", "nCorrected", "before", "linear", "highOrder", "improvement", ...
-                    "highOrderP95", "highOrderMedian"]
+                    "highOrderP95", "highOrderMedian", "rSquared", "adjustedRSquared"]
                 rows.(name)(a) = totals.(name)(a);
             end
             rows.highOrderInner(a) = regions.highOrder(regions.axis == AXES(a) & regions.region == "内周");

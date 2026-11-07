@@ -34,6 +34,10 @@ function result = shotHighOrder(wafers, settings, flags)
 %   - "skip"（その組は補正しない）：項は減らさない
 %   どの扱いでも、項がすべて決まらない k の組（k1〜k6 も決まらないなど）は補正しない（補正量・残差は NaN）。
 %   Wafer 成分の決まらない項は 0 にする。
+%   Wafer RT（options.waferRtRange。"all" はすべての Shot、"outer" は外周の Shot）：RT モデル（次数 options.waferRtOrder。
+%   alignest.basis.rtDesign）を、Shot 中心の座標（Wafer 半径 settings.data.waferRadiusMm で割る）で、Wafer ごとに X・Y を一緒に
+%   当てはめて先に引き、残りを上の補正の式で求める（正則化はかけない。X・Y の損失関数が同じならその損失関数、違えば最小二乗）。
+%   Wafer 成分（多項式）は RT で補正しない Shot だけに使う（"all" なら使わない）。RT の決まらない項は 0 にする。
 %   補正の段階を比べるために、同じ点・同じ損失関数で、Wafer 高次補正だけ（Shot 中心の座標 Xc・Yc の 0〜waferOrder 次の多項式。
 %   定数を含む）と、Wafer 高次補正＋Shot 共通補正（Wafer 成分と、Wafer 内の Shot で共通の1組の k（外周の式を分けるときは
 %   内周・外周の2組）を一緒に。くくりが Wafer 内で共通なら高次補正そのもの）の残差も求める。
@@ -41,19 +45,24 @@ function result = shotHighOrder(wafers, settings, flags)
 %   ときは ""、分けるときは "内周"・"外周"。VIF はその範囲の点で求める）
 %   result.coefficients：補正値（係数）の表（wafer・shotNo（Shot ごとのとき）・group（k の組の名前。Wafer 成分は
 %   "Wafer で共通"）・zone（外周の式を分けるときの式の範囲）・axis・component・k・term・value・unit・note・xPower・yPower
-%   （項のべき））。係数は mm の座標での値（単位 nm/mm^次数。1次は nm/mm = ppm）
+%   （項のべき））。係数は mm の座標での値（単位 nm/mm^次数。1次は nm/mm = ppm）。Wafer RT は component = "Wafer RT"・
+%   axis = "dx・dy"（X・Y で共通の係数）で、Wafer 半径で割った座標での値（単位 nm。k・xPower・yPower は NaN）
 %   result.summary：Wafer・軸ごとの評価と、全 Wafer をまとめた行（wafer = "すべての Wafer"。region = "すべて"）。点の数、
 %   補正前・Shot ごとの1次（k1〜k6）で補正した残差・高次補正の残差の |平均| + 3σ [nm]（before・linear・highOrder）、Shot
 %   ごとの1次と比べた改善（improvement）、高次補正の |残差| の 95% 点・中央値（highOrderP95・highOrderMedian）、高次補正の
 %   残差の RMS、外れ値とみなした点の数（outliers：ロバスト回帰が、残差が大きいため当てはめでの重みを半分未満に下げた点。
-%   alignest.highOrderOutliers。最小二乗では 0）、求めた k の組の数（kSets）と補正しなかった k の組の数（skipped）
+%   alignest.highOrderOutliers。最小二乗では 0）、求めた k の組の数（kSets）と補正しなかった k の組の数（skipped）、回帰の
+%   決定係数（rSquared）と自由度調整済決定係数（adjustedRSquared。alignest.highOrderRSquared）
 %   result.regionSummary：result.summary と同じ列で、内周・外周（region = "内周"・"外周"）の Shot だけの行。k の組が内周と
 %   外周にまたがるとき（外周の式を分けない Wafer 内で共通など）は kSets・skipped が NaN
-%   result.points：点ごとの値・k の組（group）・Shot 中心の半径（shotRadius）・内周か外周か（zone）・補正量・残差・Shot
+%   result.points：点ごとの値・k の組（group）・Shot 中心の半径（shotRadius）・内周か外周か（zone）・Wafer RT の補正量
+%   （waferRtX・Y。RT で補正しない Shot は 0）・RT で補正する Shot か（waferRtUsed）・補正量・残差・Shot
 %   ごとの1次で補正した残差・Wafer 高次補正だけの残差（waferResidualX・Y）・Wafer 高次補正＋Shot 共通補正の残差
 %   （commonResidualX・Y）・1点抜きの予測の誤差（looResidualX・Y。高次補正の当てはめで、その点を除いて当てはめたときの、
 %   その点の誤差。alignest.robustRidgeFit の looResidual。Shot ごとで Wafer 成分を先に引くときは、Wafer 成分は除かずに
-%   求める。その点だけで決まる項があれば NaN）・ロバスト回帰の重み（wafer の列を足して縦に並べる）
+%   求める。その点だけで決まる項があれば NaN）・ロバスト回帰の重み・ハット行列の対角（leverageX・Y。足すと回帰の自由度。
+%   Shot ごとで Wafer 成分を先に引くときは、Wafer 成分の項の数を点で等分して足す。Wafer RT の分も足す）（wafer の列を足して
+%   縦に並べる）
 %   result.commonCoefficients：Wafer 高次補正＋Shot 共通補正の Shot 共通の k（coefficients と同じ列。component は "Shot 共通"、
 %   group は "共通" または "内周"・"外周"）。くくりが Wafer 内で共通のときは空（coefficients の k が Shot 共通の k）
 %   result.reduction：式の範囲・軸（dx・dy）ごとの項数の絞り込み（axis・zone（"" または "内周"・"外周"）・zoneIndex・
@@ -128,21 +137,29 @@ for z = 1:numel(zoneTerms)
         isfinite(everything.shotNo(inZone)), options.vifThreshold);
     zoneTerms{z}.zone = repmat(ternaryText(zoneSplit, ZONE_NAMES(z), ""), height(zoneTerms{z}), 1);
 end
-waferPowers = polynomialPowers(options.waferOrder);
-waferFirst = options.unit == "shot" && options.waferOrder > 0;   % Shot ごと：Wafer 成分を先に求めて引く
+polynomialOrder = options.waferOrder * (options.waferRtRange ~= "all");   % すべての Shot が RT なら Wafer 成分は使わない
+waferPowers = polynomialPowers(polynomialOrder);
+waferFirst = options.unit == "shot" && polynomialOrder > 0;   % Shot ごと：Wafer 成分を先に求めて引く
 fitWaferPowers = waferPowers;
 if options.unit == "shot"
     fitWaferPowers = zeros(0, 2);   % Shot ごとの k と一緒には求めない（k1・k2 が Wafer 成分を含む）
 end
 
+waferRadiusMm = alignest.defaultSettings().data.waferRadiusMm;
+if isfield(settings, "data") && isfield(settings.data, "waferRadiusMm")
+    waferRadiusMm = settings.data.waferRadiusMm;
+end
+
 pointParts = cell(numel(wafers), 1);
+rtParts = cell(numel(wafers), 1);
 coefficientParts = cell(numel(wafers), 2);
 commonParts = cell(numel(wafers), 2);
 groupReductionParts = cell(numel(wafers), 2);
 summaryParts = cell(numel(wafers) + 1, 2);
 regionParts = cell(numel(wafers) + 1, 2, 2);
 counts = struct("skipped", [0, 0], "groups", [0, 0], "notConverged", 0, "noRobust", 0, "waferDropped", 0, ...
-    "undetermined", strings(1, 0), "constant", strings(1, 0), "reducedGroups", [0, 0], "reducedTerms", strings(1, 0));
+    "undetermined", strings(1, 0), "constant", strings(1, 0), "reducedGroups", [0, 0], "reducedTerms", strings(1, 0), ...
+    "rtDropped", 0, "rtNotConverged", 0);
 % 求めた・補正しなかった k の組の数（軸 × 範囲。1列目は内周と外周にまたがる組、2・3列目は内周・外周の組）
 [totalFitted, totalSkipped] = deal(zeros(2, 3));
 for w = 1:numel(wafers)
@@ -150,9 +167,15 @@ for w = 1:numel(wafers)
     label = string(wafers(w).label);
     nPoints = height(points);
     values = [points.valueX, points.valueY];
-    coordinates = [points.localX, points.localY, points.Xc, points.Yc];   % 表より速く切り出せる数の配列で回帰に渡す
     [groupKey, groupName] = groupOfPoints(points, options.unit, zoneSplit);
-    [correction, linearCorrection, weights, waferOnlyCorrection, commonCorrection, looResidual] = deal(nan(nPoints, 2));
+    rt = fitWaferRt(points, values, isfinite(groupKey), options, waferRadiusMm);
+    rtParts{w} = waferRtRows(label, rt, options);
+    counts.rtDropped = counts.rtDropped + (rt.nDropped > 0);
+    counts.rtNotConverged = counts.rtNotConverged + ~rt.converged;
+    fitValues = values - rt.part;   % RT の分を引いた残りを補正の式で求める（RT なしなら values のまま）
+    % 表より速く切り出せる数の配列で回帰に渡す。5列目：Wafer 成分を使う点は 1、RT で補正する Shot の点は 0
+    coordinates = [points.localX, points.localY, points.Xc, points.Yc, double(~rt.inScope)];
+    [correction, linearCorrection, weights, waferOnlyCorrection, commonCorrection, looResidual, leverage] = deal(nan(nPoints, 2));
     [fitted, skipped] = deal(zeros(2, 3));
     for a = 1:2
         fitOptions = axisFits(a).options;
@@ -163,14 +186,17 @@ for w = 1:numel(wafers)
         linearTerms = zoneTerms{1}(zoneTerms{1}.axis == FORMULA_AXES(a) & zoneTerms{1}.order <= 1, :);
         parts = cell(1, 0);
         waferPart = zeros(nPoints, 1);
+        waferRemoved = false;
         if flags.stages
-            waferOnlyCorrection(:, a) = fitWaferOnly(coordinates, values(:, a), isfinite(points.shotNo), ...
+            waferOnlyCorrection(:, a) = fitWaferOnly(coordinates, values(:, a), isfinite(points.shotNo) & ~rt.inScope, ...
                 [0, 0; waferPowers], fitOptions);
+            waferOnlyCorrection(rt.inScope, a) = rt.part(rt.inScope, a);
         end
         if options.unit ~= "common" && (flags.stages || waferFirst)
             % Wafer 高次補正＋Shot 共通補正（くくりが Wafer 内で共通なら、高次補正そのものなので下で写す）
-            [commonCorrection(:, a), commonWaferPart, common] = fitCommon(points, coordinates, values(:, a), axisTerms, ...
+            [commonFitted, commonWaferPart, common] = fitCommon(points, coordinates, fitValues(:, a), axisTerms, ...
                 waferPowers, zoneSplit, penalty, fitOptions, reduceGroups);
+            commonCorrection(:, a) = commonFitted + rt.part(:, a);
             if ~isempty(common) && any(common.fit.ok)
                 commonParts{w, a} = coefficientRows(label, common.unit, FORMULA_AXES(a), common.terms, zeros(0, 2), ...
                     common.fit, zoneSplit, "Shot 共通");
@@ -181,6 +207,7 @@ for w = 1:numel(wafers)
                     counts.waferDropped = counts.waferDropped + 1;   % 求められなかった Wafer 成分は 0（Shot ごとの k だけ）
                 else
                     waferPart = commonWaferPart;
+                    waferRemoved = true;
                     parts{end + 1} = waferRows(label, FORMULA_AXES(a), waferPowers, common.fit); %#ok<AGROW>
                     counts.waferDropped = counts.waferDropped + any(~common.fit.waferDetermined);
                     counts.notConverged = counts.notConverged + ~common.fit.converged;
@@ -200,12 +227,13 @@ for w = 1:numel(wafers)
                 counts.reducedGroups(a) = counts.reducedGroups(a) + height(reductionParts{u});
                 counts.reducedTerms = unique([counts.reducedTerms, "k" + string([groupDropped{:}])], 'stable');
             end
-            fit = fitGroups(coordinates(members, :), values(members, a) - waferPart(members), groupIndex, groupTerms, ...
+            fit = fitGroups(coordinates(members, :), fitValues(members, a) - waferPart(members), groupIndex, groupTerms, ...
                 fitWaferPowers, penalty, fitOptions);
             done = fit.ok(groupIndex);
-            correction(members(done), a) = fit.fitted(done) + waferPart(members(done));
+            correction(members(done), a) = fit.fitted(done) + waferPart(members(done)) + rt.part(members(done), a);
             weights(members(done), a) = fit.weights(done);
             looResidual(members(done), a) = fit.looResidual(done);
+            leverage(members(done), a) = fit.leverage(done);
             column = 1 + groupZones(points.zone(members), groupIndex, numel(fit.ok));
             fitted(a, :) = fitted(a, :) + accumarray(column(:), double(fit.ok(:)), [3, 1]).';
             skipped(a, :) = skipped(a, :) + accumarray(column(:), double(~fit.ok(:)), [3, 1]).';
@@ -226,6 +254,12 @@ for w = 1:numel(wafers)
                 end
             end
         end
+        if waferRemoved
+            % 先に引いた Wafer 成分の項の数も回帰の自由度に入れる（点で等分する）
+            corrected = isfinite(leverage(:, a));
+            leverage(corrected, a) = leverage(corrected, a) + size(waferPowers, 1) / nnz(corrected);
+        end
+        leverage(:, a) = leverage(:, a) + rt.leverage(:, a);   % 先に引いた RT の項も回帰の自由度に入れる
         coefficientParts{w, a} = [parts{:}];
         groupReductionParts{w, a} = vertcat(reductionParts{:});
         if options.unit == "common" && flags.stages
@@ -256,12 +290,14 @@ for w = 1:numel(wafers)
     zoneText(isfinite(points.zone)) = ZONE_NAMES(points.zone(isfinite(points.zone)));
     pointParts{w} = [table(repmat(label, nPoints, 1), 'VariableNames', "wafer"), ...
         points(:, ["source", "name", "shotNo", "x", "y", "localX", "localY", "direction", "rowParity", "valueX", ...
-        "valueY"]), table(groupText, points.shotRadius, zoneText, correction(:, 1), correction(:, 2), residual(:, 1), ...
+        "valueY"]), table(groupText, points.shotRadius, zoneText, rt.part(:, 1), rt.part(:, 2), rt.inScope, ...
+        correction(:, 1), correction(:, 2), residual(:, 1), ...
         residual(:, 2), linearResidual(:, 1), linearResidual(:, 2), waferResidual(:, 1), waferResidual(:, 2), ...
         commonResidual(:, 1), commonResidual(:, 2), looResidual(:, 1), looResidual(:, 2), weights(:, 1), ...
-        weights(:, 2), 'VariableNames', ["group", "shotRadius", "zone", "correctionX", "correctionY", "residualX", ...
-        "residualY", "linearResidualX", "linearResidualY", "waferResidualX", "waferResidualY", "commonResidualX", ...
-        "commonResidualY", "looResidualX", "looResidualY", "weightX", "weightY"])];
+        weights(:, 2), leverage(:, 1), leverage(:, 2), 'VariableNames', ["group", "shotRadius", "zone", "waferRtX", ...
+        "waferRtY", "waferRtUsed", "correctionX", "correctionY", "residualX", "residualY", "linearResidualX", "linearResidualY", "waferResidualX", ...
+        "waferResidualY", "commonResidualX", "commonResidualY", "looResidualX", "looResidualY", "weightX", "weightY", ...
+        "leverageX", "leverageY"])];
     for a = 1:2
         summaryParts{w, a} = summaryRow(label, AXIS_NAMES(a), ALL_REGION, points.shotNo, pointParts{w}, ...
             sum(fitted(a, :)), sum(skipped(a, :)));
@@ -279,7 +315,10 @@ result.terms = vertcat(zoneTerms{:});
 result.vifInfo = vifInfos{1};
 result.reduction = reduction;
 result.shortage = shortage;
-result.coefficients = coefficientTable([coefficientParts{:}]);
+result.coefficients = coefficientTable([rtParts{:}, coefficientParts{:}]);
+if options.waferRtRange == "outer"
+    result.coefficients.zone(result.coefficients.component == "Wafer 成分") = ZONE_NAMES(1);   % Wafer 成分は内周の Shot だけ
+end
 result.commonCoefficients = coefficientTable([commonParts{:}]);
 result.groupReductions = groupReductionTable(groupReductionParts(:));
 result.points = vertcat(pointParts{:});
@@ -626,6 +665,62 @@ else
 end
 end
 
+function block = waferBlock(coordinates, powers)
+% Wafer 成分の項の値（Shot 中心の座標 Xc・Yc の多項式。5列目が 0 の点（RT で補正する Shot）は 0）
+block = coordinates(:, 3) .^ (powers(:, 1).') .* coordinates(:, 4) .^ (powers(:, 2).') .* coordinates(:, 5);
+end
+
+function rt = fitWaferRt(points, values, hasGroup, options, waferRadiusMm)
+% Wafer RT：RT モデルを Shot 中心の座標で、X・Y を一緒に当てはめる（1 Wafer 分。k の組の分からない点は補正の式と同じく使わない
+% （hasGroup が false の点））。rt.inScope：RT で補正する Shot の点、
+% rt.part：点ごとの RT の補正量（点の数 × 2。ほかの点は 0）、rt.leverage：ハット行列の対角（X・Y の行を点に戻す。ほかの点は 0）、
+% rt.names・coefficients・determined：項ごとの名前・係数・決まったか、rt.nDropped：決まらなかった項の数、rt.converged
+n = height(points);
+rt = struct("inScope", false(n, 1), "part", zeros(n, 2), "leverage", zeros(n, 2), "names", strings(0, 1), ...
+    "coefficients", zeros(0, 1), "determined", false(0, 1), "nDropped", 0, "converged", true);
+if options.waferRtRange == "none"
+    return
+end
+rt.inScope = isfinite(points.shotNo) & isfinite(points.Xc) & isfinite(points.Yc);
+if options.waferRtRange == "outer"
+    rt.inScope = rt.inScope & points.zone == 2;
+end
+rowsX = find(rt.inScope & hasGroup & isfinite(values(:, 1)));
+rowsY = find(rt.inScope & hasGroup & isfinite(values(:, 2)));
+if isempty(rowsX) && isempty(rowsY)
+    return   % 補正する Shot の値が無い Wafer（例：外周の Shot が無い）
+end
+[basisX, basisY, rt.names] = alignest.basis.rtDesign([points.Xc, points.Yc] / waferRadiusMm, options.waferRtOrder);
+lossName = options.loss(1);
+if options.loss(2) ~= lossName
+    lossName = "ols";   % X・Y を一緒に求めるので、損失関数が違うときは最小二乗
+end
+fit = alignest.robustRidgeFit([basisX(rowsX, :); basisY(rowsY, :)], [values(rowsX, 1); values(rowsY, 2)], ...
+    false(numel(rt.names), 1), 'loss', lossName, 'huberTuning', options.huberTuning(1), 'lambda', 0);
+rt.coefficients = fit.coefficients;
+rt.determined = fit.determined;
+rt.nDropped = nnz(~fit.determined);
+rt.converged = fit.converged;
+rt.part(rt.inScope, :) = [basisX(rt.inScope, :) * fit.coefficients, basisY(rt.inScope, :) * fit.coefficients];
+rt.leverage(rowsX, 1) = fit.leverage(1:numel(rowsX));
+rt.leverage(rowsY, 2) = fit.leverage(numel(rowsX) + 1:end);
+end
+
+function rows = waferRtRows(label, rt, options)
+% Wafer RT の係数の行（coefficientRows と同じ形。RT を使わない・値が無ければ空）
+rows = [];
+n = numel(rt.names);
+if n == 0
+    return
+end
+note = strings(n, 1);
+note(~rt.determined) = "点の配置では決まらない（0 にした）";
+rows = struct("wafer", repmat(string(label), n, 1), "shotNo", nan(n, 1), "group", repmat("Wafer で共通", n, 1), ...
+    "zone", repmat(ternaryText(options.waferRtRange == "outer", "外周", ""), n, 1), "axis", repmat("dx・dy", n, 1), ...
+    "component", repmat("Wafer RT", n, 1), "k", nan(n, 1), "term", rt.names, "value", rt.coefficients, ...
+    "unit", repmat("nm", n, 1), "note", note, "xPower", nan(n, 1), "yPower", nan(n, 1));
+end
+
 function fitted = fitWaferOnly(coordinates, values, hasShot, powers, fitOptions)
 % Wafer 高次補正だけ：Shot 中心の座標 Xc・Yc の多項式（powers のべき。定数を含む）を、Shot の分かる点で当てはめた補正量
 % （正則化なし。同じ損失関数）。決まらない項は 0（alignest.robustRidgeFit）。点が無ければ NaN
@@ -634,7 +729,7 @@ rows = find(isfinite(values) & hasShot);
 if isempty(rows)
     return
 end
-design = coordinates(rows, 3) .^ (powers(:, 1).') .* coordinates(rows, 4) .^ (powers(:, 2).');
+design = waferBlock(coordinates(rows, :), powers);
 fit = alignest.robustRidgeFit(design, values(rows), false(size(powers, 1), 1), fitOptions{:}, 'lambda', 0);
 fitted(rows) = fit.fitted;
 end
@@ -671,7 +766,7 @@ end
 fitted(unit.members) = fit.fitted;
 coefficients = fit.waferCoefficients;
 coefficients(~isfinite(coefficients)) = 0;
-waferPart = (coordinates(:, 3) .^ (waferPowers(:, 1).') .* coordinates(:, 4) .^ (waferPowers(:, 2).')) * coefficients;
+waferPart = waferBlock(coordinates, waferPowers) * coefficients;
 waferPart(~isfinite(waferPart)) = 0;
 end
 
@@ -679,8 +774,8 @@ function out = fitGroups(coordinates, values, groupIndex, groupTerms, waferPower
 % 一緒に求める点の集まりに補正の式を当てはめる：k は組（groupIndex）ごと（組 g の項は groupTerms{g}。外周の式を分けると
 % 組ごとに項が違う）、Wafer 成分は共通。項がすべては決まらない組は補正しない（その組を除いて求め直す。組の項はその組の
 % 点だけで決まるので、ほかの組は変わらない）。
-% coordinates：点ごとの [Shot 内の x, Shot 内の y, Shot 中心の Xc, Yc]。penalty：正則化の強さ lambda とかける項の次数 orders。
-% out.ok：補正した組、out.fitted・weights・looResidual（1点抜きの予測の誤差）：点ごと（補正しない組の点は NaN）、
+% coordinates：点ごとの [Shot 内の x, Shot 内の y, Shot 中心の Xc, Yc, Wafer 成分を使うか（1・0）]。penalty：正則化の強さ lambda とかける項の次数 orders。
+% out.ok：補正した組、out.fitted・weights・looResidual（1点抜きの予測の誤差）・leverage（ハット行列の対角）：点ごと（補正しない組の点は NaN）、
 % out.coefficients・determined・constant：組ごとの cell（組の項の数 × 1）、out.waferCoefficients・waferDetermined・
 % waferConstant：Wafer 成分の項
 nGroups = max([groupIndex(:); 0]);
@@ -688,6 +783,7 @@ nWafer = size(waferPowers, 1);
 n = numel(values);
 emptyOf = @(fill) cellfun(@(terms) fill(height(terms), 1), groupTerms, 'UniformOutput', false);
 out = struct("ok", false(1, nGroups), "fitted", nan(n, 1), "weights", nan(n, 1), "looResidual", nan(n, 1), ...
+    "leverage", nan(n, 1), ...
     "coefficients", {emptyOf(@nan)}, "determined", {emptyOf(@false)}, "constant", {emptyOf(@false)}, ...
     "waferCoefficients", nan(nWafer, 1), "waferDetermined", true(nWafer, 1), "waferConstant", false(nWafer, 1), ...
     "converged", true, "robust", false);
@@ -716,6 +812,7 @@ end
 out.ok(active) = true;
 out.fitted(rows) = fit.fitted;
 out.looResidual(rows) = fit.looResidual;
+out.leverage(rows) = fit.leverage;
 out.weights(rows) = fit.weights;
 for j = 1:numel(active)
     out.coefficients{active(j)} = fit.coefficients(fit.columns{j});
@@ -747,7 +844,7 @@ for g = 1:nGroups
     columnGroup(columns{g}) = g;
     offset = offset + height(terms);
 end
-wafer = coordinates(:, 3) .^ (waferPowers(:, 1).') .* coordinates(:, 4) .^ (waferPowers(:, 2).');
+wafer = waferBlock(coordinates, waferPowers);
 nWafer = size(waferPowers, 1);
 groupOptions = {};
 if nGroups > 1
@@ -810,7 +907,8 @@ end
 
 function coefficients = coefficientTable(parts)
 % 係数の行（coefficientRows の構造体の配列）を縦につないで表にする（行が無ければ列だけの表）
-% xPower・yPower は項のべき（Shot 高次補正は Shot 内の x・y、Wafer 成分は Shot 中心の Xc・Yc。alignest.highOrderModelAt）
+% xPower・yPower は項のべき（Shot 高次補正は Shot 内の x・y、Wafer 成分は Shot 中心の Xc・Yc。alignest.highOrderModelAt。
+% Wafer RT は NaN）
 names = ["wafer", "shotNo", "group", "zone", "axis", "component", "k", "term", "value", "unit", "note", "xPower", "yPower"];
 if isempty(parts)
     parts = struct("wafer", strings(0, 1), "shotNo", zeros(0, 1), "group", strings(0, 1), "zone", strings(0, 1), ...
@@ -889,10 +987,12 @@ middle = NaN;
 if ~isempty(magnitude)
     middle = median(magnitude);
 end
+[rSquared, adjustedRSquared] = alignest.highOrderRSquared(values, residual, points.("leverage" + axisName));
 row = table(string(label), string(axisName), string(region), nnz(withValue), nnz(compared), shots, kSets, skipped, ...
     before, linear, highOrder, linear - highOrder, p95, middle, rms, nnz(compared & alignest.highOrderOutliers(weights)), ...
-    'VariableNames', ["wafer", "axis", "region", "n", "nCorrected", "shots", "kSets", "skipped", "before", "linear", ...
-    "highOrder", "improvement", "highOrderP95", "highOrderMedian", "rmsHighOrder", "outliers"]);
+    rSquared, adjustedRSquared, 'VariableNames', ["wafer", "axis", "region", "n", "nCorrected", "shots", "kSets", ...
+    "skipped", "before", "linear", "highOrder", "improvement", "highOrderP95", "highOrderMedian", "rmsHighOrder", ...
+    "outliers", "rSquared", "adjustedRSquared"]);
 end
 
 function value = meanPlus3Sigma(values)
@@ -928,7 +1028,29 @@ if zoneSplit
 else
     messages(end + 1, 1) = outerText + "。「補正の評価」で内周・外周に分けて出せます。";
 end
-if options.unit == "shot" && options.waferOrder > 0
+if options.waferRtRange ~= "none"
+    rtNames = struct("all", "すべての Shot", "outer", "外周の Shot");
+    messages(end + 1, 1) = sprintf(['%s は、Wafer RT（RT モデル %d 次。Shot 中心の座標で、X・Y を一緒に）を先に求めて引き、' ...
+        '残りを補正の式で求めました。'], rtNames.(options.waferRtRange), options.waferRtOrder);
+    if options.waferRtRange == "outer" && options.waferOrder > 0
+        messages(end) = messages(end) + sprintf("内周の Shot は Wafer 成分（%d 次）で補正しました。", options.waferOrder);
+    end
+    if options.loss(1) ~= options.loss(2)
+        messages(end) = messages(end) + "X・Y で損失関数が違うので、Wafer RT は最小二乗で求めました。";
+    end
+    if options.unit == "shot"
+        messages(end) = messages(end) + "Shot ごとの k1・k2 は Wafer RT を除いた値です（補正量・残差は Wafer RT なしと同じ）。";
+    end
+end
+if counts.rtDropped > 0
+    messages(end + 1, 1) = sprintf(['⚠ Shot の数が少なく Wafer RT の項が決まらない Wafer が %d 個あり、その項は 0 に' ...
+        'しました（書き出しの「補正値」のメモ）。次数を下げると決まります。'], counts.rtDropped);
+end
+if counts.rtNotConverged > 0
+    messages(end + 1, 1) = sprintf('⚠ Wafer RT のロバスト回帰の繰り返しが収束しなかった Wafer が %d 個あります（最後の値を使いました）。', ...
+        counts.rtNotConverged);
+end
+if options.unit == "shot" && options.waferOrder > 0 && options.waferRtRange ~= "all"
     messages(end + 1, 1) = sprintf(['Shot ごと：Wafer 成分（%d 次）を先に、Wafer 内で共通の k と一緒に求めて引き、残りを' ...
         ' Shot ごとに求めました（Shot ごとの k1・k2 は Wafer 成分を除いた値。補正量・残差は Wafer 成分なしと同じ）。'], ...
         options.waferOrder);

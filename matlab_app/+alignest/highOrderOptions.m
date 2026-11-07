@@ -8,6 +8,10 @@ function options = highOrderOptions(settings)
 %                       使わない。Shot ごとのほかは、Wafer で共通の1組として Shot の k と一緒に求める。Shot ごとのときは、
 %                       Shot ごとの k1・k2 が Wafer 成分を含むので、先に（Wafer 内で共通の k と一緒に）求めて引き、残りを
 %                       Shot ごとに求める（補正量・残差は Wafer 成分なしと同じで、Shot ごとの k1・k2 が Wafer 成分を除いた値になる）
+%   options.waferRtRange：Wafer RT（RT モデル。alignest.basis.rtDesign を Shot 中心の座標で当てはめる）を使う Shot。"none"（使わ
+%                         ない）・"all"（すべての Shot。Wafer 成分は使わない）・"outer"（外周の Shot だけ。Wafer 成分は内周の Shot
+%                         だけ）。X・Y を一緒に、Wafer ごとに先に求めて引き、残りを補正の式で求める
+%   options.waferRtOrder：Wafer RT の次数 K（1〜5）
 %   options.excludedTerms：使わない k の番号（「VIF で選ぶ」で外した・画面で外した項。k1〜k6 は外さない）
 %   options.outerRadiusMm：外周の Shot（Shot 中心の半径がこの値 [mm] 以上）。補正の評価を内周・外周に分けるときと、外周の式に使う
 %   options.outerMaker：外周の Shot の補正の式（"none" なら分けない。"asml"・"canon"・"nikon"・"custom"）。分けると、k の組を
@@ -28,6 +32,8 @@ function options = highOrderOptions(settings)
 %   options.description：画面・Excel に出す説明
 %   以前の設定（highOrder が無い・項目が足りない）は、alignest.defaultSettings の値を使う。
 MAX_WAFER_ORDER = 5;
+MAX_RT_ORDER = 5;
+RT_RANGE_NAMES = ["none", "all", "outer"];
 MAKER_NAMES = ["asml", "canon", "nikon", "custom"];
 MAKER_LABELS = ["ASML", "Canon", "Nikon", "カスタム（k1〜k38）"];
 UNIT_NAMES = ["common", "scan", "row", "shot"];
@@ -74,6 +80,7 @@ options.outerMaker = lower(string(options.outerMaker));
 options.outerExcludedTerms = reshape(double(options.outerExcludedTerms), 1, []);
 options.outerName = string(options.outerName);
 options.shortage = string(options.shortage);
+options.waferRtRange = string(options.waferRtRange);
 if ~isscalar(options.maker) || ~any(options.maker == MAKER_NAMES)
     error('alignest:highOrderModel', 'Shot 高次補正の式は %s のいずれかです: %s', strjoin(MAKER_NAMES, "・"), ...
         strjoin(options.maker, "・"));
@@ -88,6 +95,13 @@ if ~isscalar(options.shortage) || ~any(options.shortage == SHORTAGE_NAMES)
 end
 if ~isscalar(options.waferOrder) || ~any(options.waferOrder == 0:MAX_WAFER_ORDER)
     error('alignest:highOrderWafer', 'Wafer 成分の次数は 0〜%d の整数にしてください。', MAX_WAFER_ORDER);
+end
+if ~isscalar(options.waferRtRange) || ~any(options.waferRtRange == RT_RANGE_NAMES)
+    error('alignest:highOrderWafer', 'Wafer RT を使う Shot は none（使わない）・all（すべての Shot）・outer（外周だけ）のいずれかです: %s', ...
+        strjoin(options.waferRtRange, "・"));
+end
+if ~isscalar(options.waferRtOrder) || ~any(options.waferRtOrder == 1:MAX_RT_ORDER)
+    error('alignest:highOrderWafer', 'Wafer RT の次数は 1〜%d の整数にしてください。', MAX_RT_ORDER);
 end
 if ~isscalar(options.vifThreshold) || ~isfinite(options.vifThreshold) || options.vifThreshold <= 1
     error('alignest:highOrderVif', 'VIF のしきい値は 1 より大きい数にしてください（よく使う値は 5〜10）。');
@@ -138,12 +152,19 @@ if options.outerMaker ~= "none"
         formulaDescription(options.outerMaker, options.outerExcludedTerms, MAKER_NAMES, MAKER_LABELS, options.outerName);
 end
 unitText = UNIT_LABELS(UNIT_NAMES == options.unit);
-if options.unit == "common" && options.waferOrder > 0
-    unitText = unitText + sprintf("（Wafer 成分 %d 次も一緒に求める）", options.waferOrder);
-elseif options.unit == "shot" && options.waferOrder > 0
-    unitText = unitText + sprintf("（Wafer 成分 %d 次を先に求めて引く）", options.waferOrder);
-elseif options.waferOrder > 0
-    unitText = unitText + sprintf("（Wafer 成分 %d 次は Wafer で共通にして一緒に求める）", options.waferOrder);
+waferOrder = options.waferOrder * (options.waferRtRange ~= "all");   % すべての Shot が RT なら Wafer 成分は使わない
+if options.unit == "common" && waferOrder > 0
+    unitText = unitText + sprintf("（Wafer 成分 %d 次も一緒に求める）", waferOrder);
+elseif options.unit == "shot" && waferOrder > 0
+    unitText = unitText + sprintf("（Wafer 成分 %d 次を先に求めて引く）", waferOrder);
+elseif waferOrder > 0
+    unitText = unitText + sprintf("（Wafer 成分 %d 次は Wafer で共通にして一緒に求める）", waferOrder);
+end
+if options.waferRtRange == "all"
+    unitText = unitText + sprintf("、すべての Shot は Wafer RT %d 次を先に求めて引く", options.waferRtOrder);
+elseif options.waferRtRange == "outer"
+    unitText = unitText + sprintf("、外周（Shot 中心の半径 %g mm 以上）は Wafer RT %d 次を先に求めて引く（Wafer 成分は内周だけ）", ...
+        options.outerRadiusMm, options.waferRtOrder);
 end
 regressionText = strings(1, 2);
 for a = 1:2

@@ -97,6 +97,9 @@ settings.highOrder.unit = "common";        % k のくくり：common（Wafer 内
                                            % 偶奇ごと）・shot（Shot ごと）
 settings.highOrder.waferOrder = 1;         % Wafer 成分（Shot 中心の座標の多項式の次数。0〜5、0 = なし。shot のほかは k と一緒に、
                                            % shot は先に求めて引く）
+settings.highOrder.waferRtRange = "none";   % Wafer RT（RT モデルを Shot 中心の座標で当てはめる Wafer 高次補正）を使う Shot：
+                                           % none（使わない）・all（すべての Shot）・outer（外周の Shot だけ。内周は Wafer 成分）
+settings.highOrder.waferRtOrder = 3;       % Wafer RT の次数 K（1〜5）
 settings.highOrder.excludedTerms = zeros(1, 0);  % 使わない k の番号（「VIF で選ぶ」・画面で外した項。k1〜k6 は外さない）
 settings.highOrder.outerRadiusMm = 120;    % 外周の Shot（Shot 中心の半径がこの値 [mm] 以上）。内周・外周に分けた評価と外周の式に使う
 settings.highOrder.outerMaker = "none";    % 外周の Shot の補正の式：none（分けない）・asml・canon・nikon・custom

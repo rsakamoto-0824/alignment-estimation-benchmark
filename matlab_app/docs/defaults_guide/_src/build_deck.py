@@ -364,6 +364,7 @@ def build(output: Path, reference: Path):
         ["highOrder.maker", "\"nikon\"", "補正の式（asml・canon・nikon：ルールの式、custom：k1〜k38）", "7. 補正の式"],
         ["highOrder.unit", "\"common\"", "k のくくり（common：共通・scan：Scan 方向・row：行の偶奇・shot）", "7. 補正のくくり"],
         ["highOrder.waferOrder", "1", "Wafer 成分の次数（0〜5、0 = なし。shot は先に求めて引く）", "7. Wafer 成分"],
+        ["highOrder.waferRtRange ・ waferRtOrder", "\"none\" ・ 3", "Wafer RT を使う Shot（none・all・outer）・次数（1〜5）", "7. Wafer RT"],
         ["highOrder.excludedTerms", "[]（すべて使う）", "使わない k の番号（例：[55, 41, 29]。k1〜k6 は外さない）", "7. 使う項と VIF"],
         ["highOrder.shortage", "\"reduceAll\"", "点が足りない Shot の扱い（reduceAll・reduceGroup・skip）", "7. 点が足りない Shot"],
         ["highOrder.outerRadiusMm", "120", "外周の Shot（Shot 中心の半径 [mm] がこの値以上）", "7. 外周の半径"],
@@ -372,10 +373,10 @@ def build(output: Path, reference: Path):
         ["highOrder.loss ・ huberTuning", "\"huber\" ・ 1.345", "損失関数（ols・huber・lad）・Huber の定数 c", "7. 回帰・Huber"],
         ["highOrder.regularization ・ penaltyOrders ・ lambda", "\"l2\" ・ [2〜6] ・ 0.1", "正則化（none・l2・l1）・かける次数（1〜6）・強さ λ", "7. 正則化・λ"],
         ["highOrder.termSets", "[]（なし）", "保存した項の組み合わせ（1行 = \"名前|式|k の番号 …\"）", "7. 組み合わせ"]],
-        widths=(3.3, 1.95, 4.9, 1.98), row_h=0.35)
-    point_bar(s, 6.2, "λ はそろえた係数に対する値（L2 は 1 Shot 7×11 点の標準 0.1。点を減らすときは λ × √(77 / 点の数)）。"
+        widths=(3.3, 1.95, 4.9, 1.98), row_h=0.34)
+    point_bar(s, 6.32, "λ はそろえた係数に対する値（L2 は 1 Shot 7×11 点の標準 0.1。点を減らすときは λ × √(77 / 点の数)）。"
               "highOrder は評価の結果を変えない（「続きから再開」の比較にも使わない）",
-              icon="i", icon_color=BODY, h=0.7, size=12)
+              icon="i", icon_color=BODY, h=0.62, size=12)
     notes(s, "「7. Shot高次補正」のタブの初期値。excludedTerms は「VIF で選ぶ」・表の「使う」・点の数による項の絞り込みで変わり、"
              "「設定を保存…」の JSON にも入る。termSets は画面の「保存」で増え、MATLAB の設定（getpref）にも残る。"
              "以前の設定ファイルの l2（true・false）は、regularization の l2・none として読む。"

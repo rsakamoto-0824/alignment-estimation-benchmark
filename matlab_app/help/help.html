@@ -120,6 +120,7 @@
   <a href="#targets">未知の座標の推定の決まり</a>
   <a href="#tech-high-order">Shot 高次補正の計算</a>
   <a class="sub" href="#tech-high-order-unit">補正のくくり</a>
+  <a class="sub" href="#tech-high-order-rt">Wafer RT</a>
   <a class="sub" href="#tech-high-order-vif">VIF と項の選び方</a>
   <a class="sub" href="#tech-high-order-fit">回帰の式</a>
   <a class="sub" href="#tech-high-order-eval">評価の式</a>
@@ -282,6 +283,7 @@
 <h2 id="high-order">7. Shot高次補正</h2>
 <p>Shot 内の座標の補正の式（ASML・Canon・Nikon・カスタム）の係数（k パラメータ）を求め、補正した後の残差を、Shot ごとの1次（k1〜k6）で補正した残差と比べます。左で入力のデータ・補正の式・回帰を決めて「補正を計算する」を押します。式は<a href="#tech-high-order">技術編</a>にあります。</p>
 <p>「補正のくくり」は k の組をどの Shot で共通にするかです：Wafer 内で共通（Wafer ごとに1組）・Scan 方向ごと・行の偶奇ごと・Shot ごと（Shot ごとに1組）。「Wafer 成分」は Shot 中心の座標の多項式（0〜5次）で、Wafer の倍率・回転が Shot の k に混ざらないように一緒に求めます。補正の式の「カスタム」は k1〜k38 から項を選ぶ式です。</p>
+<p>「Wafer RT」は Wafer レベルの補正に RT モデル（1〜5次）を使う指定です。<strong>すべての Shot</strong>：Wafer 成分の代わりに RT モデルで補正します。<strong>外周だけ</strong>：外周の Shot は RT モデル、内周の Shot は Wafer 成分で補正します（外周は「外周の半径」で決まります）。「外周の式」とは別の指定で、一緒に使えます。Shot が少なくて決まらない項は 0 にして、メッセージで知らせます。式は技術編の「Wafer RT」です。</p>
 
 <h3 id="high-order-input">入力のデータ</h3>
 <table>
@@ -339,10 +341,11 @@
 <tr><td class="term">高次補正の残差</td><td>選んだ高次の式で補正した後に残った残差。</td></tr>
 <tr><td class="term">改善</td><td>1次の残差 − 高次補正の残差（正なら高次補正で小さくなった）。</td></tr>
 <tr><td class="term">|残差| 95% 点・中央値</td><td>高次補正の残差の大きさの 95% 点と中央値 [nm]。</td></tr>
+<tr><td class="term">決定係数 R²・自由度調整済 R²</td><td>補正の式で値のばらつきをどれだけ説明できたかの割合（1 に近いほどよく説明できた）。自由度調整済 R² は、項を増やすだけでは良く見えないように、項の数の分を割り引いた値です（<a href="#tech-high-order-eval">式</a>）。ロバスト回帰・正則化では 0 より小さくなることがあります。</td></tr>
 <tr><td class="term">外れ値とみなした点</td><td>上の「回帰」のとおり。</td></tr>
 </table>
 <p>どれも |平均|+3σ [nm] で小さいほどよく、高次補正と1次の補正の両方ができた点で比べます（同じ損失関数）。項がすべて決まらない k の組（点が足りない・点の配置で決まらない Shot・組・Wafer）は補正せず、表に数を出します。同じ点で当てはめた残差は、項や k の組を増やすほど小さく見えるので、項・くくりの選び方は<a href="#high-order-compare">補正の比較</a>で λ も変えて比べてください。「内周・外周に分けて出す」の外周は左の「外周の半径」以上の Shot です。</p>
-<p>「補正値」の表は、行（Wafer・k の組・Shot）ごとに、その行の点の回帰の残差（点の数・|平均|+3σ・|残差| の 95% 点と中央値。選んだ式の軸）と、使う項の係数を出します。係数は mm の座標での値（定数 nm、1次 nm/mm = ppm、n 次 nm/mm<sup>n</sup>）で、x・y は Shot 内の座標です。空欄は決まらない・補正しなかった組です。Wafer 成分（Shot 中心の座標 Xc・Yc の項）の係数は「結果を Excel に書き出す…」の「補正値」のシートにあります。</p>
+<p>「補正値」の表は、行（Wafer・k の組・Shot）ごとに、その行の点の回帰の残差（点の数・|平均|+3σ・|残差| の 95% 点と中央値。選んだ式の軸）と決定係数 R²・自由度調整済 R²、使う項の係数を出します。係数は mm の座標での値（定数 nm、1次 nm/mm = ppm、n 次 nm/mm<sup>n</sup>）で、x・y は Shot 内の座標です。空欄は決まらない・補正しなかった組です。Wafer 成分（Shot 中心の座標 Xc・Yc の項）の係数は「結果を Excel に書き出す…」の「補正値」のシートにあります。</p>
 
 <h3 id="high-order-map">マップ（グリッド・並べて表示）</h3>
 <table>
@@ -407,7 +410,7 @@
 <table>
 <tr><th>書き出すもの</th><th>表</th></tr>
 <tr><td class="term">点ごとの値</td><td>計測データの形の表で、読み直せます。Operation・EqpId・LotID・Wafer・DateTime・shotNo・Direction・Xmm・Ymm・Radius・markNo・markXmm・markYmm・measX・measY・StsX・StsY の列（Overlay 計測ルールの表の順）。measX・measY に、選んだ値（高次補正の残差・補正量・Shot ごとの1次で補正した残差・Wafer 高次補正だけの残差・Wafer 高次補正＋Shot 共通補正の残差・補正前の値）を入れ、値の無い点は空欄で Sts を −1 にします。「1. データの読み込み」や「Excel・CSV を読み込む…」でそのまま読み直せます（例：残差を読み直して、残差の面内推定や、さらに補正を評価する）。</td></tr>
-<tr><td class="term">Shot ごとの補正値</td><td>k を横に並べた表です。1行 = 1 Shot。Wafer・shotNo・Shot 中心の座標・半径・範囲・くくり・点の数のあとに、補正の段階の順に並べます：<strong>Wafer 低次・Wafer 高次</strong>（Wafer 成分の1次・2次以上の項を Shot 中心で求めた並進 dx・dy [nm]）、<strong>Shot 共通 低次・高次</strong>（Wafer 内の Shot で共通の k の k1〜k6・k7 以降。Scan 方向ごと・行の偶奇ごとはその組の k。Wafer 全体の並進（定数）は Shot 共通の k1・k2 に入ります）、<strong>Shot 毎 低次・高次</strong>（Shot ごとのときだけ。Shot ごとの k − Shot 共通の k。Shot 共通は Wafer 成分と一緒に全 Shot で求めた k。点が足りず使わない項は − Shot 共通）。最後に <strong>合計</strong>（その Shot に当てる k = Shot 共通 + Shot 毎。k1・k2 には Wafer 成分の並進も足す）とメモ（補正しなかった Shot・項を減らした Shot）。列の名前に単位を付けます。「結果を Excel に書き出す…」の「Shotごとの補正値」のシートも同じ表で、「補正値」のシートは係数を同じ段階の順に縦に並べます。</td></tr>
+<tr><td class="term">Shot ごとの補正値</td><td>k を横に並べた表です。1行 = 1 Shot。Wafer・shotNo・Shot 中心の座標・半径・範囲・くくり・点の数のあとに、補正の段階の順に並べます：<strong>Wafer 低次・Wafer 高次</strong>（Wafer 成分の1次・2次以上の項を Shot 中心で求めた並進 dx・dy [nm]）、<strong>Wafer RT</strong>（使うときだけ。その Shot の並進 dx・dy [nm]。RT で補正する Shot は Wafer 低次・高次が空欄）、<strong>Shot 共通 低次・高次</strong>（Wafer 内の Shot で共通の k の k1〜k6・k7 以降。Scan 方向ごと・行の偶奇ごとはその組の k。Wafer 全体の並進（定数）は Shot 共通の k1・k2 に入ります）、<strong>Shot 毎 低次・高次</strong>（Shot ごとのときだけ。Shot ごとの k − Shot 共通の k。Shot 共通は Wafer 成分と一緒に全 Shot で求めた k。点が足りず使わない項は − Shot 共通）。最後に <strong>合計</strong>（その Shot に当てる k = Shot 共通 + Shot 毎。k1・k2 には Wafer 成分・Wafer RT の並進も足す）とメモ（補正しなかった Shot・項を減らした Shot）。列の名前に単位を付けます。「結果を Excel に書き出す…」の「Shotごとの補正値」のシートも同じ表で、「補正値」のシートは係数を同じ段階の順に縦に並べます。</td></tr>
 <tr><td class="term">補正の比較の全条件の点ごとの値</td><td>点ごとに、補正前の値と、比べた条件ごとの選んだ値（列の名前は「番号. 条件の名前：値の名前X[nm]」）。比べた後に条件・入力を変えたときは、比べ直してから書き出します。Excel の「説明」シートに条件ごとの設定を書きます。</td></tr>
 </table>
 <p>計算した後に設定・入力を変えていれば、書き出すときに今の設定で計算し直します（「結果を Excel に書き出す…」と同じ）。</p>
@@ -692,6 +695,20 @@ Fringe 番号は、Fringe の次数 k = (n + |m|)/2 の小さい順、同じ k �
 </table>
 <p>x・y は Shot 内の座標 [mm]（Shot 中心が原点）。dx の式は X の値、dy の式は Y の値に当てはめます。係数は mm の座標での値（定数 nm、1次 nm/mm = ppm、n 次 nm/mm<sup>n</sup>）。</p>
 
+<h3 id="tech-high-order-rt">Wafer RT</h3>
+<div class="formula">値(Mark) = RT(X, Y) + Σ<sub>使う項</sub> k<sub>j</sub>·x<sup>m</sup>y<sup>n</sup>　　X = Xc / Wafer 半径、Y = Yc / Wafer 半径
+RT の dx = t<sub>x</sub> + a·X + b·Y + Σ<sub>i</sub> (M<sub>i</sub>·X − Θ<sub>i</sub>·Y)·Z<sub>i</sub>(X, Y)
+RT の dy = t<sub>y</sub> − a·Y + b·X + Σ<sub>i</sub> (M<sub>i</sub>·Y + Θ<sub>i</sub>·X)·Z<sub>i</sub>(X, Y)　　Z<sub>i</sub>：動径次数 n ≤ K の Zernike 多項式</div>
+<ul>
+  <li>式は推定の手法の RT モデルと同じです。t<sub>x</sub>・t<sub>y</sub> は並進、a は非対称倍率、b は直交度、M<sub>i</sub> は局所倍率、Θ<sub>i</sub> は局所回転の係数です。項の数は 4 + (K+1)(K+2) です（K = 5 で 46 項）。</li>
+  <li>Shot 中心の座標で当てはめるので、RT の補正量はその Shot の並進になります（Wafer 成分と同じです）。</li>
+  <li>Wafer ごとに X・Y を1組の係数で求めて先に引き、残りを補正の式で求めます。X・Y 別の補正の式とは一緒に求めません。</li>
+  <li>正則化はかけません。X・Y の損失関数が同じならその損失関数（Huber の c は X の値）、違うときは最小二乗で求めます。</li>
+  <li>「外周だけ」のときは、RT は外周の Shot の点だけで求めます。Wafer 成分は内周の Shot の点だけに効きます。k の組は「補正のくくり」のとおりです。</li>
+  <li>補正のくくりが「Shot ごと」のときは、Shot ごとの k1・k2 が Shot 中心の座標の関数をすべて含むので、補正量・残差は Wafer RT なしと同じです。Shot ごとの k1・k2 が RT の分を除いた値になります。</li>
+  <li>Shot の配置で決まらない RT の項は 0 にします（書き出しの「補正値」のメモ）。</li>
+</ul>
+
 <h3 id="tech-high-order-vif">VIF と項の選び方</h3>
 <div class="formula">VIF<sub>j</sub> = 1 / (1 − R<sub>j</sub><sup>2</sup>)　（R<sub>j</sub><sup>2</sup>：項 j を、ほかの項（定数を含む）で回帰したときの決定係数）</div>
 <p>VIF は選んだ Wafer のすべての点の Shot 内の座標で求めます（∞ はその配置では決まらない項）。「VIF で選ぶ」は、式のすべての項から始めて、VIF がしきい値以上の高次項があれば、その中で次数の最も高い項（同じ次数なら VIF の最も大きい項）を外し、VIF を求め直します。しきい値以上が1次の項だけなら、高次項の中で VIF の最も大きい項を外します。低い次数の項を残します（多項式の階層を保つ）。</p>
@@ -715,10 +732,18 @@ c → 0 の Huber は LAD と同じ目的関数になるので、スイープの
 </ul>
 
 <h3 id="tech-high-order-eval">評価の式</h3>
-<div class="formula">高次補正の残差           = 値 − 補正量（使う項 + Wafer 成分）
+<div class="formula">R² = 1 − SSE / SST　　SSE = Σ 残差²、SST = Σ (値 − 値の平均)²
+自由度調整済 R² = 1 − (SSE / (n − p)) / (SST / (n − 1))　　n：点の数、p：回帰の自由度
+</div>
+<ul>
+  <li>p は回帰のハット行列の対角の和です。最小二乗では求めた係数の数（k の組の数 × 使う項の数 + Wafer 成分の項の数）と同じ、L2 では項の数より小さい値（有効自由度）、L1 では係数が 0 でない項の数です。Shot ごとで Wafer 成分を先に引くときは、Wafer 成分の項の数も足します。Wafer RT を使うときは、RT の回帰のハット行列の対角も X・Y の行ごとに足します。</li>
+  <li>補正できた点で、残差は値 − 補正量（Wafer 成分・Wafer RT を含む）から求めます。すべての Wafer の行は、すべての点の値の平均を基準にします。</li>
+  <li>ロバスト回帰・正則化は残差の二乗和を最小にしていないので、R² が 0 より小さくなることがあります。n − p が 0 のとき（点の数と自由度が同じ）、自由度調整済 R² は空欄です。</li>
+</ul>
+<div class="formula">高次補正の残差           = 値 − 補正量（使う項 + Wafer 成分 + Wafer RT）
 Shot ごとの1次の残差     = 値 − 補正量（Shot ごとに求めた k1〜k6。くくりによらない。同じ点・同じ損失関数）
-Wafer 高次補正だけの残差 = 値 − 補正量（Shot 中心の座標 Xc・Yc の 0〜「Wafer 成分」次の多項式。定数を含む）
-Wafer 高次補正＋Shot 共通補正の残差 = 値 − 補正量（Wafer 成分 + Wafer 内の Shot で共通の1組の k）
+Wafer 高次補正だけの残差 = 値 − 補正量（Shot 中心の座標 Xc・Yc の 0〜「Wafer 成分」次の多項式。定数を含む。Wafer RT で補正する Shot は RT の補正量）
+Wafer 高次補正＋Shot 共通補正の残差 = 値 − 補正量（Wafer 成分 + Wafer RT + Wafer 内の Shot で共通の1組の k）
 代表値                   |平均| + 3σ（X・Y 別、σ は不偏標準偏差）、 改善 = Shot ごとの1次の残差 − 高次補正の残差
 残差の大きさ             高次補正の |残差| の 95% 点（大きさの順に並べて 95% の位置）・中央値</div>
 

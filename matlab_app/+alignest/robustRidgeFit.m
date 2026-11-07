@@ -35,6 +35,8 @@ function fit = robustRidgeFit(A, y, isPenalized, options)
 %   すべての点のときのままとした近似（求め直した値との差は、誤差の大きさの1割ほど）。L1 は、係数が 0 でない項だけで罰則なしに
 %   当てはめたときのハット行列の対角で近似する。
 %   h_i が 1 に近い点（その点だけで決まる項がある）は NaN。
+%   fit.leverage：ハット行列の対角 h_i（点の数 × 1）。足すと回帰の自由度（最小二乗は決まった項の数、L2 は有効自由度、L1 は
+%   係数が 0 でない項の数）。alignest.highOrderRSquared で使う。
 arguments
     A double
     y double
@@ -69,7 +71,8 @@ if numel(y) ~= n || numel(isPenalized) ~= p || numel(rowGroup) ~= n || numel(col
     error('alignest:fitSize', '設計行列・値・L2 をかける項・組の番号の数が合いません。');
 end
 fit = struct("coefficients", zeros(p, 1), "fitted", zeros(n, 1), "weights", ones(n, 1), "determined", false(p, 1), ...
-    "constant", false(p, 1), "robust", false, "converged", true, "iterations", 0, "looResidual", nan(n, 1));
+    "constant", false(p, 1), "robust", false, "converged", true, "iterations", 0, "looResidual", nan(n, 1), ...
+    "leverage", zeros(n, 1));
 if n == 0
     return
 end
@@ -154,6 +157,7 @@ residual = y - fit.fitted;
 loo = residual ./ (1 - leverage);
 loo(leverage >= LEVERAGE_LIMIT | ~isfinite(loo)) = NaN;
 fit.looResidual = loo;
+fit.leverage = leverage;
 fit.determined = determined | (constant & isPenalized);
 fit.constant = constant;
 end
