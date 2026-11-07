@@ -4,6 +4,11 @@
 Excel の計測データを読み込み、画面で比べ方を決めて実行し、結果の表・グラフ・Wafer ごとの図を画面で確認します。
 推定の計算は、模擬データで評価した Python 版（リポジトリの `src/`）を MATLAB に移したもので、同じ計算結果になることを照合しています（下の「動作確認」）。
 
+正式名称は **Lithography Utilities for Correction Analysis and Sampling Optimization**、略称は **LUCAS（ルーカス）** です。
+アプリ画面・実行ファイル・起動コマンドの名称は、現時点では従来のままです。
+
+![LUCASの機能紹介：データ読込・面内推定・手法比較・補正評価・Wafer上のShot配置とShot内のMark配置の最適化・可視化と出力](docs/branding/lucas/lucas-features-ja-v4.png)
+
 - **Windows での使い方・exe の作り方の手順書（HTML）**：[docs/windows_guide/windows_guide.html](docs/windows_guide/windows_guide.html)（ブラウザで開く。画像・CSS が同じフォルダにあるので、フォルダごと扱う）
 - **管理者向けの資料（アプリの構成と保守、HTML）**：[docs/admin_guide/admin_guide.html](docs/admin_guide/admin_guide.html)（フォルダの中身・処理の流れ・設定と Excel の列・保守で想定される作業と直す場所・テストと exe の作り直し・困ったとき）
 - **管理者向けの画面編集手順書（HTML、13章・画像7枚）**：[docs/admin_guide/ui_editing/ui-editing-guide.html](docs/admin_guide/ui_editing/ui-editing-guide.html)（文字・配置・説明行・設定・コールバックの編集、再起動確認、Windows版の再作成。画像を内包した単独HTML）

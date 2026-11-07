@@ -11,6 +11,13 @@
 
 数値はすべて乱数で生成した模擬データによります。実データ・社内データは使っていません。
 
+## MATLABアプリの名称と機能紹介
+
+正式名称は **Lithography Utilities for Correction Analysis and Sampling Optimization**、略称は **LUCAS（ルーカス）** です。
+アプリ画面・実行ファイル・起動コマンドの名称は、現時点では従来のままです。
+
+![LUCASの機能紹介：データ読込・面内推定・手法比較・補正評価・Wafer上のShot配置とShot内のMark配置の最適化・可視化と出力](matlab_app/docs/branding/lucas/lucas-features-ja-v4.png)
+
 ## 比べたもの
 
 | 区分 | 内容 |
