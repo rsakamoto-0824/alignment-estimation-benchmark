@@ -117,10 +117,12 @@
   <a class="sub" href="#overlay-model">補正モデル</a>
   <a class="sub" href="#overlay-shot">Shot 内の式</a>
   <a class="sub" href="#overlay-eval">評価のしかた</a>
+  <a class="sub" href="#overlay-plan">計測配置の成分の差</a>
   <a href="#targets">未知の座標の推定の決まり</a>
   <a href="#tech-high-order">Shot 高次補正の計算</a>
   <a class="sub" href="#tech-high-order-unit">補正のくくり</a>
   <a class="sub" href="#tech-high-order-rt">Wafer RT</a>
+  <a class="sub" href="#tech-high-order-common">Shot 共通を先に引く</a>
   <a class="sub" href="#tech-high-order-vif">VIF と項の選び方</a>
   <a class="sub" href="#tech-high-order-fit">回帰の式</a>
   <a class="sub" href="#tech-high-order-eval">評価の式</a>
@@ -141,7 +143,7 @@
   <li><strong>4. 結果一覧</strong>：表・グラフ・基準の手法との比較・計測配置の比較・誤差の分布（ANOVA・箱ひげ図）・散布図・分布の比較・処理時間の内訳。</li>
   <li><strong>5. Wafer ごとのマップ</strong>：計測値・推定値・残差（または Overlay 補正）を Wafer 上で見る。条件を並べて比べられる。</li>
   <li><strong>6. 未知の座標の推定</strong>：計測していない座標（新しい Mark の位置・Wafer 上の任意の点）の推定値を求める。点は Excel・CSV から読むか、画面で入力・作成する。外挿の点は知らせる（<a href="#tab-target">下</a>）。</li>
-  <li><strong>7. Shot高次補正</strong>：計測値・未知の座標の推定値・Excel の値で、Shot 高次補正（ASML・Canon・Nikon・カスタムの式）の k パラメータを求め、Shot ごとの1次（k1〜k6）の補正と比べて効果を評価する。外周の Shot だけ別の式にでき、内周・外周に分けて評価する。くくり・λ・回帰・項の組み合わせを変えた補正をまとめて比べ、2つの条件の Wafer を並べて改善・悪化した Shot を見る。Wafer ごとの k パラメータ・残差、残差のヒストグラムも見られる（<a href="#high-order">下</a>）。</li>
+  <li><strong>7. Shot高次補正</strong>：計測値・未知の座標の推定値・Excel の値で、Shot 高次補正（ASML・Canon・Nikon・カスタムの式）の k パラメータを求め、Shot ごとの1次（k1〜k6）の補正と比べて効果を評価する。外周の Shot だけ別の式にでき、内周・外周に分けて評価する。Shot 共通の補正（計算した値・入力した値）を先にかけてから Shot ごとに補正することもできる。くくり・λ・回帰・項の組み合わせを変えた補正をまとめて比べ、2つの条件の Wafer を並べて改善・悪化した Shot を見る。Wafer ごとの k パラメータ・残差、残差のヒストグラムも見られる（<a href="#high-order">下</a>）。</li>
   <li><strong>8. Mark配置の最適化</strong>：Shot 高次補正の計測 Mark の配置を、Mark の数（最低数から1点ずつ）ごとに I 最適計画で選び、選んだ配置で補正した制御残差を I 効率と比べる。必ず計測する Mark を指定でき、実測値の無い座標は乱数 Shotで評価する（<a href="#mark-layout">下</a>）。</li>
 </ul>
 
@@ -237,7 +239,7 @@
 <tr><th>欄</th><th>内容</th></tr>
 <tr><td class="term">評価を始める</td><td>計算中は「一時中断」で途中までの結果を残して止め、「続きから再開」で残りを計算できます。</td></tr>
 <tr><td class="term">条件を追加して評価</td><td>評価の後に手法や学習 Shot 数を増やしたとき、増えた分だけを計算して結果に足します。</td></tr>
-<tr><td class="term">計測マップ</td><td>学習に使う Shot を、評価の前に確かめられます。Scan 方向を色で示せます（▲ 上・▼ 下の印つき）。</td></tr>
+<tr><td class="term">計測マップ</td><td>学習に使う Shot を、評価の前に確かめられます。Scan 方向を色で示せます（▲ 上・▼ 下の印つき）。右下の表は全計測との成分の差です：計測配置の点だけで求めた Overlay 補正の成分（Wafer 線形・Wafer 高次・Shot 共通 低次・Shot 共通 高次）が、全計測で求めた成分とどれだけ違うか（<a href="#overlay-plan">式</a>）。「全計測」は全計測で求めた成分の大きさ、「差」はその違いの大きさで、どちらも |平均|+3σ [nm] です。補正のモデルは「2. 評価の設定」の Overlay 補正です（Shot ごとの成分は使いません）。</td></tr>
 <tr><td class="term">記録</td><td>データの確認・学習パターン・推定できなかった組み合わせなどが出ます。</td></tr>
 </table>
 
@@ -284,6 +286,7 @@
 <p>Shot 内の座標の補正の式（ASML・Canon・Nikon・カスタム）の係数（k パラメータ）を求め、補正した後の残差を、Shot ごとの1次（k1〜k6）で補正した残差と比べます。左で入力のデータ・補正の式・回帰を決めて「補正を計算する」を押します。式は<a href="#tech-high-order">技術編</a>にあります。</p>
 <p>「補正のくくり」は k の組をどの Shot で共通にするかです：Wafer 内で共通（Wafer ごとに1組）・Scan 方向ごと・行の偶奇ごと・Shot ごと（Shot ごとに1組）。「Wafer 成分」は Shot 中心の座標の多項式（0〜5次）で、Wafer の倍率・回転が Shot の k に混ざらないように一緒に求めます。補正の式の「カスタム」は k1〜k38 から項を選ぶ式です。</p>
 <p>「Wafer RT」は Wafer レベルの補正に RT モデル（1〜5次）を使う指定です。<strong>すべての Shot</strong>：Wafer 成分の代わりに RT モデルで補正します。<strong>外周だけ</strong>：外周の Shot は RT モデル、内周の Shot は Wafer 成分で補正します（外周は「外周の半径」で決まります）。「外周の式」とは別の指定で、一緒に使えます。Shot が少なくて決まらない項は 0 にして、メッセージで知らせます。式は技術編の「Wafer RT」です。</p>
+<p>「Shot 共通補正」は、補正のくくりが「Shot ごと」のときに、Shot 共通の補正を先にかけ、残りを Shot ごとに求める指定です。<strong>なし</strong>：Shot ごとの k をその Shot の点だけで求めます。<strong>計算する</strong>：Wafer 内の全 Shot で共通の k を求めて先に引きます。<strong>値を入力</strong>：「使う項と VIF」の表の「共通の値」の列に入れた k を先に引きます（外周の式を分けるときは内周・外周の2列。単位は k1・k2 が nm、1次が nm/mm、n 次が nm/mm<sup>n</sup>）。「計算した値を写す」で、直近の計算の Shot 共通の k（Wafer の平均）を写せます。「Shot ごとの次数」では、Shot ごとに求める項の次数の上限を選びます（例：1次までなら Shot ごとは k1〜k6 だけを求め、高次の項は Shot 共通の値のまま）。Shot ごとに使う項をすべて求めて正則化もかけないときは、補正量・残差は「なし」と同じで、Shot ごとの k の内訳だけが変わります。式は技術編の「Shot 共通を先に引く」です。</p>
 
 <h3 id="high-order-input">入力のデータ</h3>
 <table>
@@ -410,7 +413,7 @@
 <table>
 <tr><th>書き出すもの</th><th>表</th></tr>
 <tr><td class="term">点ごとの値</td><td>計測データの形の表で、読み直せます。Operation・EqpId・LotID・Wafer・DateTime・shotNo・Direction・Xmm・Ymm・Radius・markNo・markXmm・markYmm・measX・measY・StsX・StsY の列（Overlay 計測ルールの表の順）。measX・measY に、選んだ値（高次補正の残差・補正量・Shot ごとの1次で補正した残差・Wafer 高次補正だけの残差・Wafer 高次補正＋Shot 共通補正の残差・補正前の値）を入れ、値の無い点は空欄で Sts を −1 にします。「1. データの読み込み」や「Excel・CSV を読み込む…」でそのまま読み直せます（例：残差を読み直して、残差の面内推定や、さらに補正を評価する）。</td></tr>
-<tr><td class="term">Shot ごとの補正値</td><td>k を横に並べた表です。1行 = 1 Shot。Wafer・shotNo・Shot 中心の座標・半径・範囲・くくり・点の数のあとに、補正の段階の順に並べます：<strong>Wafer 低次・Wafer 高次</strong>（Wafer 成分の1次・2次以上の項を Shot 中心で求めた並進 dx・dy [nm]）、<strong>Wafer RT</strong>（使うときだけ。その Shot の並進 dx・dy [nm]。RT で補正する Shot は Wafer 低次・高次が空欄）、<strong>Shot 共通 低次・高次</strong>（Wafer 内の Shot で共通の k の k1〜k6・k7 以降。Scan 方向ごと・行の偶奇ごとはその組の k。Wafer 全体の並進（定数）は Shot 共通の k1・k2 に入ります）、<strong>Shot 毎 低次・高次</strong>（Shot ごとのときだけ。Shot ごとの k − Shot 共通の k。Shot 共通は Wafer 成分と一緒に全 Shot で求めた k。点が足りず使わない項は − Shot 共通）。最後に <strong>合計</strong>（その Shot に当てる k = Shot 共通 + Shot 毎。k1・k2 には Wafer 成分・Wafer RT の並進も足す）とメモ（補正しなかった Shot・項を減らした Shot）。列の名前に単位を付けます。「結果を Excel に書き出す…」の「Shotごとの補正値」のシートも同じ表で、「補正値」のシートは係数を同じ段階の順に縦に並べます。</td></tr>
+<tr><td class="term">Shot ごとの補正値</td><td>k を横に並べた表です。1行 = 1 Shot。Wafer・shotNo・Shot 中心の座標・半径・範囲・くくり・点の数のあとに、補正の段階の順に並べます：<strong>Wafer 低次・Wafer 高次</strong>（Wafer 成分の1次・2次以上の項を Shot 中心で求めた並進 dx・dy [nm]）、<strong>Wafer RT</strong>（使うときだけ。その Shot の並進 dx・dy [nm]。RT で補正する Shot は Wafer 低次・高次が空欄）、<strong>Shot 共通 低次・高次</strong>（Wafer 内の Shot で共通の k の k1〜k6・k7 以降。Scan 方向ごと・行の偶奇ごとはその組の k。Wafer 全体の並進（定数）は Shot 共通の k1・k2 に入ります）、<strong>Shot 毎 低次・高次</strong>（Shot ごとのときだけ。Shot ごとの k − Shot 共通の k。Shot 共通は Wafer 成分と一緒に全 Shot で求めた k。点が足りず使わない項は − Shot 共通。Shot 共通を先に引いたときは、Shot 共通（計算した値・入力した値）を引いた残りを Shot ごとに求めた k で、Shot ごとに求めない項は 0）。最後に <strong>合計</strong>（その Shot に当てる k = Shot 共通 + Shot 毎。k1・k2 には Wafer 成分・Wafer RT の並進も足す）とメモ（補正しなかった Shot・項を減らした Shot）。列の名前に単位を付けます。「結果を Excel に書き出す…」の「Shotごとの補正値」のシートも同じ表で、「補正値」のシートは係数を同じ段階の順に縦に並べます。</td></tr>
 <tr><td class="term">補正の比較の全条件の点ごとの値</td><td>点ごとに、補正前の値と、比べた条件ごとの選んだ値（列の名前は「番号. 条件の名前：値の名前X[nm]」）。比べた後に条件・入力を変えたときは、比べ直してから書き出します。Excel の「説明」シートに条件ごとの設定を書きます。</td></tr>
 </table>
 <p>計算した後に設定・入力を変えていれば、書き出すときに今の設定で計算し直します（「結果を Excel に書き出す…」と同じ）。</p>
@@ -484,7 +487,7 @@
 <tr><td class="term">制約</td><td>I 最適・D 最適・ランダムで、同心円（Shot 中心の半径 [mm] の区切り）・4象限・Scan 方向の区画ごとの Shot 数を、全体の割合 × 選ぶ数 ± 許容幅にそろえる。</td></tr>
 <tr><td class="term">必ず計測する Shot（拡張 I 最適計画）</td><td>指定した shotNo・最外周の Shot を先に学習に入れ、残りを最適計画で選ぶ。交換法は必ず計測する Shot を外さない。</td></tr>
 <tr><td class="term">最外周の Shot</td><td>上下左右のどこかに隣の Shot が無い Shot（Shot 中心の座標から数えた行・列で判断）。</td></tr>
-<tr><td class="term">Mark 単位の I 最適・D 最適計画</td><td>計測する Mark を I 最適（D 最適）で選ぶ。計測する Mark の数 = 1 Shot あたりの Mark 数 × 候補 Shot 数、または計測率で決めるときは 計測率 × 候補の全 Mark の数（計測率の開始・終了・刻みでスイープ）。「Shot ごとに n 点の Mark 計測を必須にする」（初期値オン、n = 1）では各 Shot で n 点以上（Mark が少ない Shot はその全 Mark）を必ず計測し、オフでは Shot を問わず選ぶ。Mark 番号ごとの数は、全計測での割合 × 計測する数 ± 許容幅にそろえる（例：4 Mark なら各 25%）。評価点は計測しなかった Mark。</td></tr>
+<tr><td class="term">Mark 単位の I 最適・D 最適計画</td><td>計測する Mark を I 最適（D 最適）で選ぶ。計測する Mark の数 = 1 Shot あたりの Mark 数 × 候補 Shot 数、または計測率で決めるときは 計測率 × 候補の全 Mark の数（計測率の開始・終了・刻みでスイープ）。「Shot ごとに n 点の Mark 計測を必須にする」（初期値オン、n = 1）では各 Shot で n 点以上（Mark が少ない Shot はその全 Mark）を必ず計測し、オフでは Shot を問わず選ぶ。「Mark 番号ごとの計測数」で、Mark 番号ごとの数のそろえ方を選ぶ：<strong>全計測の割合にそろえる</strong>（初期値。全計測での割合 × 計測する数 ± 許容幅。例：4 Mark なら各 25%）・<strong>均等にする</strong>（計測する数 ÷ Mark 番号の数。許容幅は使わず、割り切れないときの1つの差だけ。候補の少ない Mark 番号はその数まで計測し、残りをほかの Mark 番号で均等に分ける）・<strong>そろえない</strong>。評価点は計測しなかった Mark。</td></tr>
 <tr><td class="term">Excel ファイルで指定</td><td>人が決めた計測配置を Excel・CSV で渡す（以前の「手動・人の選択」と「ファイルの優先順」をまとめたもの）。1行目が見出しで、shotNo の列（markNo の列もあれば Mark 単位：1行が1つの Mark）と、名前を見出しにした列を並べる。1・0 だけの列は<strong>パターン</strong>（1 の Shot・Mark を計測する）。1・2・3… の列（または見出しに「優先」「prior」を含む列）は<strong>優先順</strong>（1 = 必ず計測、2・3… = その次に計測する順、空欄 = 番号の後に行の順、0 = 計測しない）で、学習 Shot 数（計測率。Mark 単位は 1 Shot あたりの Mark 数・計測率）ごとに先頭から使う。計測マップの Excel（「計測マップ_Mark」シートがあればそれ）もそのまま読める。I 最適・D 最適と同じ評価の中で比べられる。</td></tr>
 </table>
 
@@ -670,6 +673,19 @@ Fringe 番号は、Fringe の次数 k = (n + |m|)/2 の小さい順、同じ k �
 推定による変化         D = R<sub>E</sub> − R<sub>A</sub> = 補正量(A) − 補正量(E)
 代表値                 |平均| + 3σ（X・Y 別、σ は不偏標準偏差）、 増加量 = (R<sub>E</sub> の値) − (R<sub>A</sub> の値)</div>
 
+<h3 id="overlay-plan">計測配置の成分の差（計測マップ）</h3>
+<div class="formula">c<sub>全</sub>：全計測（その軸が有効なすべての Mark）で当てはめた係数、 c<sub>配置</sub>：計測配置の点（計測する Mark）だけで当てはめた係数
+成分の補正量   F<sub>成分</sub>(c) = Σ<sub>その成分の項</sub> c<sub>j</sub>·f<sub>j</sub>(Mark)　（全計測の Mark の位置で求める）
+全計測         |平均| + 3σ of F<sub>成分</sub>(c<sub>全</sub>)
+差             |平均| + 3σ of ( F<sub>成分</sub>(c<sub>配置</sub>) − F<sub>成分</sub>(c<sub>全</sub>) )　（書き出しには差の絶対値の最大も）</div>
+<ul>
+  <li>補正モデルは「2. 評価の設定」の Overlay 補正の Wafer 成分と Shot 共通成分です。X・Y 別に最小二乗で当てはめます。Shot ごとの成分は使いません（計測配置の点が Shot に数点だと決まらず、Wafer 成分の分まで吸い込むため）。</li>
+  <li>成分：<strong>Wafer 線形</strong>（Wafer 成分の定数と1次の項）、<strong>Wafer 高次</strong>（2次以上の項）、<strong>Shot 共通 低次</strong>（定数と1次の項。k1〜k6）、<strong>Shot 共通 高次</strong>（2次以上の項）、<strong>合計</strong>（Wafer 成分 + Shot 共通成分）。項の無い成分は表に出しません（Shot 共通 高次を見るときは、Shot 共通成分を「式を入力」にして2次以上の項を入れます）。</li>
+  <li>成分どうしで重なる項（Wafer 成分の定数と Shot 共通の k1 など）や、点の配置で決まらない項は、前の項（Wafer → Shot 共通、各成分の中は式の順）に含めて 0 にします（重ね合わせ補正値と同じ）。計測配置の点だけで決まらない項は、計測マップの下の欄と書き出しの「成分の係数」のメモに出ます。</li>
+  <li>成分は式の項のまま分けるので、項どうしが似ていると、成分ごとの補正量が打ち消し合うことがあります（例：Wafer 線形と Wafer 高次がどちらも大きく、合計は小さい）。全体の違いは「合計」の行で見てください。</li>
+  <li>「計測マップを Excel に書き出す…」の「成分の差」シートに、学習パターン・成分ごとの全計測の成分・差（|平均|+3σ と絶対値の最大）、「成分の係数」シートに項ごとの係数（全計測・計測配置の点・差。mm の座標での値）を書きます。</li>
+</ul>
+
 <h2 id="targets">未知の座標の推定の決まり</h2>
 <p>推定は評価と同じ計算です（点を、計測値の無い Mark として足して推定する）。</p>
 <table>
@@ -709,6 +725,19 @@ RT の dy = t<sub>y</sub> − a·Y + b·X + Σ<sub>i</sub> (M<sub>i</sub>·Y + �
   <li>Shot の配置で決まらない RT の項は 0 にします（書き出しの「補正値」のメモ）。</li>
 </ul>
 
+<h3 id="tech-high-order-common">Shot 共通を先に引く</h3>
+<div class="formula">値(Mark) = Wafer 成分(Xc, Yc) + Σ<sub>使う項</sub> c<sub>j</sub>·x<sup>m</sup>y<sup>n</sup> + Σ<sub>Shot ごとの項</sub> d<sub>j,Shot</sub>·x<sup>m</sup>y<sup>n</sup>
+その Shot に当てる k<sub>j,Shot</sub> = c<sub>j</sub> + d<sub>j,Shot</sub>　（Shot ごとに求めない項は d<sub>j,Shot</sub> = 0）</div>
+<ul>
+  <li>c<sub>j</sub> は Shot 共通の k、d<sub>j,Shot</sub> は残りを Shot ごとに求めた k です。補正のくくりが「Shot ごと」のときだけ使います。Shot ごとの項は、使う項のうち次数が「Shot ごとの次数」以下の項です（k1〜k6 は必ず求めます）。</li>
+  <li>計算する：c<sub>j</sub> を Wafer 成分と一緒に、Wafer 内のすべての点で求めます（「Wafer 内で共通」と同じ求め方。外周の式を分けるときは内周・外周の2組）。c<sub>j</sub> を求めるときは Shot ごとの違いを考えないので、Shot によって Mark の位置が違うと、Shot ごとの違いの一部が c<sub>j</sub> に入ることがあります。</li>
+  <li>値を入力：c<sub>j</sub> は入力した値です（入力しない k は 0）。Wafer 成分は、入力した k の分を引いた残りに定数と一緒に当てはめて求めます（定数は Shot ごとの k1・k2 に入ります）。</li>
+  <li>Wafer RT・Wafer 成分・Shot 共通の分を値から引いた残りに、Shot ごとの項を当てはめて d<sub>j,Shot</sub> を求めます。正則化は d<sub>j,Shot</sub> にかかるので、高次の項は 0 ではなく Shot 共通の値に寄ります。</li>
+  <li>Shot ごとに使う項をすべて求めて正則化もかけないときは、c<sub>j</sub> をどう選んでも d<sub>j,Shot</sub> がその分を打ち消すので、補正量・残差は先に引かないときと同じです（最小二乗・Huber・LAD はどれも残差だけで決まるため）。違いが出るのは、Shot ごとの次数を下げたとき、正則化をかけたとき、点が足りず Shot ごとの項を減らしたときです。</li>
+  <li>「点が足りない Shot」の扱いは、Shot ごとに求める項に当てます。Shot 共通の項は減らしません（減らした項は、その Shot では Shot 共通の値です）。</li>
+  <li>画面の「補正値」と書き出しの「Shotごとの補正値」の合計は k<sub>j,Shot</sub>、書き出しの「補正値」の Shot 毎は d<sub>j,Shot</sub> です。</li>
+</ul>
+
 <h3 id="tech-high-order-vif">VIF と項の選び方</h3>
 <div class="formula">VIF<sub>j</sub> = 1 / (1 − R<sub>j</sub><sup>2</sup>)　（R<sub>j</sub><sup>2</sup>：項 j を、ほかの項（定数を含む）で回帰したときの決定係数）</div>
 <p>VIF は選んだ Wafer のすべての点の Shot 内の座標で求めます（∞ はその配置では決まらない項）。「VIF で選ぶ」は、式のすべての項から始めて、VIF がしきい値以上の高次項があれば、その中で次数の最も高い項（同じ次数なら VIF の最も大きい項）を外し、VIF を求め直します。しきい値以上が1次の項だけなら、高次項の中で VIF の最も大きい項を外します。低い次数の項を残します（多項式の階層を保つ）。</p>
@@ -736,14 +765,14 @@ c → 0 の Huber は LAD と同じ目的関数になるので、スイープの
 自由度調整済 R² = 1 − (SSE / (n − p)) / (SST / (n − 1))　　n：点の数、p：回帰の自由度
 </div>
 <ul>
-  <li>p は回帰のハット行列の対角の和です。最小二乗では求めた係数の数（k の組の数 × 使う項の数 + Wafer 成分の項の数）と同じ、L2 では項の数より小さい値（有効自由度）、L1 では係数が 0 でない項の数です。Shot ごとで Wafer 成分を先に引くときは、Wafer 成分の項の数も足します。Wafer RT を使うときは、RT の回帰のハット行列の対角も X・Y の行ごとに足します。</li>
+  <li>p は回帰のハット行列の対角の和です。最小二乗では求めた係数の数（k の組の数 × 使う項の数 + Wafer 成分の項の数）と同じ、L2 では項の数より小さい値（有効自由度）、L1 では係数が 0 でない項の数です。Shot ごとで Wafer 成分を先に引くときは、Wafer 成分の項の数も足します。Shot 共通を「計算する」で先に引くときは、Shot 共通の k の数も足します（入力した値は求めていないので足しません）。Wafer RT を使うときは、RT の回帰のハット行列の対角も X・Y の行ごとに足します。</li>
   <li>補正できた点で、残差は値 − 補正量（Wafer 成分・Wafer RT を含む）から求めます。すべての Wafer の行は、すべての点の値の平均を基準にします。</li>
   <li>ロバスト回帰・正則化は残差の二乗和を最小にしていないので、R² が 0 より小さくなることがあります。n − p が 0 のとき（点の数と自由度が同じ）、自由度調整済 R² は空欄です。</li>
 </ul>
 <div class="formula">高次補正の残差           = 値 − 補正量（使う項 + Wafer 成分 + Wafer RT）
 Shot ごとの1次の残差     = 値 − 補正量（Shot ごとに求めた k1〜k6。くくりによらない。同じ点・同じ損失関数）
 Wafer 高次補正だけの残差 = 値 − 補正量（Shot 中心の座標 Xc・Yc の 0〜「Wafer 成分」次の多項式。定数を含む。Wafer RT で補正する Shot は RT の補正量）
-Wafer 高次補正＋Shot 共通補正の残差 = 値 − 補正量（Wafer 成分 + Wafer RT + Wafer 内の Shot で共通の1組の k）
+Wafer 高次補正＋Shot 共通補正の残差 = 値 − 補正量（Wafer 成分 + Wafer RT + Wafer 内の Shot で共通の1組の k。Shot 共通を「値を入力」にしたときは入力した k）
 代表値                   |平均| + 3σ（X・Y 別、σ は不偏標準偏差）、 改善 = Shot ごとの1次の残差 − 高次補正の残差
 残差の大きさ             高次補正の |残差| の 95% 点（大きさの順に並べて 95% の位置）・中央値</div>
 

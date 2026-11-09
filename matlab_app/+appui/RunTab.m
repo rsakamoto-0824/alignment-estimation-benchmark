@@ -57,12 +57,14 @@ classdef (Abstract) RunTab < appui.Core
             results = evaluate(app, showProgress, previous, Inf, "extend");
         end
 
-        function plans = drawMeasurementMap(app, unitIndex, planLabels)
+        function [plans, components] = drawMeasurementMap(app, unitIndex, planLabels)
             %DRAWMEASUREMENTMAP 選んだ Wafer・学習パターン（省略時は画面の選択。どちらも複数可）の計測マップを「3. 実行」に
             %   並べて描く（Wafer × 学習パターン、最大 MAX_MEASURE_PANELS 枚）。学習に使う（計測する）Shot・必ず計測する Shot・
             %   計測しない Shot を塗り分け、選べば Scan 方向（Shot の内側の色の枠と ▲・▼）と同心円の制約の区切りも描く。
             %   評価の前に使える。学習パターンは評価と同じ作り方なので、同じ設定なら評価でも同じ Shot を使う。
-            %   plans は描いた学習パターン（Wafer ごとに学習パターンの順）。
+            %   plans は描いた学習パターン（Wafer ごとに学習パターンの順）。components は、図ごとの「全計測との成分の差」
+            %   （計測配置の点だけで求めた Overlay 補正の Wafer 線形・高次、Shot 共通 低次・高次の成分と、全計測で求めた成分の差。
+            %   alignest.planComponentDifference の結果の配列。図の右下の表にも出す）。
             c = app.Controls;
             if isempty(app.Data)
                 error('alignest:noData', '先に「1. データの読み込み」でデータを読み込んでください。');
@@ -112,6 +114,12 @@ classdef (Abstract) RunTab < appui.Core
             plans = repmat(alignest.planTemplate(), 0, 1);
             lines = strings(0, 1);
             axesList = gobjects(1, nPanels);
+            components = struct("summary", {}, "coefficients", {}, "nPoints", {}, "description", {}, "messages", {});
+            componentRows = cell(nPanels, 1);
+            % 成分の差の表の1列目：図どうしで違うもの（Wafer が1つなら学習パターン、学習パターンが1つなら Wafer）
+            oneWafer = isscalar(unique(pairs(1:nPanels, 1)));
+            onePlan = isscalar(unique(pairs(1:nPanels, 2)));
+            panelHeader = ternary(oneWafer, "学習パターン", ternary(onePlan, "Wafer", "Wafer｜学習パターン"));
             for k = 1:nPanels
                 unit = app.Data.units(pairs(k, 1));
                 spec = specs(string({specs.label}) == labels(pairs(k, 2)));
@@ -123,7 +131,14 @@ classdef (Abstract) RunTab < appui.Core
                 axesList(k) = ax;
                 plans(end + 1, 1) = orderfields(plan, alignest.planTemplate()); %#ok<AGROW>
                 lines = [lines; measurementLines(app, unit, plan)]; %#ok<AGROW>
+                components(end + 1, 1) = alignest.planComponentDifference(unit, plan, app.Settings); %#ok<AGROW>
+                panelLabel = ternary(oneWafer, plan.label, ternary(onePlan, unit.label, unit.label + "｜" + plan.label));
+                componentRows{k} = componentTableRows(panelLabel, components(end).summary);
+                if ~isempty(components(end).messages)
+                    lines = [lines; "成分の差：" + strjoin(components(end).messages, " ")]; %#ok<AGROW>
+                end
             end
+            showMeasureComponents(app, vertcat(componentRows{:}), components, panelHeader);
             if nPanels > 1
                 % 並べるときは凡例を1つだけ右に、短い名前で出す（区分の数は図ごとに違うので、数は下の欄に書く）
                 items = flipud(findobj(axesList(1), '-regexp', 'DisplayName', '.+'));
@@ -148,6 +163,9 @@ classdef (Abstract) RunTab < appui.Core
             %   Excel に書き出す。
             %   「計測マップ」シート：Shot ごとの座標・行・列・最外周・指定の有無と、学習パターンごとの 1（計測する）／0（しない）。
             %   「学習パターン」シート：学習パターンごとの Shot 数・計測率・必ず計測した数・I 基準・D 基準・shotNo・メモ。
+            %   「成分の差」シート：学習パターン・成分ごとの、全計測で求めた成分の大きさと、計測配置の点で求めた成分との差
+            %   （|平均|+3σ と最大 [nm]。alignest.planComponentDifference）。「成分の係数」シート：項ごとの係数（全計測・
+            %   計測配置の点・差）。
             if isempty(app.Data)
                 error('alignest:noData', '先に「1. データの読み込み」でデータを読み込んでください。');
             end
@@ -180,6 +198,8 @@ classdef (Abstract) RunTab < appui.Core
             marks = unit.marks;
             markSheet = table(marks.shotNo, marks.markNo, marks.x, marks.y, 'VariableNames', ["shotNo", "markNo", "Xmm", "Ymm"]);
             hasMarkPlans = false;
+            [componentParts, coefficientParts] = deal(cell(numel(specs), 1));
+            componentText = "";
             for k = 1:numel(specs)
                 if ~isempty(dialog)
                     dialog.Value = (k - 1) / numel(specs);
@@ -191,6 +211,16 @@ classdef (Abstract) RunTab < appui.Core
                 summary(k, :) = {plan.label, plan.rate, plan.nShots, numel(plan.requiredShotIndex), plan.criterionI, ...
                     plan.criterionD, plan.efficiencyI, plan.efficiencyD, plan.violation, ...
                     strjoin(string(plan.shotNos(:).'), " "), plan.message};
+                difference = alignest.planComponentDifference(unit, plan, app.Settings);
+                componentText = difference.description;
+                parts = difference.summary;
+                componentParts{k} = [table(repmat(plan.label, height(parts), 1), 'VariableNames', "学習パターン"), ...
+                    renamevars(parts, parts.Properties.VariableNames, ["成分", "全計測の成分X[nm]", "全計測の成分Y[nm]", ...
+                    "差X[nm]", "差Y[nm]", "差の最大X[nm]", "差の最大Y[nm]"])];
+                parts = difference.coefficients;
+                coefficientParts{k} = [table(repmat(plan.label, height(parts), 1), 'VariableNames', "学習パターン"), ...
+                    renamevars(parts, parts.Properties.VariableNames, ["式", "成分", "補正モデルの成分", "項", "全計測", ...
+                    "計測配置の点", "差", "単位", "メモ"])];
             end
             planSheet = cell2table(summary, 'VariableNames', ["学習パターン", "計測率[%]", "学習Shot数", ...
                 "必ず計測したShot数", "I基準tr(M⁻¹)", "D基準det(M)^(-1/p)", "I効率(全計測に対する)", ...
@@ -204,10 +234,16 @@ classdef (Abstract) RunTab < appui.Core
                 writetable(markSheet, filePath, 'Sheet', '計測マップ_Mark');
             end
             writetable(planSheet, filePath, 'Sheet', '学習パターン');
-            notes = table(["Wafer"; "学習 Shot の選び方"; "見方"], [unit.label; ...
+            writetable(vertcat(componentParts{:}), filePath, 'Sheet', '成分の差');
+            writetable(vertcat(coefficientParts{:}), filePath, 'Sheet', '成分の係数');
+            notes = table(["Wafer"; "学習 Shot の選び方"; "見方"; "成分の差"], [unit.label; ...
                 strjoin(string(app.Controls.samplingMethod.Items(ismember(app.Controls.samplingMethod.ItemsData, ...
                 app.Controls.samplingMethod.Value))), "、"); "学習パターンの列は 1 = 計測する（学習に使う）、0 = 計測しない（評価に使う）。" + ...
-                "最外周・指定で必ず計測は 1 = そうである。"], 'VariableNames', ["項目", "内容"]);
+                "最外周・指定で必ず計測は 1 = そうである。"; "「2. 評価の設定」の Overlay 補正（" + componentText + "）を、" + ...
+                "全計測と計測配置の点（計測する Mark）だけで X・Y 別に最小二乗で当てはめ、成分（Wafer 線形・Wafer 高次・" + ...
+                "Shot 共通 低次・Shot 共通 高次・合計）の補正量を全計測の Mark の位置で比べた。全計測の成分は全計測で求めた" + ...
+                "補正量の |平均|+3σ、差は 計測配置の点で求めた補正量 − 全計測で求めた補正量 の |平均|+3σ と絶対値の最大 [nm]。" + ...
+                "重なる項・決まらない項は前の項に含めて 0（成分の係数のメモ）。"], 'VariableNames', ["項目", "内容"]);
             writetable(notes, filePath, 'Sheet', '説明');
         end
     end
@@ -234,7 +270,7 @@ classdef (Abstract) RunTab < appui.Core
             c.log = uitextarea(logGrid, 'Editable', 'off', 'Value', {''});
             % 計測マップ：評価の前に、学習に使う（計測する）Shot を Wafer 上で確かめる
             mapPanel = uipanel(lower, 'Title', '計測マップ');
-            mapGrid = uigridlayout(mapPanel, [4, 1], 'RowHeight', {'fit', 'fit', '1x', 90}, 'Padding', 8, 'RowSpacing', 6);
+            mapGrid = uigridlayout(mapPanel, [4, 1], 'RowHeight', {'fit', 'fit', '1x', 160}, 'Padding', 8, 'RowSpacing', 6);
             choose = uigridlayout(mapGrid, [2, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1.4x'}, 'RowHeight', {66, 'fit'}, ...
                 'Padding', 0);
             label(choose, 'Wafer', 1, 1);
@@ -264,8 +300,15 @@ classdef (Abstract) RunTab < appui.Core
             % 図は専用の枠に、並べる数に合わせて tiledlayout で作る（凡例を1つにまとめて右に置くため）
             c.measurePanel = uipanel(mapGrid, 'BorderType', 'none');
             c.measureAxes = gobjects(1, 0);
-            c.measureInfo = uitextarea(mapGrid, 'Editable', 'off', 'Value', ...
+            infoGrid = uigridlayout(mapGrid, [1, 2], 'ColumnWidth', {'0.75x', '1.6x'}, 'Padding', 0, 'ColumnSpacing', 6);
+            c.measureInfo = uitextarea(infoGrid, 'Editable', 'off', 'Value', ...
                 {'「2. 評価の設定」で学習 Shot の選び方を決め、Wafer と学習パターンを選んで「計測マップを作る」を押してください。'});
+            c.measureComponents = uitable(infoGrid, 'RowName', {}, 'ColumnName', {'Wafer｜学習パターン', '成分', ...
+                '全計測|X [nm]', '全計測|Y [nm]', '差|X [nm]', '差|Y [nm]'}, 'ColumnWidth', {170, 118, 54, 54, 54, 54}, ...
+                'Data', cell(0, 6), 'Tooltip', ['全計測との成分の差：「2. 評価の設定」の Overlay 補正の Wafer 成分・Shot 共通成分を、' ...
+                '全計測と計測配置の点だけで当てはめ、成分ごとの補正量を全計測の Mark の位置で比べます。全計測：全計測で求めた成分の' ...
+                '補正量の |平均|+3σ。差：計測配置の点で求めた成分 − 全計測で求めた成分 の |平均|+3σ（Shot ごとの成分は使いません。' ...
+                '詳しくは「ヘルプ」）。']);
             app.Controls = mergeStruct(app.Controls, c);
         end
 
@@ -618,6 +661,10 @@ classdef (Abstract) RunTab < appui.Core
                 end
                 c.measurePanel.UserData = signature;
             end
+            overlayNow = fieldOr(app.Settings, "overlay", struct());
+            if ~isempty(c.measureComponents.Data) && ~isequaln(c.measureComponents.UserData, overlayNow)
+                c.measureComponents.Data = cell(0, 6);   % Overlay 補正の設定を変えた：成分の差は作り直す
+            end
         end
 
         function lines = measurementLines(app, unit, plan)
@@ -664,9 +711,29 @@ classdef (Abstract) RunTab < appui.Core
         end
 
         function clearMeasurePanel(app)
-            % 描いた計測マップを消す（枠の中の tiledlayout と図）
+            % 描いた計測マップを消す（枠の中の tiledlayout と図）と、全計測との成分の差の表を空にする
             delete(app.Controls.measurePanel.Children);
             app.Controls.measureAxes = gobjects(1, 0);
+            app.Controls.measureComponents.Data = cell(0, 6);
+        end
+
+        function showMeasureComponents(app, rows, components, panelHeader)
+            % 全計測との成分の差の表（図ごとに、項のある成分と合計の行。1列目の見出しは panelHeader）。使った Overlay 補正の
+            % 設定を覚えておき、変えたら空にする
+            c = app.Controls;
+            if isempty(rows)
+                rows = cell(0, 6);
+            end
+            names = reshape(cellstr(c.measureComponents.ColumnName), 1, []);
+            names{1} = char(panelHeader);
+            c.measureComponents.ColumnName = names;
+            c.measureComponents.Data = rows;
+            c.measureComponents.UserData = fieldOr(app.Settings, "overlay", struct());
+            if ~isempty(components)
+                c.measureComponents.Tooltip = ['全計測との成分の差（補正モデル：' char(components(1).description) '）。' ...
+                    '全計測：全計測で求めた成分の補正量の |平均|+3σ。差：計測配置の点で求めた成分 − 全計測で求めた成分 の ' ...
+                    '|平均|+3σ。どちらも全計測の Mark の位置で求めます（詳しくは「ヘルプ」）。'];
+            end
         end
     end
 end
@@ -681,6 +748,19 @@ elseif seconds < 3600
     text = sprintf("%.0f 分", seconds / 60);
 else
     text = sprintf("%.1f 時間", seconds / 3600);
+end
+end
+
+function rows = componentTableRows(panelLabel, summary)
+% 全計測との成分の差の表の行（項のある成分と合計。値は有効数字3桁の文字）
+present = ~(isnan(summary.sizeX) & isnan(summary.sizeY));
+summary = summary(present, :);
+n = height(summary);
+rows = cell(n, 6);
+for r = 1:n
+    rows(r, :) = {char(panelLabel), char(summary.component(r)), numberText(summary.sizeX(r), '%.3g'), ...
+        numberText(summary.sizeY(r), '%.3g'), numberText(summary.differenceX(r), '%.3g'), ...
+        numberText(summary.differenceY(r), '%.3g')};
 end
 end
 

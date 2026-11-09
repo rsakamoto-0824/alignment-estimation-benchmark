@@ -443,7 +443,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             c.highOrderCompare = primaryButton(app, controls, 'すべて計算して比べる', @(~, ~) app.onCompareHighOrder());
             place(c.highOrderCompare, 1, 6);
             c.highOrderConditionTable = uitable(grid, 'RowName', {}, 'ColumnName', {'No', '条件', '補正の式', 'くくり', ...
-                'Wafer レベル', 'X の回帰', 'Y の回帰'}, 'ColumnWidth', {30, 170, 60, 100, 190, 190, 190}, 'Data', cell(0, 7), ...
+                'Wafer レベル', 'X の回帰', 'Y の回帰'}, 'ColumnWidth', {30, 170, 60, 230, 150, 190, 190}, 'Data', cell(0, 7), ...
                 'CellSelectionCallback', @(~, event) app.onHighOrderConditionsSelected(event), 'Tooltip', ...
                 '比べる条件。セルをクリックして選びます（Shift・Ctrl で複数）。比べた後に2つ選ぶと、「2つの条件を並べる」に出ます。');
             place(c.highOrderConditionTable, 2, 1);
@@ -940,6 +940,12 @@ shotText = "なし";
 if perShot
     common = "なし";
     shotText = makerLabel(options);
+    if options.shotCommon ~= "none"
+        common = makerLabel(options) + ternary(options.shotCommon == "fit", "（計算した k を先に引く）", "（入力した k を先に引く）");
+        if options.shotEachOrder > 0
+            shotText = shotText + sprintf("（%d次まで）", options.shotEachOrder);
+        end
+    end
 end
 outer = "分けない";
 if options.outerMaker ~= "none"
@@ -982,9 +988,16 @@ end
 end
 
 function text = unitLabel(options)
+% くくりの短い説明（Shot 共通を先に引く Shot ごとは「共通（計算）→ Shot ごと 1次まで」など）
 names = ["common", "scan", "row", "shot"];
 labels = ["Wafer 内で共通", "Scan 方向ごと", "行の偶奇ごと", "Shot ごと"];
 text = labels(names == options.unit);
+if options.unit == "shot" && options.shotCommon ~= "none"
+    text = ternary(options.shotCommon == "fit", "共通（計算）→ ", "共通（入力）→ ") + text;
+    if options.shotEachOrder > 0
+        text = text + sprintf(" %d次まで", options.shotEachOrder);
+    end
+end
 end
 
 function data = residualByWafer(points, labels, axisName, statistic)

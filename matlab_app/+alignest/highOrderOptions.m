@@ -12,6 +12,12 @@ function options = highOrderOptions(settings)
 %                         ない）・"all"（すべての Shot。Wafer 成分は使わない）・"outer"（外周の Shot だけ。Wafer 成分は内周の Shot
 %                         だけ）。X・Y を一緒に、Wafer ごとに先に求めて引き、残りを補正の式で求める
 %   options.waferRtOrder：Wafer RT の次数 K（1〜5）
+%   options.shotCommon：Shot ごと（unit = "shot"）のとき、先に引く Shot 共通の補正。"none"（引かない。Shot ごとの k をその Shot の
+%                       点だけで求める）・"fit"（Wafer 内の Shot で共通の k を Wafer 成分と一緒に求めて引く）・"input"（入力した
+%                       k の値 shotCommonValues・shotCommonOuterValues を引く）。引いた残りを Shot ごとに求める。ほかのくくりでは使わない
+%   options.shotEachOrder：Shot 共通を先に引くとき、Shot ごとに求める項の次数の上限（0 = 使う項すべて。1〜6。k1〜k6 は必ず求める）
+%   options.shotCommonValues：入力した Shot 共通の k（n 番目が kn の値。mm の座標での値で、k1・k2 は nm、1次は nm/mm、n 次は
+%                             nm/mm^n。並びより大きい番号の k は 0）。shotCommonOuterValues：外周の式（outerMaker）の k の値
 %   options.excludedTerms：使わない k の番号（「VIF で選ぶ」で外した・画面で外した項。k1〜k6 は外さない）
 %   options.outerRadiusMm：外周の Shot（Shot 中心の半径がこの値 [mm] 以上）。補正の評価を内周・外周に分けるときと、外周の式に使う
 %   options.outerMaker：外周の Shot の補正の式（"none" なら分けない。"asml"・"canon"・"nikon"・"custom"）。分けると、k の組を
@@ -33,6 +39,8 @@ function options = highOrderOptions(settings)
 %   以前の設定（highOrder が無い・項目が足りない）は、alignest.defaultSettings の値を使う。
 MAX_WAFER_ORDER = 5;
 MAX_RT_ORDER = 5;
+SHOT_COMMON_NAMES = ["none", "fit", "input"];
+MAX_EACH_ORDER = 6;   % Shot ごとに求める項の次数の上限の最大（Nikon の式の6次まで）
 RT_RANGE_NAMES = ["none", "all", "outer"];
 MAKER_NAMES = ["asml", "canon", "nikon", "custom"];
 MAKER_LABELS = ["ASML", "Canon", "Nikon", "カスタム（k1〜k38）"];
@@ -81,6 +89,9 @@ options.outerExcludedTerms = reshape(double(options.outerExcludedTerms), 1, []);
 options.outerName = string(options.outerName);
 options.shortage = string(options.shortage);
 options.waferRtRange = string(options.waferRtRange);
+options.shotCommon = lower(string(options.shotCommon));
+options.shotCommonValues = reshape(double(options.shotCommonValues), 1, []);
+options.shotCommonOuterValues = reshape(double(options.shotCommonOuterValues), 1, []);
 if ~isscalar(options.maker) || ~any(options.maker == MAKER_NAMES)
     error('alignest:highOrderModel', 'Shot 高次補正の式は %s のいずれかです: %s', strjoin(MAKER_NAMES, "・"), ...
         strjoin(options.maker, "・"));
@@ -102,6 +113,17 @@ if ~isscalar(options.waferRtRange) || ~any(options.waferRtRange == RT_RANGE_NAME
 end
 if ~isscalar(options.waferRtOrder) || ~any(options.waferRtOrder == 1:MAX_RT_ORDER)
     error('alignest:highOrderWafer', 'Wafer RT の次数は 1〜%d の整数にしてください。', MAX_RT_ORDER);
+end
+if ~isscalar(options.shotCommon) || ~any(options.shotCommon == SHOT_COMMON_NAMES)
+    error('alignest:highOrderShotCommon', ['先に引く Shot 共通の補正は none（引かない）・fit（計算する）・input（入力した' ...
+        '値）のいずれかです: %s'], strjoin(options.shotCommon, "・"));
+end
+if ~isscalar(options.shotEachOrder) || ~any(options.shotEachOrder == 0:MAX_EACH_ORDER)
+    error('alignest:highOrderShotCommon', 'Shot ごとに求める項の次数は 0（使う項すべて）〜%d の整数にしてください。', ...
+        MAX_EACH_ORDER);
+end
+if any(~isfinite([options.shotCommonValues, options.shotCommonOuterValues]))
+    error('alignest:highOrderShotCommon', '入力する Shot 共通の k の値は数にしてください（使わない k は 0）。');
 end
 if ~isscalar(options.vifThreshold) || ~isfinite(options.vifThreshold) || options.vifThreshold <= 1
     error('alignest:highOrderVif', 'VIF のしきい値は 1 より大きい数にしてください（よく使う値は 5〜10）。');
@@ -159,6 +181,17 @@ elseif options.unit == "shot" && waferOrder > 0
     unitText = unitText + sprintf("（Wafer 成分 %d 次を先に求めて引く）", waferOrder);
 elseif waferOrder > 0
     unitText = unitText + sprintf("（Wafer 成分 %d 次は Wafer で共通にして一緒に求める）", waferOrder);
+end
+if options.unit == "shot" && options.shotCommon ~= "none"
+    sourceText = "求めた";
+    if options.shotCommon == "input"
+        sourceText = "入力した";
+    end
+    eachText = "";
+    if options.shotEachOrder > 0
+        eachText = sprintf("%d次までの項を", options.shotEachOrder);
+    end
+    unitText = unitText + "、" + sourceText + " Shot 共通の k を先に引いて残りの" + eachText + " Shot ごとに求める";
 end
 if options.waferRtRange == "all"
     unitText = unitText + sprintf("、すべての Shot は Wafer RT %d 次を先に求めて引く", options.waferRtOrder);

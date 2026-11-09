@@ -21,6 +21,9 @@ function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm)
 %   その Shot の全 Mark）以上を必ず計測する（足りないときは Mark の数を増やし、plan.message に書く）。false なら
 %   Shot を問わず選ぶ（計測しない Shot もある）。sampling.constraints.markRatio が true（既定）なら、
 %   Mark 番号ごとの計測する数を、全計測（候補の全 Mark）での割合 × Mark の数 ± 許容幅にそろえる。
+%   sampling.constraints.markEqual が true なら、Mark 番号ごとの計測する数を均等にする（Mark の数 / Mark 番号の数。
+%   割り切れないときの1つの差だけ。候補の少ない Mark 番号はその数まで計測し、残りをほかの Mark 番号で均等に分ける。
+%   alignest.equalTargets）。markEqual は markRatio より優先する。
 %   plan.markIndex に計測する Mark（unit.marks の何番目か）を入れる（Shot 単位の選び方では空）。plan.shotIndex は
 %   計測する Mark のある Shot。
 %   plan.nMarks は学習に使う Mark の数（その軸が有効な Mark。X・Y のどちらか）。
@@ -167,13 +170,24 @@ if nMarks >= numel(markCandidates)
 end
 blocks = markBlocks(unit, markCandidates, sampling.designOrder, waferRadiusMm);
 labels = zeros(numel(markCandidates), 0);
-if ~isfield(sampling.constraints, "markRatio") || sampling.constraints.markRatio
-    [~, ~, labels] = unique(marks.markNo(markCandidates));
+equal = isfield(sampling.constraints, "markEqual") && sampling.constraints.markEqual;
+if equal || ~isfield(sampling.constraints, "markRatio") || sampling.constraints.markRatio
+    [levels, ~, labels] = unique(marks.markNo(markCandidates));
+end
+if equal
+    sizes = accumarray(labels, 1);
+    target = alignest.equalTargets(sizes, nMarks);
+    short = sizes < nMarks / numel(sizes);
+    if any(short)
+        plan.message = strtrim(plan.message + sprintf(" 候補の少ない Mark 番号（%s）はその数まで計測し、残りをほかの" + ...
+            "Mark 番号で均等にしました（%s）。", strjoin("M" + string(levels(short).'), "・"), ...
+            strjoin("M" + string(levels.') + " " + string(round(target.', 1)), "・")));
+    end
 end
 stream = RandStream('mt19937ar', 'Seed', seedFor(sampling.seed, nMarks, spec.repeat));
 [selected, plan.criterion, plan.violation] = alignest.exchangeDesign(blocks, nMarks, labels, ...
     sampling.constraints.slack, stream, sampling.exchangeStarts, sampling.exchangeMaxIterations, criterion=criterion, ...
-    group=group, minPerGroup=minPerShot);
+    group=group, minPerGroup=minPerShot, equal=equal & true(1, size(labels, 2)));
 if plan.violation > 0
     plan.message = strtrim(plan.message + sprintf(" Mark 番号ごとの数をそろえる制約を満たす組が見つからず、" + ...
         "違反量 %d の組を使いました。", plan.violation));
