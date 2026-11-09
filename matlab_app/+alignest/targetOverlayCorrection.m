@@ -83,7 +83,7 @@ dropped = zeros(1, 2);
 for k = 1:2
     index = find(used & isfinite(values(:, k)));
     [design, terms] = alignest.overlayDesign(points, choice, settings.data.waferRadiusMm, k, index);
-    keep = orderedIndependent(design, RELATIVE_TOLERANCE);
+    keep = alignest.independentColumns(design, RELATIVE_TOLERANCE);
     coefficients = zeros(size(design, 2), 1);
     coefficients(keep) = design(:, keep) \ values(index, k);
     corrections(index, k) = design * coefficients;
@@ -124,29 +124,6 @@ if any(dropped > 0)
         '（補正量はほかの項に含まれます。係数の表の「メモ」）。'], dropped(1), dropped(2));
 end
 correction.messages = messages;
-end
-
-function keep = orderedIndependent(design, tolerance)
-% 前の列で表せない列だけを残す（列の順に、それまでに残した列の正規直交基底へ射影した残りの大きさで判定）。
-% 同じ射影を2回する（Gram–Schmidt の再直交化）ので、列が多くても数値的に安定
-nColumns = size(design, 2);
-keep = false(1, nColumns);
-basis = zeros(size(design, 1), 0);
-for column = 1:nColumns
-    vector = design(:, column);
-    scale = norm(vector);
-    if scale == 0
-        continue
-    end
-    for pass = 1:2
-        vector = vector - basis * (basis.' * vector);
-    end
-    remainder = norm(vector);
-    if remainder > sqrt(tolerance) * scale
-        keep(column) = true;
-        basis(:, end + 1) = vector / remainder; %#ok<AGROW>
-    end
-end
 end
 
 function numbers = shotNumberOf(shotIndex, shots)

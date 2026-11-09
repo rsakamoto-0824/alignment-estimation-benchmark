@@ -58,6 +58,8 @@ settings.sampling.constraints.quadrants = true;
 settings.sampling.constraints.scanDirection = true;
 settings.sampling.constraints.slack = 1;
 settings.sampling.constraints.markRatio = true;   % Mark 単位：Mark 番号ごとの計測する数を全計測の割合にそろえる
+settings.sampling.constraints.markEqual = false;  % Mark 単位：Mark 番号ごとの計測する数を均等にする（markRatio より優先。
+                                                  % 許容幅は使わず、割り切れないときの1つの差だけ）
 settings.sampling.markPerShot = 1;      % Mark 単位：1 Shot あたりの平均の計測 Mark 数（1 = 全 Shot で1点。複数なら比べる）
                                         % （countBy = "rate" なら、代わりに計測率 = 候補の全 Mark に対する割合で決める）
 settings.sampling.markRequirePerShot = true;   % Mark 単位：各 Shot で markMinPerShot 点以上を必ず計測する（false なら Shot を問わず選ぶ）
@@ -97,6 +99,12 @@ settings.highOrder.unit = "common";        % k のくくり：common（Wafer 内
                                            % 偶奇ごと）・shot（Shot ごと）
 settings.highOrder.waferOrder = 1;         % Wafer 成分（Shot 中心の座標の多項式の次数。0〜5、0 = なし。shot のほかは k と一緒に、
                                            % shot は先に求めて引く）
+settings.highOrder.shotCommon = "none";     % Shot ごと（unit = shot）のとき、先に引く Shot 共通の補正：none（引かない。Shot ごとに
+                                           % 求める）・fit（Wafer 内の Shot で共通の k を求めて引く）・input（入力した値を引く）
+settings.highOrder.shotEachOrder = 0;      % Shot 共通を先に引くとき、Shot ごとに求める項の次数の上限（0 = 使う項すべて。1〜6）
+settings.highOrder.shotCommonValues = zeros(1, 0);  % 入力した Shot 共通の k（n 番目が kn の値。k1・k2 は nm、1次は nm/mm、
+                                           % n 次は nm/mm^n。無い k は 0）
+settings.highOrder.shotCommonOuterValues = zeros(1, 0);  % 外周の式（outerMaker）の Shot 共通の k（外周の式を分けるとき）
 settings.highOrder.waferRtRange = "none";   % Wafer RT（RT モデルを Shot 中心の座標で当てはめる Wafer 高次補正）を使う Shot：
                                            % none（使わない）・all（すべての Shot）・outer（外周の Shot だけ。内周は Wafer 成分）
 settings.highOrder.waferRtOrder = 3;       % Wafer RT の次数 K（1〜5）

@@ -6,6 +6,8 @@ function [selected, criterion, violation] = exchangeDesign(blocks, nSelect, labe
 %                Mark 単位なら1行）
 %   labels     : 候補 × 制約の種類 の区分番号（同心円・象限・Scan 方向・Mark 番号。制約なしなら 0 列）。
 %                各区分の数を、全候補に占める割合 × 選ぶ数 ± slack に収める（alignest.shotGroupBounds）
+%   options.equal      ：制約の種類ごとの論理値（省略時はすべて false）。true の種類は、割合ではなく区分ごとの数を
+%                        できるだけ均等にする（slack は使わない。alignest.shotGroupBounds）
 %   options.criterion  ："I"（tr(M⁻¹) を小さく）・"D"（det(M) を大きく、det(M)^(−1/p) を小さく）
 %   options.fixed      ：必ず選ぶ候補（論理ベクトル。交換で外さない）
 %   options.group      ：候補のまとまり（例：Mark の Shot 番号）。minPerGroup とともに、まとまりごとに
@@ -25,6 +27,7 @@ arguments
     options.fixed logical = false(0, 1)
     options.group double = zeros(0, 1)
     options.minPerGroup (1, 1) double = 1
+    options.equal logical = false(1, 0)
 end
 REGULARIZATION = 1e-10;
 nCandidates = numel(blocks);
@@ -47,7 +50,11 @@ information = zeros(nParams, nParams, nCandidates);
 for c = 1:nCandidates
     information(:, :, c) = blocks{c}.' * blocks{c};
 end
-bounds = alignest.shotGroupBounds(labels, nSelect, slack);
+equal = options.equal;
+if isempty(equal)
+    equal = false(1, size(labels, 2));
+end
+bounds = alignest.shotGroupBounds(labels, nSelect, slack, equal);
 context = struct("information", information, "stacked", stacked, "rowsOf", {rowsOf}, "labels", labels, ...
     "bounds", bounds, "fixed", fixed, "group", group, "useGroups", useGroups, "minPerGroup", options.minPerGroup, ...
     "criterion", options.criterion, "singleRows", singleRows, "regularization", REGULARIZATION);
@@ -58,7 +65,8 @@ for start = 1:nStarts
     if useGroups
         [current, currentViolation] = initialGroupedDesign(nSelect, labels, bounds, group, options.minPerGroup, fixed, stream);
     else
-        [current, currentViolation] = alignest.randomFeasibleShots(nCandidates, nSelect, labels, slack, stream, fixed);
+        [current, currentViolation] = alignest.randomFeasibleShots(nCandidates, nSelect, labels, slack, stream, fixed, ...
+            equal);
     end
     total = sum(information(:, :, current), 3);
     value = designValue(total + REGULARIZATION * eye(nParams), options.criterion);

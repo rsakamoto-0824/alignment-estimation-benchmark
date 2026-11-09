@@ -1104,7 +1104,7 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             c.markPerShot.ValueChangedFcn([], []);
             testCase.verifyEqual(app.Settings.sampling.method, ["ioptimal", "doptimal", "mark"]);
             testCase.verifyEqual(app.Settings.sampling.markPerShot, 1, "全角の数字も読む");
-            testCase.verifyEqual(string(c.markRatio.Enable), "on");
+            testCase.verifyEqual(string(c.markBalance.Enable), "on");
             folder = tempname;
             mkdir(folder);
             cleanup = onCleanup(@() rmdir(folder, 's'));

@@ -8,7 +8,9 @@ function levels = highOrderLevels(result)
 %   - Shot 共通：くくりが Shot ごとなら、Wafer 成分と一緒に Wafer 内の Shot で共通に求めた k（result.commonCoefficients。
 %     外周の式を分けるときは内周・外周の2組）。ほかのくくりは k の組の k（Wafer 内で共通・Scan 方向ごと・行の偶奇ごと）
 %   - Shot 毎：くくりが Shot ごとのときだけ。Shot ごとの k − Shot 共通の k（Shot 共通に足すと、その Shot に当てる k）。
-%     その Shot で使わない項（点が足りず外した項）は − Shot 共通（足すと 0）
+%     その Shot で使わない項（点が足りず外した項）は − Shot 共通（足すと 0）。Shot 共通を先に引いたとき（options.shotCommon が
+%     "fit"・"input"）は、Shot 共通（求めた k・入力した k）を引いた残りを Shot ごとに求めた k になり、Shot ごとに求めない
+%     項は 0（result.coefficients の Shot ごとの k が Shot 共通を足した値なので、同じ引き算で求まる）
 %   列：wafer・level（段階の名前）・shotNo・group（k の組の名前）・zone（外周の式を分けるときの式の範囲）・axis・k・term・
 %   value・unit・note・xPower・yPower。行は Wafer の順、段階の順、Shot の番号の順、k の番号の順（Wafer 成分は dx・dy、次数の順）。
 arguments

@@ -166,10 +166,14 @@ classdef (Abstract) SettingsTab < appui.Core
                 'この値 × 候補 Shot 数（四捨五入）。計測率で決めるときは、計測率 × 候補の全 Mark の数（上の計測率の開始・' ...
                 '終了・刻みでスイープ）。']);
             place(c.markPerShot, 4, 1);
-            c.markRatio = uicheckbox(exchangeGrid, 'Text', 'Mark 番号ごとの計測割合を全計測とそろえる', 'ValueChangedFcn', onChange, ...
-                'Tooltip', ['Mark 番号ごとの計測する Mark の数を、候補の全 Mark での割合 × 計測する数 ± 許容幅に収めます' ...
-                '（例：4 Mark なら各 25%）。']);
-            place(c.markRatio, 5, [1, 2]);
+            balanceGrid = uigridlayout(exchangeGrid, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
+            place(balanceGrid, 5, [1, 2]);
+            label(balanceGrid, 'Mark 番号ごとの計測数', 1, 1);
+            c.markBalance = uidropdown(balanceGrid, 'Items', {'そろえない', '全計測の割合にそろえる', '均等にする'}, ...
+                'ItemsData', {'none', 'ratio', 'equal'}, 'ValueChangedFcn', onChange, 'Tooltip', ['最適計画で選ぶ Mark の数を、' ...
+                'Mark 番号ごとにそろえる制約。全計測の割合：候補の全 Mark での割合 × 計測する数 ± 許容幅。均等：計測する数 ÷ ' ...
+                'Mark 番号の数（割り切れないときの1つの差だけ。候補の少ない Mark 番号はその数まで）。']);
+            place(c.markBalance, 1, 2);
             perShotGrid = uigridlayout(exchangeGrid, [1, 3], 'ColumnWidth', {'fit', 'fit', 70}, 'Padding', 0);
             place(perShotGrid, 6, [1, 2]);
             c.markRequirePerShot = uicheckbox(perShotGrid, 'Text', 'Shot ごとに n 点の Mark 計測を必須にする', ...
@@ -478,7 +482,13 @@ classdef (Abstract) SettingsTab < appui.Core
             refreshFactorColumns(app, choice.columns, choiceY.columns);
             c.samplingMethod.Value = cellstr(s.sampling.method(:).');
             c.markPerShot.Value = char(strjoin(string(fieldOr(s.sampling, "markPerShot", 1)), " "));
-            c.markRatio.Value = logical(fieldOr(s.sampling.constraints, "markRatio", true));
+            balance = "none";
+            if logical(fieldOr(s.sampling.constraints, "markEqual", false))
+                balance = "equal";
+            elseif logical(fieldOr(s.sampling.constraints, "markRatio", true))
+                balance = "ratio";
+            end
+            c.markBalance.Value = char(balance);
             c.markRequirePerShot.Value = logical(fieldOr(s.sampling, "markRequirePerShot", true));
             c.markMinPerShot.Value = double(fieldOr(s.sampling, "markMinPerShot", 1));
             c.nShotsStart.Value = s.sampling.nShotsStart;
@@ -619,7 +629,8 @@ classdef (Abstract) SettingsTab < appui.Core
             if ok && ~isempty(values) && all(values > 0)
                 s.sampling.markPerShot = unique(values);
             end
-            s.sampling.constraints.markRatio = c.markRatio.Value;
+            s.sampling.constraints.markRatio = string(c.markBalance.Value) ~= "none";
+            s.sampling.constraints.markEqual = string(c.markBalance.Value) == "equal";
             s.sampling.markRequirePerShot = c.markRequirePerShot.Value;
             s.sampling.markMinPerShot = c.markMinPerShot.Value;
             try
@@ -889,7 +900,7 @@ classdef (Abstract) SettingsTab < appui.Core
             c.slack.Enable = onOff(shotConstraints || markPlans);
             set([c.randomRepeats], 'Enable', onOff(any(method == "random")));
             set([c.designOrder, c.exchangeStarts], 'Enable', onOff(optimal));
-            set([c.markRatio, c.markRequirePerShot], 'Enable', onOff(markPlans));
+            set([c.markBalance, c.markRequirePerShot], 'Enable', onOff(markPlans));
             c.markPerShot.Enable = onOff(markPlans && ~byRate);
             c.markMinPerShot.Enable = onOff(markPlans && c.markRequirePerShot.Value);
             c.layoutPlanInfo.Enable = onOff(any(method == "excel"));

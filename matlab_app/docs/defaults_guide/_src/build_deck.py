@@ -311,7 +311,8 @@ def build(output: Path, reference: Path):
         ["constraints.quadrants", "true", "4象限の Shot 数をそろえる", "2. 4象限"],
         ["constraints.scanDirection", "true", "Scan 方向ごとの Shot 数をそろえる", "2. Scan 方向"],
         ["constraints.slack", "1", "許容幅（各区画の数の ±）", "2. 許容幅"],
-        ["constraints.markRatio", "true", "Mark 単位：Mark 番号ごとの数を全計測の割合にそろえる", "2. Mark 単位"]],
+        ["constraints.markRatio ・ markEqual", "true ・ false", "Mark 単位：Mark 番号ごとの数を全計測の割合にそろえる・均等にする",
+         "2. Mark 番号ごとの計測数"]],
         row_h=0.44)
     point_bar(s, 6.2, "初期配置の数の目安：1つあたり 約 0.01 秒 × 学習 Shot 数（10 → 30 で約 3 倍）。10〜20 を超えても良さはほぼ同じ",
               icon="i", icon_color=BODY, h=0.6, size=13)
@@ -367,13 +368,13 @@ def build(output: Path, reference: Path):
         ["highOrder.waferRtRange ・ waferRtOrder", "\"none\" ・ 3", "Wafer RT を使う Shot（none・all・outer）・次数（1〜5）", "7. Wafer RT"],
         ["highOrder.excludedTerms", "[]（すべて使う）", "使わない k の番号（例：[55, 41, 29]。k1〜k6 は外さない）", "7. 使う項と VIF"],
         ["highOrder.shortage", "\"reduceAll\"", "点が足りない Shot の扱い（reduceAll・reduceGroup・skip）", "7. 点が足りない Shot"],
-        ["highOrder.outerRadiusMm", "120", "外周の Shot（Shot 中心の半径 [mm] がこの値以上）", "7. 外周の半径"],
-        ["highOrder.outerMaker ・ outerName", "\"none\" ・ \"\"", "外周の式（none：分けない）・選んだ組み合わせの名前", "7. 外周の式"],
+        ["highOrder.shotCommon ・ shotEachOrder", "\"none\" ・ 0", "先に引く Shot 共通（none・fit・input）・Shot ごとの次数", "7. Shot 共通補正"],
+        ["highOrder.outerRadiusMm ・ outerMaker", "120 ・ \"none\"", "外周の半径 [mm]・外周の式（none：分けない）", "7. 外周"],
         ["highOrder.vifThreshold", "10", "「VIF で選ぶ」のしきい値（よく使う値は 5〜10）", "7. VIF のしきい値"],
         ["highOrder.loss ・ huberTuning", "\"huber\" ・ 1.345", "損失関数（ols・huber・lad）・Huber の定数 c", "7. 回帰・Huber"],
         ["highOrder.regularization ・ penaltyOrders ・ lambda", "\"l2\" ・ [2〜6] ・ 0.1", "正則化（none・l2・l1）・かける次数（1〜6）・強さ λ", "7. 正則化・λ"],
         ["highOrder.termSets", "[]（なし）", "保存した項の組み合わせ（1行 = \"名前|式|k の番号 …\"）", "7. 組み合わせ"]],
-        widths=(3.3, 1.95, 4.9, 1.98), row_h=0.34)
+        widths=(3.3, 1.95, 4.9, 1.98), size=10, row_h=0.32)
     point_bar(s, 6.32, "λ はそろえた係数に対する値（L2 は 1 Shot 7×11 点の標準 0.1。点を減らすときは λ × √(77 / 点の数)）。"
               "highOrder は評価の結果を変えない（「続きから再開」の比較にも使わない）",
               icon="i", icon_color=BODY, h=0.62, size=12)
@@ -383,7 +384,10 @@ def build(output: Path, reference: Path):
              "shortage は、選んだ項を決めるのに点が足りない Shot（k の組）の扱い：reduceAll（全体の項を減らす。点の数が最も少ない"
              "組に合わせて k の小さい順に絞る）・reduceGroup（その Shot だけ項を減らす）・skip（その Shot は補正しない）。"
              "unit・λ・回帰・保存した組み合わせは「補正の比較」でまとめて並べて比べられる。outerMaker を none 以外にすると、"
-             "外周の Shot だけその式で補正する（保存した組み合わせを選ぶと、その使わない項 outerExcludedTerms と名前 outerName も入る）。"
+             "外周の Shot だけその式で補正する（保存した組み合わせを選ぶと、その使わない項 outerExcludedTerms と名前 outerName も入る。初期値は \"\"）。"
+             "shotCommon は unit が shot のときだけ使う：fit は Wafer 内の全 Shot で共通の k を求めて先に引き、input は"
+             "入力した k（shotCommonValues・外周の式は shotCommonOuterValues。n 番目が kn の値）を先に引く。shotEachOrder は"
+             "Shot ごとに求める項の次数の上限（0 = すべての項）。"
              "既定の設定ファイルにも書ける。"
              "計算の方法と式はメニュー「ヘルプ」の技術編。")
 

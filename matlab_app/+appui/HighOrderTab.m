@@ -19,6 +19,9 @@ classdef (Abstract) HighOrderTab < appui.Core
             %SETHIGHORDERSETTINGS 補正の式・単位・回帰の欄を変える（画面で選ぶのと同じ）。名前と値の組で渡す：
             %   maker（"asml"・"canon"・"nikon"・"custom"）・unit（k の組のくくり："common"・"scan"・"row"・"shot"）・
             %   waferOrder（0〜5）・waferRtRange（Wafer RT を使う Shot："none"・"all"・"outer"）・waferRtOrder（1〜5）・
+            %   shotCommon（Shot ごとのとき先に引く Shot 共通の補正："none"・"fit"（計算する）・"input"（入力した値））・
+            %   shotEachOrder（Shot 共通を先に引くとき、Shot ごとに求める項の次数の上限。0 = 使う項すべて）・
+            %   shotCommonValues・shotCommonOuterValues（入力する Shot 共通の k の値。n 番目が kn。外周は外周の式）・
             %   outerRadiusMm（外周の Shot の半径 [mm]）・outerMaker（外周の式："none"（分けない）・
             %   "asml"・"canon"・"nikon"・"custom"）・outerTermSet（外周の式にする保存した項の組み合わせの名前）・shortage
             %   （点が足りない Shot・組："reduceAll"（全体の項を減らす）・"reduceGroup"（その組だけ項を減らす）・"skip"
@@ -33,6 +36,10 @@ classdef (Abstract) HighOrderTab < appui.Core
                 options.waferOrder (1, 1) double
                 options.waferRtRange (1, 1) string
                 options.waferRtOrder (1, 1) double
+                options.shotCommon (1, 1) string
+                options.shotEachOrder (1, 1) double
+                options.shotCommonValues (1, :) double
+                options.shotCommonOuterValues (1, :) double
                 options.outerRadiusMm (1, 1) double
                 options.outerMaker (1, 1) string
                 options.outerTermSet (1, 1) string
@@ -48,9 +55,16 @@ classdef (Abstract) HighOrderTab < appui.Core
             end
             c = app.Controls;
             controls = struct("maker", c.highOrderMaker, "unit", c.highOrderUnit, "waferOrder", c.highOrderWaferOrder, ...
-                "waferRtRange", c.highOrderRtRange, "waferRtOrder", c.highOrderRtOrder, "outerRadiusMm", c.highOrderOuterRadius, "outerMaker", c.highOrderOuterFormula, "outerTermSet", ...
-                c.highOrderOuterFormula, "shortage", c.highOrderShortage, "vifThreshold", c.highOrderVifThreshold, ...
-                "measured", c.highOrderMeasured);
+                "waferRtRange", c.highOrderRtRange, "waferRtOrder", c.highOrderRtOrder, "shotCommon", c.highOrderShotCommon, ...
+                "shotEachOrder", c.highOrderShotEachOrder, "outerRadiusMm", c.highOrderOuterRadius, "outerMaker", ...
+                c.highOrderOuterFormula, "outerTermSet", c.highOrderOuterFormula, "shortage", c.highOrderShortage, ...
+                "vifThreshold", c.highOrderVifThreshold, "measured", c.highOrderMeasured);
+            for name = ["shotCommonValues", "shotCommonOuterValues"]
+                if isfield(options, name)
+                    app.Settings.highOrder.(name) = options.(name);   % 欄ではなく表の「共通の値」の値
+                    options = rmfield(options, name);
+                end
+            end
             if isfield(options, "outerTermSet")
                 if ~any(termSetTable(app.Settings.highOrder.termSets).name == options.outerTermSet)
                     error('alignest:highOrderTermSet', '保存した項の組み合わせ「%s」がありません。', options.outerTermSet);
@@ -69,6 +83,42 @@ classdef (Abstract) HighOrderTab < appui.Core
                 onHighOrderInputEdited(app);
             end
             onHighOrderSettingsChanged(app);
+        end
+
+        function values = copyHighOrderCommonValues(app)
+            %COPYHIGHORDERCOMMONVALUES 直近の計算の Shot 共通の k（Wafer の平均）を、入力する Shot 共通の値（「使う項と VIF」の
+            %   表の「共通の値」）に写す（画面の「計算した値を写す」）。補正の式（外周の式も）が今の設定と同じ計算だけ。
+            %   values：{内周の式（外周の式を分けないときは式）の値, 外周の式の値}（n 番目が kn の値）
+            run = app.HighOrderRun;
+            if isempty(run)
+                error('alignest:highOrderShotCommon', '先に「補正を計算する」で Shot 共通の k を求めてください。');
+            end
+            computed = run.result.options;
+            current = alignest.highOrderOptions(app.Settings);
+            if computed.maker ~= current.maker || computed.outerMaker ~= current.outerMaker
+                error('alignest:highOrderShotCommon', ['直近の計算と補正の式が違うので写せません（k の番号の意味が違うため）。' ...
+                    '今の式で計算してから写してください。']);
+            end
+            common = run.result.commonCoefficients;
+            if isempty(common) && computed.unit == "common"
+                common = run.result.coefficients(run.result.coefficients.component == "Shot 高次補正", :);
+            end
+            if isempty(common)
+                error('alignest:highOrderShotCommon', ['直近の計算に Shot 共通の k がありません。くくりを「Shot ごと」などに' ...
+                    'して計算してから写してください。']);
+            end
+            values = {zeros(1, 0), zeros(1, 0)};
+            zoneIndex = 1 + double(common.zone == "外周");   % "" と "内周" は内周の式（分けないときは式）
+            for z = 1:2
+                mine = common(zoneIndex == z & isfinite(common.value), :);
+                for k = reshape(unique(mine.k), 1, [])
+                    values{z}(k) = mean(mine.value(mine.k == k));   % 足りない番号は 0 で埋まる
+                end
+            end
+            app.Settings.highOrder.shotCommonValues = values{1};
+            app.Settings.highOrder.shotCommonOuterValues = values{2};
+            refreshHighOrderTerms(app);
+            markHighOrderStale(app);
         end
 
         function data = loadHighOrderFile(app, filePath, sheetName)
@@ -236,14 +286,16 @@ classdef (Abstract) HighOrderTab < appui.Core
             result = alignest.shotHighOrder(wafers, app.Settings);
             result.seconds = toc(started);
             result.messages = [result.messages; notes(:)];
+            % Shot 共通を先に引くときは、Shot ごとに求める項だけを減らした（Shot 共通は使う）ので、表の「使う」は変えない
+            keepTerms = result.options.unit == "shot" && result.options.shotCommon ~= "none";
             dropped = [result.reduction([result.reduction.zoneIndex] == 1).dropped];
-            if ~isempty(dropped)
+            if ~isempty(dropped) && ~keepTerms
                 % 点の数が最も少ない k の組で求められない項を外した：表の「使う」も外す（次の計算も同じ項になる）
                 app.Settings.highOrder.excludedTerms = unique([reshape(app.Settings.highOrder.excludedTerms, 1, []), dropped]);
                 refreshHighOrderTerms(app);
             end
             outerDropped = [result.reduction([result.reduction.zoneIndex] == 2).dropped];
-            if ~isempty(outerDropped)
+            if ~isempty(outerDropped) && ~keepTerms
                 app.Settings.highOrder.outerExcludedTerms = unique([reshape( ...
                     app.Settings.highOrder.outerExcludedTerms, 1, []), outerDropped]);   % 外周の式も同じ
             end
@@ -252,6 +304,7 @@ classdef (Abstract) HighOrderTab < appui.Core
                 "measured", c.highOrderMeasured.Value);
             c.highOrderOutputs.SelectedTab = c.highOrderSummaryTab;   % 結果（補正の評価）を見せる
             showHighOrderRun(app);
+            updateHighOrderEnabled(app);   % 「計算した値を写す」
         end
 
         function summary = drawHighOrderMap(app, waferIndex, view, value, mode, group, layout, shotNo)
@@ -535,8 +588,8 @@ classdef (Abstract) HighOrderTab < appui.Core
 
             place(uilabel(left, 'Text', '② 補正の式と k パラメータ', 'FontWeight', 'bold'), 5, 1);
             onSetting = @(~, ~) app.onHighOrderSettingsChanged();
-            modelGrid = uigridlayout(left, [5, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1x'}, 'RowHeight', ...
-                {'fit', 'fit', 'fit', 'fit', 'fit'}, 'Padding', 0);
+            modelGrid = uigridlayout(left, [6, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1x'}, 'RowHeight', ...
+                {'fit', 'fit', 'fit', 'fit', 'fit', 'fit'}, 'Padding', 0);
             place(modelGrid, 6, 1);
             label(modelGrid, '補正の式', 1, 1);
             c.highOrderMaker = uidropdown(modelGrid, 'Items', {'ASML', 'Canon', 'Nikon', 'カスタム'}, ...
@@ -597,15 +650,32 @@ classdef (Abstract) HighOrderTab < appui.Core
                 '補正しない：項は減らさず、足りない Shot は補正しません（評価からも外れます）。どれでも、k1〜k6 も決まらない' ...
                 ' Shot は補正しません。']);
             place(c.highOrderShortage, 5, [2, 4]);
-            termButtons = uigridlayout(left, [1, 3], 'ColumnWidth', {'fit', 'fit', '1x'}, 'Padding', 0);
+            label(modelGrid, 'Shot 共通補正', 6, 1);
+            c.highOrderShotCommon = uidropdown(modelGrid, 'Items', {'なし', '計算する', '値を入力'}, ...
+                'ItemsData', {'none', 'fit', 'input'}, 'ValueChangedFcn', onSetting, 'Tooltip', ['補正のくくりが Shot ごと' ...
+                'のとき、Shot 共通の補正を先にかけ、残りを Shot ごとに求めます。計算する：Wafer 内の全 Shot で共通の k を' ...
+                '求める。値を入力：「使う項と VIF」の表の「共通の値」の k。詳しくは「ヘルプ」。']);
+            place(c.highOrderShotCommon, 6, 2);
+            label(modelGrid, 'Shot ごとの次数', 6, 3);
+            c.highOrderShotEachOrder = uidropdown(modelGrid, 'Items', {'すべての項', '1次まで', '2次まで', '3次まで', ...
+                '4次まで', '5次まで', '6次まで'}, 'ItemsData', {0, 1, 2, 3, 4, 5, 6}, 'ValueChangedFcn', onSetting, 'Tooltip', ...
+                ['Shot 共通を先にかけたあと、Shot ごとに求める項の次数の上限（k1〜k6 は必ず求めます）。それより高い次数の項は' ...
+                ' Shot 共通の値のままです。']);
+            place(c.highOrderShotEachOrder, 6, 4);
+            termButtons = uigridlayout(left, [2, 3], 'ColumnWidth', {'fit', 'fit', 'fit'}, 'RowHeight', {'fit', 'fit'}, ...
+                'Padding', 0, 'RowSpacing', 2);
             place(termButtons, 7, 1);
             c.highOrderVifSelect = uibutton(termButtons, 'Text', 'VIF で選ぶ', 'ButtonPushedFcn', ...
                 @(~, ~) app.onHighOrderVifSelect(), 'Tooltip', ['式のすべての項から始めて、VIF がしきい値以上の高次項を、' ...
                 '次数の高い項から1つずつ外します（k1〜k6 は外しません）。VIF は Shot 内の座標だけで決まります。']);
             c.highOrderAllTerms = uibutton(termButtons, 'Text', 'すべての項を使う', 'ButtonPushedFcn', ...
                 @(~, ~) app.useAllHighOrderTerms());
+            c.highOrderCopyCommon = uibutton(termButtons, 'Text', '計算した値を写す', 'Enable', 'off', ...
+                'ButtonPushedFcn', @(~, ~) app.onCopyHighOrderCommon(), 'Tooltip', ['直近の計算の Shot 共通の k（Wafer の' ...
+                '平均）を、表の「共通の値」に写します（補正の式が同じときだけ）。']);
             c.highOrderTermInfo = uilabel(termButtons, 'WordWrap', 'on', 'FontColor', app.Palette.muted, 'UserData', "muted", ...
                 'Text', '');
+            place(c.highOrderTermInfo, 2, [1, 3]);   % ボタンの下の行（文が長くてもボタンの高さを変えない）
 
             c.highOrderRegression = regressionControls(left, onSetting);
             place(c.highOrderRegression.grid, 8, 1);
@@ -805,6 +875,8 @@ classdef (Abstract) HighOrderTab < appui.Core
             c.highOrderWaferOrder.Value = double(fieldOr(source, "waferOrder", options.waferOrder));
             c.highOrderRtRange.Value = char(options.waferRtRange);
             c.highOrderRtOrder.Value = double(options.waferRtOrder);
+            c.highOrderShotCommon.Value = char(options.shotCommon);
+            c.highOrderShotEachOrder.Value = double(options.shotEachOrder);
             c.highOrderOuterRadius.Value = options.outerRadiusMm;
             c.highOrderShortage.Value = char(options.shortage);
             refreshHighOrderOuterChoices(app);
@@ -881,6 +953,8 @@ classdef (Abstract) HighOrderTab < appui.Core
             app.Settings.highOrder.waferOrder = c.highOrderWaferOrder.Value;
             app.Settings.highOrder.waferRtRange = string(c.highOrderRtRange.Value);
             app.Settings.highOrder.waferRtOrder = c.highOrderRtOrder.Value;
+            app.Settings.highOrder.shotCommon = string(c.highOrderShotCommon.Value);
+            app.Settings.highOrder.shotEachOrder = c.highOrderShotEachOrder.Value;
             app.Settings.highOrder.outerRadiusMm = c.highOrderOuterRadius.Value;
             readHighOrderOuterFormula(app);
             app.Settings.highOrder.shortage = string(c.highOrderShortage.Value);
@@ -898,6 +972,11 @@ classdef (Abstract) HighOrderTab < appui.Core
             rtRange = string(c.highOrderRtRange.Value);
             c.highOrderWaferOrder.Enable = onOff(rtRange ~= "all");   % すべての Shot が RT なら Wafer 成分は使わない
             c.highOrderRtOrder.Enable = onOff(rtRange ~= "none");
+            perShot = string(c.highOrderUnit.Value) == "shot";   % Shot 共通を先に引くのは Shot ごとのときだけ
+            shotCommon = string(c.highOrderShotCommon.Value);
+            c.highOrderShotCommon.Enable = onOff(perShot);
+            c.highOrderShotEachOrder.Enable = onOff(perShot && shotCommon ~= "none");
+            c.highOrderCopyCommon.Enable = onOff(perShot && shotCommon == "input" && ~isempty(app.HighOrderRun));
         end
 
         function onHighOrderSettingsChanged(app)
@@ -1032,6 +1111,9 @@ classdef (Abstract) HighOrderTab < appui.Core
             pointText = strjoin(texts, " ");
             n = height(terms);
             table_ = c.highOrderTermTable;
+            % Shot 共通を「値を入力」にしたときは、入力する k の値の列（内周・外周の式ごと）を足す
+            showValues = options.unit == "shot" && options.shotCommon == "input";
+            inputValues = {options.shotCommonValues, options.shotCommonOuterValues};
             if split
                 % 内周・外周を1つの項の行にまとめ、使うチェックを内周・外周の列に分ける
                 [merged, rowOf] = mergedZoneTerms(terms);
@@ -1042,11 +1124,22 @@ classdef (Abstract) HighOrderTab < appui.Core
                         char(merged.term(k)), merged.order(k), vifText(merged.vifAllInner(k)), vifText(merged.vifUsedInner(k)), ...
                         vifText(merged.vifAllOuter(k)), vifText(merged.vifUsedOuter(k))};
                 end
-                table_.ColumnName = {'内周', '外周', '式', 'k', '項', '次数', '内周 VIF（全項）', '内周 VIF（使う項）', ...
+                names = {'内周', '外周', '式', 'k', '項', '次数', '内周 VIF（全項）', '内周 VIF（使う項）', ...
                     '外周 VIF（全項）', '外周 VIF（使う項）'};
-                table_.ColumnFormat = {'logical', 'logical', 'char', 'char', 'char', 'numeric', 'char', 'char', 'char', 'char'};
-                table_.ColumnEditable = [true, true, false(1, 8)];
-                table_.ColumnWidth = {44, 44, 40, 60, 80, 44, 100, 110, 100, 110};
+                formats = {'logical', 'logical', 'char', 'char', 'char', 'numeric', 'char', 'char', 'char', 'char'};
+                editable = [true, true, false(1, 8)];
+                widths = {44, 44, 40, 60, 80, 44, 100, 110, 100, 110};
+                if showValues
+                    % 次数の右に置く（VIF の列より前にして、横に送らなくても見えるように）
+                    values = num2cell([commonValueOf(inputValues{1}, merged.kInner), commonValueOf(inputValues{2}, merged.kOuter)]);
+                    values(cellfun(@isnan, values)) = {[]};   % その式に無い項は空欄
+                    data = [data(:, 1:6), values, data(:, 7:end)];
+                    names = [names(1:6), {'内周 共通の値', '外周 共通の値'}, names(7:end)];
+                    formats = [formats(1:6), {'shortG', 'shortG'}, formats(7:end)];   % 小さい高次の値も桁を出す
+                    editable = [editable(1:6), true, true, editable(7:end)];
+                    widths = [widths(1:6), {105, 105}, widths(7:end)];
+                end
+                set(table_, 'ColumnName', names, 'ColumnFormat', formats, 'ColumnEditable', editable, 'ColumnWidth', widths);
                 table_.UserData = merged;
             else
                 rowOf = (1:n).';
@@ -1055,10 +1148,19 @@ classdef (Abstract) HighOrderTab < appui.Core
                     data(k, :) = {terms.used(k), char(terms.axis(k)), sprintf('k%d', terms.k(k)), char(terms.term(k)), ...
                         terms.order(k), vifText(terms.vifAll(k)), vifText(terms.vifUsed(k))};
                 end
-                table_.ColumnName = {'使う', '式', 'k', '項', '次数', 'VIF（全項）', 'VIF（使う項）'};
-                table_.ColumnFormat = {'logical', 'char', 'char', 'char', 'numeric', 'char', 'char'};
-                table_.ColumnEditable = [true, false(1, 6)];
-                table_.ColumnWidth = {50, 50, 56, 90, 56, 130, 130};
+                names = {'使う', '式', 'k', '項', '次数', 'VIF（全項）', 'VIF（使う項）'};
+                formats = {'logical', 'char', 'char', 'char', 'numeric', 'char', 'char'};
+                editable = [true, false(1, 6)];
+                widths = {50, 50, 56, 90, 56, 130, 130};
+                if showValues
+                    % 次数の右に置き、VIF の列を狭めて、表の幅に収める
+                    data = [data(:, 1:5), num2cell(commonValueOf(inputValues{1}, terms.k)), data(:, 6:end)];
+                    names = [names(1:5), {'共通の値'}, names(6:end)];
+                    formats = [formats(1:5), {'shortG'}, formats(6:end)];   % 小さい高次の値も桁を出す
+                    editable = [editable(1:5), true, editable(6:end)];
+                    widths = {50, 50, 56, 90, 56, 80, 110, 110};
+                end
+                set(table_, 'ColumnName', names, 'ColumnFormat', formats, 'ColumnEditable', editable, 'ColumnWidth', widths);
                 table_.UserData = terms;
             end
             table_.Data = data;
@@ -1075,6 +1177,9 @@ classdef (Abstract) HighOrderTab < appui.Core
                 % 片方の式に無い項のチェック欄は使えない（灰色）
                 absent = [find(isnan(merged.kInner)), ones(nnz(isnan(merged.kInner)), 1); ...
                     find(isnan(merged.kOuter)), repmat(2, nnz(isnan(merged.kOuter)), 1)];
+                if showValues
+                    absent = [absent; absent(:, 1), absent(:, 2) + 6];   % 共通の値の列（7・8 列目）も
+                end
                 if ~isempty(absent)
                     addStyle(table_, uistyle('BackgroundColor', app.MARK_ABSENT_COLOR), 'cell', absent);
                 end
@@ -1173,10 +1278,23 @@ classdef (Abstract) HighOrderTab < appui.Core
             % 表の「使う」（外周の式を分けるときは「内周」「外周」）を変えたら設定に移す（k1〜k6 は外せないので戻す）
             terms = app.Controls.highOrderTermTable.UserData;
             row = event.Indices(1);
+            column = event.Indices(2);
             if isempty(terms) || row > height(terms)
                 return
             end
-            if any(strcmp(terms.Properties.VariableNames, 'kInner'))
+            split = any(strcmp(terms.Properties.VariableNames, 'kInner'));
+            names = string(app.Controls.highOrderTermTable.ColumnName);
+            if column <= numel(names) && contains(names(column), "共通の値")   % Shot 共通を「値を入力」にしたときの列
+                zone = ternary(startsWith(names(column), "外周"), "outer", "inner");
+                if split
+                    k = ternary(zone == "inner", terms.kInner(row), terms.kOuter(row));
+                else
+                    k = terms.k(row);
+                end
+                setHighOrderCommonValue(app, k, event.NewData, zone);
+                return
+            end
+            if split
                 zone = ternary(event.Indices(2) == 1, "inner", "outer");
                 k = ternary(zone == "inner", terms.kInner(row), terms.kOuter(row));
                 if isnan(k)
@@ -1199,6 +1317,28 @@ classdef (Abstract) HighOrderTab < appui.Core
                 return
             end
             setHighOrderTermUsed(app, terms.k(row), logical(event.NewData), terms.zone(row));
+        end
+
+        function setHighOrderCommonValue(app, k, value, zone)
+            % 表の「共通の値」を変えたら設定（shotCommonValues・外周の式は shotCommonOuterValues。n 番目が kn）に移す
+            % （数でない・その式に無い項なら戻す）
+            c = app.Controls;
+            if isnan(k) || ~isnumeric(value) || ~isscalar(value) || ~isfinite(value)
+                refreshHighOrderTerms(app);
+                c.highOrderTermInfo.Text = ternary(isnan(k), 'この項はその式にありません', '共通の値は数を入れてください');
+                return
+            end
+            field = ternary(string(zone) == "outer", "shotCommonOuterValues", "shotCommonValues");
+            values = reshape(double(fieldOr(app.Settings.highOrder, field, zeros(1, 0))), 1, []);
+            values(end + 1:k) = 0;
+            values(k) = value;
+            app.Settings.highOrder.(field) = values;
+            markHighOrderStale(app);
+        end
+
+        function onCopyHighOrderCommon(app)
+            runWithAlert(app, @() app.copyHighOrderCommonValues(), "計算した値を写せませんでした", ...
+                "今の補正の式で「補正を計算する」を押してから、もう一度写してください。");
         end
 
         function onHighOrderVifSelect(app)
@@ -1566,6 +1706,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             refreshHighOrderHistogramChoices(app);
             drawShownHighOrderAnalysis(app);
             showHighOrderCheck(app);   % 計算の前の確かめと、計算のしかたの知らせ
+            updateHighOrderEnabled(app);   % 「計算した値を写す」
         end
 
         function onHighOrderOutputChanged(app, event)
@@ -1690,6 +1831,15 @@ merged = merged(sorted, :);
 position = zeros(n, 1);
 position(sorted) = 1:n;
 rowOf = position(rowOf);
+end
+
+function values = commonValueOf(inputValues, kNumbers)
+% 入力した Shot 共通の k の値（n 番目が kn）を項の行に並べる（並びに無い番号は 0、その式に無い項（k が NaN）は NaN）
+values = nan(numel(kNumbers), 1);
+known = isfinite(kNumbers);
+values(known) = 0;
+inside = known & kNumbers <= numel(inputValues);
+values(inside) = inputValues(kNumbers(inside));
 end
 
 function text = vifText(value)

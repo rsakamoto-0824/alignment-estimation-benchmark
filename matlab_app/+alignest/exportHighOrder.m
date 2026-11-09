@@ -123,7 +123,13 @@ function text = levelText(options)
 % 「補正値」「Shotごとの補正値」の段階の説明
 text = "Wafer 低次・高次：Wafer 成分（Shot 中心の座標 Xc・Yc の1次・2次以上の項。定数は Shot 共通の k1・k2 に含む）。" + ...
     "Shot 共通 低次・高次：Wafer 内の Shot で共通の k の k1〜k6・k7 以降";
-if options.unit == "shot"
+if options.unit == "shot" && options.shotCommon == "input"
+    text = text + "（入力した値。先に引いた）。Shot 毎：Shot 共通を引いた残りを Shot ごとに求めた k（足すとその Shot に" + ...
+        "当てる k。Shot ごとに求めない項は 0）。";
+elseif options.unit == "shot" && options.shotCommon == "fit"
+    text = text + "（Wafer 成分と一緒に全 Shot で求めて、先に引いた k）。Shot 毎：Shot 共通を引いた残りを Shot ごとに求めた k" + ...
+        "（足すとその Shot に当てる k。Shot ごとに求めない項は 0）。";
+elseif options.unit == "shot"
     text = text + "（Wafer 成分と一緒に全 Shot で求めた k）。Shot 毎：Shot ごとの k − Shot 共通の k（足すとその Shot に" + ...
         "当てる k。点が足りず使わない項は − Shot 共通）。";
 else
