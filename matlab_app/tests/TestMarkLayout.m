@@ -211,6 +211,9 @@ classdef TestMarkLayout < matlab.unittest.TestCase
             testCase.verifyEqual(study.counts, (8:12).');
             testCase.verifyEqual(numel(findobj(c.markOptChartAxes, 'Type', 'line')), 4, "X・Y の線と ★ 2つ");
             testCase.verifyEqual(height(c.markOptResultTable.Data), 6);
+            testCase.verifyTrue(startsWith(string(c.markOptCriterion.Value{1}), "採用した式：I(S) = Σ trace(M_S⁻¹ W)"), ...
+                "配置を選んだ I 最適計画の式");
+            testCase.verifyTrue(any(contains(string(c.markOptMessage.Value), "「I 最適の式」タブ")));
             testCase.verifyEqual(c.markOptMapCount.Value, 8);
             app.drawMarkLayoutMap(10);
             testCase.verifyTrue(startsWith(string(c.markOptMapInfo.Text), "計測する Mark："));
@@ -224,6 +227,8 @@ classdef TestMarkLayout < matlab.unittest.TestCase
             testCase.verifyEqual(string(sheetnames(file)).', ["説明", "制御残差", "配置", "候補のMark", "項とVIF"]);
             layout = readtable(file, 'Sheet', '配置', 'VariableNamingRule', 'preserve');
             testCase.verifyEqual(height(layout), sum(8:12));
+            explanation = readtable(file, 'Sheet', '説明', 'VariableNamingRule', 'preserve', 'TextType', 'string');
+            testCase.verifyTrue(any(explanation.("項目") == "I 最適の式：採用した式"), "Excel にも I 最適計画の式");
             % 設定を変えた後は計算し直す知らせ
             app.setMarkLayoutSettings(maker="nikon");
             testCase.verifyTrue(startsWith(string(c.markOptChartInfo.Text), "⚠"));

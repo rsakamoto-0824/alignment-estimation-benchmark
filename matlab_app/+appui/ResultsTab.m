@@ -490,7 +490,7 @@ classdef (Abstract) ResultsTab < appui.Core
             end
             metric = string(c.metric.Value);
             statistic = string(c.statistic.Value);
-            comparison = alignest.layoutComparison(app.Results, c.compareLayoutMethod.Value, metric, statistic);
+            comparison = alignest.layoutComparison(app.Results, c.compareLayoutMethod.Value, metric, statistic, app.Data);
             xChoice = string(c.compareLayoutXAxis.Value);
             [x, axisLabel, fallbackNote] = layoutAxisValues(comparison, xChoice);
             [lowerBar, upperBar, errorLabel] = alignest.layoutErrorBars(comparison, string(c.compareLayoutErrorBar.Value));
@@ -634,9 +634,10 @@ classdef (Abstract) ResultsTab < appui.Core
             place(chartControls, 1, 1);
             label(chartControls, '横軸', 1, 1);
             c.chartXAxis = uidropdown(chartControls, 'Items', {'学習 Shot 数', ...
-                'I 基準と D 基準'}, 'ItemsData', {'plan', 'criteria'}, ...
-                'Tooltip', ['学習 Shot の組の I 基準 tr(M⁻¹) と D 基準 det(M)^(−1/p)（XY 多項式の基準モデル）に対する推定誤差。' ...
-                '点は学習パターンの列ごとの Wafer の集計。基準は Wafer の平均。'], 'ValueChangedFcn', @(~, ~) app.drawChart());
+                'I 基準と D 基準', 'I 効率と D 効率（全計測に対する）'}, 'ItemsData', {'plan', 'criteria', 'efficiency'}, ...
+                'Tooltip', ['学習 Shot の組の I 基準 tr(M⁻¹) と D 基準 det(M)^(−1/p)（XY 多項式の基準モデル）、または全計測に' ...
+                '対する I 効率・D 効率 [%] に対する推定誤差。点は学習パターンの列ごとの Wafer の集計。基準・効率は Wafer の平均。'], ...
+                'ValueChangedFcn', @(~, ~) app.drawChart());
             place(c.chartXAxis, 1, 2);
             label(chartControls, 'エラーバー', 1, 3);
             c.chartErrorBars = uidropdown(chartControls, 'Items', {'なし', '±1σ', '95% 区間'}, ...
@@ -673,11 +674,12 @@ classdef (Abstract) ResultsTab < appui.Core
             place(c.compareLayoutMethod, 1, 2);
             label(layoutControls, '横軸', 1, 3);
             c.compareLayoutXAxis = uidropdown(layoutControls, 'Items', {'計測する Mark の数', '学習 Shot 数', ...
-                'D 効率', 'I 効率'}, 'ItemsData', {'marks', 'shots', 'efficiencyD', ...
+                '計測率', 'D 効率', 'I 効率'}, 'ItemsData', {'marks', 'shots', 'rate', 'efficiencyD', ...
                 'efficiencyI'}, 'Enable', 'off', 'ValueChangedFcn', @(~, ~) app.drawLayoutComparison(), ...
                 'Tooltip', ['計測する Mark の数：Shot 単位と Mark 単位の計画を同じ計測の手間で比べる。学習 Shot 数：Shot 単位の' ...
                 '計画どうしを比べる（Mark 単位の計画は全 Shot を計測するので右端に寄る）。D 効率・I 効率：全計測に対する' ...
-                '計画の良さ（%。100% なら全計測と同じ）で比べる（効率が同じなら誤差も同じくらいか確かめられる）。']);
+                '計画の良さ（%。100% なら全計測と同じ）で比べる（効率が同じなら誤差も同じくらいか確かめられる）。計測率：' ...
+                '計測する Mark の数 ÷ 候補の全 Mark の数 [%]（計測率で決めた学習パターンはその値）。']);
             place(c.compareLayoutXAxis, 1, 4);
             label(layoutControls, 'エラーバー', 1, 5);
             [errorKinds, errorLabels] = alignest.errorBarKinds();
@@ -1183,9 +1185,9 @@ classdef (Abstract) ResultsTab < appui.Core
                 return
             end
             c = app.Controls;
-            if string(c.chartXAxis.Value) == "criteria"
+            if any(string(c.chartXAxis.Value) == ["criteria", "efficiency"])
                 c.chartAxesGrid.ColumnWidth = {'1x', '1x'};
-                drawCriteriaChart(app);
+                drawCriteriaChart(app, string(c.chartXAxis.Value));
                 return
             end
             c.chartAxesGrid.ColumnWidth = {'1x', 0};
@@ -1227,13 +1229,17 @@ classdef (Abstract) ResultsTab < appui.Core
             title(ax, "Wafer の" + statisticLabel(string(c.statistic.Value)) + errorBarCaption(string(c.chartErrorBars.Value)));
             grid(ax, 'on');
             if ~isempty(selected)
-                legend(ax, 'Location', 'southoutside', 'NumColumns', 1, 'Interpreter', 'none', 'FontSize', 10, 'Box', 'off');
+                legend(ax, 'Location', 'northeast', 'NumColumns', 1, 'Interpreter', 'none', 'FontSize', 10, 'Box', 'off');
             end
             styleAxes(app, ax, app.AXES_FONT_SIZE);
         end
 
-        function drawCriteriaChart(app)
-            % I 基準・D 基準（学習 Shot の組の評価指標）を横軸に、推定誤差の集計値を描く。学習パターンの列ごとに1点。
+        function drawCriteriaChart(app, kind)
+            % I 基準・D 基準（学習 Shot の組の評価指標）、または全計測に対する I 効率・D 効率（kind = "efficiency"）を横軸に、
+            % 推定誤差の集計値を描く。学習パターンの列ごとに1点。2つの図は同じ大きさ（凡例は左の図の中の右上）
+            if nargin < 2
+                kind = "criteria";
+            end
             c = app.Controls;
             metric = string(c.metric.Value);
             statistic = string(c.statistic.Value);
@@ -1241,8 +1247,15 @@ classdef (Abstract) ResultsTab < appui.Core
             selected = cell2mat(c.chartMethods.Value);
             [names, labels] = alignest.metricNames(true, true, resultSpec(app));
             criteria = ["criterionI", "criterionD"];
-            criteriaLabels = ["I 基準 tr(M^{-1})", "D 基準 det(M)^{-1/p}"];
+            criteriaLabels = ["I 基準 tr(M^{-1})", "D 基準 det(M)^{-1/p}"] + "（対数目盛、小さいほど良い計画）";
             criteriaNames = ["I 基準", "D 基準"];
+            scale = 1;
+            if kind == "efficiency"
+                criteria = ["efficiencyI", "efficiencyD"];
+                criteriaLabels = ["I 効率 [%]", "D 効率 [%]"] + "（全計測に対する。大きいほど良い計画）";
+                criteriaNames = ["I 効率", "D 効率"];
+                scale = 100;
+            end
             markers = {'o', 's', 'd', '^', 'v', '>', '<', 'p', 'h', 'x'};
             groupNames = string(summary.groups);
             shortNames = extractBefore(groupNames, " Shot");
@@ -1253,10 +1266,15 @@ classdef (Abstract) ResultsTab < appui.Core
                 ax = axesList(a);
                 cla(ax, 'reset');
                 hold(ax, 'on');
+                if ~any(string(app.Results.table.Properties.VariableNames) == criteria(a))
+                    title(ax, criteriaNames(a) + "：この結果には値がありません");
+                    ax.Visible = 'on';
+                    continue
+                end
                 perUnit = alignest.perUnitValues(app.Results, criteria(a));
                 for k = 1:numel(selected)
                     m = selected(k);
-                    x = cellfun(@(values) mean(values, 'omitnan'), perUnit(m, :));
+                    x = scale * cellfun(@(values) mean(values, 'omitnan'), perUnit(m, :));
                     y = summary.values(m, :);
                     valid = find(isfinite(x) & isfinite(y) & x > 0);
                     [xs, order] = sort(x(valid));
@@ -1276,13 +1294,15 @@ classdef (Abstract) ResultsTab < appui.Core
                     end
                     if c.chartPoints.Value
                         rows = app.Results.table(app.Results.table.methodIndex == m, :);
-                        scatter(ax, rows.(criteria(a)), rows.(metric), 14, curve.Color, 'filled', ...
+                        scatter(ax, scale * rows.(criteria(a)), rows.(metric), 14, curve.Color, 'filled', ...
                             'MarkerFaceAlpha', 0.25, 'HandleVisibility', 'off');
                     end
                 end
                 hold(ax, 'off');
-                ax.XScale = 'log';
-                xlabel(ax, criteriaLabels(a) + "（対数目盛、小さいほど良い計画）");
+                if kind == "criteria"
+                    ax.XScale = 'log';
+                end
+                xlabel(ax, criteriaLabels(a));
                 ylabel(ax, labels(names == metric));
                 title(ax, sprintf("%s と推定誤差（Wafer の%s%s）", criteriaNames(a), statisticLabel(statistic), ...
                     errorBarCaption(string(c.chartErrorBars.Value))));
@@ -1290,7 +1310,8 @@ classdef (Abstract) ResultsTab < appui.Core
                 ax.Visible = 'on';
             end
             if ~isempty(selected)
-                legend(c.chartAxes, 'Location', 'southoutside', 'NumColumns', 1, 'Interpreter', 'none', 'FontSize', 10, ...
+                % 図の中の右上（外に出すと左の図だけ小さくなり、2つの図の大きさがそろわないため）
+                legend(c.chartAxes, 'Location', 'northeast', 'NumColumns', 1, 'Interpreter', 'none', 'FontSize', 10, ...
                     'Box', 'off');
             end
             styleAxes(app, axesList, app.AXES_FONT_SIZE);
@@ -1631,6 +1652,13 @@ switch choice
             axisLabel = "計測する Mark の数（Wafer の平均）";
         else
             note = "（この結果には計測する Mark の数が無いので、学習 Shot 数で描きました）";
+        end
+    case "rate"
+        if any(isfinite(comparison.rate))
+            x = comparison.rate;
+            axisLabel = "計測率 [%]（計測する Mark の数 ÷ 候補の全 Mark の数。Wafer の平均）";
+        else
+            note = "（この結果では計測率を求められないので、学習 Shot 数で描きました。データを読み込むと描けます）";
         end
     case {"efficiencyD", "efficiencyI"}
         if any(isfinite(comparison.(choice)))

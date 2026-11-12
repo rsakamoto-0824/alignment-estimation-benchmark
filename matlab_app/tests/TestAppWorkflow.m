@@ -466,6 +466,7 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             settings.methods.rbf.enabled = true;
             settings.methods.rbf.factorModes = "backfit";
             settings.sampling.nShots = 15;
+            settings.factors.separateY = false;   % はじめは Y 成分も X 成分と同じにして、別に選ぶ流れを確かめる
             app.setSettings(settings);
             testCase.verifyEqual(app.Controls.rbfFactors.Value, 'backfit');
             app.Controls.factorScan.Value = false;
@@ -916,8 +917,12 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             settings.methods.tps.enabled = true;
             settings.sampling.nShots = [10, 20];
             app.setSettings(settings);
-            % 時間の目安は 1条件 2 秒（2 手法 × 2 学習パターン × 5 枚 = 20 条件）
-            testCase.verifyTrue(contains(app.Controls.countLabel.Text, "= 20 回の推定（目安 40 秒）"));
+            % 時間の目安は 1条件 2 秒（2 手法 × 2 学習パターン × 5 枚 = 20 条件）＋ 学習パターン（I 最適）を作る時間
+            [seconds, detail] = alignest.estimateRunSeconds(app.Data.units, app.Settings);
+            testCase.verifyEqual(detail.estimateSeconds, 40);
+            testCase.verifyEqual(seconds, 40 + detail.planSeconds, 'AbsTol', 1e-9);
+            testCase.verifyTrue(contains(app.Controls.countLabel.Text, "= 20 回の推定（目安 "));
+            testCase.verifyTrue(contains(app.Controls.countLabel.Text, "うち学習パターンを作る時間"));
             % 一時中断：途中までの結果が出て、「続きから再開」で残りを計算する
             results = app.runEvaluationNow(false, 6);
             testCase.verifyTrue(results.cancelled);
@@ -928,8 +933,8 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyFalse(results.cancelled);
             testCase.verifyEqual(height(results.table), 20);
             testCase.verifyEqual(string(app.Controls.resumeRun.Enable), "off");
-            testCase.verifyTrue(contains(string(app.Controls.log.Value{1}), "一時中断の前と後の合計"), "完了の知らせは記録に残す");
-            testCase.verifyEqual(string(app.Controls.runStatus.Text), "", "完了の知らせはボタンの右に出さない");
+            testCase.verifyTrue(contains(app.RunLog(1), "一時中断の前と後の合計"), "完了の知らせは記録に残す");
+            testCase.verifyTrue(contains(string(app.Controls.runStatus.Text), "一時中断の前と後の合計"), "要点はボタンの右に出す");
             testCase.verifyTrue(all(isfinite(results.table.efficiencyI) & results.table.efficiencyI <= 1));
             testCase.verifyFalse(any(contains(string(app.Controls.metric.ItemsData), "adjR2")), "調整済み R² は出さない");
             % 中断の後に設定を変えると、続きからは再開できない
@@ -1012,8 +1017,8 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             app.setSettings(more);
             extended = app.extendEvaluation(false);
             testCase.verifyEqual(height(extended.table), 45);
-            testCase.verifyTrue(contains(string(app.Controls.log.Value{1}), "新たに 25 件を計算"));
-            testCase.verifyEqual(string(app.Controls.runStatus.Text), "");
+            testCase.verifyTrue(contains(app.RunLog(1), "新たに 25 件を計算"));
+            testCase.verifyTrue(contains(string(app.Controls.runStatus.Text), "新たに 25 件を計算"));
             testCase.verifyEqual(string(app.Controls.summaryTable.ColumnName).', ["手法", "10 Shot", "15 Shot", "20 Shot"]);
             testCase.verifyEqual(extended.table.RMSE_XY(ismember(extended.table.Wafer + extended.table.plan + ...
                 extended.table.methodId, first.table.Wafer + first.table.plan + first.table.methodId)), first.table.RMSE_XY);

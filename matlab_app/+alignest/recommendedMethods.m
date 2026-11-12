@@ -24,6 +24,7 @@ methods.kriging.variograms = "exponential";
 methods.kriging.ordinaryFactorModes = "none";
 methods.kriging.universalFactorModes = "none";
 methods.gam.enabled = true;
+methods.gam.factorModes = "factor";  % 質的変数：factor（効果コードの項として一緒に推定）・none（使わない）、両方なら比べる
 methods.gam.shapes = struct("xy", "spline", "r", "spline");  % 形状関数：spline・gp（項ごと）
 methods.gam.gpKernels = "matern52";  % ガウス過程の形状関数のカーネル（alignest.models.gamKernelChoices。複数ならカーネルごとに比べる）
 methods.gam.gpMaternNu = 2;          % カーネル matern（ν を指定）を選んだときの ν（複数なら ν ごとに比べる）

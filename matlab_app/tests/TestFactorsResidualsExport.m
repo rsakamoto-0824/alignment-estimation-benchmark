@@ -22,6 +22,7 @@ classdef TestFactorsResidualsExport < matlab.unittest.TestCase
             data = testCase.Data;
             data.units = data.units(1:2);
             settings = alignest.defaultSettings();
+            settings.factors.separateY = false;   % Y 成分も X 成分と同じ質的変数
             settings.sampling.nShots = 20;
             settings.methods = alignest.recommendedMethods("none");
             settings.methods.tps.enabled = true;

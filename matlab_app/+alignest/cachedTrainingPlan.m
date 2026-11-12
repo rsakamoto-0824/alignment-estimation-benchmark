@@ -10,10 +10,7 @@ if spec.type == "manual"
     plan = addPlanFields(plan, toc(timer), false);
     return
 end
-marks = unit.marks;
-usable = marks.validX | marks.validY;
-signature = sprintf('%.3f,', [marks.x(usable); marks.y(usable); marks.direction(usable)]);
-key = [char(spec.label), '|', signature];
+key = [char(spec.label), '|', alignest.planLayoutKey(unit)];
 shotKey = round([unit.shots.Xmm, unit.shots.Ymm], 3);
 if isKey(planCache, key)
     cached = planCache(key);

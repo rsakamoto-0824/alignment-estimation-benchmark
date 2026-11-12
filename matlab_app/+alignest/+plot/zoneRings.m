@@ -1,7 +1,8 @@
 function handle = zoneRings(ax, radiiMm)
-%ZONERINGS 同心円の制約の区切り（Shot 中心の半径 [mm]）を、破線の円と半径の文字で描く。
+%ZONERINGS 同心円の制約の区切り（Wafer 中心からの半径 [mm]）を、破線の円と半径の文字で描く。
 %   handle = alignest.plot.zoneRings(ax, radiiMm)   % handle は凡例に使う最初の円（区切りが無ければ空）
-%   区切りの半径は alignest.zoneEdgesMm。区画は Shot 中心の半径で決まるので、Shot の枠と合わせて見る。
+%   区切りの半径は alignest.zoneEdgesMm。区画は、Shot 単位の計画では Shot 中心の半径、Mark 単位の計画では Mark の半径で
+%   決まるので、Shot の枠・Mark の点と合わせて見る。
 RING_COLOR = [0.85, 0.33, 0.10];
 RING_WIDTH = 1.3;
 LABEL_ANGLE = 5 * pi / 12;   % 半径の文字を置く向き（上のやや右。区切りどうしの文字が重ならないように）

@@ -2,7 +2,8 @@ function exportMarkLayouts(filePath, study, notes)
 %EXPORTMARKLAYOUTS 「8. Mark配置の最適化」の結果（alignest.markLayoutStudy）を Excel ファイル（.xlsx）に書き出す。
 %   alignest.exportMarkLayouts(filePath, study)
 %   alignest.exportMarkLayouts(filePath, study, notes)   % notes：「説明」シートに足す行（[項目, 内容] の2列の文字列）
-%   シート：「説明」（作成日時・補正の式と回帰・配置の選び方・制御残差を求めた値・メッセージ・notes）、「制御残差」（Mark の
+%   シート：「説明」（作成日時・補正の式と回帰・配置の選び方・I 最適計画の式と使った項（alignest.markLayoutCriterion）・
+%   制御残差を求めた値・メッセージ・notes）、「制御残差」（Mark の
 %   数ごと・軸ごとの I 効率と制御残差。最後の2行はすべての候補を計測したとき）、「配置」（Mark の数ごとに計測する Mark の
 %   番号・座標。1行 = 1つの Mark）、「候補のMark」（候補の番号・座標・必ず計測するか・値のある Shot の数）、「項とVIF」。
 arguments
@@ -37,8 +38,9 @@ values = [string(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss')); options.desc
     nnz(study.candidates.required)); ...
     "計測できる Mark をすべて計測したときを 100% とした、予測の分散の平均の比"; ...
     valueText; string(study.nShots)];
-items = [items; repmat("メッセージ", numel(study.messages), 1); notes(:, 1)];
-values = [values; study.messages(:); notes(:, 2)];
+criterion = alignest.markLayoutCriterion(study);   % 配置を選んだ I 最適計画の式と使った項
+items = [items; "I 最適の式：" + criterion(:, 1); repmat("メッセージ", numel(study.messages), 1); notes(:, 1)];
+values = [values; criterion(:, 2); study.messages(:); notes(:, 2)];
 writetable(table(items, values, 'VariableNames', ["項目", "内容"]), filePath, 'Sheet', '説明');
 evaluation = study.evaluation;
 if height(evaluation) > 0

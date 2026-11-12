@@ -357,7 +357,8 @@ classdef (Abstract) DataTab < appui.Core
         function buildDataTab(app)
             grid = uigridlayout(app.Tabs.data, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 12, 'RowSpacing', 12);
             filePanel = uipanel(grid, 'Title', '計測データのファイル');
-            fileGrid = uigridlayout(filePanel, [6, 4], 'ColumnWidth', {'fit', '1x', 260, 300}, ...
+            % 欄の幅は中身に合わせて決め、余りは右の空き（5列目）にする（画面が広くてもプルダウンを伸ばさない）
+            fileGrid = uigridlayout(filePanel, [6, 5], 'ColumnWidth', {'fit', 260, 240, 170, '1x'}, ...
                 'RowHeight', {'fit', 'fit', 'fit', 'fit', 'fit', 'fit'}, 'Padding', 10);
             label(fileGrid, 'ファイル', 2, [1, 2]);
             label(fileGrid, 'シート', 2, 3);
@@ -392,7 +393,7 @@ classdef (Abstract) DataTab < appui.Core
             place(c.directionRule, 5, 2);
             c.invertDirection = uicheckbox(fileGrid, 'Text', '付ける 1 と 2 を入れ替える', 'ValueChangedFcn', onDataOption);
             place(c.invertDirection, 5, 3);
-            directionHelp = label(fileGrid, 'Direction の列に値がある行はそのまま使います。', 5, 4);
+            directionHelp = label(fileGrid, 'Direction の列に値がある行はそのまま使います。', 5, [4, 5]);
             directionHelp.FontColor = app.Palette.muted;
             % 座標の定義（Shot 中心＋Shot 内の位置、または絶対座標だけ）と、推定する値（X・Y 成分、または1つの列）
             label(fileGrid, '座標の定義', 6, 1);

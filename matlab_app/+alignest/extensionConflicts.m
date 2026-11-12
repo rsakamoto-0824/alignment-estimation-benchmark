@@ -10,7 +10,8 @@ function conflicts = extensionConflicts(evaluated, requested)
 %   乱数の種・必ず計測する Shot）・評価（外周の半径・1次を除く・異常値の除外・処理時間の記録）・
 %   Overlay 補正の評価・手法の細かい設定（options）。表示の設定（display：Scan 方向の色・向き）は比べない。
 COUNT_FIELDS = ["nShots", "nShotsStart", "nShotsEnd", "nShotsStep", "countBy", "rateStart", "rateEnd", "rateStep", ...
-    "layoutPlans", "layoutFile", "randomRepeats", "markPerShot"];
+    "layoutPlans", "layoutFile", "randomRepeats", "markPerShot", "markCountBy", "markCountStart", "markCountEnd", ...
+    "markCountStep"];
 GROUPS = ["data", "sampling", "options", "evaluation", "overlay"];
 NAMES = ["データの読み込みの条件", "学習 Shot の選び方・制約", "手法の細かい設定", ...
     "評価の条件（外周の半径・1次を除く・異常値の除外・処理時間の記録）", "Overlay 補正の評価"];

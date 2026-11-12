@@ -254,8 +254,8 @@ def build(output: Path, reference: Path):
             ["+alignest/recommendedMethods.m", "比べる手法（初期設定・推奨の組み合わせ・すべて・なし）と手法の細かい設定 options",
              "GPR matern52 × 質的変数4通り"],
             ["+appui/Core.m（先頭）", "画面の大きさ・文字の大きさ・並べる図の数・色", "FONT_SIZE = 16"],
-            ["+alignest/estimateRunSeconds.m", "時間の目安（1条件 2 秒、ν を指定した Matérn は 3 倍）", "SECONDS_PER_RUN = 2"],
-            ["+alignest/exchangeSecondsGuide.m", "交換法の時間の目安（初期配置1つ × 学習 Shot 1つ）", "0.01 秒"],
+            ["+alignest/estimateRunSeconds.m", "時間の目安（推定 1条件 2 秒 ＋ 学習パターンを作る時間）", "SECONDS_PER_RUN = 2"],
+            ["+alignest/planSecondsGuide.m", "交換法の時間：Mark 1点（Shot 1つは exchangeSecondsGuide.m）", "0.013 秒・0.01 秒"],
             ["+alignest/siteDefaults.m", "既定の設定ファイル（手順 B）を読む", DEFAULTS_FILE],
             ["help/help.html", "メニュー「ヘルプ」の説明（機能編・技術編）", "手法を足したら説明も足す"]]
     table(s, 0.6, 1.5, [3.6, 5.2, 3.33], rows, size=12, row_h=0.56, bold_first=True)
@@ -276,7 +276,7 @@ def build(output: Path, reference: Path):
         ["factors.scan・mark・shotRowParity", "true・true・false", "質的変数（Scan 方向・Mark 番号・Shot 行の奇偶）", "2. 質的変数"],
         ["factors.evaluateSingles", "false", "チェックした質的変数を1つだけ使う手法も足して比べる", "2. 1つだけ使う"],
         ["factors.columns", "[]（なし）", "質的変数に使うファイルのその他の列の名前", "2. その他の列"],
-        ["factors.separateY ・ factors.y", "false", "Y 成分の質的変数を別に選ぶ（y に同じ形の項目）", "2. Y 成分は別に"]],
+        ["factors.separateY ・ factors.y", "true", "Y 成分の質的変数を別に選ぶ（y に同じ形の項目。はじめは X と同じ）", "2. Y 成分は別に"]],
         widths=(3.75, 1.9, 4.78, 1.7), row_h=0.4)
     point_bar(s, 6.3, "Wafer 半径を変えるときは validRadiusMm・同心円の区切り・外周の半径（mm）も一緒に見直す",
               icon="!", icon_color=CORAL, h=0.55, size=13)
@@ -292,14 +292,18 @@ def build(output: Path, reference: Path):
         ["sampling.rateStart・End・Step", "10・40・10", "計測率 [%] の開始・終了・刻み（countBy = rate）", "2. 計測率"],
         ["sampling.randomRepeats ・ seed", "10 ・ 20261017", "ランダムの繰り返し回数・乱数の種（メニュー「設定」）", "2. ランダム"],
         ["sampling.layoutPlans・layoutFile", "[]・\"\"", "Excel ファイルで指定（1行 =「種類|名前|shotNo …」。読み込みで入る）", "2. Excel で指定"],
-        ["sampling.requiredShots・requireOuterShots", "[]・false", "必ず計測する shotNo（拡張 I 最適計画）・最外周の Shot をすべて",
+        ["sampling.requiredShots・excludedShots", "[]・[]", "必ず計測する・計測しない shotNo（Mark 単位では Shot の Mark すべて）",
          "2. 必ず計測"],
-        ["sampling.markPerShot", "1", "Mark 単位：1 Shot あたりの計測 Mark 数（countBy = rate なら計測率）", "2. Mark 単位"],
+        ["sampling.markCountBy ・ markPerShot", "\"perShot\" ・ 1", "Mark 単位：数の決め方（perShot・total）・1 Shot あたり", "2. Mark 単位"],
         ["sampling.markRequirePerShot・markMinPerShot", "true・1", "Mark 単位：Shot ごとに n 点の計測を必須にする・n", "2. Mark 単位"]],
         widths=(3.85, 1.6, 4.98, 1.7), row_h=0.42)
     point_bar(s, 6.3, "method を2つ以上にすると、結果一覧の「計測配置の比較」で選び方どうしを比べられる",
               icon="i", icon_color=BODY, h=0.55, size=13)
-    notes(s, "学習 Shot 数は開始・終了・刻みと並び nShots の両方を持つ。コードで変えるときは shotCountList で並びも作る。")
+    notes(s, "学習 Shot 数は開始・終了・刻みと並び nShots の両方を持つ。コードで変えるときは shotCountList で並びも作る。"
+             "requireOuterShots（初期値 false）を true にすると最外周の Shot をすべて必ず計測する。"
+             "markCountBy が total のときは markCountStart・markCountEnd・markCountStep（初期値 100・300・50）で計測する Mark の数をスイープする。"
+             "requiredMarks・excludedMarks は Mark 単位の必ず計測する・計測しない Mark（\"shotNo-markNo\" の並び。「2. 評価の設定」の欄と計測マップで指定できる）。"
+             "Mark 単位の計画では Wafer 中心に最も近い Mark を必ず計測する。")
 
     # 11. sampling（制約・交換法）
     s = deck.body("03　設定の項目と初期値", "設定の項目③：sampling（制約・交換法）")
@@ -307,7 +311,7 @@ def build(output: Path, reference: Path):
         ["sampling.designOrder", "5", "最適計画の基準モデル（XY 多項式の次数。5次で 21 項）", "2. 基準モデル"],
         ["sampling.exchangeStarts", "10", "交換法の初期配置の数（時間はほぼ比例）", "2. 初期配置の数"],
         ["sampling.exchangeMaxIterations", "300", "交換法の反復の上限", "（設定ファイルのみ）"],
-        ["constraints.radialZoneEdgesMm", "[67.5 105]", "同心円の区切り：Shot 中心の半径 [mm]", "2. 同心円の区切り"],
+        ["constraints.radialZoneEdgesMm", "[67.5 105]", "同心円の区切り：半径 [mm]（Mark 単位は Mark の半径）", "2. 同心円の区切り"],
         ["constraints.quadrants", "true", "4象限の Shot 数をそろえる", "2. 4象限"],
         ["constraints.scanDirection", "true", "Scan 方向ごとの Shot 数をそろえる", "2. Scan 方向"],
         ["constraints.slack", "1", "許容幅（各区画の数の ±）", "2. 許容幅"],
@@ -371,7 +375,7 @@ def build(output: Path, reference: Path):
         ["highOrder.shotCommon ・ shotEachOrder", "\"none\" ・ 0", "先に引く Shot 共通（none・fit・input）・Shot ごとの次数", "7. Shot 共通補正"],
         ["highOrder.outerRadiusMm ・ outerMaker", "120 ・ \"none\"", "外周の半径 [mm]・外周の式（none：分けない）", "7. 外周"],
         ["highOrder.vifThreshold", "10", "「VIF で選ぶ」のしきい値（よく使う値は 5〜10）", "7. VIF のしきい値"],
-        ["highOrder.loss ・ huberTuning", "\"huber\" ・ 1.345", "損失関数（ols・huber・lad）・Huber の定数 c", "7. 回帰・Huber"],
+        ["highOrder.loss ・ huberTuning", "\"huber\" ・ 3", "損失関数（ols・huber・lad）・Huber の定数 c", "7. 回帰・Huber"],
         ["highOrder.regularization ・ penaltyOrders ・ lambda", "\"l2\" ・ [2〜6] ・ 0.1", "正則化（none・l2・l1）・かける次数（1〜6）・強さ λ", "7. 正則化・λ"],
         ["highOrder.termSets", "[]（なし）", "保存した項の組み合わせ（1行 = \"名前|式|k の番号 …\"）", "7. 組み合わせ"]],
         widths=(3.3, 1.95, 4.9, 1.98), size=10, row_h=0.32)
@@ -396,7 +400,7 @@ def build(output: Path, reference: Path):
     settings_table(s, [
         ["markLayout.maker ・ excludedTerms", "\"nikon\" ・ []", "補正の式・使わない k の番号（highOrder と同じ書き方）", "8. 補正の式"],
         ["markLayout.vifThreshold", "10", "「VIF で選ぶ」のしきい値（候補の Mark の位置で求める）", "8. VIF のしきい値"],
-        ["markLayout.loss ・ huberTuning", "\"huber\" ・ 1.345", "制御残差を求める当てはめの損失関数・Huber の c", "8. 回帰"],
+        ["markLayout.loss ・ huberTuning", "\"huber\" ・ 3", "制御残差を求める当てはめの損失関数・Huber の c", "8. 回帰"],
         ["markLayout.regularization ・ penaltyOrders ・ lambda", "\"l2\" ・ [2〜6] ・ 0.1", "正則化（none・l2・l1）・かける次数・強さ λ", "8. 正則化・λ"],
         ["markLayout.minMarks ・ maxMarks", "0 ・ 0", "Mark の数の最低数・最大数（0 = 使う項の数・すべての候補）", "8. 最低数・最大数"],
         ["markLayout.starts", "5", "Mark の数ごとに配置を探す始め方の数（1〜50）", "8. 探す回数"],
@@ -430,7 +434,7 @@ def build(output: Path, reference: Path):
             ["DEFAULT_MARKER_SIZE（色の点）", "30"], ["MAX_CURVES（グラフの線の数）", "8"],
             ["MAX_MEASURE_PANELS ・ MAX_COMPARE_PANELS", "6 ・ 6"],
             ["SECONDS_PER_RUN ・ MATERN_NU_FACTOR", "2 秒 ・ 3 倍"],
-            ["SECONDS_PER_SHOT_START（交換法）", "0.01 秒"], ["WORST_PERCENT（95%値）", "95"]]
+            ["SECONDS_PER_SHOT_START・MARK_START", "0.01・0.013 秒"], ["WORST_PERCENT（95%値）", "95"]]
     table(s, 6.85, 1.5, [3.98, 1.9], rows, size=11.5, header_size=12, row_h=0.43)
     point_bar(s, 5.65, "options は Python 版と同じ値。変えると推定の結果が変わり、Python 版との照合テスト"
               "（TestPythonReference）が合わなくなる", icon="!", icon_color=CORAL, h=0.75, size=13)

@@ -104,8 +104,10 @@ classdef (Abstract) MapTab < appui.Core
             place(c.mapEllipse, 2, 9);
             % 図に重ねるもの：Shot の枠・Scan 方向の色の Shot の枠・同心円の制約の区切りと、「ベクトルを描かない（楕円だけ）」
             % （上の行の右に置くと、手法・図の内容の欄が狭くなるため）
-            extras = uigridlayout(grid, [1, 5], 'ColumnWidth', {'fit', 'fit', 'fit', 'fit', '1x'}, 'Padding', 0);
+            extras = uigridlayout(grid, [1, 6], 'ColumnWidth', {'fit', 'fit', 'fit', 'fit', 'fit', '1x'}, 'Padding', 0);
             c.mapShotFrames = uicheckbox(extras, 'Text', 'Shot の枠', 'Value', true, 'ValueChangedFcn', onChange);
+            c.mapShotNumbers = uicheckbox(extras, 'Text', 'Shot 番号', 'Value', false, 'ValueChangedFcn', onChange, ...
+                'Tooltip', 'Shot 中心に shotNo を重ねて描きます。');
             c.mapScanFrames = uicheckbox(extras, 'Text', 'Shot の枠を Scan 方向で色分け', ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['Shot の枠を Scan 方向の色で描き、枠の左上に ▲（上向き）・' ...
                 '▼（下向き）を付けます。Scan 方向が無い Shot は灰色の枠です。色と、Scan 方向 1・2 のどちらが上向きかは' ...
@@ -419,13 +421,17 @@ classdef (Abstract) MapTab < appui.Core
                 rings = activeZoneEdges(settings);
             end
             ellipseSigma = c.mapEllipse.Value * f.isGroup;
+            [numberCenters, numbers] = deal(zeros(0, 2), zeros(0, 1));
+            if c.mapShotNumbers.Value && isfield(f, "shotNos")
+                [numberCenters, numbers] = deal(f.centers, f.shotNos);
+            end
             alignest.plot.waferMap(ax, f.points, f.values{k}, mode=string(c.mapMode.Value), scaleMmPerNm=scale, ...
                 colorLimit=limit, trainPoints=f.trainPoints, outlierPoints=f.outlierPoints, titleText=titleText, ...
                 waferRadiusMm=settings.data.waferRadiusMm, magnitudeLimit=magnitude, arrowColor=app.ARROW_COLORS(k, :), ...
                 markerSize=c.mapMarkerSize.Value, markerShape=c.mapMarkerShape.Value, shotCenters=centers, ...
                 shotSizeMm=sizeMm, shotDirections=directions, ringRadiiMm=rings, covariance=f.covariance{k}, scanStyle=scanStyle(app), ...
                 ellipseSigma=ellipseSigma, showArrows=~(c.mapEllipseOnly.Value && ellipseSigma > 0), showLegend=showLegend, ...
-                colorRange=colorRange, colorTitle=colorTitle);
+                colorRange=colorRange, colorTitle=colorTitle, numberCenters=numberCenters, shotNumbers=numbers);
             styleAxes(app, ax, app.AXES_FONT_SIZE);
         end
 
@@ -583,6 +589,7 @@ classdef (Abstract) MapTab < appui.Core
             end
             shots = firstUnit.shots;
             f.centers = [shots.Xmm, shots.Ymm];
+            f.shotNos = shots.shotNo;
             f.sizeMm = firstUnit.shotSizeMm;
             f.stack = struct("local", vertcat(stackParts{1, :}), "values", ...
                 {cellfun(@(parts) vertcat(parts{:}), panelValues, 'UniformOutput', false)}, ...
@@ -629,8 +636,12 @@ classdef (Abstract) MapTab < appui.Core
             metricsText = "";
             if ~isempty(row)
                 f.rmse = row.RMSE_XY;
-                metricsText = sprintf("RMSE（X・Y）%.3f nm、X %.3f nm、Y %.3f nm｜R² %.3f｜MAE %.3f nm｜平均値に対する改善率 %.1f%%", ...
-                    row.RMSE_XY, row.RMSE_X, row.RMSE_Y, row.R2_XY, row.MAE_XY, row.improveMeanPct_XY);
+                maeText = sprintf("MAE %.3f nm", row.MAE_XY);
+                if all(ismember(["MAE_X", "MAE_Y"], string(row.Properties.VariableNames)))
+                    maeText = sprintf("MAE（X・Y）%.3f nm、X %.3f nm、Y %.3f nm", row.MAE_XY, row.MAE_X, row.MAE_Y);
+                end
+                metricsText = sprintf("RMSE（X・Y）%.3f nm、X %.3f nm、Y %.3f nm｜R² %.3f｜%s｜平均値に対する改善率 %.1f%%", ...
+                    row.RMSE_XY, row.RMSE_X, row.RMSE_Y, row.R2_XY, maeText, row.improveMeanPct_XY);
                 spec = alignest.valueSpec(settings.data);
                 if spec.scalar
                     metricsText = sprintf("RMSE（%s）%.3f %s｜R² %.3f｜MAE %.3f %s｜平均値に対する改善率 %.1f%%", spec.name, ...

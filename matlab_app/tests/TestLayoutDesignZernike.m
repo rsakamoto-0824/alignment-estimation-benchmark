@@ -348,7 +348,8 @@ classdef TestLayoutDesignZernike < matlab.unittest.TestCase
             [seconds, detail] = alignest.estimateRunSeconds(units, settings);
             testCase.verifyEqual(detail.nRuns, numel(units) * 2 * 5, "XY・matern52・ν 3つ = 5 手法");
             testCase.verifyEqual(detail.nMaternNuMethods, 3);
-            testCase.verifyEqual(seconds, 2 * numel(units) * 2 * (2 + 3 * 3), "ν を指定した Matérn は 1条件 6 秒");
+            testCase.verifyEqual(detail.estimateSeconds, 2 * numel(units) * 2 * (2 + 3 * 3), "ν を指定した Matérn は 1条件 6 秒");
+            testCase.verifyEqual(seconds, detail.estimateSeconds + detail.planSeconds, 'AbsTol', 1e-9);
             testCase.verifyEqual(alignest.normalizeNumberText("０．７５　２，３"), "0.75 2,3");
         end
 

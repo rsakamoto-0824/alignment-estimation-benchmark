@@ -13,6 +13,9 @@ function measurementMap(ax, unit, plan, waferRadiusMm, titleText, options)
 %   options.showLegend  ：凡例を出すか（並べて描くときは1枚だけに出す）
 %   options.legendLocation：凡例の位置（既定は図の右）
 %   options.allCategories：Shot の無い区分も凡例の見本として描く（並べた図で1つの凡例にまとめるとき）
+%   options.excludedShots：計測しないに指定した Shot（unit.shots の何番目か。赤の破線の枠）
+%   options.requiredMarks・excludedMarks：必ず計測する Mark（□）・計測しないに指定した Mark（赤の ×）。unit.marks の何番目か
+%   図の上の線・塗り・文字は、クリックを図（ax）に渡す（HitTest = off。計測マップで Shot・Mark をクリックして指定するため）
 arguments
     ax
     unit struct
@@ -25,6 +28,9 @@ arguments
     options.legendLocation (1, 1) string = "eastoutside"
     options.allCategories (1, 1) logical = false
     options.scanStyle struct = alignest.plot.scanStyle()
+    options.excludedShots double = zeros(0, 1)
+    options.requiredMarks double = zeros(0, 1)
+    options.excludedMarks double = zeros(0, 1)
 end
 REQUIRED_COLOR = [0.96, 0.62, 0.25];
 SELECTED_COLOR = [0.42, 0.65, 0.90];
@@ -35,6 +41,8 @@ REQUIRED_EDGE_COLOR = [0.55, 0.20, 0.0];
 MARK_SHOT_COLOR = [0.86, 0.92, 0.99];   % Mark 単位の計画で、計測する Shot の薄い塗り
 MARK_COLOR = [0.0, 0.30, 0.62];
 MARK_SIZE = 4;
+EXCLUDED_COLOR = [0.80, 0.10, 0.10];   % 計測しないに指定した Shot・Mark
+REQUIRED_MARK_SIZE = 7;
 SCAN_FRAME_INSET = 0.16;   % Scan 方向の枠を Shot の内側に縮める割合（塗りの枠と重ならないように）
 LABEL_FONT_SIZE = 7;
 MARGIN_MM = 8;
@@ -89,6 +97,25 @@ if markLevel
         'MarkerSize', MARK_SIZE, 'MarkerFaceColor', [1, 1, 1], 'MarkerEdgeColor', MARK_COLOR, 'LineStyle', 'none', ...
         'DisplayName', sprintf("計測しない Mark（評価に使う）（%d）", nnz(candidate & ~chosen)));
 end
+if ~isempty(options.excludedShots)
+    select = options.excludedShots(:).';
+    patchX = shots.Xmm(select).' + [-1; 1; 1; -1] * half(1);
+    patchY = shots.Ymm(select).' + [-1; -1; 1; 1] * half(2);
+    legendItems(end + 1) = patch(ax, 'XData', patchX, 'YData', patchY, 'FaceColor', 'none', 'EdgeColor', EXCLUDED_COLOR, ...
+        'LineStyle', '--', 'LineWidth', 1.5, 'DisplayName', sprintf("計測しないに指定した Shot（%d）", numel(select)));
+end
+if ~isempty(options.requiredMarks)
+    marks = unit.marks;
+    legendItems(end + 1) = plot(ax, marks.x(options.requiredMarks), marks.y(options.requiredMarks), 's', ...
+        'MarkerSize', REQUIRED_MARK_SIZE, 'MarkerEdgeColor', REQUIRED_EDGE_COLOR, 'LineWidth', 1.5, 'LineStyle', 'none', ...
+        'DisplayName', sprintf("必ず計測する Mark（%d）", numel(options.requiredMarks)));
+end
+if ~isempty(options.excludedMarks)
+    marks = unit.marks;
+    legendItems(end + 1) = plot(ax, marks.x(options.excludedMarks), marks.y(options.excludedMarks), 'x', ...
+        'MarkerSize', REQUIRED_MARK_SIZE, 'MarkerEdgeColor', EXCLUDED_COLOR, 'LineWidth', 1.5, 'LineStyle', 'none', ...
+        'DisplayName', sprintf("計測しないに指定した Mark（%d）", numel(options.excludedMarks)));
+end
 if options.showScan
     directions = nan(nShots, 1);
     if isfield(unit, "hasDirection") && unit.hasDirection
@@ -111,6 +138,7 @@ for s = 1:nShots
         'Color', [0, 0, 0], 'Tag', 'keepColor');
 end
 hold(ax, 'off');
+set(ax.Children, 'HitTest', 'off');   % クリックは図に渡す（計測マップで Shot・Mark を指定する）
 axis(ax, 'equal');
 limit = waferRadiusMm + MARGIN_MM;
 xlim(ax, [-limit, limit]);

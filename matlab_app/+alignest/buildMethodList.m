@@ -11,7 +11,8 @@ function methods = buildMethodList(config)
 %   config.gam.shapes は項（xy・r）ごとに選んだ形状関数（spline・gp。1つ以上）で、その組み合わせをすべて並べる。
 %   ガウス過程の項がある組は、config.gam.gpKernels のカーネルごとに並べる（matern は config.gam.gpMaternNu の ν ごと）。
 %   matern52 は以前と同じ id、ほかのカーネルは id の最後に _<カーネル>（例：GAM_XYR_gp-xy_matern32）を付ける。
-%   variant は "gp:<項>+<項>:<カーネル>"（例：gp:xy+r:matern52）。
+%   variant は "gp:<項>+<項>:<カーネル>"（例：gp:xy+r:matern52）。GAM の質的変数（config.gam.factorModes）：factor は
+%   以前と同じ id（「質的変数あり」）、none は id に _nofactor を付ける（「質的変数なし」）。
 [modeNames, modeLabels] = alignest.models.gprFactorModes();
 config = alignest.completeMethodSettings(config);
 methods = struct("id", {}, "family", {}, "featureSet", {}, "variant", {}, "factorMode", {}, "label", {});
@@ -62,17 +63,26 @@ for featureSet = string(config.featureSets(:)).'
                 kernels = gpKernels;
             end
             for kernel = kernels
-                id = "GAM_" + featureSet + idSuffix;
-                label = "GAM｜" + featureLabel + "（質的変数あり）" + labelSuffix;
-                kernelVariant = variant;
-                if kernel ~= ""
-                    kernelVariant = variant + ":" + kernel;
-                    label = label + "（" + replace(kernel, "_nu", " ν=") + "）";
-                    if kernel ~= "matern52"
-                        id = id + "_" + kernel;
+                for mode = gamModes(config.gam.factorModes)
+                    id = "GAM_" + featureSet + idSuffix;
+                    factorText = "（質的変数あり）";
+                    if mode == "none"
+                        factorText = "（質的変数なし）";
                     end
+                    label = "GAM｜" + featureLabel + factorText + labelSuffix;
+                    kernelVariant = variant;
+                    if kernel ~= ""
+                        kernelVariant = variant + ":" + kernel;
+                        label = label + "（" + replace(kernel, "_nu", " ν=") + "）";
+                        if kernel ~= "matern52"
+                            id = id + "_" + kernel;
+                        end
+                    end
+                    if mode == "none"
+                        id = id + "_nofactor";
+                    end
+                    methods(end + 1) = item(id, "GAM", featureSet, kernelVariant, mode, label); %#ok<AGROW>
                 end
-                methods(end + 1) = item(id, "GAM", featureSet, kernelVariant, "factor", label); %#ok<AGROW>
             end
         end
     end
@@ -238,4 +248,14 @@ switch featureSet
     otherwise
         error('alignest:featureSet', '説明変数の組は XY・XYR のいずれかです: %s', featureSet);
 end
+end
+
+function modes = gamModes(modes)
+% GAM の質的変数の扱い（factor・none。factor を先に）
+chosen = unique(reshape(string(modes), 1, []));
+if isempty(chosen) || ~all(ismember(chosen, ["factor", "none"]))
+    error('alignest:gamFactorMode', 'GAM の質的変数の扱いは factor（あり）・none（なし）のいずれか、または両方を選んでください。');
+end
+order = ["factor", "none"];
+modes = order(ismember(order, chosen));
 end

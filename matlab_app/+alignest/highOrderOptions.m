@@ -16,6 +16,8 @@ function options = highOrderOptions(settings)
 %                       点だけで求める）・"fit"（Wafer 内の Shot で共通の k を Wafer 成分と一緒に求めて引く）・"input"（入力した
 %                       k の値 shotCommonValues・shotCommonOuterValues を引く）。引いた残りを Shot ごとに求める。ほかのくくりでは使わない
 %   options.shotEachOrder：Shot 共通を先に引くとき、Shot ごとに求める項の次数の上限（0 = 使う項すべて。1〜6。k1〜k6 は必ず求める）
+%   options.shotCommonTerms・shotCommonOuterTerms：Shot 共通を「計算する」ときに Shot 共通の k に使う項（k の番号。空なら
+%                             使う項と同じ。k1〜k6 は必ず使う。Shot ごとの項は「使う」と shotEachOrder で決まる）
 %   options.shotCommonValues：入力した Shot 共通の k（n 番目が kn の値。mm の座標での値で、k1・k2 は nm、1次は nm/mm、n 次は
 %                             nm/mm^n。並びより大きい番号の k は 0）。shotCommonOuterValues：外周の式（outerMaker）の k の値
 %   options.excludedTerms：使わない k の番号（「VIF で選ぶ」で外した・画面で外した項。k1〜k6 は外さない）
@@ -92,6 +94,8 @@ options.waferRtRange = string(options.waferRtRange);
 options.shotCommon = lower(string(options.shotCommon));
 options.shotCommonValues = reshape(double(options.shotCommonValues), 1, []);
 options.shotCommonOuterValues = reshape(double(options.shotCommonOuterValues), 1, []);
+options.shotCommonTerms = reshape(double(options.shotCommonTerms), 1, []);
+options.shotCommonOuterTerms = reshape(double(options.shotCommonOuterTerms), 1, []);
 if ~isscalar(options.maker) || ~any(options.maker == MAKER_NAMES)
     error('alignest:highOrderModel', 'Shot 高次補正の式は %s のいずれかです: %s', strjoin(MAKER_NAMES, "・"), ...
         strjoin(options.maker, "・"));
@@ -122,6 +126,11 @@ if ~isscalar(options.shotEachOrder) || ~any(options.shotEachOrder == 0:MAX_EACH_
     error('alignest:highOrderShotCommon', 'Shot ごとに求める項の次数は 0（使う項すべて）〜%d の整数にしてください。', ...
         MAX_EACH_ORDER);
 end
+for terms = {options.shotCommonTerms, options.shotCommonOuterTerms}
+    if any(~isfinite(terms{1}) | terms{1} < 1 | terms{1} ~= round(terms{1}))
+        error('alignest:highOrderShotCommon', 'Shot 共通の k に使う項は k の番号（1 以上の整数）で指定してください。');
+    end
+end
 if any(~isfinite([options.shotCommonValues, options.shotCommonOuterValues]))
     error('alignest:highOrderShotCommon', '入力する Shot 共通の k の値は数にしてください（使わない k は 0）。');
 end
@@ -133,7 +142,7 @@ if numel(options.loss) ~= 2 || ~all(ismember(options.loss, LOSS_NAMES))
         strjoin(options.loss, "・"));
 end
 if ~isnumeric(options.huberTuning) || numel(options.huberTuning) ~= 2 || any(~isfinite(options.huberTuning) | options.huberTuning <= 0)
-    error('alignest:highOrderHuber', 'Huber の定数 c は正の数にしてください（よく使う値は 1.345）。');
+    error('alignest:highOrderHuber', 'Huber の定数 c は正の数にしてください（初期値は 3。1.345 で正規分布の誤差のとき効率 95%%）。');
 end
 if ~isnumeric(options.lambda) || numel(options.lambda) ~= 2 || any(~isfinite(options.lambda) | options.lambda < 0)
     error('alignest:highOrderLambda', '正則化の強さ λ は 0 以上の数にしてください。');

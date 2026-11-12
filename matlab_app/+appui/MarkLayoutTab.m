@@ -16,6 +16,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
         MARK_Y_COLOR = [0.85, 0.40, 0.10]   % 制御残差と I 効率の図の Y の線の色（X は PRIMARY_COLOR）
         MARK_REQUIRED_COLOR = [0.80, 0.10, 0.10]  % 必ず計測する Mark・飛び値の色
         MARK_ABSENT_COLOR = [0.65, 0.65, 0.65]    % 「使う項と VIF」の表で、その式に無い項のチェック欄の色
+        MARK_CRITERION_EMPTY = '「配置を最適化する」を押すと、配置を選んだ I 最適計画の式と使った項が出ます。'
     end
 
     methods
@@ -777,7 +778,8 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             c.markOptCandidateTab = candidateTab;
             candidateGrid = uigridlayout(candidateTab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 6, ...
                 'RowSpacing', 4);
-            candidateBody = uigridlayout(candidateGrid, [1, 2], 'ColumnWidth', {'1.3x', '1x'}, 'Padding', 0, 'ColumnSpacing', 6);
+            % 表は以前の2倍の幅（列の幅も2倍）。図は残りの幅
+            candidateBody = uigridlayout(candidateGrid, [1, 2], 'ColumnWidth', {'2.6x', '1x'}, 'Padding', 0, 'ColumnSpacing', 6);
             place(candidateBody, 2, 1);
             gridControls = uigridlayout(candidateGrid, [2, 9], 'ColumnWidth', {'fit', 64, 'fit', 64, 'fit', 50, 'fit', ...
                 50, '1x'}, 'RowHeight', {'fit', 'fit'}, 'Padding', 0);
@@ -812,7 +814,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                 @(~, ~) app.onClearMarkLayoutRequired(), 'Tooltip', '必ず計測・計測しないの指定をすべて外します。');
             c.markOptCandidateTable = uitable(candidateBody, 'ColumnName', {'No', 'X [mm]', 'Y [mm]', '計測済み|Shot 数', ...
                 '必ず|計測', '計測|しない'}, 'ColumnFormat', {'numeric', 'numeric', 'numeric', 'char', 'logical', 'logical'}, ...
-                'RowName', {}, 'ColumnWidth', {34, 58, 58, 66, 50, 50}, 'Data', cell(0, 6), ...
+                'RowName', {}, 'ColumnWidth', {68, 116, 116, 132, 100, 100}, 'Data', cell(0, 6), ...
                 'CellEditCallback', @(~, event) app.onMarkLayoutCandidateEdited(event), ...
                 'CellSelectionCallback', @(~, event) app.onMarkLayoutCandidateSelected(event), 'Tooltip', ...
                 ['計測済み Shot 数：この位置を実測した Shot の数（座標だけの入力は —）。必ず計測：どの配置にも入れます。計測しない：' ...
@@ -963,6 +965,12 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             tableGrid = uigridlayout(tableTab, [1, 1], 'Padding', 6);
             c.markOptResultTable = uitable(tableGrid, 'RowName', {}, 'Data', table());
             place(c.markOptResultTable, 1, 1);
+            % 配置を選んだ I 最適計画の式（採用した演算式と、F の列に使った項）
+            criterionTab = uitab(outputs, 'Title', 'I 最適の式');
+            c.markOptCriterionTab = criterionTab;
+            criterionGrid = uigridlayout(criterionTab, [1, 1], 'Padding', 6);
+            c.markOptCriterion = uitextarea(criterionGrid, 'Editable', 'off', 'Value', {app.MARK_CRITERION_EMPTY});
+            place(c.markOptCriterion, 1, 1);
             outputs.SelectedTab = candidateTab;
             app.Controls = mergeStruct(app.Controls, c);
             refreshMarkLayoutChoices(app);
@@ -1363,6 +1371,8 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             c.markOptExport.Enable = 'on';
             c.markOptExportSelection.Enable = 'on';
             c.markOptResultTable.Data = resultTable(study);
+            rows = alignest.markLayoutCriterion(study);
+            c.markOptCriterion.Value = cellstr(rows(:, 1) + "：" + rows(:, 2));
             drawMarkLayoutChart(app);
             drawMarkLayoutMap(app);
             showMarkLayoutMessages(app);
@@ -1384,6 +1394,8 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                         "（図と表は前の結果）。";
                 end
                 lines = [lines; reshape(study.messages, [], 1)];
+                lines(end + 1, 1) = sprintf("配置は I(S) = Σ trace(M_S⁻¹ W) で選びました（dx %d 項・dy %d 項。" + ...
+                    "式と項は「I 最適の式」タブ）。", study.nTerms(1), study.nTerms(2));
             end
             c.markOptMessage.Value = cellstr(lines);
         end
