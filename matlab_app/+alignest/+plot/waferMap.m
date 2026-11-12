@@ -26,6 +26,7 @@ function waferMap(ax, points, values, options)
 %   options.showArrows   : 矢印（ベクトル）を描くか（既定 true）。false なら楕円だけ（楕円の中心は矢印の先のまま）
 %   options.ellipseSigma : 共分散楕円の大きさ（σ の何倍か。0 なら描かない）。矢印の先を中心に、矢印と同じ倍率で描く。
 %                          楕円の色は X・Y の相関係数の絶対値（alignest.plot.covarianceEllipses。MATLAB の既定の色）
+%   options.shotNumbers  : Shot の番号（options.numberCenters と同じ数）。渡すと Shot 中心に番号を重ねる（alignest.plot.shotNumbers）
 %   色だけで意味を伝えないよう、学習 Mark は形（四角）と凡例の文字でも示す。
 arguments
     ax
@@ -53,6 +54,8 @@ arguments
     options.scanStyle struct = alignest.plot.scanStyle()
     options.colorRange (1, 2) double = [NaN, NaN]
     options.colorTitle (1, 1) string = ""
+    options.numberCenters double = zeros(0, 2)
+    options.shotNumbers double = zeros(0, 1)
 end
 WAFER_EDGE_COLOR = [0.45, 0.45, 0.45];
 TRAIN_FACE_COLOR = [0.80, 0.80, 0.80];
@@ -79,6 +82,7 @@ rings = alignest.plot.zoneRings(ax, options.ringRadiiMm);
 if ~isempty(rings)
     legendItems(end + 1) = rings;
 end
+alignest.plot.shotNumbers(ax, options.numberCenters, options.shotNumbers);
 if ~isempty(options.trainPoints)
     legendItems(end + 1) = plot(ax, options.trainPoints(:, 1), options.trainPoints(:, 2), 's', 'MarkerSize', 6, ...
         'MarkerFaceColor', TRAIN_FACE_COLOR, 'MarkerEdgeColor', TRAIN_EDGE_COLOR, 'LineStyle', 'none', ...

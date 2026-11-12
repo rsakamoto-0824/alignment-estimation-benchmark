@@ -27,6 +27,12 @@ function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm)
 %   plan.markIndex に計測する Mark（unit.marks の何番目か）を入れる（Shot 単位の選び方では空）。plan.shotIndex は
 %   計測する Mark のある Shot。
 %   plan.nMarks は学習に使う Mark の数（その軸が有効な Mark。X・Y のどちらか）。
+%   Mark の数は spec.markCount があればその数（計測する Mark の数でスイープするとき）。
+%   Mark 単位の I 最適・D 最適では、Wafer 中心に最も近い Mark（計測しない Mark を除く）と、必ず計測する Mark
+%   （sampling.requiredMarks）、必ず計測する Shot（指定した shotNo・最外周）の Mark すべてを必ず計測する
+%   （alignest.markPlanFixedMarks。plan.requiredShotIndex は必ず計測する Shot）。同心円の区切りがあれば、Wafer 中心からの
+%   Mark の半径で区画に分け、区画ごとの数を割合 × Mark の数 ± 許容幅にそろえる（半径の方向のバランス）。計測しない Shot（sampling.excludedShots）・Mark（sampling.excludedMarks）は
+%   学習に選ばない（評価には使う。I 最適・D 最適・ランダムの Shot と Mark 単位の Mark。alignest.measurementSelections）。
 %   選び方によらず、選んだ組の I 基準 tr(M⁻¹) と D 基準 det(M)^(−1/p)、全計測に対する I 効率・D 効率を求める
 %   （alignest.designCriteria。基準モデルの項数より学習点が少ないなど、求められないときは NaN）。
 shots = unit.shots;
@@ -78,6 +84,15 @@ switch spec.type
             plan.message = "必ず計測する Shot のうち、この Wafer に無い、または計測値の無い shotNo：" + ...
                 strjoin(string(required.missingNos.'), " ") + "。";
         end
+        % 計測しない Shot は学習に選ばない（必ず計測する Shot からも外す。評価には使う）
+        selection = alignest.measurementSelections(unit, sampling);
+        selectable = ~ismember(candidates, selection.excludedShots);
+        plan.requiredShotIndex = setdiff(plan.requiredShotIndex, selection.excludedShots);
+        if nShots >= nnz(selectable)
+            plan.message = strtrim(plan.message + sprintf(" 学習 Shot 数 %d が、計測しない Shot を除いた候補 %d 以上です。", ...
+                nShots, nnz(selectable)));
+            return
+        end
         fixed = ismember(candidates, plan.requiredShotIndex);
         if nnz(fixed) >= nShots
             plan.shotIndex = plan.requiredShotIndex;
@@ -88,21 +103,23 @@ switch spec.type
         else
             labels = partitionLabels(shots, candidates, sampling, waferRadiusMm, unit.hasDirection);
             stream = RandStream('mt19937ar', 'Seed', seedFor(sampling.seed, nShots, spec.repeat));
+            pool = find(selectable);   % 選べる候補（基底は全候補で正規直交化したまま）
             if spec.type == "ioptimal"
                 blocks = shotBlocks(unit, candidates, sampling.designOrder, waferRadiusMm);
-                [selected, plan.criterion, plan.violation] = alignest.constrainedIOptimal(blocks, nShots, labels, ...
-                    sampling.constraints.slack, stream, sampling.exchangeStarts, sampling.exchangeMaxIterations, fixed);
+                [selected, plan.criterion, plan.violation] = alignest.constrainedIOptimal(blocks(pool), nShots, ...
+                    labels(pool, :), sampling.constraints.slack, stream, sampling.exchangeStarts, ...
+                    sampling.exchangeMaxIterations, fixed(pool));
             elseif spec.type == "doptimal"
                 blocks = shotBlocks(unit, candidates, sampling.designOrder, waferRadiusMm);
-                [selected, plan.criterion, plan.violation] = alignest.exchangeDesign(blocks, nShots, labels, ...
-                    sampling.constraints.slack, stream, sampling.exchangeStarts, sampling.exchangeMaxIterations, ...
-                    criterion="D", fixed=fixed);
+                [selected, plan.criterion, plan.violation] = alignest.exchangeDesign(blocks(pool), nShots, ...
+                    labels(pool, :), sampling.constraints.slack, stream, sampling.exchangeStarts, ...
+                    sampling.exchangeMaxIterations, criterion="D", fixed=fixed(pool));
             else
-                [chosen, plan.violation] = alignest.randomFeasibleShots(numel(candidates), nShots, labels, ...
-                    sampling.constraints.slack, stream, fixed);
+                [chosen, plan.violation] = alignest.randomFeasibleShots(numel(pool), nShots, labels(pool, :), ...
+                    sampling.constraints.slack, stream, fixed(pool));
                 selected = find(chosen);
             end
-            plan.shotIndex = candidates(selected(:));
+            plan.shotIndex = candidates(pool(selected(:)));
             if plan.violation > 0 && any(fixed)
                 plan.message = strtrim(plan.message + sprintf(" 必ず計測する Shot を入れると制約（同心円・4象限・" + ...
                     "Scan 方向の Shot 数）を満たせないため、違反量 %d の組を使いました（残りは違反が少なくなるように選んだ）。", ...
@@ -130,9 +147,18 @@ plan.ok = true;
 end
 
 function plan = markPlan(unit, spec, sampling, waferRadiusMm, candidates, plan)
-% Mark 単位の I 最適・D 最適：（各 Shot で n 点以上を計測し、）Mark 番号の割合をそろえて、計測する Mark を交換法で選ぶ
+% Mark 単位の I 最適・D 最適：（各 Shot で n 点以上を計測し、）Mark 番号の割合をそろえて、計測する Mark を交換法で選ぶ。
+% Wafer 中心に最も近い Mark・指定した必ず計測する Mark・必ず計測する Shot の Mark は必ず選び、計測しない Shot・Mark は
+% 選ばない。同心円の区切りがあれば、Mark の半径の区画ごとの数もそろえる
 marks = unit.marks;
-markCandidates = find(ismember(marks.shotIndex, candidates) & (marks.validX | marks.validY));
+allCandidates = find(ismember(marks.shotIndex, candidates) & (marks.validX | marks.validY));   % 基底を正規直交化する Mark
+selection = alignest.measurementSelections(unit, sampling);
+pool = find(~ismember(allCandidates, selection.excludedMarks));   % 選べる Mark（allCandidates の何番目か）
+markCandidates = allCandidates(pool);
+if isempty(markCandidates)
+    plan.message = "計測しない Shot・Mark を除くと、選べる Mark がありません。";
+    return
+end
 [~, ~, groupOfMark] = unique(marks.shotIndex(markCandidates));
 nGroups = max(groupOfMark);
 criterion = "I";
@@ -140,11 +166,22 @@ if spec.type == "markd"
     criterion = "D";
 end
 if isfinite(plan.rate)
-    nMarks = max(1, round(plan.rate / 100 * numel(markCandidates)));
+    nMarks = max(1, round(plan.rate / 100 * numel(allCandidates)));
     sizeText = sprintf("計測率 %g%% の Mark の数 %d", plan.rate, nMarks);
+elseif isfield(spec, "markCount") && isfinite(spec.markCount)
+    nMarks = max(1, round(spec.markCount));
+    sizeText = sprintf("計測する Mark の数 %d", nMarks);
 else
     nMarks = max(1, round(spec.markPerShot * nGroups));
     sizeText = sprintf("1 Shot あたり %g 点の Mark の数 %d", spec.markPerShot, nMarks);
+end
+% 必ず計測する Mark：Wafer 中心に最も近い Mark・指定した Mark・必ず計測する Shot の Mark すべて
+[fixedMarks, fixedInfo] = alignest.markPlanFixedMarks(unit, sampling);
+fixed = ismember(markCandidates, fixedMarks);
+plan.requiredShotIndex = fixedInfo.requiredShots;
+if ~isempty(fixedInfo.missingShotNos)
+    plan.message = "必ず計測する Shot のうち、この Wafer に無い、または計測値の無い shotNo：" + ...
+        strjoin(string(fixedInfo.missingShotNos.'), " ") + "。";
 end
 requirePerShot = ~isfield(sampling, "markRequirePerShot") || sampling.markRequirePerShot;
 minPerShot = 1;
@@ -153,27 +190,36 @@ if isfield(sampling, "markMinPerShot") && ~isempty(sampling.markMinPerShot)
 end
 group = zeros(0, 1);
 if requirePerShot
-    % 各 Shot で n 点（Mark の少ない Shot はその Shot の全 Mark）。合わせた数に足りなければ Mark の数を増やす
+    % 各 Shot で n 点（Mark の少ない Shot はその Shot の全 Mark。必ず計測する Mark がそれより多い Shot はその数）。
+    % 合わせた数に足りなければ Mark の数を増やす
     perGroup = accumarray(groupOfMark, 1);
-    minimumTotal = sum(min(minPerShot, perGroup));
+    fixedPerGroup = accumarray(groupOfMark(fixed), 1, [nGroups, 1]);
+    minimumTotal = sum(max(min(minPerShot, perGroup), fixedPerGroup));
     if nMarks < minimumTotal
-        plan.message = sprintf("%s では各 Shot %d 点を計測できないため、%d 点にしました。", sizeText, minPerShot, ...
-            minimumTotal);
+        plan.message = strtrim(plan.message + sprintf(" %s では各 Shot %d 点（と必ず計測する Mark）を計測できないため、" + ...
+            "%d 点にしました。", sizeText, minPerShot, minimumTotal));
         nMarks = minimumTotal;
     end
     group = groupOfMark;
 end
 if nMarks >= numel(markCandidates)
-    plan.message = sprintf("計測する Mark の数 %d が候補の Mark の数 %d 以上なので、評価する Mark が残りません。", ...
-        nMarks, numel(markCandidates));
+    plan.message = strtrim(plan.message + sprintf(" 計測する Mark の数 %d が候補の Mark の数 %d 以上なので、評価する" + ...
+        " Mark が残りません。", nMarks, numel(markCandidates)));
     return
 end
-blocks = markBlocks(unit, markCandidates, sampling.designOrder, waferRadiusMm);
+if nnz(fixed) >= nMarks
+    plan.message = strtrim(plan.message + sprintf(" 必ず計測する Mark（Wafer 中心に最も近い Mark・指定した Mark・" + ...
+        "必ず計測する Shot の Mark）が %d 個あり、計測する Mark の数 %d 以上です。", nnz(fixed), nMarks));
+    return
+end
+blocks = markBlocks(unit, allCandidates, sampling.designOrder, waferRadiusMm);
+blocks = blocks(pool);
 labels = zeros(numel(markCandidates), 0);
 equal = isfield(sampling.constraints, "markEqual") && sampling.constraints.markEqual;
 if equal || ~isfield(sampling.constraints, "markRatio") || sampling.constraints.markRatio
     [levels, ~, labels] = unique(marks.markNo(markCandidates));
 end
+equalColumns = equal & true(1, size(labels, 2));
 if equal
     sizes = accumarray(labels, 1);
     target = alignest.equalTargets(sizes, nMarks);
@@ -184,13 +230,21 @@ if equal
             strjoin("M" + string(levels.') + " " + string(round(target.', 1)), "・")));
     end
 end
+% 同心円の区切り：Wafer 中心からの Mark の半径で区画に分け、区画ごとの数を割合 × Mark の数 ± 許容幅にそろえる
+% （半径の方向にもバランスよく配置する。Shot 単位の計画の Shot 中心の半径と同じ区切り）
+edges = alignest.zoneEdgesMm(sampling, waferRadiusMm);
+if ~isempty(edges)
+    [~, ~, zone] = unique(1 + sum(hypot(marks.x(markCandidates), marks.y(markCandidates)) >= edges, 2));
+    labels = [labels, zone];
+    equalColumns = [equalColumns, false];
+end
 stream = RandStream('mt19937ar', 'Seed', seedFor(sampling.seed, nMarks, spec.repeat));
 [selected, plan.criterion, plan.violation] = alignest.exchangeDesign(blocks, nMarks, labels, ...
     sampling.constraints.slack, stream, sampling.exchangeStarts, sampling.exchangeMaxIterations, criterion=criterion, ...
-    group=group, minPerGroup=minPerShot, equal=equal & true(1, size(labels, 2)));
+    group=group, minPerGroup=minPerShot, equal=equalColumns, fixed=fixed);
 if plan.violation > 0
-    plan.message = strtrim(plan.message + sprintf(" Mark 番号ごとの数をそろえる制約を満たす組が見つからず、" + ...
-        "違反量 %d の組を使いました。", plan.violation));
+    plan.message = strtrim(plan.message + sprintf(" Mark 番号ごと・同心円の区画ごとの数をそろえる制約を満たす組が" + ...
+        "見つからず、違反量 %d の組を使いました。", plan.violation));
 end
 plan.markIndex = sort(markCandidates(selected(:)));
 plan.shotIndex = unique(marks.shotIndex(plan.markIndex));   % 計測する Mark のある Shot（各 Shot で必ず計測するなら全候補）
@@ -283,6 +337,8 @@ else
     nGroups = numel(unique(marks.shotIndex(markCandidates)));
     if isfinite(plan.rate)
         nMarks = max(1, round(plan.rate / 100 * numel(markCandidates)));
+    elseif isfield(spec, "markCount") && isfinite(spec.markCount)
+        nMarks = max(1, round(spec.markCount));
     else
         nMarks = max(1, round(spec.markPerShot * nGroups));
     end

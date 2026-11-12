@@ -86,6 +86,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             app.HighOrderConditions = [app.HighOrderConditions, added];
             conditions = app.HighOrderConditions;
             refreshHighOrderConditions(app);
+            app.Controls.highOrderCompareResults.SelectedTab = app.Controls.highOrderConditionTab;   % 足した条件を見せる
         end
 
         function removeHighOrderConditions(app, indices)
@@ -125,6 +126,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
                 "source", string(c.highOrderSource.Value), "selection", {c.highOrderWafer.Value}, ...
                 "measured", c.highOrderMeasured.Value, "results", {results}, "wafers", wafers);
             c.highOrderOutputs.SelectedTab = c.highOrderCompareTab;
+            c.highOrderCompareResults.SelectedTab = c.highOrderCompareTableTab;   % 比べた結果の表を見せる
             showHighOrderComparison(app);
         end
 
@@ -369,12 +371,13 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
                     set(worse, 'LineWidth', FRAME_WIDTH, 'LineStyle', '--');
                 end
                 outliers = outlierPoints(parts{k}, axisName);
-                if any(outliers)
+                showOutliers = c.highOrderPairOutliers.Value;   % 外れ値とみなした点の ○・◇ を描くか
+                if any(outliers) && showOutliers
                     plot(ax, parts{k}.x(outliers), parts{k}.y(outliers), 'o', 'MarkerSize', 6, 'LineWidth', 1, 'Color', ...
                         app.Palette.text, 'LineStyle', 'none', 'HandleVisibility', 'off');
                 end
                 % 基準の図には、比べる条件が外れ値とみなした点も ◇ で示す（基準が最小二乗でも、どの点かが分かるように）
-                if k == 1
+                if k == 1 && showOutliers
                     others = outlierPoints(parts{2}, axisName) & ~outliers;
                     if any(others)
                         plot(ax, parts{2}.x(others), parts{2}.y(others), 'd', 'MarkerSize', 7, 'LineWidth', 1, 'Color', ...
@@ -417,7 +420,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             c = struct();
             tab = uitab(outputs, 'Title', '補正の比較');
             c.highOrderCompareTab = tab;
-            grid = uigridlayout(tab, [4, 1], 'RowHeight', {'fit', 120, '1x', 'fit'}, 'Padding', 6, 'RowSpacing', 4);
+            grid = uigridlayout(tab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 6, 'RowSpacing', 4);
             % 何を変えた条件を足すかを1つ選び、足す。左の②③の今の設定をもとにする
             controls = uigridlayout(grid, [1, 6], 'ColumnWidth', {'fit', 150, '1x', 'fit', 'fit', 'fit'}, 'Padding', 0);
             label(controls, '足す条件', 1, 1);
@@ -442,15 +445,16 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             place(c.highOrderConditionRemove, 1, 5);
             c.highOrderCompare = primaryButton(app, controls, 'すべて計算して比べる', @(~, ~) app.onCompareHighOrder());
             place(c.highOrderCompare, 1, 6);
-            c.highOrderConditionTable = uitable(grid, 'RowName', {}, 'ColumnName', {'No', '条件', '補正の式', 'くくり', ...
-                'Wafer レベル', 'X の回帰', 'Y の回帰'}, 'ColumnWidth', {30, 170, 60, 230, 150, 190, 190}, 'Data', cell(0, 7), ...
+            % 条件の表と、結果の表・図（中のタブで切り替える。狭い画面でも図・表の高さを取れるように）
+            results = uitabgroup(grid, 'SelectionChangedFcn', @(~, ~) app.drawHighOrderComparisonChart());
+            place(results, 2, 1);
+            c.highOrderCompareResults = results;
+            c.highOrderConditionTab = uitab(results, 'Title', '条件');
+            c.highOrderConditionTable = uitable(uigridlayout(c.highOrderConditionTab, [1, 1], 'Padding', 4), 'RowName', {}, ...
+                'ColumnName', {'No', '条件', '補正の式', 'くくり', 'Wafer レベル', 'X の回帰', 'Y の回帰'}, ...
+                'ColumnWidth', {30, 170, 60, 230, 150, 190, 190}, 'Data', cell(0, 7), ...
                 'CellSelectionCallback', @(~, event) app.onHighOrderConditionsSelected(event), 'Tooltip', ...
                 '比べる条件。セルをクリックして選びます（Shift・Ctrl で複数）。比べた後に2つ選ぶと、「2つの条件を並べる」に出ます。');
-            place(c.highOrderConditionTable, 2, 1);
-            % 結果：表と図（中のタブで切り替える。狭い画面でも図の高さを取れるように）
-            results = uitabgroup(grid, 'SelectionChangedFcn', @(~, ~) app.drawHighOrderComparisonChart());
-            place(results, 3, 1);
-            c.highOrderCompareResults = results;
             c.highOrderCompareTableTab = uitab(results, 'Title', '表');
             c.highOrderCompareTable = uitable(uigridlayout(c.highOrderCompareTableTab, [1, 1], 'Padding', 4), ...
                 'RowName', {}, 'Data', table(), 'ColumnWidth', {170, 40, 90, 90, 90, 90, 90, 90, 90, 76, 90, 60, 60, 60, 70, 'auto'});
@@ -467,7 +471,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             place(c.highOrderComparePanel, 2, [1, 3]);
             c.highOrderCompareAxes = uiaxes(uigridlayout(c.highOrderComparePanel, [1, 1], 'Padding', 0));
             c.highOrderCompareInfo = uilabel(grid, 'WordWrap', 'on', 'Text', '');
-            place(c.highOrderCompareInfo, 4, 1);
+            place(c.highOrderCompareInfo, 3, 1);
             app.Controls = mergeStruct(app.Controls, c);
             refreshHighOrderConditionKind(app);
         end
@@ -519,6 +523,10 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             c.highOrderPairTolerance = uieditfield(actions, 'numeric', 'Limits', [0, Inf], 'Value', 0.1, ...
                 'ValueChangedFcn', onDraw, 'Tooltip', 'Shot の値の差がこの値以下の Shot は「同じ」（改善でも悪化でもない）にします。');
             place(c.highOrderPairTolerance, 1, 2);
+            c.highOrderPairOutliers = uicheckbox(actions, 'Text', '外れ値とみなした点（○）', 'Value', true, ...
+                'ValueChangedFcn', onDraw, 'Tooltip', ['オン：外れ値とみなした点を ○（左の図の ◇ は比べる条件だけが外れ値と' ...
+                'みなした点）で描きます。オフ：描きません（Shot の枠の改善・悪化だけを見るとき）。']);
+            place(c.highOrderPairOutliers, 1, 3);
             c.highOrderPairSave = uibutton(actions, 'Text', '図を画像で保存…', 'Enable', 'off', 'ButtonPushedFcn', ...
                 @(~, ~) app.saveFigureWithDialog("highOrderPair", 'shot_high_order_pair.png'));
             place(c.highOrderPairSave, 1, 4);

@@ -24,7 +24,7 @@ settings.factors.mark = true;           % Mark 番号（markNo）
 settings.factors.shotRowParity = false; % Shot 配列の行（上から1行目）の奇数・偶数
 settings.factors.columns = strings(1, 0);  % ファイルのその他の列（標準の項目に対応づけなかった列）の名前
 settings.factors.evaluateSingles = false;  % true なら、チェックした質的変数を1つだけ使う手法も足して比べる（alignest.singleFactorMethods）
-settings.factors.separateY = false;      % true なら Y 成分は factors.y の質的変数を使う（false なら X と同じ）
+settings.factors.separateY = true;       % true なら Y 成分は factors.y の質的変数を使う（false なら X と同じ）
 settings.factors.y.scan = true;
 settings.factors.y.mark = true;
 settings.factors.y.shotRowParity = false;
@@ -61,6 +61,14 @@ settings.sampling.constraints.markRatio = true;   % Mark 単位：Mark 番号ご
 settings.sampling.constraints.markEqual = false;  % Mark 単位：Mark 番号ごとの計測する数を均等にする（markRatio より優先。
                                                   % 許容幅は使わず、割り切れないときの1つの差だけ）
 settings.sampling.markPerShot = 1;      % Mark 単位：1 Shot あたりの平均の計測 Mark 数（1 = 全 Shot で1点。複数なら比べる）
+settings.sampling.markCountBy = "perShot";   % Mark 単位の Mark の数の決め方：perShot（1 Shot あたりの数 markPerShot）・
+                                            % total（計測する Mark の数 markCountStart〜markCountEnd を markCountStep ごと）
+settings.sampling.markCountStart = 100;      % Mark 単位：計測する Mark の数の開始・終了・刻み（markCountBy = total）
+settings.sampling.markCountEnd = 300;
+settings.sampling.markCountStep = 50;
+settings.sampling.excludedShots = zeros(1, 0);   % 計測しない shotNo（学習に使わず評価に使う。計測マップで指定できる）
+settings.sampling.requiredMarks = strings(1, 0); % Mark 単位：必ず計測する Mark（"shotNo-markNo"。計測マップで指定できる）
+settings.sampling.excludedMarks = strings(1, 0); % Mark 単位：計測しない Mark（"shotNo-markNo"。学習に使わず評価に使う）
                                         % （countBy = "rate" なら、代わりに計測率 = 候補の全 Mark に対する割合で決める）
 settings.sampling.markRequirePerShot = true;   % Mark 単位：各 Shot で markMinPerShot 点以上を必ず計測する（false なら Shot を問わず選ぶ）
 settings.sampling.markMinPerShot = 1;          % Mark 単位：各 Shot で必ず計測する Mark の数 n（Mark の少ない Shot はその Shot の全 Mark）
@@ -105,6 +113,9 @@ settings.highOrder.shotEachOrder = 0;      % Shot 共通を先に引くとき、
 settings.highOrder.shotCommonValues = zeros(1, 0);  % 入力した Shot 共通の k（n 番目が kn の値。k1・k2 は nm、1次は nm/mm、
                                            % n 次は nm/mm^n。無い k は 0）
 settings.highOrder.shotCommonOuterValues = zeros(1, 0);  % 外周の式（outerMaker）の Shot 共通の k（外周の式を分けるとき）
+settings.highOrder.shotCommonTerms = zeros(1, 0);       % Shot 共通を「計算する」ときの Shot 共通の k に使う項（k の番号。空なら
+                                                        % 使う項と同じ。k1〜k6 は必ず使う）
+settings.highOrder.shotCommonOuterTerms = zeros(1, 0);  % 外周の式の Shot 共通の k に使う項（空なら外周の式の使う項と同じ）
 settings.highOrder.waferRtRange = "none";   % Wafer RT（RT モデルを Shot 中心の座標で当てはめる Wafer 高次補正）を使う Shot：
                                            % none（使わない）・all（すべての Shot）・outer（外周の Shot だけ。内周は Wafer 成分）
 settings.highOrder.waferRtOrder = 3;       % Wafer RT の次数 K（1〜5）
@@ -119,7 +130,7 @@ settings.highOrder.shortage = "reduceAll";  % 点が足りない k の組：redu
 settings.highOrder.vifThreshold = 10;      % 「VIF で選ぶ」のしきい値（すべての項の VIF がこれより小さくなるまで高次項を外す）
 % 回帰（loss・huberTuning・regularization・lambda）は [X, Y] の2つで X・Y 別にできる（1つなら X・Y で同じ）
 settings.highOrder.loss = "huber";         % 回帰の損失関数：ols（最小二乗）・huber（Huber）・lad（最小絶対偏差）
-settings.highOrder.huberTuning = 1.345;    % Huber の定数 c（正規分布の誤差で効率 95% になる値）
+settings.highOrder.huberTuning = 3;        % Huber の定数 c（大きいほど最小二乗に近い。1.345 で正規分布の誤差のとき効率 95%）
 settings.highOrder.regularization = "l2";  % 正則化：none（なし）・l2（係数を小さくする）・l1（効かない項の係数を 0 にする）
 settings.highOrder.penaltyOrders = 2:6;    % 正則化をかける項の次数（1〜6 から選ぶ。定数 k1・k2 と Wafer 成分にはかけない）
 settings.highOrder.penaltyOrdersY = -1;    % Y の正則化をかける項の次数（-1 なら X と同じ）
@@ -131,7 +142,7 @@ settings.markLayout.maker = "nikon";        % 補正の式：asml・canon・niko
 settings.markLayout.excludedTerms = zeros(1, 0);  % 使わない k の番号（「VIF で選ぶ」・画面で外した項。k1〜k6 は外さない）
 settings.markLayout.vifThreshold = 10;      % 「VIF で選ぶ」のしきい値（VIF は候補の Mark の位置で求める）
 settings.markLayout.loss = "huber";         % 回帰の損失関数：ols・huber・lad
-settings.markLayout.huberTuning = 1.345;    % Huber の定数 c
+settings.markLayout.huberTuning = 3;        % Huber の定数 c
 settings.markLayout.regularization = "l2";  % 正則化：none・l2・l1
 settings.markLayout.penaltyOrders = 2:6;    % 正則化をかける項の次数（1〜6）
 settings.markLayout.penaltyOrdersY = -1;    % Y の正則化をかける項の次数（-1 なら X と同じ）

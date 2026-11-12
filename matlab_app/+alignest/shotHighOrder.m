@@ -116,6 +116,15 @@ if zoneSplit
     zoneTerms{2} = alignest.highOrderTerms(options.outerMaker, options.outerExcludedTerms);
 end
 everything = vertcat(wafers.points);
+commonZoneTerms = zoneTerms;   % Shot 共通の k に使う項（Shot 共通を「計算する」で項を選んだときは、選んだ項と k1〜k6）
+if sequential && options.shotCommon == "fit"
+    commonLists = {options.shotCommonTerms, options.shotCommonOuterTerms};
+    for z = 1:numel(zoneTerms)
+        if ~isempty(commonLists{z})
+            commonZoneTerms{z}.used = commonZoneTerms{z}.protected | ismember(commonZoneTerms{z}.k, commonLists{z});
+        end
+    end
+end
 eachTerms = zoneTerms;   % k の組（Shot ごとなら Shot）ごとに求める項
 if sequential
     eachTerms = eachShotTerms(zoneTerms, options.shotEachOrder);   % Shot 共通は使う項すべて、Shot ごとは次数の上限まで
@@ -132,6 +141,10 @@ if options.shortage == "reduceAll"
 end
 if ~sequential
     zoneTerms = eachTerms;   % Shot 共通を先に引くときだけ、Shot 共通の項は減らさない
+else
+    for z = 1:numel(zoneTerms)
+        zoneTerms{z}.used = zoneTerms{z}.used | commonZoneTerms{z}.used;   % 結果の項の表：Shot ごと・Shot 共通のどちらかで使う項
+    end
 end
 reduceGroups = options.shortage == "reduceGroup";
 dropped = droppedTerms(reduction, 1);
@@ -205,6 +218,8 @@ for w = 1:numel(wafers)
         if sequential
             eachAxisTerms = cellfun(@(terms) terms(terms.axis == FORMULA_AXES(a) & terms.used, :), eachTerms, ...
                 'UniformOutput', false);
+            axisTerms = cellfun(@(terms) terms(terms.axis == FORMULA_AXES(a) & terms.used, :), commonZoneTerms, ...
+                'UniformOutput', false);   % Shot 共通の k に使う項
         end
         linearTerms = zoneTerms{1}(zoneTerms{1}.axis == FORMULA_AXES(a) & zoneTerms{1}.order <= 1, :);
         parts = cell(1, 0);

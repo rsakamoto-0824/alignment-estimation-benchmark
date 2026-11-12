@@ -163,6 +163,7 @@ classdef TestSpatialModels < matlab.unittest.TestCase
             unit.marks.measX = 20*(unit.marks.shotRowParity == 1) + 4*unit.marks.markNo;
             unit.marks.measY = -unit.marks.measX;
             settings = alignest.defaultSettings();
+            settings.factors.separateY = false;   % Y 成分も X 成分と同じ質的変数
             settings.factors.shotRowParity = true;
             settings.methods = alignest.recommendedMethods('none');
             settings.methods.tps.enabled = true;
@@ -237,6 +238,7 @@ classdef TestSpatialModels < matlab.unittest.TestCase
             unit.marks.measX = 12 * (chuck == "C1") + 3 * unit.marks.markNo;
             unit.marks.measY = unit.marks.measX;
             settings = alignest.defaultSettings();
+            settings.factors.separateY = false;
             settings.factors.scan = false;
             settings.factors.columns = "Chuck";
             % 別に選ばなければ Y 成分も X 成分と同じ

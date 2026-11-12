@@ -161,7 +161,8 @@ classdef TestShotHighOrderLevels < matlab.unittest.TestCase
             points.valueX = points.valueX + 0.1 * randn(height(points), 1);
             points.valueY = points.valueY + 0.1 * randn(height(points), 1);
             settings = alignest.defaultSettings();
-            settings.highOrder = struct("maker", "nikon", "unit", "common", "waferOrder", 0, "loss", "huber");
+            settings.highOrder = struct("maker", "nikon", "unit", "common", "waferOrder", 0, "loss", "huber", ...
+                "huberTuning", 1.345);   % 効率 95% の c（初期値の 3 より外れ値に強い）で確かめる
             clean = alignest.shotHighOrder(struct("label", "W1", "points", points), settings);
             total = clean.summary(clean.summary.wafer == "すべての Wafer" & clean.summary.axis == "X", :);
             testCase.verifyLessThan(total.outliers / total.nCorrected, 0.02, "雑音だけなら 2% 未満");
@@ -192,7 +193,9 @@ classdef TestShotHighOrderLevels < matlab.unittest.TestCase
             fine = alignest.plot.shotGridMap(ax, [0, 0], [26, 33], displacementOf(1), gridStepMm=0.001);
             testCase.verifyEqual(fine.gridStepMm, 33 / 100, 'AbsTol', 1e-12, "線が 101 本を超えないように広げる");
             automatic = alignest.plot.shotGridMap(ax, [0, 0], [26, 33], displacementOf(1));
-            testCase.verifyEqual(automatic.gridStepMm, 26 / 4, 'AbsTol', 1e-12, "0 なら縦・横 5 本");
+            testCase.verifyEqual(automatic.gridStepMm, min(26 / 6, 33 / 8), 'AbsTol', 1e-12, "0 なら縦の線 7 本・横の線 9 本");
+            lines = findobj(ax, 'Type', 'line', 'DisplayName', '変形させたグリッド（1 Shot）');
+            testCase.verifyEqual(nnz(isnan(lines.XData)), 7 + 9 + 1, "線の後ろと Shot の後ろに NaN の区切り");
         end
 
         function screenChoosesShortageOuterTermsAndLevels(testCase)

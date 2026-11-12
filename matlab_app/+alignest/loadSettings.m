@@ -5,6 +5,8 @@ function settings = loadSettings(filePath, source)
 %   学習 Shot 数の開始・終了・刻みが無い以前の設定ファイルは、Shot 数の並びから決める（alignest.syncShotCounts）。
 %   同心円の区切り・外周の半径を Wafer 半径に対する比で書いた以前の設定は、mm の値に直す（alignest.upgradeRadiusSettings）。
 %   「7. Shot高次補正」の以前の L2 のオン・オフ（highOrder.l2）は、正則化の種類（highOrder.regularization）に直す。
+%   質的変数（factors）を書いてあり、Y 成分を別に選ぶか（factors.separateY）が無い以前の設定は、Y 成分も X 成分と同じ
+%   （separateY = false）として読む（初期設定は別に選ぶ）。
 %   変えたい項目だけを書いたファイル（既定の設定ファイルなど）で、学習 Shot 数の開始・終了・刻みだけがあり並び nShots が
 %   無いときは、開始・終了・刻みから並びを作る（書いた値が使われるように）。
 if nargin >= 2 && source == "text"
@@ -13,7 +15,8 @@ if nargin >= 2 && source == "text"
     catch err
         error('alignest:loadSettings', '設定を JSON として読めません（%s）', err.message);
     end
-    settings = merge(alignest.defaultSettings(), upgradeHighOrder(upgradeLayout(alignest.upgradeRadiusSettings(decoded))));
+    settings = merge(alignest.defaultSettings(), upgradeFactors(upgradeHighOrder(upgradeLayout( ...
+        alignest.upgradeRadiusSettings(decoded)))));
     if isstruct(decoded) && isfield(decoded, "sampling") && isstruct(decoded.sampling) && ...
             ~isfield(decoded.sampling, "nShots") && any(isfield(decoded.sampling, ["nShotsStart", "nShotsEnd", "nShotsStep"]))
         sampling = settings.sampling;
@@ -53,6 +56,13 @@ catch
         methods = "ioptimal";
     end
     decoded.sampling.method = methods;
+end
+end
+
+function decoded = upgradeFactors(decoded)
+% 以前の設定（質的変数の Y 成分を別に選べなかった版）：factors に separateY が無ければ、Y 成分も X 成分と同じにする
+if isstruct(decoded) && isfield(decoded, "factors") && isstruct(decoded.factors) && ~isfield(decoded.factors, "separateY")
+    decoded.factors.separateY = false;
 end
 end
 

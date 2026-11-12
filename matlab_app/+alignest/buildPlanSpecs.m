@@ -13,7 +13,8 @@ function specs = buildPlanSpecs(sampling)
 %     alignest.upgradeLayoutSettings で "excel" に直して使う（学習パターンの名前は以前と同じ）
 %     "mark"（Mark 単位の I 最適）・"markd"（Mark 単位の D 最適）：計測する Shot ではなく Mark を選ぶ（既定では全 Shot で
 %                1点以上。sampling.markRequirePerShot・markMinPerShot）。markPerShot（1 Shot あたりの平均の Mark 数）
-%                ごとに1つ（"Mark最適 1 点/Shot"・"MarkD最適 1 点/Shot"）
+%                ごとに1つ（"Mark最適 1 点/Shot"・"MarkD最適 1 点/Shot"）。sampling.markCountBy = "total" なら、計測する Mark の数
+%                （markCountStart〜markCountEnd を markCountStep ごと）ごとに1つ（"Mark最適 120 点"。spec.markCount）
 %   sampling.countBy = "rate" なら、Shot 数の代わりに計測率 [%]（rateStart・rateEnd・rateStep）ごとに作る
 %   （"I最適 計測率 20%" のように。Shot 数は Wafer の候補 Shot 数から planTrainingShots で決める。nShots は NaN）。
 %   Mark 単位の計画も計測率ごとに作る（"Mark最適 計測率 20%"。計測する Mark の数 = 計測率 × 候補の全 Mark の数。
@@ -37,7 +38,7 @@ end
 methods = ORDER(ismember(ORDER, methods));
 compare = numel(methods) > 1;
 specs = struct("type", {}, "nShots", {}, "rate", {}, "repeat", {}, "label", {}, "group", {}, "shotNos", {}, ...
-    "markPerShot", {}, "markNos", {}, "required", {});
+    "markPerShot", {}, "markNos", {}, "required", {}, "markCount", {});
 for method = methods
     prefix = PREFIX.(method);
     switch method
@@ -58,10 +59,10 @@ for method = methods
         case "excel"
             specs = [specs, excelSpecs(sampling, compare)]; %#ok<AGROW>
         case {"mark", "markd"}
-            [perShot, rates, sizeTexts] = markSizes(sampling);
+            [perShot, rates, sizeTexts, counts] = markSizes(sampling);
             for k = 1:numel(sizeTexts)
                 specs(end + 1) = spec(method, NaN, rates(k), 1, prefix + " " + sizeTexts(k), ...
-                    groupName(compare, prefix, sizeTexts(k)), [], perShot(k)); %#ok<AGROW>
+                    groupName(compare, prefix, sizeTexts(k)), [], perShot(k), zeros(1, 0), false(1, 0), counts(k)); %#ok<AGROW>
             end
     end
 end
@@ -70,15 +71,18 @@ if isempty(specs)
 end
 end
 
-function item = spec(type, nShots, rate, repeat, label, group, shotNos, markPerShot, markNos, required)
+function item = spec(type, nShots, rate, repeat, label, group, shotNos, markPerShot, markNos, required, markCount)
 % 学習パターン1つ。shotNos・markNos（Mark 単位の Excel の指定）・required（優先順で必ず計測する項目）は行ベクトル。
-% markNos・required は Excel の指定だけ
+% markNos・required は Excel の指定だけ。markCount は Mark 単位の計測する Mark の数（決めないときは NaN）
 if nargin < 9
     markNos = zeros(1, 0);
     required = false(1, 0);
 end
+if nargin < 11
+    markCount = NaN;
+end
 item = struct("type", type, "nShots", nShots, "rate", rate, "repeat", repeat, "label", label, "group", group, ...
-    "shotNos", shotNos, "markPerShot", markPerShot, "markNos", markNos, "required", required);
+    "shotNos", shotNos, "markPerShot", markPerShot, "markNos", markNos, "required", required, "markCount", markCount);
 end
 
 function name = groupName(compare, prefix, sizeText)
@@ -93,7 +97,7 @@ function specs = excelSpecs(sampling, compare)
 % Excel ファイルで指定：パターン（type "manual"）は1つずつ、優先順（type "file"）は Shot 数・計測率（Mark 単位は
 % 1 Shot あたりの Mark 数・計測率）ごと
 specs = struct("type", {}, "nShots", {}, "rate", {}, "repeat", {}, "label", {}, "group", {}, "shotNos", {}, ...
-    "markPerShot", {}, "markNos", {}, "required", {});
+    "markPerShot", {}, "markNos", {}, "required", {}, "markCount", {});
 plans = alignest.parseLayoutPlans(string(fieldOr(sampling, "layoutPlans", strings(0, 1))));
 if isempty(plans)
     error('alignest:layoutPlans', ['Excel ファイルで指定する学習パターンがありません。「Excel ファイルを読み込む…」で' ...
@@ -111,25 +115,46 @@ for plan = plans
         continue
     end
     if markLevel
-        [perShot, rates, sizeTexts] = markSizes(sampling);
+        [perShot, rates, sizeTexts, counts] = markSizes(sampling);
         sizes = nan(size(rates));
     else
         [sizes, sizeTexts, rates] = trainingSizes(sampling);
         perShot = nan(size(rates));
+        counts = nan(size(rates));
     end
     for k = 1:numel(sizeTexts)
         specs(end + 1) = spec("file", sizes(k), rates(k), 1, plan.name + " " + sizeTexts(k), ...
             groupName(named, plan.name, sizeTexts(k)), plan.shotNos.', perShot(k), plan.markNos.', ...
-            plan.required.'); %#ok<AGROW>
+            plan.required.', counts(k)); %#ok<AGROW>
     end
 end
 end
 
-function [perShot, rates, texts] = markSizes(sampling)
-% Mark 単位の計画の大きさ：1 Shot あたりの Mark 数（markPerShot）ごと、計測率で決めるときは計測率ごと
+function [perShot, rates, texts, counts] = markSizes(sampling)
+% Mark 単位の計画の大きさ：1 Shot あたりの Mark 数（markPerShot）ごと、計測する Mark の数（markCountBy = "total"）ごと、
+% 計測率で決めるときは計測率ごと。counts：計測する Mark の数（決めないときは NaN）
+MAX_COUNTS = 100;   % 並びの数の上限（alignest.shotCountList と同じ）
 if isfield(sampling, "countBy") && string(sampling.countBy) == "rate"
     [~, texts, rates] = trainingSizes(sampling);
     perShot = nan(size(rates));
+    counts = nan(size(rates));
+    return
+end
+if string(fieldOr(sampling, "markCountBy", "perShot")) == "total"
+    values = [fieldOr(sampling, "markCountStart", 100), fieldOr(sampling, "markCountEnd", 300), ...
+        fieldOr(sampling, "markCountStep", 50)];
+    if numel(values) ~= 3 || any(~isfinite(values) | values < 1 | values ~= round(values)) || values(2) < values(1)
+        error('alignest:markCount', ['計測する Mark の数の開始・終了・刻みは 1 以上の整数にし、終了は開始以上に' ...
+            'してください。']);
+    end
+    counts = values(1):values(3):values(2);
+    if numel(counts) > MAX_COUNTS
+        error('alignest:markCount', '計測する Mark の数が %d 通りになります（上限 %d 通り）。刻みを大きくしてください。', ...
+            numel(counts), MAX_COUNTS);
+    end
+    perShot = nan(size(counts));
+    rates = nan(size(counts));
+    texts = compose("%d 点", counts);
     return
 end
 perShot = 1;
@@ -140,6 +165,7 @@ if any(~isfinite(perShot) | perShot <= 0)
     error('alignest:markPerShot', '1 Shot あたりの Mark 数は 0 より大きい数にしてください（1 なら Shot 数と同じ数）。');
 end
 rates = nan(size(perShot));
+counts = nan(size(perShot));
 texts = compose("%g 点/Shot", perShot);
 end
 

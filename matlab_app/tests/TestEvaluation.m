@@ -91,7 +91,9 @@ classdef TestEvaluation < matlab.unittest.TestCase
             [total, detail] = alignest.estimateRunSeconds(units, settings);
             nRuns = numel(units) * 2 * numel(alignest.buildMethodList(settings.methods));
             testCase.verifyEqual(detail.nRuns, nRuns);
-            testCase.verifyEqual(total, 2 * nRuns, "1条件（Wafer × 学習パターン × 手法）あたり 2 秒");
+            testCase.verifyEqual(detail.estimateSeconds, 2 * nRuns, "1条件（Wafer × 学習パターン × 手法）あたり 2 秒");
+            testCase.verifyEqual(total, detail.estimateSeconds + detail.planSeconds, 'AbsTol', 1e-9, ...
+                "学習パターン（I 最適）を作る時間を足す");
             testCase.verifyEqual(alignest.estimateRunSeconds(units([]), settings), 0);
         end
 
@@ -259,7 +261,11 @@ classdef TestEvaluation < matlab.unittest.TestCase
             loaded = alignest.loadSettings(settingsFile);
             testCase.verifyEqual(loaded.data.coordinateUnits, alignest.coordinateUnits());
             testCase.verifyFalse(loaded.factors.shotRowParity);
-            testCase.verifyFalse(loaded.factors.separateY, "以前の設定は Y 成分も X 成分と同じ");
+            testCase.verifyTrue(loaded.factors.separateY, "質的変数を書いていない設定は初期設定（別に選ぶ）");
+            legacyFactors = settings;
+            legacyFactors.factors = rmfield(settings.factors, ["separateY", "y"]);
+            alignest.saveSettings(legacyFactors, settingsFile);
+            testCase.verifyFalse(alignest.loadSettings(settingsFile).factors.separateY, "以前の設定は Y 成分も X 成分と同じ");
             % 開始・終了・刻みの無い以前の設定は、Shot 数の並びから決める（等間隔でなければ間が加わる）
             legacy.sampling = rmfield(legacy.sampling, ["nShotsStart", "nShotsEnd", "nShotsStep"]);
             legacy.sampling.nShots = [10, 20, 50];

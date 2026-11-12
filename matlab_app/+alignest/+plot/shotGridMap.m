@@ -9,7 +9,8 @@ function summary = shotGridMap(ax, centers, sizeMm, displacement, options)
 %   options.scaleMmPerNm：変位の倍率 [mm/nm]（0 なら、変位の大きさの 95% 点がグリッドの間隔の SHIFT_RATIO 倍になる）。
 %   options.gridStepMm：グリッドの刻み [mm]（Shot の中心から刻みごとの線と、Shot の端の線を描く。0 なら gridLines）。
 %   線が縦・横それぞれ MAX_GRID_LINES 本を超える細かい刻みは、超えない刻みに広げる（summary.gridStepMm）。
-%   options.gridLines：刻みが 0 のときのグリッドの線の数（縦・横それぞれ。Shot の端から端まで等しい間隔）、
+%   options.gridLines：刻みが 0 のときのグリッドの線の数 [縦の線（X 方向に並ぶ数）, 横の線（Y 方向に並ぶ数）]（既定 [7, 9]。
+%   1つなら両方。Shot の端から端まで等しい間隔）、
 %   options.titleText：題名、options.waferRadiusMm：Wafer の半径。
 %   summary：描いた Shot の数 n、倍率 scaleMmPerNm、変位の大きさの最大 maxNm、刻み gridStepMm（使った刻み [mm]。線の数で
 %   決めたときは線の間隔）。
@@ -21,7 +22,7 @@ arguments
     options.stack (1, 1) logical = false
     options.scaleMmPerNm (1, 1) double {mustBeNonnegative} = 0
     options.gridStepMm (1, 1) double {mustBeNonnegative, mustBeFinite} = 0
-    options.gridLines (1, 1) double {mustBeInteger, mustBePositive} = 5
+    options.gridLines (1, :) double {mustBeInteger, mustBePositive} = [7, 9]
     options.titleText (1, 1) string = ""
     options.waferRadiusMm (1, 1) double = 150
 end
@@ -40,9 +41,10 @@ if options.gridStepMm > 0
     levelsX = gridLevels(half(1), step);
     levelsY = gridLevels(half(2), step);
 else
-    levelsX = linspace(-half(1), half(1), options.gridLines);
-    levelsY = linspace(-half(2), half(2), options.gridLines);
-    step = min(sizeMm) / max(options.gridLines - 1, 1);
+    lines = options.gridLines([1, end]);
+    levelsX = linspace(-half(1), half(1), lines(1));
+    levelsY = linspace(-half(2), half(2), lines(2));
+    step = min(sizeMm(:) ./ max(lines(:) - 1, 1));
 end
 along = linspace(0, 1, SAMPLES).';
 local = zeros(0, 2);

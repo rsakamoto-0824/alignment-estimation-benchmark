@@ -219,8 +219,11 @@ classdef (Abstract) HighOrderTab < appui.Core
         end
 
         function useAllHighOrderTerms(app)
-            %USEALLHIGHORDERTERMS 「すべての項を使う」：外した項を戻す（外周の式を分けるときは外周の式も、式の全項にする）
+            %USEALLHIGHORDERTERMS 「すべての項を使う」：外した項を戻す（外周の式を分けるときは外周の式も、式の全項にする）。
+            %   Shot 共通の k に選んだ項も、使う項と同じ（すべての項）に戻す
             app.Settings.highOrder.excludedTerms = zeros(1, 0);
+            app.Settings.highOrder.shotCommonTerms = zeros(1, 0);
+            app.Settings.highOrder.shotCommonOuterTerms = zeros(1, 0);
             if lower(string(fieldOr(app.Settings.highOrder, "outerMaker", "none"))) ~= "none"
                 app.Settings.highOrder.outerExcludedTerms = zeros(1, 0);
                 app.Settings.highOrder.outerName = "";
@@ -362,7 +365,11 @@ classdef (Abstract) HighOrderTab < appui.Core
             set([c.highOrderGridStep, c.highOrderGridScale], 'Enable', onOff(mode == "grid"));
             view = string(c.highOrderMapView.Value);
             stack = view ~= "wafer";
-            side = string(c.highOrderMapLayout.Value) == "side";
+            byScan = view == "stack" && c.highOrderMapByScan.Value;   % Shot を重ねる図を Scan 方向ごとに並べる
+            c.highOrderMapByScan.Enable = onOff(view == "stack");
+            c.highOrderMapLayout.Enable = onOff(~byScan);
+            c.highOrderMapShotNumbers.Enable = onOff(~stack);
+            side = string(c.highOrderMapLayout.Value) == "side" && ~byScan;
             % 1つの Shot：今の Wafer・くくりの Shot を選択肢にする
             numbers = unique(points.shotNo(inGroup & isfinite(points.shotNo)));
             if isempty(numbers)
@@ -380,18 +387,33 @@ classdef (Abstract) HighOrderTab < appui.Core
                 titleText = titleText + sprintf("・Shot %d", c.highOrderMapShot.Value);
             end
             c.highOrderMapValue.Enable = onOff(~side);   % 並べるときは補正前の値・補正量・残差で決まっている
+            points = points(inGroup, :);
             if side
                 valueNames = ["value", "correction", "residual"];
+                masks = repmat({true(height(points), 1)}, 1, 3);
+                suffixes = strings(1, 3);
+            elseif byScan
+                % Scan 方向 1・2 の Shot の点に分けて、同じ値を横に並べる（Scan 方向の分からない点は描かない）
+                directions = intersect([1, 2], unique(points.direction(isfinite(points.direction))).');
+                if isempty(directions)
+                    directions = 1;
+                end
+                valueNames = repmat(string(c.highOrderMapValue.Value), 1, numel(directions));
+                masks = arrayfun(@(d) points.direction == d, directions, 'UniformOutput', false);
+                suffixes = "（Scan 方向 " + string(directions) + "）";
             else
                 valueNames = string(c.highOrderMapValue.Value);
+                masks = {true(height(points), 1)};
+                suffixes = "";
             end
             showHighOrderMapPanels(app, numel(valueNames));
-            points = points(inGroup, :);
             % 並べる図の矢印の倍率・色の範囲をそろえる（点の値の図だけ。グリッドは補正量の図だけで、倍率は自分で決める）
             values = cell(1, numel(valueNames));
             for k = 1:numel(valueNames)
                 values{k} = highOrderMapValues(run, points, valueNames(k), string(wafer.label));
+                values{k}(~masks{k}, :) = NaN;   % ほかの Scan 方向の点は倍率・色の範囲に入れない
             end
+            outlier = alignest.highOrderOutliers(points.weightX) | alignest.highOrderOutliers(points.weightY);
             showRing = ~stack && (run.result.options.outerMaker ~= "none" || c.highOrderSummaryZones.Value);
             together = vertcat(values{:});
             column = 1 + (mode == "Y");
@@ -406,19 +428,21 @@ classdef (Abstract) HighOrderTab < appui.Core
             gridScale = c.highOrderGridScale.Value;
             for k = 1:numel(valueNames)
                 ax = axesList(k);
-                valueLabel = highOrderValueLabel(valueNames(k));
+                valueLabel = highOrderValueLabel(valueNames(k)) + suffixes(k);
                 % 並べるときは図が狭いので、題名は値の名前だけ（Wafer の名前は図の下の説明に出す）、凡例は出さない
-                panelTitle = ternary(side, valueLabel, titleText + "｜" + valueLabel);
+                panelTitle = ternary(side || byScan, valueLabel, titleText + "｜" + valueLabel);
                 isModel = any(valueNames(k) == ["correction", "highOnly"]);
-                if mode == "grid" && (isModel || stack)
-                    shots = highOrderShots(points);
+                panelPoints = points(masks{k}, :);
+                panelValues = values{k}(masks{k}, :);
+                if mode == "grid"
+                    % グリッド：補正量は求めた補正の式、ほかの値（補正前の値・残差など）は Shot ごとに点の値を内挿して変形させる
+                    shots = highOrderShots(panelPoints);
                     if isModel
                         part = ternary(valueNames(k) == "highOnly", "highOrder", "all");
                         displacement = @(local) alignest.highOrderModelAt(run.result.coefficients, run.result.options.unit, ...
                             string(wafer.label), shots, local, part);
                     else
-                        pointValues = values{k};
-                        displacement = @(local) shotValuesAt(points, pointValues, shots, local);
+                        displacement = @(local) shotValuesAt(panelPoints, panelValues, shots, local);
                     end
                     gridSummary = alignest.plot.shotGridMap(ax, [shots.Xc, shots.Yc], wafer.unit.shotSizeMm, displacement, ...
                         stack=stack, titleText=panelTitle + "（グリッド）", waferRadiusMm=app.Settings.data.waferRadiusMm, ...
@@ -434,14 +458,23 @@ classdef (Abstract) HighOrderTab < appui.Core
                         valueLabel, gridSummary.n, gridSummary.maxNm, gridSummary.scaleMmPerNm, gridSummary.gridStepMm);
                 else
                     drawMode = ternary(mode == "grid", "vector", mode);
-                    panelSummary = drawHighOrderPanel(app, ax, points, wafer, values{k}, valueLabel, drawMode, stack, ...
-                        panelTitle, scale, colorLimit, magnitudeLimit, run.source == "target", ~side, ...
+                    panelSummary = drawHighOrderPanel(app, ax, panelPoints, wafer, panelValues, valueLabel, drawMode, stack, ...
+                        panelTitle, scale, colorLimit, magnitudeLimit, run.source == "target", ~side && ~byScan, ...
                         ternary(view == "stack" && drawMode == "vector", c.highOrderMapEllipse.Value, 0));
                     texts(k) = sprintf("%s：%d 点、|平均|+3σ X %.3f nm・Y %.3f nm", valueLabel, panelSummary.n, ...
                         panelSummary.meanPlus3SigmaX, panelSummary.meanPlus3SigmaY);
                 end
                 if showRing
                     drawOuterRing(ax, run.result.options.outerRadiusMm);
+                end
+                if c.highOrderMapShotNumbers.Value && ~stack
+                    shots = highOrderShots(panelPoints);
+                    hold(ax, 'on');
+                    alignest.plot.shotNumbers(ax, [shots.Xc, shots.Yc], shots.shotNo);
+                    hold(ax, 'off');
+                end
+                if c.highOrderMapOutliers.Value
+                    drawOutlierCircles(ax, panelPoints(outlier(masks{k}), :), stack, ~side && ~byScan);
                 end
                 if side && stack
                     xlabel(ax, 'Shot 内の X [mm]');   % 並べると長い名前が隣の図と重なる（倍率は図の下の説明）
@@ -453,13 +486,16 @@ classdef (Abstract) HighOrderTab < appui.Core
             end
             set([c.highOrderSaveFigure, c.highOrderCopyFigure], 'Enable', 'on');
             note = "";
-            if mode == "grid" && ~stack && ~any(valueNames == "correction" | valueNames == "highOnly")
-                note = "（Wafer 上のグリッドは補正量だけです）";
+            if mode == "grid" && ~any(valueNames == "correction" | valueNames == "highOnly")
+                note = "（補正量のほかのグリッドは、Shot ごとに点の値を内挿して描きます。3点以上で面を決められない Shot は描きません）";
             elseif run.source == "target" && ~stack
                 note = "（四角は実測値の点、◇ は未知の座標の点）";
             end
-            if side
+            if side || byScan
                 note = "（" + titleText + "）" + note;
+            end
+            if c.highOrderMapOutliers.Value
+                note = note + sprintf("（○ は外れ値とみなした点：%d 点）", nnz(outlier));
             end
             if showRing
                 note = note + sprintf("（一点鎖線の円は外周の境界：Shot 中心の半径 %g mm）", run.result.options.outerRadiusMm);
@@ -556,8 +592,8 @@ classdef (Abstract) HighOrderTab < appui.Core
             grid = uigridlayout(app.Tabs.highOrder, [1, 1], 'Padding', 12);
             body = uigridlayout(grid, [1, 2], 'ColumnWidth', {600, '1x'}, 'Padding', 0, 'ColumnSpacing', 14);
             registerResponsiveColumn(app, body, 1);
-            left = uigridlayout(body, [9, 1], 'RowHeight', {'fit', 'fit', 'fit', '1x', 'fit', 'fit', 'fit', 'fit', 'fit'}, ...
-                'Padding', 0, 'RowSpacing', 6);
+            left = uigridlayout(body, [10, 1], 'RowHeight', {'fit', 'fit', 'fit', app.HIGH_ORDER_WAFER_LIST_HEIGHT, 'fit', ...
+                'fit', 'fit', 'fit', 'fit', '1x'}, 'Padding', 0, 'RowSpacing', 6, 'Scrollable', 'on');
             place(uilabel(left, 'Text', '① 入力のデータ', 'FontWeight', 'bold'), 1, 1);
             inputGrid = uigridlayout(left, [2, 3], 'ColumnWidth', {'fit', '1x', 'fit'}, 'RowHeight', {'fit', 'fit'}, ...
                 'Padding', 0);
@@ -588,9 +624,18 @@ classdef (Abstract) HighOrderTab < appui.Core
 
             place(uilabel(left, 'Text', '② 補正の式と k パラメータ', 'FontWeight', 'bold'), 5, 1);
             onSetting = @(~, ~) app.onHighOrderSettingsChanged();
-            modelGrid = uigridlayout(left, [6, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1x'}, 'RowHeight', ...
-                {'fit', 'fit', 'fit', 'fit', 'fit', 'fit'}, 'Padding', 0);
+            % 並び：式と範囲 → Wafer 補正 → Shot 共通補正 → Shot ごとの補正
+            modelGrid = uigridlayout(left, [10, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1x'}, 'RowHeight', ...
+                repmat({'fit'}, 1, 10), 'Padding', 0);
             place(modelGrid, 6, 1);
+            sectionNames = ["Wafer 補正", "Shot 共通補正", "Shot ごとの補正"];
+            sectionRows = [3, 6, 8];
+            for k = 1:numel(sectionNames)
+                sectionLabel = label(modelGrid, sectionNames(k), sectionRows(k), [1, 4]);
+                sectionLabel.FontWeight = 'bold';
+                sectionLabel.FontColor = app.Palette.muted;
+                sectionLabel.UserData = "muted";
+            end
             label(modelGrid, '補正の式', 1, 1);
             c.highOrderMaker = uidropdown(modelGrid, 'Items', {'ASML', 'Canon', 'Nikon', 'カスタム'}, ...
                 'ItemsData', {'asml', 'canon', 'nikon', 'custom'}, 'ValueChangedFcn', onSetting, 'Tooltip', ['Overlay 計測' ...
@@ -599,48 +644,48 @@ classdef (Abstract) HighOrderTab < appui.Core
                 '組み合わせを保存できます）。' ...
                 '式は「ヘルプ」。']);
             place(c.highOrderMaker, 1, 2);
-            label(modelGrid, '補正のくくり', 1, 3);
+            label(modelGrid, '補正のくくり', 9, 1);
             c.highOrderUnit = uidropdown(modelGrid, 'Items', {'Wafer 内で共通', 'Scan 方向ごと', '行の偶奇ごと', ...
                 'Shot ごと'}, 'ItemsData', {'common', 'scan', 'row', 'shot'}, 'ValueChangedFcn', onSetting, 'Tooltip', ...
                 ['k の組をどの Shot で共通にするか。Wafer 内で共通：Wafer ごとに1組。Scan 方向ごと：Scan 方向（Direction 1・2）' ...
                 'ごとに1組ずつ。行の偶奇ごと：Shot 行（上から1行目が奇数行）の奇数行・偶数行ごとに1組ずつ。Shot ごと：Shot ' ...
                 'ごとに1組（その Shot の点だけで求める。項の数より多い点があるとよい）。どれがよいかは「補正の比較」で比べられます。']);
-            place(c.highOrderUnit, 1, 4);
-            label(modelGrid, 'Wafer 成分', 2, 1);
+            place(c.highOrderUnit, 9, 2);
+            label(modelGrid, 'Wafer 成分', 4, 1);
             c.highOrderWaferOrder = uidropdown(modelGrid, 'Items', {'なし', '1次', '2次', '3次', '4次', '5次'}, ...
                 'ItemsData', {0, 1, 2, 3, 4, 5}, 'ValueChangedFcn', onSetting, 'Tooltip', ['Shot 中心の座標（Xc・Yc）の' ...
                 '多項式（定数を除く）を、Wafer で共通の1組として k と一緒に求めます（Wafer の倍率・回転などが Shot の k に' ...
                 '混ざらないように）。Shot ごとのときは、先に（Wafer 内で共通の k と一緒に）求めて引き、残りを Shot ごとに' ...
                 '求めます（補正量・残差は Wafer 成分なしと同じで、Shot ごとの k1・k2 が Wafer 成分を除いた値になります）。']);
-            place(c.highOrderWaferOrder, 2, 2);
+            place(c.highOrderWaferOrder, 4, 2);
             label(modelGrid, 'VIF のしきい値', 2, 3);
             c.highOrderVifThreshold = uieditfield(modelGrid, 'numeric', 'Limits', [1, Inf], 'LowerLimitInclusive', 'off', ...
                 'ValueChangedFcn', onSetting, 'Tooltip', ['「VIF で選ぶ」で、VIF がこの値以上の高次項を外します' ...
                 '（よく使う値は 5〜10）。表では、使う項のうち VIF がこの値以上の行に色を付けます。']);
             place(c.highOrderVifThreshold, 2, 4);
-            label(modelGrid, 'Wafer RT', 3, 1);
+            label(modelGrid, 'Wafer RT', 4, 3);
             c.highOrderRtRange = uidropdown(modelGrid, 'Items', {'使わない', 'すべての Shot', '外周だけ'}, ...
                 'ItemsData', {'none', 'all', 'outer'}, 'ValueChangedFcn', onSetting, 'Tooltip', ['RT モデルを Shot 中心の' ...
                 '座標で、X・Y を一緒に当てはめて先に引きます。外周だけ：外周の Shot は RT、内周の Shot は Wafer 成分。' ...
                 'すべての Shot：Wafer 成分は使いません。詳しくは「ヘルプ」。']);
-            place(c.highOrderRtRange, 3, 2);
-            label(modelGrid, 'RT の次数', 3, 3);
+            place(c.highOrderRtRange, 4, 4);
+            label(modelGrid, 'RT の次数', 5, 1);
             c.highOrderRtOrder = uidropdown(modelGrid, 'Items', {'1次', '2次', '3次', '4次', '5次'}, ...
                 'ItemsData', {1, 2, 3, 4, 5}, 'ValueChangedFcn', onSetting, 'Tooltip', ['RT モデルの次数 K。局所倍率・' ...
                 '局所回転を動径次数 K までの Zernike 多項式で表します（項の数は 4 + (K+1)(K+2)）。']);
-            place(c.highOrderRtOrder, 3, 4);
-            label(modelGrid, '外周の半径 [mm]', 4, 1);
+            place(c.highOrderRtOrder, 5, 2);
+            label(modelGrid, '外周の半径 [mm]', 2, 1);
             c.highOrderOuterRadius = uieditfield(modelGrid, 'numeric', 'Limits', [0, Inf], 'LowerLimitInclusive', 'off', ...
                 'ValueChangedFcn', onSetting, 'Tooltip', ['Shot 中心の半径（Wafer 中心からの距離）がこの値以上の Shot を' ...
                 '外周にします。「補正の評価」で内周・外周に分けて出すときと、外周の式・Wafer RT を外周だけに使うときに使います。']);
-            place(c.highOrderOuterRadius, 4, 2);
-            label(modelGrid, '外周の式', 4, 3);
+            place(c.highOrderOuterRadius, 2, 2);
+            label(modelGrid, '外周の式', 1, 3);
             c.highOrderOuterFormula = uidropdown(modelGrid, 'Items', {'分けない'}, 'ItemsData', {'none'}, ...
                 'ValueChangedFcn', onSetting, 'Tooltip', ['外周の Shot だけ別の補正の式にします（例：外周は ASML、内周は' ...
                 'Nikon やカスタム）。k の組は内周と外周で別に求めます（くくりの組ごと。Wafer 成分は共通）。式の全項か、' ...
                 '「使う項と VIF」で保存した項の組み合わせを選べます。']);
-            place(c.highOrderOuterFormula, 4, 4);
-            label(modelGrid, '点が足りない Shot', 5, 1);
+            place(c.highOrderOuterFormula, 1, 4);
+            label(modelGrid, '点が足りない Shot', 10, 1);
             c.highOrderShortage = uidropdown(modelGrid, 'Items', {'全体の項を減らす', ...
                 'その Shot だけ項を減らす', 'その Shot は補正しない'}, 'ItemsData', {'reduceAll', 'reduceGroup', ...
                 'skip'}, 'ValueChangedFcn', onSetting, 'Tooltip', ['選んだ項を決めるのに点が足りない Shot（Shot ごと' ...
@@ -649,20 +694,24 @@ classdef (Abstract) HighOrderTab < appui.Core
                 'だけ、その点で決められる項（k の小さい順）で補正し、ほかの Shot は選んだ項をすべて使います。その Shot は' ...
                 '補正しない：項は減らさず、足りない Shot は補正しません（評価からも外れます）。どれでも、k1〜k6 も決まらない' ...
                 ' Shot は補正しません。']);
-            place(c.highOrderShortage, 5, [2, 4]);
-            label(modelGrid, 'Shot 共通補正', 6, 1);
+            place(c.highOrderShortage, 10, [2, 4]);
+            label(modelGrid, 'Shot 共通補正', 7, 1);
             c.highOrderShotCommon = uidropdown(modelGrid, 'Items', {'なし', '計算する', '値を入力'}, ...
                 'ItemsData', {'none', 'fit', 'input'}, 'ValueChangedFcn', onSetting, 'Tooltip', ['補正のくくりが Shot ごと' ...
                 'のとき、Shot 共通の補正を先にかけ、残りを Shot ごとに求めます。計算する：Wafer 内の全 Shot で共通の k を' ...
                 '求める。値を入力：「使う項と VIF」の表の「共通の値」の k。詳しくは「ヘルプ」。']);
-            place(c.highOrderShotCommon, 6, 2);
-            label(modelGrid, 'Shot ごとの次数', 6, 3);
+            place(c.highOrderShotCommon, 7, 2);
+            label(modelGrid, 'Shot ごとの次数', 9, 3);
             c.highOrderShotEachOrder = uidropdown(modelGrid, 'Items', {'すべての項', '1次まで', '2次まで', '3次まで', ...
                 '4次まで', '5次まで', '6次まで'}, 'ItemsData', {0, 1, 2, 3, 4, 5, 6}, 'ValueChangedFcn', onSetting, 'Tooltip', ...
                 ['Shot 共通を先にかけたあと、Shot ごとに求める項の次数の上限（k1〜k6 は必ず求めます）。それより高い次数の項は' ...
                 ' Shot 共通の値のままです。']);
-            place(c.highOrderShotEachOrder, 6, 4);
-            termButtons = uigridlayout(left, [2, 3], 'ColumnWidth', {'fit', 'fit', 'fit'}, 'RowHeight', {'fit', 'fit'}, ...
+            place(c.highOrderShotEachOrder, 9, 4);
+            c.highOrderCopyCommon = uibutton(modelGrid, 'Text', '計算した値を写す', 'Enable', 'off', ...
+                'ButtonPushedFcn', @(~, ~) app.onCopyHighOrderCommon(), 'Tooltip', ['直近の計算の Shot 共通の k（Wafer の' ...
+                '平均）を、「使う項と VIF」の表の「共通の値」に写します（補正の式が同じときだけ）。']);
+            place(c.highOrderCopyCommon, 7, [3, 4]);
+            termButtons = uigridlayout(left, [2, 2], 'ColumnWidth', {'fit', 'fit'}, 'RowHeight', {'fit', 'fit'}, ...
                 'Padding', 0, 'RowSpacing', 2);
             place(termButtons, 7, 1);
             c.highOrderVifSelect = uibutton(termButtons, 'Text', 'VIF で選ぶ', 'ButtonPushedFcn', ...
@@ -670,12 +719,10 @@ classdef (Abstract) HighOrderTab < appui.Core
                 '次数の高い項から1つずつ外します（k1〜k6 は外しません）。VIF は Shot 内の座標だけで決まります。']);
             c.highOrderAllTerms = uibutton(termButtons, 'Text', 'すべての項を使う', 'ButtonPushedFcn', ...
                 @(~, ~) app.useAllHighOrderTerms());
-            c.highOrderCopyCommon = uibutton(termButtons, 'Text', '計算した値を写す', 'Enable', 'off', ...
-                'ButtonPushedFcn', @(~, ~) app.onCopyHighOrderCommon(), 'Tooltip', ['直近の計算の Shot 共通の k（Wafer の' ...
-                '平均）を、表の「共通の値」に写します（補正の式が同じときだけ）。']);
+
             c.highOrderTermInfo = uilabel(termButtons, 'WordWrap', 'on', 'FontColor', app.Palette.muted, 'UserData', "muted", ...
                 'Text', '');
-            place(c.highOrderTermInfo, 2, [1, 3]);   % ボタンの下の行（文が長くてもボタンの高さを変えない）
+            place(c.highOrderTermInfo, 2, [1, 2]);   % ボタンの下の行（文が長くてもボタンの高さを変えない）
 
             c.highOrderRegression = regressionControls(left, onSetting);
             place(c.highOrderRegression.grid, 8, 1);
@@ -770,8 +817,8 @@ classdef (Abstract) HighOrderTab < appui.Core
             mapTab = uitab(outputs, 'Title', 'マップ');
             c.highOrderMapTab = mapTab;
             mapGrid = uigridlayout(mapTab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 6, 'RowSpacing', 4);
-            mapControls = uigridlayout(mapGrid, [3, 7], 'ColumnWidth', {'fit', '1x', 'fit', '1.2x', 'fit', '1.1x', 'fit'}, ...
-                'RowHeight', {'fit', 'fit', 'fit'}, 'Padding', 0);
+            mapControls = uigridlayout(mapGrid, [4, 7], 'ColumnWidth', {'fit', '1x', 'fit', '1.2x', 'fit', '1.1x', 'fit'}, ...
+                'RowHeight', {'fit', 'fit', 'fit', 'fit'}, 'Padding', 0);
             onMap = @(~, ~) app.drawHighOrderMap();
             label(mapControls, 'Wafer', 1, 1);
             c.highOrderMapWafer = uidropdown(mapControls, 'Items', {'—'}, 'ItemsData', {1}, 'Enable', 'off', ...
@@ -817,10 +864,21 @@ classdef (Abstract) HighOrderTab < appui.Core
             gridControls = uigridlayout(mapControls, [1, 8], 'ColumnWidth', {'fit', 60, 'fit', 60, 'fit', 76, 'fit', '1x'}, ...
                 'Padding', 0);
             place(gridControls, 3, [1, 7]);
+            % 図に重ねるもの：Shot 番号・外れ値とみなした点、と Shot を重ねる図を Scan 方向ごとに並べる
+            overlayControls = uigridlayout(mapControls, [1, 4], 'ColumnWidth', {'fit', 'fit', 'fit', '1x'}, 'Padding', 0);
+            place(overlayControls, 4, [1, 7]);
+            c.highOrderMapShotNumbers = uicheckbox(overlayControls, 'Text', 'Shot 番号', 'ValueChangedFcn', onMap, ...
+                'Tooltip', 'Wafer 上の図で、Shot 中心に shotNo を重ねて描きます。');
+            c.highOrderMapOutliers = uicheckbox(overlayControls, 'Text', '外れ値とみなした点（○）', 'ValueChangedFcn', onMap, ...
+                'Tooltip', ['ロバスト回帰（Huber・LAD）が、残差が大きいため当てはめでの重みを半分未満に下げた点（X・Y の' ...
+                'どちらか）を ○ で描きます（最小二乗では無し）。']);
+            c.highOrderMapByScan = uicheckbox(overlayControls, 'Text', 'Scan 方向ごとに並べる', 'ValueChangedFcn', onMap, ...
+                'Enable', 'off', 'Tooltip', ['「Shot を重ねる」の図を、Scan 方向 1・2 の Shot に分けて横に並べます' ...
+                '（矢印の倍率と色の範囲はそろえる）。']);
             label(gridControls, 'グリッド刻み [mm]', 1, 1);
             c.highOrderGridStep = uieditfield(gridControls, 'numeric', 'Value', 0, 'Limits', [0, Inf], ...
                 'ValueChangedFcn', onMap, 'Enable', 'off', 'Tooltip', ['グリッド（Shot の形）の線の間隔 [mm]。Shot の中心から' ...
-                'この刻みごとの線と、Shot の端の線を描きます。0 なら縦・横 5 本ずつ（Shot の端から端まで等しい間隔）。']);
+                'この刻みごとの線と、Shot の端の線を描きます。0 なら縦の線 7 本・横の線 9 本（Shot の端から端まで等しい間隔）。']);
             place(c.highOrderGridStep, 1, 2);
             label(gridControls, '倍率 [mm/nm]', 1, 3);
             c.highOrderGridScale = uieditfield(gridControls, 'numeric', 'Value', 0, 'Limits', [0, Inf], ...
@@ -1114,6 +1172,9 @@ classdef (Abstract) HighOrderTab < appui.Core
             % Shot 共通を「値を入力」にしたときは、入力する k の値の列（内周・外周の式ごと）を足す
             showValues = options.unit == "shot" && options.shotCommon == "input";
             inputValues = {options.shotCommonValues, options.shotCommonOuterValues};
+            % Shot 共通を「計算する」ときは、Shot 共通の k に使う項を選ぶ列（「使う」は Shot ごとの項）を足す
+            showCommonTerms = options.unit == "shot" && options.shotCommon == "fit";
+            commonLists = {options.shotCommonTerms, options.shotCommonOuterTerms};
             if split
                 % 内周・外周を1つの項の行にまとめ、使うチェックを内周・外周の列に分ける
                 [merged, rowOf] = mergedZoneTerms(terms);
@@ -1138,6 +1199,14 @@ classdef (Abstract) HighOrderTab < appui.Core
                     formats = [formats(1:6), {'shortG', 'shortG'}, formats(7:end)];   % 小さい高次の値も桁を出す
                     editable = [editable(1:6), true, true, editable(7:end)];
                     widths = [widths(1:6), {105, 105}, widths(7:end)];
+                elseif showCommonTerms
+                    used = num2cell([commonUsedOf(commonLists{1}, merged.kInner, merged.usedInner, merged.protected), ...
+                        commonUsedOf(commonLists{2}, merged.kOuter, merged.usedOuter, merged.protected)]);
+                    data = [data(:, 1:6), used, data(:, 7:end)];
+                    names = [names(1:6), {'内周 共通', '外周 共通'}, names(7:end)];
+                    formats = [formats(1:6), {'logical', 'logical'}, formats(7:end)];
+                    editable = [editable(1:6), true, true, editable(7:end)];
+                    widths = [widths(1:6), {64, 64}, widths(7:end)];
                 end
                 set(table_, 'ColumnName', names, 'ColumnFormat', formats, 'ColumnEditable', editable, 'ColumnWidth', widths);
                 table_.UserData = merged;
@@ -1159,6 +1228,13 @@ classdef (Abstract) HighOrderTab < appui.Core
                     formats = [formats(1:5), {'shortG'}, formats(6:end)];   % 小さい高次の値も桁を出す
                     editable = [editable(1:5), true, editable(6:end)];
                     widths = {50, 50, 56, 90, 56, 80, 110, 110};
+                elseif showCommonTerms
+                    used = num2cell(commonUsedOf(commonLists{1}, terms.k, terms.used, terms.protected));
+                    data = [data(:, 1:5), used, data(:, 6:end)];
+                    names = [names(1:5), {'共通'}, names(6:end)];
+                    formats = [formats(1:5), {'logical'}, formats(6:end)];
+                    editable = [editable(1:5), true, editable(6:end)];
+                    widths = {50, 50, 56, 90, 56, 56, 110, 110};
                 end
                 set(table_, 'ColumnName', names, 'ColumnFormat', formats, 'ColumnEditable', editable, 'ColumnWidth', widths);
                 table_.UserData = terms;
@@ -1177,8 +1253,8 @@ classdef (Abstract) HighOrderTab < appui.Core
                 % 片方の式に無い項のチェック欄は使えない（灰色）
                 absent = [find(isnan(merged.kInner)), ones(nnz(isnan(merged.kInner)), 1); ...
                     find(isnan(merged.kOuter)), repmat(2, nnz(isnan(merged.kOuter)), 1)];
-                if showValues
-                    absent = [absent; absent(:, 1), absent(:, 2) + 6];   % 共通の値の列（7・8 列目）も
+                if showValues || showCommonTerms
+                    absent = [absent; absent(:, 1), absent(:, 2) + 6];   % 共通の値・共通の列（7・8 列目）も
                 end
                 if ~isempty(absent)
                     addStyle(table_, uistyle('BackgroundColor', app.MARK_ABSENT_COLOR), 'cell', absent);
@@ -1284,14 +1360,18 @@ classdef (Abstract) HighOrderTab < appui.Core
             end
             split = any(strcmp(terms.Properties.VariableNames, 'kInner'));
             names = string(app.Controls.highOrderTermTable.ColumnName);
-            if column <= numel(names) && contains(names(column), "共通の値")   % Shot 共通を「値を入力」にしたときの列
+            if column <= numel(names) && contains(names(column), "共通")   % Shot 共通の値（入力）・使う項（計算）の列
                 zone = ternary(startsWith(names(column), "外周"), "outer", "inner");
                 if split
                     k = ternary(zone == "inner", terms.kInner(row), terms.kOuter(row));
                 else
                     k = terms.k(row);
                 end
-                setHighOrderCommonValue(app, k, event.NewData, zone);
+                if contains(names(column), "共通の値")
+                    setHighOrderCommonValue(app, k, event.NewData, zone);
+                else
+                    setHighOrderCommonTerm(app, k, logical(event.NewData), zone, terms.protected(row));
+                end
                 return
             end
             if split
@@ -1333,6 +1413,40 @@ classdef (Abstract) HighOrderTab < appui.Core
             values(end + 1:k) = 0;
             values(k) = value;
             app.Settings.highOrder.(field) = values;
+            markHighOrderStale(app);
+        end
+
+        function setHighOrderCommonTerm(app, k, used, zone, protected)
+            % 表の「共通」（Shot 共通の k に使う項）を変えたら設定（shotCommonTerms・外周の式は shotCommonOuterTerms）に移す。
+            % はじめて変えるときは、使う項から始める。k1〜k6 は外せない
+            c = app.Controls;
+            if isnan(k)
+                refreshHighOrderTerms(app);
+                c.highOrderTermInfo.Text = 'この項はその式にありません';
+                return
+            end
+            if protected && ~used
+                refreshHighOrderTerms(app);
+                c.highOrderTermInfo.Text = 'k1〜k6 は外せません';
+                return
+            end
+            options = alignest.highOrderOptions(app.Settings);
+            outer = string(zone) == "outer";
+            field = ternary(outer, "shotCommonOuterTerms", "shotCommonTerms");
+            list = reshape(double(options.(field)), 1, []);
+            if isempty(list)
+                % まだ選んでいない：今の使う項から始める（式の項のうち、使わない項を除く）
+                maker = ternary(outer, options.outerMaker, options.maker);
+                terms = alignest.highOrderTerms(maker, ternary(outer, options.outerExcludedTerms, options.excludedTerms));
+                list = unique(terms.k(terms.used)).';
+            end
+            if used
+                list = union(list, k);
+            else
+                list = setdiff(list, k);
+            end
+            app.Settings.highOrder.(field) = reshape(list, 1, []);
+            refreshHighOrderTerms(app);
             markHighOrderStale(app);
         end
 
@@ -1833,6 +1947,16 @@ position(sorted) = 1:n;
 rowOf = position(rowOf);
 end
 
+function used = commonUsedOf(list, kNumbers, usedNow, protected)
+% Shot 共通の k に使う項か（選んだ項 list が空なら「使う」と同じ。k1〜k6 は使う。その式に無い項（k が NaN）は false）
+if isempty(list)
+    used = logical(usedNow);
+else
+    used = ismember(kNumbers, list) | protected;
+end
+used = used & isfinite(kNumbers);
+end
+
 function values = commonValueOf(inputValues, kNumbers)
 % 入力した Shot 共通の k の値（n 番目が kn）を項の行に並べる（並びに無い番号は 0、その式に無い項（k が NaN）は NaN）
 values = nan(numel(kNumbers), 1);
@@ -2004,4 +2128,25 @@ if ~isempty(legendHandle)
 end
 ring = alignest.plot.zoneRings(ax, radiusMm);
 set(ring, 'HandleVisibility', 'off');
+end
+
+function drawOutlierCircles(ax, points, stack, showLegend)
+% 外れ値とみなした点（ロバスト回帰で重みを半分未満に下げた点）を ○ で重ねる（Wafer 上は点の座標、Shot を重ねる図は
+% Shot 内の座標）。凡例は showLegend のときだけ
+OUTLIER_COLOR = [0.80, 0.10, 0.10];
+CIRCLE_SIZE = 10;
+if isempty(points)
+    return
+end
+xy = [points.x, points.y];
+if stack
+    xy = [points.localX, points.localY];
+end
+hold(ax, 'on');
+circles = plot(ax, xy(:, 1), xy(:, 2), 'o', 'MarkerSize', CIRCLE_SIZE, 'MarkerEdgeColor', OUTLIER_COLOR, ...
+    'LineWidth', 1.2, 'LineStyle', 'none', 'DisplayName', sprintf("外れ値とみなした点（%d）", height(points)));
+hold(ax, 'off');
+if ~showLegend
+    circles.HandleVisibility = 'off';
+end
 end

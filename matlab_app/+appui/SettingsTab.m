@@ -119,11 +119,29 @@ classdef (Abstract) SettingsTab < appui.Core
             place(c.layoutPlanInfo, 10, [1, 2]);
             s.RowHeight{10} = 90;
             c.layoutPlanError = errorLabel(app, s, 11, [1, 2]);
-            heading(s, '必ず計測する Shot', 14);
-            label(s, '必ず計測する shotNo', 15, [1, 2]);
-            c.requiredShots = uieditfield(s, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['ここに書いた Shot を' ...
-                '必ず学習に入れ、残りを I 最適（またはランダム）で選びます（拡張 I 最適計画）。']);
-            place(c.requiredShots, 16, [1, 2]);
+            heading(s, '必ず計測する・計測しない Shot と Mark', 14);
+            selectGrid = uigridlayout(s, [4, 2], 'RowHeight', {'fit', 'fit', 'fit', 'fit'}, 'ColumnWidth', {'1x', '1x'}, ...
+                'Padding', 0, 'RowSpacing', 2);
+            place(selectGrid, [15, 16], [1, 2]);
+            label(selectGrid, '必ず計測する shotNo', 1, 1);
+            label(selectGrid, '計測しない shotNo', 1, 2);
+            c.requiredShots = uieditfield(selectGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['ここに書いた Shot を' ...
+                '必ず学習に入れ、残りを I 最適（またはランダム）で選びます（拡張 I 最適計画）。Mark 単位の計画では、その Shot の' ...
+                ' Mark をすべて計測します。「3. 実行」の計測マップでクリックしても指定できます。']);
+            place(c.requiredShots, 2, 1);
+            c.excludedShots = uieditfield(selectGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['ここに書いた Shot は' ...
+                '学習に選びません（評価には使います）。I 最適・D 最適・ランダムの Shot と、Mark 単位の計画の Mark に効きます。' ...
+                '「3. 実行」の計測マップでクリックしても指定できます。']);
+            place(c.excludedShots, 2, 2);
+            label(selectGrid, '必ず計測する Mark', 3, 1);
+            label(selectGrid, '計測しない Mark', 3, 2);
+            markTip = '「shotNo-markNo」（例：12-3）を空白で区切って入れます。「3. 実行」の Mark 単位の計測マップでクリックしても指定できます。';
+            c.requiredMarks = uieditfield(selectGrid, 'text', 'ValueChangedFcn', onChange, 'Placeholder', '例：12-3 40-1', ...
+                'Tooltip', ['Mark 単位の計画で必ず計測する Mark。' markTip]);
+            place(c.requiredMarks, 4, 1);
+            c.excludedMarks = uieditfield(selectGrid, 'text', 'ValueChangedFcn', onChange, 'Placeholder', '例：12-3 40-1', ...
+                'Tooltip', ['Mark 単位の計画で学習に選ばない Mark（評価には使います）。' markTip]);
+            place(c.excludedMarks, 4, 2);
             c.requireOuter = uicheckbox(s, 'Text', '最外周の Shot をすべて必ず計測する', ...
                 'ValueChangedFcn', onChange);
             place(c.requireOuter, 17, [1, 2]);
@@ -135,7 +153,8 @@ classdef (Abstract) SettingsTab < appui.Core
             label(s, '同心円の区切り [mm]', 21, [1, 2]);
             c.zoneEdges = uieditfield(s, 'text', 'ValueChangedFcn', onChange, 'Tooltip', sprintf(['Shot 中心の Wafer 中心からの' ...
                 '距離 [mm] で区画を分け、区画ごとの Shot 数をそろえます（例：67.5 105 → 0〜67.5・67.5〜105・105 mm 以上の' ...
-                '3区画）。0 より大きく %g mm より小さい値。使わないなら空欄。'], radiusMm));
+                '3区画）。Mark 単位の計画では Mark の距離で分け、区画ごとの Mark の数をそろえます（半径の方向のバランス）。' ...
+                '0 より大きく %g mm より小さい値。使わないなら空欄。'], radiusMm));
             place(c.zoneEdges, 22, [1, 2]);
             c.zoneError = errorLabel(app, s, 23, [1, 2]);
             c.quadrants = uicheckbox(s, 'Text', '4象限の Shot 数をそろえる', 'ValueChangedFcn', onChange);
@@ -150,7 +169,7 @@ classdef (Abstract) SettingsTab < appui.Core
             place(c.designOrder, 27, 2);
             label(s, '交換法の初期配置の数', 28, [1, 2]);
             % 入力欄と時間の目安（目安の文が長くても入力欄が縦に伸びないように、小さな格子に入れる）と、Mark 単位の計画
-            exchangeGrid = uigridlayout(s, [7, 2], 'ColumnWidth', {'1x', '1x'}, 'RowHeight', repmat({'fit'}, 1, 7), ...
+            exchangeGrid = uigridlayout(s, [10, 2], 'ColumnWidth', {'1x', '1x'}, 'RowHeight', repmat({'fit'}, 1, 10), ...
                 'Padding', 0, 'RowSpacing', 2);
             place(exchangeGrid, 29, [1, 2]);
             c.exchangeStarts = uispinner(exchangeGrid, 'Limits', [1, 100], 'RoundFractionalValues', 'on', ...
@@ -160,14 +179,39 @@ classdef (Abstract) SettingsTab < appui.Core
             place(c.exchangeStarts, 1, 1);
             c.exchangeInfo = uilabel(exchangeGrid, 'WordWrap', 'on', 'Text', '');
             place(c.exchangeInfo, 2, [1, 2]);
-            markLabel = label(exchangeGrid, '1 Shot あたりの計測 Mark 数', 3, [1, 2]);
+            markLabel = label(exchangeGrid, 'Mark 単位の計画', 3, [1, 2]);
             markLabel.FontWeight = 'bold';
-            c.markPerShot = uieditfield(exchangeGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['計測する Mark の数 = ' ...
-                'この値 × 候補 Shot 数（四捨五入）。計測率で決めるときは、計測率 × 候補の全 Mark の数（上の計測率の開始・' ...
-                '終了・刻みでスイープ）。']);
-            place(c.markPerShot, 4, 1);
+            countByGrid = uigridlayout(exchangeGrid, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
+            place(countByGrid, 4, [1, 2]);
+            label(countByGrid, 'Mark の数の決め方', 1, 1);
+            c.markCountBy = uidropdown(countByGrid, 'Items', {'1 Shot あたりの数', '計測する Mark の数（開始・終了・刻み）'}, ...
+                'ItemsData', {'perShot', 'total'}, 'ValueChangedFcn', onChange, 'Tooltip', ['1 Shot あたりの数：計測する' ...
+                ' Mark の数 = この値 × 候補 Shot 数。計測する Mark の数：Wafer 全体で計測する Mark の数を開始から終了まで刻みごとに' ...
+                '比べます。上の「学習 Shot 数」を計測率にしたときは、計測率で決めます。']);
+            place(c.markCountBy, 1, 2);
+            c.markPerShot = uieditfield(exchangeGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['1 Shot あたりの' ...
+                '計測 Mark 数（空白区切りで複数入れると比べます）。計測する Mark の数 = この値 × 候補 Shot 数（四捨五入）。']);
+            place(c.markPerShot, 5, 1);
+            markCountGrid = uigridlayout(exchangeGrid, [1, 6], 'ColumnWidth', {'fit', '1x', 'fit', '1x', 'fit', '1x'}, ...
+                'Padding', 0);
+            place(markCountGrid, 6, [1, 2]);
+            c.markCountStart = uispinner(markCountGrid, 'Limits', [1, 100000], 'RoundFractionalValues', 'on', ...
+                'ValueChangedFcn', onChange);
+            c.markCountEnd = uispinner(markCountGrid, 'Limits', [1, 100000], 'RoundFractionalValues', 'on', ...
+                'ValueChangedFcn', onChange);
+            c.markCountStep = uispinner(markCountGrid, 'Limits', [1, 100000], 'RoundFractionalValues', 'on', ...
+                'ValueChangedFcn', onChange);
+            countLabels = ["開始", "終了", "刻み"];
+            countControls = [c.markCountStart, c.markCountEnd, c.markCountStep];
+            for k = 1:3
+                label(markCountGrid, countLabels(k), 1, 2 * k - 1);
+                place(countControls(k), 1, 2 * k);
+            end
+            c.markCountNote = uilabel(exchangeGrid, 'WordWrap', 'on', 'Text', '', 'FontColor', app.Palette.muted, ...
+                'UserData', "muted");
+            place(c.markCountNote, 7, [1, 2]);
             balanceGrid = uigridlayout(exchangeGrid, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
-            place(balanceGrid, 5, [1, 2]);
+            place(balanceGrid, 8, [1, 2]);
             label(balanceGrid, 'Mark 番号ごとの計測数', 1, 1);
             c.markBalance = uidropdown(balanceGrid, 'Items', {'そろえない', '全計測の割合にそろえる', '均等にする'}, ...
                 'ItemsData', {'none', 'ratio', 'equal'}, 'ValueChangedFcn', onChange, 'Tooltip', ['最適計画で選ぶ Mark の数を、' ...
@@ -175,7 +219,7 @@ classdef (Abstract) SettingsTab < appui.Core
                 'Mark 番号の数（割り切れないときの1つの差だけ。候補の少ない Mark 番号はその数まで）。']);
             place(c.markBalance, 1, 2);
             perShotGrid = uigridlayout(exchangeGrid, [1, 3], 'ColumnWidth', {'fit', 'fit', 70}, 'Padding', 0);
-            place(perShotGrid, 6, [1, 2]);
+            place(perShotGrid, 9, [1, 2]);
             c.markRequirePerShot = uicheckbox(perShotGrid, 'Text', 'Shot ごとに n 点の Mark 計測を必須にする', ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['オン：各 Shot で n 点以上の Mark を必ず計測します（Mark が n 点より' ...
                 '少ない Shot はその Shot の全 Mark）。計測する数が足りないときは増やします。オフ：Shot を問わず、' ...
@@ -184,7 +228,7 @@ classdef (Abstract) SettingsTab < appui.Core
             c.markMinPerShot = uispinner(perShotGrid, 'Limits', [1, 99], 'RoundFractionalValues', 'on', 'Value', 1, ...
                 'ValueChangedFcn', onChange, 'Tooltip', '各 Shot で必ず計測する Mark の数');
             place(c.markMinPerShot, 1, 3);
-            c.markError = errorLabel(app, exchangeGrid, 7, [1, 2]);
+            c.markError = errorLabel(app, exchangeGrid, 10, [1, 2]);
             heading(s, '評価', 30);
             label(s, '外周とみなす Mark の半径 [mm]', 31, [1, 2]);
             c.outerRadius = uieditfield(s, 'numeric', 'Limits', [0, radiusMm], 'ValueDisplayFormat', '%.1f', ...
@@ -304,45 +348,45 @@ classdef (Abstract) SettingsTab < appui.Core
                 'ときだけ足します。手法の数が増えるので、評価の時間も増えます。']);
             place(c.factorSingles, 6, [1, 5]);
             c.factorColumnsError = errorLabel(app, m, 5, [1, 4]);
-            % 手法は 基底関数系・平滑化系・確率過程系・その他 に分けて並べる
-            methodHeadings = ["基底関数系", "平滑化系", "確率過程系", "その他"];
-            methodHeadingRows = [6, 10, 15, 25];
+            % 手法は 基底関数系（XY 多項式・Fringe Zernike・RBF・RT モデル）・平滑化系・確率過程系 に分けて並べる
+            methodHeadings = ["基底関数系", "平滑化系", "確率過程系"];
+            methodHeadingRows = [6, 11, 16];
             for k = 1:numel(methodHeadings)
                 groupHeading = label(m, methodHeadings(k), methodHeadingRows(k), [1, 4]);
                 groupHeading.FontWeight = 'bold';
             end
             c.gpr = uicheckbox(m, 'Text', 'GPR', 'ValueChangedFcn', onChange);
-            place(c.gpr, 16, [1, 4]);
-            label(m, 'カーネル', 17, [1, 2]);
-            label(m, '質的変数の扱い', 17, [3, 4]);
+            place(c.gpr, 17, [1, 4]);
+            label(m, 'カーネル', 18, [1, 2]);
+            label(m, '質的変数の扱い', 18, [3, 4]);
             [kernelNames, kernelLabels] = alignest.models.gprKernelChoices();
             c.kernels = uilistbox(m, 'Items', cellstr(kernelLabels), 'ItemsData', cellstr(kernelNames), 'Multiselect', 'on', ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['periodic（周期）：説明変数ごとに、周期 p で同じ形をくり返す' ...
                 'カーネル（p も長さスケールと一緒に推定する）。ardperiodic は長さスケールが説明変数ごと。式は「ヘルプ」。']);
-            place(c.kernels, 18, [1, 2]);
+            place(c.kernels, 19, [1, 2]);
             [modeNames, modeLabels] = alignest.models.gprFactorModes();
             modeLabels = plainLabels(modeLabels);
             modeGrid = uigridlayout(m, [numel(modeNames), 1], 'Padding', 0, 'RowSpacing', 2, ...
                 'RowHeight', repmat({'fit'}, 1, numel(modeNames)));
-            place(modeGrid, 18, [3, 4]);
+            place(modeGrid, 19, [3, 4]);
             c.factorModes = gobjects(1, numel(modeNames));
             for k = 1:numel(modeNames)
                 c.factorModes(k) = uicheckbox(modeGrid, 'Text', modeLabels(k), 'UserData', modeNames(k), ...
                     'ValueChangedFcn', onChange);
             end
-            m.RowHeight{18} = 300;
-            label(m, 'Matérn の ν', 19, [1, 2]);
+            m.RowHeight{19} = 300;
+            label(m, 'Matérn の ν', 20, [1, 2]);
             c.maternNu = uieditfield(m, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['Matérn カーネルの次数 ν' ...
                 '（0 より大きく 50 以下）。大きいほど滑らか。0.5・1.5・2.5 は exponential・matern32・matern52 と同じ。' ...
                 '複数入れると ν ごとに比べます（例：0.75 1 2 3.5）。']);
-            place(c.maternNu, 19, [3, 4]);
-            c.maternNuError = errorLabel(app, m, 20, [1, 4]);
+            place(c.maternNu, 20, [3, 4]);
+            c.maternNuError = errorLabel(app, m, 21, [1, 4]);
             c.tps = uicheckbox(m, 'Text', 'TPS', 'ValueChangedFcn', onChange);
-            place(c.tps, 11, [1, 2]);
+            place(c.tps, 12, [1, 2]);
             c.tpsFactors = spatialFactorDropdown(m, onChange);
-            place(c.tpsFactors, 11, [3, 4]);
+            place(c.tpsFactors, 12, [3, 4]);
             smoothingGrid = uigridlayout(m, [1, 6], 'ColumnWidth', {'fit', 'fit', 'fit', 'fit', 70, '1x'}, 'Padding', 0);
-            place(smoothingGrid, 12, [1, 4]);
+            place(smoothingGrid, 13, [1, 4]);
             label(smoothingGrid, '平滑化', 1, 1);
             c.tpsSmoothing = [ ...
                 uicheckbox(smoothingGrid, 'Text', 'GCV で選ぶ', 'UserData', "gcv", 'ValueChangedFcn', onChange), ...
@@ -360,18 +404,18 @@ classdef (Abstract) SettingsTab < appui.Core
             c.rbfFactors = spatialFactorDropdown(m, onChange);
             place(c.rbfFactors, 9, [3, 4]);
             c.ordinaryKriging = uicheckbox(m, 'Text', 'Kriging', 'ValueChangedFcn', onChange);
-            place(c.ordinaryKriging, 21, [1, 2]);
+            place(c.ordinaryKriging, 22, [1, 2]);
             c.ordinaryFactors = spatialFactorDropdown(m, onChange);
-            place(c.ordinaryFactors, 21, [3, 4]);
+            place(c.ordinaryFactors, 22, [3, 4]);
             c.universalKriging = uicheckbox(m, 'Text', 'Universal Kriging', 'ValueChangedFcn', onChange);
-            place(c.universalKriging, 22, [1, 2]);
+            place(c.universalKriging, 23, [1, 2]);
             c.universalFactors = spatialFactorDropdown(m, onChange);
-            place(c.universalFactors, 22, [3, 4]);
-            label(m, 'バリオグラム', 23, [1, 4]);
+            place(c.universalFactors, 23, [3, 4]);
+            label(m, 'バリオグラム', 24, [1, 4]);
             variograms = ["linear", "gaussian", "power", "exponential", "spherical"];
             variogramGrid = uigridlayout(m, [1, numel(variograms)], 'Padding', 0, ...
                 'ColumnWidth', repmat({'1x'}, 1, numel(variograms)));
-            place(variogramGrid, 24, [1, 4]);
+            place(variogramGrid, 25, [1, 4]);
             c.variograms = gobjects(1, numel(variograms));
             for k = 1:numel(variograms)
                 c.variograms(k) = uicheckbox(variogramGrid, 'Text', variograms(k), 'UserData', variograms(k), ...
@@ -379,7 +423,11 @@ classdef (Abstract) SettingsTab < appui.Core
             end
             c.variograms(end).Tooltip = '球形モデル（range より遠い点の相関は 0）。説明変数（X,Y・X,Y,半径）は3次元までなので正定値が保証されます。';
             c.gam = uicheckbox(m, 'Text', 'GAM', 'ValueChangedFcn', onChange);
-            place(c.gam, 13, [1, 4]);
+            place(c.gam, 14, [1, 2]);
+            c.gamFactors = uidropdown(m, 'Items', {'質的変数あり', '質的変数なし', 'あり・なしを比較'}, ...
+                'ItemsData', {'factor', 'none', 'both'}, 'ValueChangedFcn', onChange, 'Tooltip', ['上で選んだ質的変数を、' ...
+                'GAM の項（効果コード。罰則なし）として一緒に推定するか。']);
+            place(c.gamFactors, 14, [3, 4]);
             % 形状関数は項（X・Y、半径）ごとに1行、カーネルは2行に並べる（画面の幅が狭くても切れないように）
             [termNames, termLabels] = alignest.models.gamTerms("XYR");
             [gamKernelNames, gamKernelLabels] = alignest.models.gamKernelChoices();
@@ -387,7 +435,7 @@ classdef (Abstract) SettingsTab < appui.Core
             nShapeRows = numel(termNames) + ceil(numel(gamKernelNames) / kernelColumns) + 1;
             shapeGrid = uigridlayout(m, [nShapeRows, kernelColumns + 1], 'Padding', 0, 'RowSpacing', 2, ...
                 'ColumnWidth', [{'fit'}, repmat({'1x'}, 1, kernelColumns)], 'RowHeight', repmat({'fit'}, 1, nShapeRows));
-            place(shapeGrid, 14, [1, 4]);
+            place(shapeGrid, 15, [1, 4]);
             shapeNames = ["spline", "gp"];
             shapeLabels = ["スプライン", "ガウス過程回帰"];
             c.gamShapeChecks = gobjects(numel(termNames), numel(shapeNames));
@@ -425,9 +473,9 @@ classdef (Abstract) SettingsTab < appui.Core
             c.polynomialOrder = uispinner(m, 'Limits', [1, 8], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
             place(c.polynomialOrder, 7, 2);
             c.rt = uicheckbox(m, 'Text', 'RT モデル　次数 K：', 'ValueChangedFcn', onChange);
-            place(c.rt, 26, 1);
+            place(c.rt, 10, 1);
             c.rtOrders = uieditfield(m, 'text', 'ValueChangedFcn', onChange);
-            place(c.rtOrders, 26, 2);
+            place(c.rtOrders, 10, 2);
             c.zernike = uicheckbox(m, 'Text', 'Fringe Zernike', 'ValueChangedFcn', onChange, ...
                 'Tooltip', ['Fringe Zernike 多項式（Z1〜Z(k+1)²）の最小二乗。k = 3：Z1〜Z16、4：Z1〜Z25、5：Z1〜Z36、' ...
                 '6：Z1〜Z49、7：Z1〜Z64（次数は 1〜7）。' ...
@@ -499,6 +547,13 @@ classdef (Abstract) SettingsTab < appui.Core
             c.rateEnd.Value = s.sampling.rateEnd;
             c.rateStep.Value = s.sampling.rateStep;
             c.requiredShots.Value = char(strjoin(string(s.sampling.requiredShots), " "));
+            c.excludedShots.Value = char(strjoin(string(fieldOr(s.sampling, "excludedShots", zeros(1, 0))), " "));
+            c.requiredMarks.Value = char(strjoin(string(fieldOr(s.sampling, "requiredMarks", strings(1, 0))), " "));
+            c.excludedMarks.Value = char(strjoin(string(fieldOr(s.sampling, "excludedMarks", strings(1, 0))), " "));
+            c.markCountBy.Value = char(fieldOr(s.sampling, "markCountBy", "perShot"));
+            c.markCountStart.Value = double(fieldOr(s.sampling, "markCountStart", 100));
+            c.markCountEnd.Value = double(fieldOr(s.sampling, "markCountEnd", 300));
+            c.markCountStep.Value = double(fieldOr(s.sampling, "markCountStep", 50));
             c.requireOuter.Value = s.sampling.requireOuterShots;
             c.randomRepeats.Value = s.sampling.randomRepeats;
             refreshSeedMenu(app);   % 「設定」→「乱数の種…」（設定 sampling.seed）
@@ -582,6 +637,7 @@ classdef (Abstract) SettingsTab < appui.Core
                 c.variograms(k).Value = any(methods.kriging.variograms == c.variograms(k).UserData);
             end
             c.gam.Value = methods.gam.enabled;
+            c.gamFactors.Value = gamFactorSelection(fieldOr(methods.gam, "factorModes", "factor"));
             c.polynomial.Value = methods.polynomial.enabled;
             c.polynomialOrder.Value = methods.polynomial.order;
             c.rt.Value = methods.rt.enabled;
@@ -655,6 +711,22 @@ classdef (Abstract) SettingsTab < appui.Core
                 s.sampling.requiredShots = unique(values);
             end
             s.sampling.requireOuterShots = c.requireOuter.Value;
+            [values, ok] = parseNumbers(c.excludedShots.Value);
+            if ok && all(values == round(values))
+                s.sampling.excludedShots = reshape(unique(values), 1, []);
+            end
+            [keys, ok] = parseMarkText(c.requiredMarks.Value);
+            if ok
+                s.sampling.requiredMarks = keys;
+            end
+            [keys, ok] = parseMarkText(c.excludedMarks.Value);
+            if ok
+                s.sampling.excludedMarks = keys;
+            end
+            s.sampling.markCountBy = string(c.markCountBy.Value);
+            s.sampling.markCountStart = c.markCountStart.Value;
+            s.sampling.markCountEnd = c.markCountEnd.Value;
+            s.sampling.markCountStep = c.markCountStep.Value;
             s.sampling.randomRepeats = c.randomRepeats.Value;
             [values, ok] = parseNumbers(c.zoneEdges.Value);
             if ok && all(values > 0 & values < s.data.waferRadiusMm)
@@ -714,6 +786,8 @@ classdef (Abstract) SettingsTab < appui.Core
             s.methods.kriging.universal = c.universalKriging.Value;
             s.methods.kriging.variograms = checkedValues(c.variograms);
             s.methods.gam.enabled = c.gam.Value;
+            s.methods.gam.factorModes = ternary(string(c.gamFactors.Value) == "both", ["factor", "none"], ...
+                string(c.gamFactors.Value));
             s.methods.polynomial.enabled = c.polynomial.Value;
             s.methods.polynomial.order = c.polynomialOrder.Value;
             s.methods.rt.enabled = c.rt.Value;
@@ -775,12 +849,20 @@ classdef (Abstract) SettingsTab < appui.Core
             messages = [messages; text(text ~= "")];
             [values, ok] = parseNumbers(c.requiredShots.Value);
             text = "";
-            if any(ismember(method, ["ioptimal", "doptimal", "random"])) && (~ok || any(values ~= round(values)))
+            if any(ismember(method, ["ioptimal", "doptimal", "random", "mark", "markd"])) && (~ok || any(values ~= round(values)))
                 text = "⚠ 必ず計測する shotNo は整数を空白またはカンマで区切って入れてください（使わないなら空欄）。";
+            end
+            [values, ok] = parseNumbers(c.excludedShots.Value);
+            if ~ok || any(values ~= round(values))
+                text = strtrim(text + " ⚠ 計測しない shotNo は整数を空白またはカンマで区切って入れてください（使わないなら空欄）。");
+            end
+            [~, okRequired] = parseMarkText(c.requiredMarks.Value);
+            [~, okExcluded] = parseMarkText(c.excludedMarks.Value);
+            if ~okRequired || ~okExcluded
+                text = strtrim(text + " ⚠ Mark は「shotNo-markNo」（例：12-3）を空白で区切って入れてください（使わないなら空欄）。");
             end
             c.requiredError.Text = text;
             c.requiredInfo.Text = requiredText(app);
-            c.exchangeInfo.Text = exchangeText(app);
             messages = [messages; text(text ~= "")];
             [values, ok] = parseNumbers(c.zoneEdges.Value);
             text = "";
@@ -830,8 +912,17 @@ classdef (Abstract) SettingsTab < appui.Core
             [values, ok] = parseNumbers(c.markPerShot.Value);
             text = "";
             byRate = string(c.countBy.Value) == "rate";
-            if any(ismember(method, ["mark", "markd"])) && ~byRate && (~ok || isempty(values) || any(values <= 0))
+            byTotal = string(c.markCountBy.Value) == "total";
+            if any(ismember(method, ["mark", "markd"])) && ~byRate && ~byTotal && (~ok || isempty(values) || any(values <= 0))
                 text = "⚠ 1 Shot あたりの計測 Mark 数は 0 より大きい数を空白で区切って入れてください（例：1 1.5 2）。";
+            elseif any(ismember(method, ["mark", "markd"])) && ~byRate && byTotal
+                counts = c.markCountStart.Value:c.markCountStep.Value:c.markCountEnd.Value;
+                if isempty(counts)
+                    text = "⚠ 計測する Mark の数の終了は、開始以上にしてください。";
+                elseif numel(counts) > app.MAX_COUNT_LIST
+                    text = sprintf("⚠ 計測する Mark の数が %d 通りになります（上限 %d 通り）。刻みを大きくしてください。", ...
+                        numel(counts), app.MAX_COUNT_LIST);
+                end
             end
             c.markError.Text = text;
             messages = [messages; text(text ~= "")];
@@ -895,13 +986,27 @@ classdef (Abstract) SettingsTab < appui.Core
             c.nShotsList.Enable = onOff(constrained || markPlans);
             set([c.nShotsStart, c.nShotsEnd, c.nShotsStep], 'Enable', onOff(constrained && ~byRate));
             set([c.rateStart, c.rateEnd, c.rateStep], 'Enable', onOff((constrained || markPlans) && byRate));
-            set([c.requiredShots, c.requireOuter, c.requiredInfo], 'Enable', onOff(shotConstraints));
-            set([c.zoneEdges, c.quadrants, c.scanConstraint], 'Enable', onOff(shotConstraints));
+            % 必ず計測する Shot・同心円の区切りは、Mark 単位の計画にも効く（Shot の Mark すべて・Mark の半径）
+            set([c.requiredShots, c.requireOuter, c.requiredInfo, c.excludedShots, c.zoneEdges], 'Enable', ...
+                onOff(shotConstraints || markPlans));
+            set([c.requiredMarks, c.excludedMarks], 'Enable', onOff(markPlans));
+            set([c.quadrants, c.scanConstraint], 'Enable', onOff(shotConstraints));
             c.slack.Enable = onOff(shotConstraints || markPlans);
             set([c.randomRepeats], 'Enable', onOff(any(method == "random")));
             set([c.designOrder, c.exchangeStarts], 'Enable', onOff(optimal));
             set([c.markBalance, c.markRequirePerShot], 'Enable', onOff(markPlans));
-            c.markPerShot.Enable = onOff(markPlans && ~byRate);
+            byTotal = string(c.markCountBy.Value) == "total";
+            c.markCountBy.Enable = onOff(markPlans && ~byRate);
+            c.markPerShot.Enable = onOff(markPlans && ~byRate && ~byTotal);
+            set([c.markCountStart, c.markCountEnd, c.markCountStep], 'Enable', onOff(markPlans && ~byRate && byTotal));
+            % 使えない理由を書く（Mark 単位を選んでも欄が使えないと思われないように）
+            if markPlans && byRate
+                c.markCountNote.Text = '「学習 Shot 数」を計測率にしているので、Mark の数は上の計測率（開始・終了・刻み）で決めます。';
+            elseif ~markPlans
+                c.markCountNote.Text = '選び方で「Mark 単位の I 最適」「Mark 単位の D 最適」を選ぶと使えます。';
+            else
+                c.markCountNote.Text = 'Wafer 中心に最も近い Mark は必ず計測します。';
+            end
             c.markMinPerShot.Enable = onOff(markPlans && c.markRequirePerShot.Value);
             c.layoutPlanInfo.Enable = onOff(any(method == "excel"));
             c.outlierMethod.Enable = onOff(c.excludeOutliers.Value);
@@ -913,6 +1018,7 @@ classdef (Abstract) SettingsTab < appui.Core
             set([c.kernels, c.factorModes], 'Enable', onOff(c.gpr.Value));
             c.maternNu.Enable = onOff(usesMaternNu(c));
             set(c.gamShapeChecks, 'Enable', onOff(c.gam.Value));
+            c.gamFactors.Enable = onOff(c.gam.Value);
             set(c.gamKernelChecks, 'Enable', onOff(usesGamKernels(c)));
             c.gamMaternNu.Enable = onOff(usesGamKernels(c) && usesGamMaternNu(c));
             set(c.variograms, 'Enable', onOff(c.ordinaryKriging.Value || c.universalKriging.Value));
@@ -968,6 +1074,8 @@ classdef (Abstract) SettingsTab < appui.Core
         end
 
         function onSettingsChanged(app)
+            % 欄の使える・使えないを先に変える（確かめ・設定への写しで思わぬエラーが起きても、選んだ選び方の欄を使えるように）
+            updateEnabled(app);
             validateSettings(app);
             controlsToSettings(app);
             updateEnabled(app);
@@ -1049,6 +1157,16 @@ end
 function used = usesMaternNu(c)
 % GPR で ν を指定する Matérn（matern・ardmatern）を選んでいるか
 used = c.gpr.Value && any(ismember(string(c.kernels.Value), ["matern", "ardmatern"]));
+end
+
+function selection = gamFactorSelection(modes)
+% GAM の質的変数の扱い（factor・none、両方なら both）を欄の値にする
+modes = unique(string(modes));
+if isscalar(modes) && any(modes == ["factor", "none"])
+    selection = char(modes);
+else
+    selection = 'both';
+end
 end
 
 function control = spatialFactorDropdown(parent, callback)

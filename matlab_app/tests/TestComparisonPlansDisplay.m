@@ -158,6 +158,7 @@ classdef TestComparisonPlansDisplay < matlab.unittest.TestCase
 
         function singleFactorMethodsUseOneFactor(testCase)
             settings = alignest.defaultSettings();
+            settings.factors.separateY = false;   % Y 成分も X 成分と同じ質的変数
             settings.methods = alignest.recommendedMethods("none");
             settings.methods.tps.enabled = true;
             settings.methods.tps.factorModes = "backfit";

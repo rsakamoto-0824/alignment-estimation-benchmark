@@ -42,6 +42,8 @@ classdef (Abstract) Core < handle
         MAX_MATERN_NU = 50              % Matérn の ν の上限（alignest.models.maternNuCheck と同じ）
         FORMULA_CHOICE = -1             % Wafer 成分の選択肢「式を入力」の値（次数 0〜5 と区別する）
         MAX_ZERNIKE_ORDER = 7           % Fringe Zernike の次数の上限（Z1〜Z64）
+        MAX_COUNT_LIST = 100            % 学習 Shot 数・計測する Mark の数の並びの上限（alignest.shotCountList と同じ）
+        HIGH_ORDER_WAFER_LIST_HEIGHT = 48   % 「7. Shot高次補正」の Wafer の一覧の高さ [px]（以前の約 1/4。2行ほど見える）
         WORST_PERCENT = 95              % マップに出す「95%値」の百分位（結果一覧の集計と同じ）
         IMAGE_RESOLUTION = 150          % 「図を画像で保存…」の解像度 [dpi]
         IMAGE_GAP_PIXELS = 20           % 図を横に並べて1枚の画像にするときの間 [px]
@@ -74,6 +76,8 @@ classdef (Abstract) Core < handle
         MapCache
         Analysis = []   % 「推定値と誤差の分布」で最後に分析した結果（推定値の表と検定の結果）
         MeasurementCache = []   % 計測マップの学習パターン（設定・データが変わったら作り直す）
+        RunLog = strings(0, 1)  % 評価の記録（データの確認・学習パターン・推定できなかった組み合わせなど。「記録を見る…」）
+        LogWindow = []          % 記録を見る窓
         Distribution = []       % 「分布の比較」で最後に比べた結果（alignest.distributionComparison）
         ImportedEstimates = []  % Excel から読み込んだ推定値（alignest.importEstimates。読み込んだ評価結果と組で使う）
         DefaultsSource = ""     % 初期設定に重ねた既定の設定ファイル（alignest.siteDefaults。無ければ ""）
@@ -135,6 +139,9 @@ classdef (Abstract) Core < handle
             end
             if ~isempty(app.HelpWindow) && isvalid(app.HelpWindow)
                 delete(app.HelpWindow);
+            end
+            if ~isempty(app.LogWindow) && isvalid(app.LogWindow)
+                delete(app.LogWindow);
             end
             if ~isempty(app.Figure) && isvalid(app.Figure)
                 delete(app.Figure);
@@ -238,9 +245,11 @@ classdef (Abstract) Core < handle
             settingsToControls(app);
             refreshRunSummary(app);
             if app.DefaultsSource ~= ""
-                app.Controls.log.Value = {char("既定の設定ファイルを読み込みました（初期設定に使います）：" + app.DefaultsSource)};
+                app.RunLog = "既定の設定ファイルを読み込みました（初期設定に使います）：" + app.DefaultsSource;
+                app.Controls.runStatus.Text = char(app.RunLog);
             elseif defaultsError ~= ""
-                app.Controls.log.Value = {char("⚠ " + defaultsError + " アプリの初期設定で開きました。")};
+                app.RunLog = "⚠ " + defaultsError + " アプリの初期設定で開きました。";
+                app.Controls.runStatus.Text = char(app.RunLog);
                 if visible
                     uialert(app.Figure, char(defaultsError + " アプリの初期設定で開きました。"), '既定の設定ファイル', ...
                         'Icon', 'warning');

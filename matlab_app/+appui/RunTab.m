@@ -116,6 +116,7 @@ classdef (Abstract) RunTab < appui.Core
             axesList = gobjects(1, nPanels);
             components = struct("summary", {}, "coefficients", {}, "nPoints", {}, "description", {}, "messages", {});
             componentRows = cell(nPanels, 1);
+            statisticRows = cell(nPanels, 1);
             % 成分の差の表の1列目：図どうしで違うもの（Wafer が1つなら学習パターン、学習パターンが1つなら Wafer）
             oneWafer = isscalar(unique(pairs(1:nPanels, 1)));
             onePlan = isscalar(unique(pairs(1:nPanels, 2)));
@@ -125,20 +126,35 @@ classdef (Abstract) RunTab < appui.Core
                 spec = specs(string({specs.label}) == labels(pairs(k, 2)));
                 plan = measurementPlan(app, pairs(k, 1), spec(1), dialog);
                 ax = nexttile(layout);
+                [excludedShots, requiredMarks, excludedMarks] = selectionMarks(app, unit, plan);
                 alignest.plot.measurementMap(ax, unit, plan, app.Settings.data.waferRadiusMm, ...
                     unit.label + "｜" + plan.label, showScan=c.measureScan.Value, ringRadiiMm=rings, ...
-                    showLegend=nPanels == 1, allCategories=k == 1 && nPanels > 1, scanStyle=scanStyle(app));
+                    showLegend=nPanels == 1, allCategories=k == 1 && nPanels > 1, scanStyle=scanStyle(app), ...
+                    excludedShots=excludedShots, requiredMarks=requiredMarks, excludedMarks=excludedMarks);
+                % クリックで Shot（Mark 単位の学習パターンでは Mark）を必ず計測・計測しないに指定する
+                ax.ButtonDownFcn = @(source, event) app.onMeasureMapClicked(source, event, pairs(k, 1), ...
+                    any(spec(1).type == ["mark", "markd"]) || ~isempty(plan.markIndex));
                 axesList(k) = ax;
                 plans(end + 1, 1) = orderfields(plan, alignest.planTemplate()); %#ok<AGROW>
                 lines = [lines; measurementLines(app, unit, plan)]; %#ok<AGROW>
                 components(end + 1, 1) = alignest.planComponentDifference(unit, plan, app.Settings); %#ok<AGROW>
                 panelLabel = ternary(oneWafer, plan.label, ternary(onePlan, unit.label, unit.label + "｜" + plan.label));
                 componentRows{k} = componentTableRows(panelLabel, components(end).summary);
+                statisticRows{k} = statisticTableRows(panelLabel, alignest.planStatisticsDifference(unit, plan).table);
                 if ~isempty(components(end).messages)
                     lines = [lines; "成分の差：" + strjoin(components(end).messages, " ")]; %#ok<AGROW>
                 end
             end
             showMeasureComponents(app, vertcat(componentRows{:}), components, panelHeader);
+            statistics = vertcat(statisticRows{:});
+            if isempty(statistics)
+                statistics = cell(0, 8);
+            end
+            c.measureStatistics.Data = statistics;
+            names = reshape(cellstr(c.measureStatistics.ColumnName), 1, []);
+            names{1} = char(panelHeader);
+            c.measureStatistics.ColumnName = names;
+            refreshMeasureSelectionInfo(app);
             if nPanels > 1
                 % 並べるときは凡例を1つだけ右に、短い名前で出す（区分の数は図ごとに違うので、数は下の欄に書く）
                 items = flipud(findobj(axesList(1), '-regexp', 'DisplayName', '.+'));
@@ -198,7 +214,7 @@ classdef (Abstract) RunTab < appui.Core
             marks = unit.marks;
             markSheet = table(marks.shotNo, marks.markNo, marks.x, marks.y, 'VariableNames', ["shotNo", "markNo", "Xmm", "Ymm"]);
             hasMarkPlans = false;
-            [componentParts, coefficientParts] = deal(cell(numel(specs), 1));
+            [componentParts, coefficientParts, statisticParts] = deal(cell(numel(specs), 1));
             componentText = "";
             for k = 1:numel(specs)
                 if ~isempty(dialog)
@@ -221,6 +237,10 @@ classdef (Abstract) RunTab < appui.Core
                 coefficientParts{k} = [table(repmat(plan.label, height(parts), 1), 'VariableNames', "学習パターン"), ...
                     renamevars(parts, parts.Properties.VariableNames, ["式", "成分", "補正モデルの成分", "項", "全計測", ...
                     "計測配置の点", "差", "単位", "メモ"])];
+                parts = alignest.planStatisticsDifference(unit, plan).table;
+                statisticParts{k} = [table(repmat(plan.label, height(parts), 1), 'VariableNames', "学習パターン"), ...
+                    renamevars(parts, parts.Properties.VariableNames, ["統計量", "全計測X", "全計測Y", "計測配置の点X", ...
+                    "計測配置の点Y", "差X", "差Y"])];
             end
             planSheet = cell2table(summary, 'VariableNames', ["学習パターン", "計測率[%]", "学習Shot数", ...
                 "必ず計測したShot数", "I基準tr(M⁻¹)", "D基準det(M)^(-1/p)", "I効率(全計測に対する)", ...
@@ -236,6 +256,7 @@ classdef (Abstract) RunTab < appui.Core
             writetable(planSheet, filePath, 'Sheet', '学習パターン');
             writetable(vertcat(componentParts{:}), filePath, 'Sheet', '成分の差');
             writetable(vertcat(coefficientParts{:}), filePath, 'Sheet', '成分の係数');
+            writetable(vertcat(statisticParts{:}), filePath, 'Sheet', '統計量の差');
             notes = table(["Wafer"; "学習 Shot の選び方"; "見方"; "成分の差"], [unit.label; ...
                 strjoin(string(app.Controls.samplingMethod.Items(ismember(app.Controls.samplingMethod.ItemsData, ...
                 app.Controls.samplingMethod.Value))), "、"); "学習パターンの列は 1 = 計測する（学習に使う）、0 = 計測しない（評価に使う）。" + ...
@@ -246,6 +267,45 @@ classdef (Abstract) RunTab < appui.Core
                 "重なる項・決まらない項は前の項に含めて 0（成分の係数のメモ）。"], 'VariableNames', ["項目", "内容"]);
             writetable(notes, filePath, 'Sheet', '説明');
         end
+
+        function setMeasurementSelection(app, kind, target, mode)
+            %SETMEASUREMENTSELECTION 計測マップの指定（画面で Shot・Mark をクリックするのと同じ）。
+            %   kind："shot"（target は shotNo）・"mark"（target は "shotNo-markNo"）。mode："required"（必ず計測する）・
+            %   "excluded"（計測しない。学習に使わず評価に使う）・"clear"（指定を外す）。設定 sampling.requiredShots・
+            %   excludedShots・requiredMarks・excludedMarks を変え、計測マップを描いてあれば作り直す。
+            sampling = app.Settings.sampling;
+            if string(kind) == "shot"
+                target = double(target);
+                required = reshape(double(fieldOr(sampling, "requiredShots", zeros(1, 0))), 1, []);
+                excluded = reshape(double(fieldOr(sampling, "excludedShots", zeros(1, 0))), 1, []);
+                [required, excluded] = applySelection(required, excluded, target, string(mode));
+                app.Settings.sampling.requiredShots = unique(required);
+                app.Settings.sampling.excludedShots = unique(excluded);
+            elseif string(kind) == "mark"
+                target = string(target);
+                alignest.parseMarkKeys(target);   % 形を確かめる
+                required = reshape(string(fieldOr(sampling, "requiredMarks", strings(1, 0))), 1, []);
+                excluded = reshape(string(fieldOr(sampling, "excludedMarks", strings(1, 0))), 1, []);
+                [required, excluded] = applySelection(required, excluded, target, string(mode));
+                app.Settings.sampling.requiredMarks = unique(required, 'stable');
+                app.Settings.sampling.excludedMarks = unique(excluded, 'stable');
+            else
+                error('alignest:measurementSelection', '指定の対象は shot・mark のどちらかです: %s', string(kind));
+            end
+            selectionChanged(app);
+        end
+
+        function showRunLog(app)
+            %SHOWRUNLOG 評価の記録（データの確認・学習パターン・推定できなかった組み合わせなど）の全文を別の窓で見る。
+            lines = app.RunLog;
+            if isempty(lines)
+                lines = "まだ記録はありません（評価の後や、既定の設定ファイルを読んだときに残ります）。";
+            end
+            window = uifigure('Name', '記録', 'Position', [200, 200, 760, 480], 'Visible', app.Figure.Visible);
+            grid = uigridlayout(window, [1, 1], 'Padding', 10);
+            uitextarea(grid, 'Editable', 'off', 'Value', cellstr(lines), 'FontSize', app.FontSize);
+            app.LogWindow = window;
+        end
     end
 
     methods (Access = {?appui.Core})
@@ -254,7 +314,7 @@ classdef (Abstract) RunTab < appui.Core
             grid = uigridlayout(app.Tabs.run, [3, 1], 'RowHeight', {'fit', 'fit', '1x'}, 'Padding', 12, ...
                 'RowSpacing', 10);
             c.runSummary = uilabel(grid, 'WordWrap', 'on', 'Text', '');
-            buttonGrid = uigridlayout(grid, [1, 4], 'ColumnWidth', {240, 200, 280, '1x'}, 'Padding', 0);
+            buttonGrid = uigridlayout(grid, [1, 5], 'ColumnWidth', {240, 200, 280, 'fit', '1x'}, 'Padding', 0);
             c.run = primaryButton(app, buttonGrid, '評価を始める', @(~, ~) app.onRun());
             c.resumeRun = uibutton(buttonGrid, 'Text', '続きから再開', 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~, ~) app.onResumeRun(), 'Tooltip', ['「一時中断」で止めた評価の残りを計算します' ...
@@ -263,11 +323,28 @@ classdef (Abstract) RunTab < appui.Core
                 'ButtonPushedFcn', @(~, ~) app.onExtendRun(), 'Tooltip', ['評価の後に「2. 評価の設定」で手法や学習 Shot 数' ...
                 '（計測率）を増やしてから押すと、増えた組み合わせだけを計算して今の結果に加えます。データ・質的変数・制約・' ...
                 '評価の条件などを変えたときは追加できません（「評価を始める」で計算し直してください）。']);
+            c.viewLog = uibutton(buttonGrid, 'Text', '記録を見る…', 'ButtonPushedFcn', @(~, ~) app.showRunLog(), ...
+                'Tooltip', ['データの確認・学習パターン・推定できなかった組み合わせなどの知らせの全文を、別の窓で見ます' ...
+                '（要点は右に出します）。']);
             c.runStatus = uilabel(buttonGrid, 'WordWrap', 'on', 'Text', '');
-            lower = uigridlayout(grid, [1, 2], 'ColumnWidth', {'1x', '2.4x'}, 'Padding', 0, 'ColumnSpacing', 12);
-            logGrid = uigridlayout(lower, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 0);
-            label(logGrid, '記録');
-            c.log = uitextarea(logGrid, 'Editable', 'off', 'Value', {''});
+            lower = uigridlayout(grid, [1, 2], 'ColumnWidth', {'0.8x', '2.6x'}, 'Padding', 0, 'ColumnSpacing', 12);
+            % 計測の指定：計測マップのクリックで、必ず計測する・計測しない Shot・Mark を指定する
+            selectPanel = uipanel(lower, 'Title', '計測の指定');
+            selectGrid = uigridlayout(selectPanel, [5, 1], 'RowHeight', {'fit', 'fit', 'fit', '1x', 'fit'}, 'Padding', 8, ...
+                'RowSpacing', 6);
+            modeGrid = uigridlayout(selectGrid, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
+            label(modeGrid, 'クリックで', 1, 1);
+            c.measureClickMode = uidropdown(modeGrid, 'Items', {'見るだけ', '必ず計測にする', '計測しないにする', '指定を外す'}, ...
+                'ItemsData', {'none', 'required', 'excluded', 'clear'}, 'Tooltip', ['計測マップの Shot（Mark 単位の学習パターンの' ...
+                '図では Mark）をクリックしたときにすること。計測しない Shot・Mark は学習に使わず、評価には使います。']);
+            place(c.measureClickMode, 1, 2);
+            c.measureSelectNote = uilabel(selectGrid, 'WordWrap', 'on', 'FontColor', app.Palette.muted, 'UserData', "muted", ...
+                'Text', ['Shot の図では Shot、Mark 単位の図では Mark を指定します。Mark の指定は Mark 単位の計画だけに効きます' ...
+                '（必ず計測する Shot は、Mark 単位ではその Shot の Mark すべて）。「2. 評価の設定」の欄でも指定できます。']);
+            label(selectGrid, '指定した Shot・Mark');
+            c.measureSelectionInfo = uitextarea(selectGrid, 'Editable', 'off', 'Value', {'（なし）'});
+            c.clearMeasureSelections = uibutton(selectGrid, 'Text', '指定をすべて外す', ...
+                'ButtonPushedFcn', @(~, ~) app.onClearMeasureSelections());
             % 計測マップ：評価の前に、学習に使う（計測する）Shot を Wafer 上で確かめる
             mapPanel = uipanel(lower, 'Title', '計測マップ');
             mapGrid = uigridlayout(mapPanel, [4, 1], 'RowHeight', {'fit', 'fit', '1x', 160}, 'Padding', 8, 'RowSpacing', 6);
@@ -275,6 +352,7 @@ classdef (Abstract) RunTab < appui.Core
                 'Padding', 0);
             label(choose, 'Wafer', 1, 1);
             onMeasure = @(~, ~) app.onDrawMeasurementMap();
+            onMeasureDisplay = @(~, ~) app.onMeasureDisplayChanged();   % 表示の切り替えでは、描いた図を描き直すだけ
             multiTip = 'Ctrl・Shift で複数選ぶと、Wafer × 学習パターンの図を並べます（最大 6 枚）。';
             c.measureWafer = uilistbox(choose, 'Items', {'—'}, 'ItemsData', {1}, 'Multiselect', 'on', 'Tooltip', multiTip);
             place(c.measureWafer, 1, 2);
@@ -282,12 +360,12 @@ classdef (Abstract) RunTab < appui.Core
             c.measurePlan = uilistbox(choose, 'Items', {'—'}, 'Multiselect', 'on', 'Tooltip', multiTip);
             place(c.measurePlan, 1, 4);
             c.measureScan = uicheckbox(choose, 'Text', 'Scan 方向を色で示す', 'Value', true, ...
-                'ValueChangedFcn', onMeasure, 'Tooltip', ['Shot の内側の枠の色と ▲・▼ で Scan 方向を示します' ...
+                'ValueChangedFcn', onMeasureDisplay, 'Tooltip', ['Shot の内側の枠の色と ▲・▼ で Scan 方向を示します' ...
                 '（Scan 方向の制約で Shot 数がそろっているかを確かめる）。色と向きは「2. 評価の設定」の表示で変えられます。']);
             place(c.measureScan, 2, [1, 2]);
             c.measureRings = uicheckbox(choose, 'Text', '同心円の区切りを描く', 'Value', true, ...
-                'ValueChangedFcn', onMeasure, 'Tooltip', ['I 最適・ランダムで同心円の制約を使うとき、区切りの半径（Shot 中心' ...
-                'の半径）を橙の一点鎖線で描きます。']);
+                'ValueChangedFcn', onMeasureDisplay, 'Tooltip', ['同心円の制約を使うとき、区切りの半径（Shot 単位の計画は' ...
+                ' Shot 中心、Mark 単位の計画は Mark の半径で区画を分ける）を橙の一点鎖線で描きます。']);
             place(c.measureRings, 2, [3, 4]);
             buttons = uigridlayout(mapGrid, [1, 4], 'ColumnWidth', {'fit', 'fit', 'fit', 'fit'}, 'Padding', 0);
             c.drawMeasure = uibutton(buttons, 'Text', '計測マップを作る', 'ButtonPushedFcn', onMeasure);
@@ -303,7 +381,18 @@ classdef (Abstract) RunTab < appui.Core
             infoGrid = uigridlayout(mapGrid, [1, 2], 'ColumnWidth', {'0.75x', '1.6x'}, 'Padding', 0, 'ColumnSpacing', 6);
             c.measureInfo = uitextarea(infoGrid, 'Editable', 'off', 'Value', ...
                 {'「2. 評価の設定」で学習 Shot の選び方を決め、Wafer と学習パターンを選んで「計測マップを作る」を押してください。'});
-            c.measureComponents = uitable(infoGrid, 'RowName', {}, 'ColumnName', {'Wafer｜学習パターン', '成分', ...
+            % 全計測との差：成分（Overlay 補正）と統計量をタブで切り替える
+            infoTabs = uitabgroup(infoGrid);
+            componentTab = uitab(infoTabs, 'Title', '成分の差');
+            statisticTab = uitab(infoTabs, 'Title', '統計量の差');
+            componentGrid = uigridlayout(componentTab, [1, 1], 'Padding', 0);
+            statisticGrid = uigridlayout(statisticTab, [1, 1], 'Padding', 0);
+            c.measureStatistics = uitable(statisticGrid, 'RowName', {}, 'ColumnName', {'学習パターン', '統計量', ...
+                '全計測|X', '全計測|Y', '計測配置|X', '計測配置|Y', '差|X', '差|Y'}, 'ColumnWidth', ...
+                {150, 64, 58, 58, 64, 64, 58, 58}, 'Data', cell(0, 8), 'Tooltip', ['全計測との統計量の差：計測配置の点（計測する' ...
+                ' Mark）の計測値の平均・中央値・分散（不偏分散）・最大・最小を、全計測（有効なすべての Mark）と比べます。' ...
+                '差 = 計測配置の点 − 全計測。単位は計測値と同じ（分散は単位の2乗）。']);
+            c.measureComponents = uitable(componentGrid, 'RowName', {}, 'ColumnName', {'Wafer｜学習パターン', '成分', ...
                 '全計測|X [nm]', '全計測|Y [nm]', '差|X [nm]', '差|Y [nm]'}, 'ColumnWidth', {170, 118, 54, 54, 54, 54}, ...
                 'Data', cell(0, 6), 'Tooltip', ['全計測との成分の差：「2. 評価の設定」の Overlay 補正の Wafer 成分・Shot 共通成分を、' ...
                 '全計測と計測配置の点だけで当てはめ、成分ごとの補正量を全計測の Mark の位置で比べます。全計測：全計測で求めた成分の' ...
@@ -397,11 +486,12 @@ classdef (Abstract) RunTab < appui.Core
                     ternary(isempty(previous), "", "（一時中断の前と後の合計）"));
             end
             if nFailed > 0
-                status = status + sprintf(" うち %d 件は推定できませんでした（理由は下の記録）。", nFailed);
+                status = status + sprintf(" うち %d 件は推定できませんでした（理由は「記録を見る…」）。", nFailed);
             end
-            % 完了の知らせはボタンの右に出さない（下の記録に残す）。一時中断のときだけ、続きから再開できることを出す
-            c.runStatus.Text = ternary(results.cancelled, status, "");
-            c.log.Value = cellstr([status; results.additions(:); results.log(:)]);
+            % 要点はボタンの右に、全文は記録（「記録を見る…」で別の窓）に残す
+            app.RunLog = reshape(string([status; results.additions(:); results.log(:)]), [], 1);
+            c.runStatus.Text = status;
+            c.runStatus.FontColor = ternary(nFailed > 0, app.Palette.error, app.Palette.text);
             refreshResultControls(app);
             c.resumeRun.Enable = onOff(results.cancelled);
             c.extendRun.Enable = 'on';
@@ -472,6 +562,20 @@ classdef (Abstract) RunTab < appui.Core
                 "「1. データの読み込み」と「2. 評価の設定」を確かめてから、もう一度試してください。");
         end
 
+        function onMeasureDisplayChanged(app)
+            % 「Scan 方向を色で示す」「同心円の区切りを描く」を切り替えたとき：計測マップを描いてあるときだけ描き直す
+            % （まだ作っていなければ何もしない。学習パターンを作るのは「計測マップを作る」を押したときだけ）
+            if hasMeasurementMap(app)
+                onDrawMeasurementMap(app);
+            end
+        end
+
+        function drawn = hasMeasurementMap(app)
+            % 計測マップを描いてあるか（設定を直すと図は消える）
+            axesList = app.Controls.measureAxes;
+            drawn = ~isempty(axesList) && all(isvalid(axesList));
+        end
+
         function onSaveMeasurementMap(app)
             saveFigureWithDialog(app, "measure", 'measurement_map.png');
         end
@@ -513,35 +617,30 @@ classdef (Abstract) RunTab < appui.Core
                 previewList(counts, app.LIST_PREVIEW_COUNT));
         end
 
-        function text = exchangeText(app)
-            % 交換法で学習パターンを作る時間の目安（alignest.exchangeSecondsGuide。I 最適のときだけ）
-            c = app.Controls;
+        function text = exchangeText(~, detail)
+            % 交換法で学習パターンを作る時間の目安（I 最適・D 最適・Mark 単位の I 最適・D 最適。最初の Wafer の配置で。
+            % alignest.planSecondsGuide）。配置の違う Wafer があれば、その数だけ作り直す時間も書く
             text = "";
-            if ~any(ismember(string(c.samplingMethod.Value), ["ioptimal", "doptimal"]))
+            each = detail.planSecondsEach(detail.planSecondsEach > 0);
+            if isempty(each)
                 return
             end
-            nCandidates = 99;
-            if ~isempty(app.Data)
-                unit = app.Data.units(1);
-                nCandidates = nnz(unit.shots.nValidX + unit.shots.nValidY > 0);
+            range = durationText(min(each));
+            if durationText(max(each)) ~= range
+                range = range + "〜" + durationText(max(each));
             end
-            try
-                if string(c.countBy.Value) == "rate"
-                    rates = alignest.measurementRateList(c.rateStart.Value, c.rateEnd.Value, c.rateStep.Value);
-                    counts = max(1, round(rates / 100 * nCandidates));
-                else
-                    counts = alignest.shotCountList(c.nShotsStart.Value, c.nShotsEnd.Value, c.nShotsStep.Value);
-                end
-            catch
-                return   % 学習 Shot 数の欄が正しくないとき（欄の下に理由が出る）
+            text = sprintf("→ 目安：学習パターン1つ 約 %s", range);
+            if numel(each) > 1
+                text = text + sprintf("、全 %d 個で 約 %s", numel(each), durationText(sum(each)));
             end
-            seconds = alignest.exchangeSecondsGuide(counts, c.exchangeStarts.Value, nCandidates);
-            text = sprintf("→ 目安：学習パターン1つ 約 %s〜%s、全 %d 個で 約 %s", durationText(min(seconds)), ...
-                durationText(max(seconds)), numel(counts), durationText(sum(seconds)));
+            if detail.nLayouts > 1
+                text = text + sprintf("。配置（値の無い Mark）の違う Wafer が %d 種類あり、合わせて 約 %s", ...
+                    detail.nLayouts, durationText(detail.planSeconds));
+            end
         end
 
         function text = requiredText(app)
-            % 必ず計測する Shot の数（最初の Wafer で。画面の入力から数える）
+            % 必ず計測する Shot の数（最初の Wafer で。画面の入力から数える）。Mark 単位の計画では必ず計測する Mark の数も
             c = app.Controls;
             text = "";
             [values, ok] = parseNumbers(c.requiredShots.Value);
@@ -553,15 +652,29 @@ classdef (Abstract) RunTab < appui.Core
             candidates = find(unit.shots.nValidX + unit.shots.nValidY > 0);
             [index, details] = alignest.requiredShotIndex(unit.shots, candidates, sampling);
             if isempty(index) && isempty(details.missingNos)
-                text = "→ 必ず計測する Shot はありません（すべての学習 Shot を選び方に従って選びます）。";
-                return
+                text = "→ 必ず計測する Shot はありません";
+            else
+                text = sprintf("→ %s では %d Shot を必ず計測（指定 %d・最外周 %d", unit.label, numel(index), ...
+                    numel(details.specified), numel(details.outer));
+                overlap = numel(details.specified) + numel(details.outer) - numel(index);
+                text = text + ternary(overlap > 0, sprintf("、重なり %d）", overlap), "）");
+                if ~isempty(details.missingNos)
+                    text = text + "。この Wafer に無い、または計測値の無い shotNo：" + strjoin(string(details.missingNos.'), " ");
+                end
             end
-            text = sprintf("→ %s では %d Shot を必ず計測（指定 %d・最外周 %d", unit.label, numel(index), ...
-                numel(details.specified), numel(details.outer));
-            overlap = numel(details.specified) + numel(details.outer) - numel(index);
-            text = text + ternary(overlap > 0, sprintf("、重なり %d）", overlap), "）");
-            if ~isempty(details.missingNos)
-                text = text + "。この Wafer に無い、または計測値の無い shotNo：" + strjoin(string(details.missingNos.'), " ");
+            if any(ismember(string(c.samplingMethod.Value), ["mark", "markd"]))
+                % Mark 単位の計画で必ず計測する Mark（Wafer 中心に最も近い Mark・必ず計測する Shot の Mark・指定した Mark）
+                [requiredMarks, okRequired] = parseMarkText(c.requiredMarks.Value);
+                [excludedMarks, okExcluded] = parseMarkText(c.excludedMarks.Value);
+                [excludedShots, okShots] = parseNumbers(c.excludedShots.Value);
+                if okRequired && okExcluded && okShots
+                    sampling.requiredMarks = requiredMarks;
+                    sampling.excludedMarks = excludedMarks;
+                    sampling.excludedShots = excludedShots;
+                    fixedMarks = alignest.markPlanFixedMarks(unit, sampling);
+                    text = text + sprintf("。Mark 単位の計画では Mark %d 点を必ず計測（中心に最も近い Mark・必ず計測する" + ...
+                        " Shot の Mark・指定した Mark）", numel(fixedMarks));
+                end
             end
             text = text + "。「3. 実行」の計測マップで確かめられます。";
         end
@@ -594,7 +707,8 @@ classdef (Abstract) RunTab < appui.Core
             end
             total = numel(methods) * nPlans * nUnits;
             seconds = 0;
-            detail = struct("nMaternNuMethods", 0, "maternNuFactor", 1, "secondsPerRun", 2);
+            detail = struct("nMaternNuMethods", 0, "maternNuFactor", 1, "secondsPerRun", 2, "planSeconds", 0, ...
+                "nLayouts", 0, "planSecondsEach", zeros(1, 0));
             if nUnits > 0 && nPlans > 0
                 try
                     [seconds, detail] = alignest.estimateRunSeconds(app.Data.units, app.Settings);
@@ -608,9 +722,18 @@ classdef (Abstract) RunTab < appui.Core
                 nuText = sprintf("。うち ν を指定した Matérn の手法 %d 種類は 1条件 %g 秒で見積もり", ...
                     detail.nMaternNuMethods, detail.secondsPerRun * detail.maternNuFactor);
             end
-            text = sprintf("手法 %d 種類 × 学習パターン %d × Wafer %d 枚 = %d 回の推定（目安 %s%s）", ...
-                numel(methods), nPlans, nUnits, total, durationText(seconds), nuText);
+            planText = "";
+            if detail.planSeconds > 0
+                % 交換法の学習パターン（とくに Mark 単位）は作るのに時間がかかるので、目安に含めたことと1枚あたりを示す
+                planText = sprintf("。うち学習パターンを作る時間 約 %s（配置 %d 種類）、1枚あたり 約 %s", ...
+                    durationText(detail.planSeconds), detail.nLayouts, durationText(seconds / nUnits));
+            end
+            text = sprintf("手法 %d 種類 × 学習パターン %d × Wafer %d 枚 = %d 回の推定（目安 %s%s%s）", ...
+                numel(methods), nPlans, nUnits, total, durationText(seconds), planText, nuText);
             c.countLabel.Text = text;
+            if isfield(c, 'exchangeInfo')
+                c.exchangeInfo.Text = exchangeText(app, detail);
+            end
             if nUnits == 0
                 c.runSummary.Text = "データがまだ読み込まれていません。「1. データの読み込み」から始めてください。";
             elseif isempty(methods)
@@ -711,10 +834,107 @@ classdef (Abstract) RunTab < appui.Core
         end
 
         function clearMeasurePanel(app)
-            % 描いた計測マップを消す（枠の中の tiledlayout と図）と、全計測との成分の差の表を空にする
+            % 描いた計測マップを消す（枠の中の tiledlayout と図）と、全計測との成分・統計量の差の表を空にする
             delete(app.Controls.measurePanel.Children);
             app.Controls.measureAxes = gobjects(1, 0);
             app.Controls.measureComponents.Data = cell(0, 6);
+            app.Controls.measureStatistics.Data = cell(0, 8);
+        end
+
+        function [excludedShots, requiredMarks, excludedMarks] = selectionMarks(app, unit, plan)
+            % 計測マップに描く指定：計測しない Shot・Mark と、必ず計測する Mark（Mark 単位の学習パターンでは、Wafer 中心に
+            % 最も近い Mark・必ず計測する Shot の Mark も。alignest.markPlanFixedMarks）。unit.shots・unit.marks の何番目か
+            excludedShots = zeros(0, 1);
+            requiredMarks = zeros(0, 1);
+            excludedMarks = zeros(0, 1);
+            try
+                [fixedMarks, fixedInfo] = alignest.markPlanFixedMarks(unit, app.Settings.sampling);
+            catch
+                return   % 指定の文字が正しくないときは描かない（「2. 評価の設定」の欄の下に理由）
+            end
+            selection = fixedInfo.selection;
+            excludedShots = selection.excludedShots;
+            if isempty(plan.markIndex)
+                return
+            end
+            excludedMarks = setdiff(selection.excludedMarks, find(ismember(unit.marks.shotIndex, excludedShots)));
+            requiredMarks = fixedMarks(:);
+            excludedMarks = excludedMarks(:);
+        end
+
+        function onMeasureMapClicked(app, ~, event, unitIndex, markLevel)
+            % 計測マップのクリック：「クリックで」の指定で、クリックした Shot（Mark 単位の図では最も近い Mark）を
+            % 必ず計測・計測しない・指定を外すにして、計測マップを作り直す
+            mode = string(app.Controls.measureClickMode.Value);
+            if mode == "none" || isempty(event)
+                return
+            end
+            unit = app.Data.units(unitIndex);
+            point = event.IntersectionPoint(1:2);
+            if markLevel
+                marks = unit.marks;
+                [distance, nearest] = min(hypot(marks.x - point(1), marks.y - point(2)));
+                if distance > max(unit.shotSizeMm) / 2
+                    return   % Mark から離れた所（Wafer の外など）
+                end
+                key = sprintf("%d-%d", marks.shotNo(nearest), marks.markNo(nearest));
+                runWithAlert(app, @() app.setMeasurementSelection("mark", key, mode), "指定できませんでした", ...
+                    "「2. 評価の設定」の学習 Shot の選び方を確かめてください。");
+            else
+                shots = unit.shots;
+                inside = abs(shots.Xmm - point(1)) <= unit.shotSizeMm(1) / 2 & abs(shots.Ymm - point(2)) <= unit.shotSizeMm(2) / 2;
+                if ~any(inside)
+                    return
+                end
+                runWithAlert(app, @() app.setMeasurementSelection("shot", shots.shotNo(find(inside, 1)), mode), ...
+                    "指定できませんでした", "「2. 評価の設定」の学習 Shot の選び方を確かめてください。");
+            end
+        end
+
+        function onClearMeasureSelections(app)
+            % 計測マップで指定した Shot・Mark（必ず計測・計測しない）をすべて外す
+            app.Settings.sampling.requiredShots = zeros(1, 0);
+            app.Settings.sampling.excludedShots = zeros(1, 0);
+            app.Settings.sampling.requiredMarks = strings(1, 0);
+            app.Settings.sampling.excludedMarks = strings(1, 0);
+            selectionChanged(app);
+        end
+
+        function selectionChanged(app)
+            % 指定を変えた後：「2. 評価の設定」の欄と指定の一覧を直し、計測マップを描いてあれば作り直す
+            c = app.Controls;
+            hadMap = hasMeasurementMap(app);   % 設定を直すと図は消えるので、先に覚える
+            c.requiredShots.Value = char(strjoin(string(app.Settings.sampling.requiredShots), " "));
+            c.excludedShots.Value = char(strjoin(string(app.Settings.sampling.excludedShots), " "));
+            c.requiredMarks.Value = char(strjoin(string(app.Settings.sampling.requiredMarks), " "));
+            c.excludedMarks.Value = char(strjoin(string(app.Settings.sampling.excludedMarks), " "));
+            validateSettings(app);
+            updateEnabled(app);
+            refreshRunSummary(app);
+            refreshMeasureSelectionInfo(app);
+            if hadMap
+                drawMeasurementMap(app);
+            end
+        end
+
+        function refreshMeasureSelectionInfo(app)
+            % 計測の指定の一覧（必ず計測する Shot・計測しない Shot・必ず計測する Mark・計測しない Mark）
+            sampling = app.Settings.sampling;
+            items = ["必ず計測する Shot", "計測しない Shot", "必ず計測する Mark", "計測しない Mark"];
+            values = {string(fieldOr(sampling, "requiredShots", zeros(1, 0))), ...
+                string(fieldOr(sampling, "excludedShots", zeros(1, 0))), ...
+                string(fieldOr(sampling, "requiredMarks", strings(1, 0))), ...
+                string(fieldOr(sampling, "excludedMarks", strings(1, 0)))};
+            lines = strings(0, 1);
+            for k = 1:numel(items)
+                if ~isempty(values{k})
+                    lines(end + 1, 1) = sprintf("%s（%d）：%s", items(k), numel(values{k}), strjoin(values{k}, " ")); %#ok<AGROW>
+                end
+            end
+            if isempty(lines)
+                lines = "（なし）";
+            end
+            app.Controls.measureSelectionInfo.Value = cellstr(lines);
         end
 
         function showMeasureComponents(app, rows, components, panelHeader)
@@ -748,6 +968,34 @@ elseif seconds < 3600
     text = sprintf("%.0f 分", seconds / 60);
 else
     text = sprintf("%.1f 時間", seconds / 3600);
+end
+end
+
+function [required, excluded] = applySelection(required, excluded, target, mode)
+% 指定の一覧を変える：必ず計測（計測しないから外す）・計測しない（必ず計測から外す）・外す（どちらからも外す）
+required = required(required ~= target);
+excluded = excluded(excluded ~= target);
+switch mode
+    case "required"
+        required(end + 1) = target;
+    case "excluded"
+        excluded(end + 1) = target;
+    case "clear"
+    otherwise
+        error('alignest:measurementSelection', '指定は required・excluded・clear のいずれかです: %s', mode);
+end
+end
+
+function rows = statisticTableRows(panelLabel, statistics)
+% 全計測との統計量の差の表の行（統計量ごと。値は有効数字3桁の文字）
+n = height(statistics);
+rows = cell(n, 8);
+format = '%.3g';
+for r = 1:n
+    rows(r, :) = {char(panelLabel), char(statistics.statistic(r)), numberText(statistics.fullX(r), format), ...
+        numberText(statistics.fullY(r), format), numberText(statistics.planX(r), format), ...
+        numberText(statistics.planY(r), format), numberText(statistics.differenceX(r), format), ...
+        numberText(statistics.differenceY(r), format)};
 end
 end
 

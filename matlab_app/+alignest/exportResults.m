@@ -225,9 +225,13 @@ if ~isfield(sampling, "markRequirePerShot") || sampling.markRequirePerShot
 end
 if isfield(sampling, "countBy") && sampling.countBy == "rate"
     text = text + "、計測率で Mark の数を決めた";
+elseif isfield(sampling, "markCountBy") && sampling.markCountBy == "total"
+    text = text + sprintf("、計測する Mark の数 %d〜%d（刻み %d）", sampling.markCountStart, sampling.markCountEnd, ...
+        sampling.markCountStep);
 else
     text = text + "、1 Shot あたり " + strjoin(string(sampling.markPerShot), "・") + " 点";
 end
+text = text + "、Wafer 中心に最も近い Mark は必ず計測";
 end
 
 function value = ternary(condition, whenTrue, whenFalse)

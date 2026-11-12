@@ -146,8 +146,11 @@ switch method.family
                     out.aux(k) = result.nugget;
                 case "GAM"
                     points = gamPoints(marks, radius);
-                    factors = factorLevels(unit, marks, train, test, settings, axisNames(k));
-                    [factorTrain, factorTest] = factorCodes(factors, numel(train), numel(test));
+                    [factorTrain, factorTest] = deal(zeros(numel(train), 0), zeros(numel(test), 0));
+                    if method.factorMode ~= "none"   % 質的変数なしの GAM は空間の項だけ
+                        factors = factorLevels(unit, marks, train, test, settings, axisNames(k));
+                        [factorTrain, factorTest] = factorCodes(factors, numel(train), numel(test));
+                    end
                     nBasis = struct("axis", options.gamBasisAxis, "radius", options.gamBasisRadius);
                     [gpTerms, gpKernel] = gamGpTerms(method.variant);
                     shapes = struct();
