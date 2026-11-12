@@ -114,6 +114,7 @@ classdef (Abstract) Core < handle
         HighOrderTransfer = []  % 「7. Shot高次補正」の「他の Wafer の補正」の結果（alignest.transferHighOrder）
         HighOrderTermSelection = []  % 「7. Shot高次補正」の「k の選定」の結果（alignest.highOrderTermSelection）
         EstimatedCorrection = []     % 「4. 結果一覧」の「実測値と推定値の補正」の結果（alignest.estimatedCorrectionComparison）
+        WaferRanking = []       % 「4. 結果一覧」の「Wafer のベスト・ワースト」の結果（alignest.waferRanking。結果が変わると求め直す）
         MarkLayoutFile = []     % 「8. Mark配置の最適化」で読み込んだ Excel・CSV（raw・info：alignest.readHighOrderFile、mapping、
                                 %  wafers・coordinates・dataInfo：選んだ列で整理した入力（alignest.markLayoutFileData。まだなら dataInfo は []））
         MarkLayoutInput = []    % 「8. Mark配置の最適化」の今の入力の候補の Mark と Shot ごとの値（alignest.markCandidates。入力が無ければ []）
@@ -376,7 +377,8 @@ classdef (Abstract) Core < handle
             c.timingInfo.Text = '';
             c.chartAxes2.Visible = 'off';
             set([c.export, c.saveChart, c.copyChart, c.mapWafer, c.mapPlan, c.mapMethod, c.mapContent, c.mapMode, c.mapScale, ...
-                c.mapMarkerSize, c.mapMarkerShape, c.mapEllipse, c.mapEllipseOnly, c.mapShotFrames, c.saveMap, c.copyMap, c.analysisMethod, ...
+                c.mapMarkerSize, c.mapMarkerShape, c.mapEllipse, c.mapEllipseOnly, c.mapShotFrames, c.saveMap, c.copyMap, c.mapVariance, ...
+                c.analysisMethod, ...
                 c.analysisGroup, ...
                 c.analysisWafer, c.analyze, ...
                 c.estimateScope, c.exportEstimates, c.scatterMethod, c.scatterGroup, c.scatterWafer, c.scatterColor, ...
@@ -387,8 +389,11 @@ classdef (Abstract) Core < handle
                 c.residualVariableName, c.drawResidualVariableButton, c.boxFactor, c.timingWafer, c.timingPlan, c.timingMethods, c.timingRepeats, c.measureTimingButton, ...
                 c.estimatedCorrectionMethods, c.estimatedCorrectionGroup, c.estimatedCorrectionWafer, c.compareEstimatedCorrectionButton, ...
                 c.compareLayoutMethod, c.compareLayoutXAxis, c.compareLayoutErrorBar, ...
+                c.rankingMethod, c.rankingGroup, c.rankingOverallMetrics, ...
                 c.filterResults.apply, c.filterMap.apply], 'Enable', 'off');
             showFilter(app);
+            app.WaferRanking = [];
+            showWaferRanking(app);
             app.Distribution = [];
             app.EstimatedCorrection = [];
             c.estimatedCorrectionTable.Data = table();
@@ -547,6 +552,9 @@ classdef (Abstract) Core < handle
                 case "map"
                     if string(c.mapView.Value) == "single"
                         items = c.mapAxes;
+                        if isfield(c, 'mapVarianceAxes') && strcmp(c.mapVarianceAxes.Visible, 'on')
+                            items = [items, c.mapVarianceAxes];   % 推定の分散（GPR）の図も並べてある
+                        end
                     else
                         items = findobj(c.comparePanel.Children, 'flat', 'Type', 'tiledlayout');   % 並べて比べる・スタック
                     end

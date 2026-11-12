@@ -17,7 +17,8 @@ function result = predictTargets(unit, training, method, settings, targets)
 %   result.table：点ごとの name・Xmm・Ymm・markXmm・markYmm・x・y・markNo・shotNo・direction・estimateX・
 %   estimateY（[nm]）・extrapolated・outsideMm（凸包の外への距離、内側は 0）・nearestMm（最も近い学習点までの
 %   距離）・unseenMark（学習に無い Mark 番号）・outsideWafer（Wafer の外）・shotIndex（点を含む Shot が
-%   unit.shots の何番目か。分からなければ 0）・note（点ごとの注意）。
+%   unit.shots の何番目か。分からなければ 0）・note（点ごとの注意）・varianceX・varianceY（GPR の推定の分散 [nm²]。
+%   alignest.models.gprPredictVariance。ほかの手法・Wafer の外は NaN）。
 %   result.messages：画面に出す説明（外挿・Wafer の外・学習に無い Mark 番号・Scan 方向が分からない点など）。
 %   result.nExtrapolated・nUnseenMark・nOutsideWafer：その点の数、result.trainXY：学習点の座標、result.hull：凸包の
 %   頂点、result.toleranceMm：外挿とみなす距離、result.seconds：推定にかかった秒数。
@@ -72,6 +73,14 @@ for k = 1:2
     estimate(inside(out.testIndex.(AXIS_NAMES(k)) - nMarks), k) = out.estimate.(AXIS_NAMES(k));
 end
 estimate(outsideWafer, :) = 0;   % 推定の対象外（X・Y とも 0 を返す）
+variance = nan(n, 2);   % 推定の分散（GPR だけ。ほかの手法・Wafer の外は NaN）
+if isfield(out, "variance")
+    for k = 1:2
+        if numel(out.variance.(AXIS_NAMES(k))) == numel(out.testIndex.(AXIS_NAMES(k)))
+            variance(inside(out.testIndex.(AXIS_NAMES(k)) - nMarks), k) = out.variance.(AXIS_NAMES(k));
+        end
+    end
+end
 
 % 学習点の範囲（凸包）と比べて外挿を判定する
 trainRows = unique([out.trainIndex.X; out.trainIndex.Y]);
@@ -140,9 +149,9 @@ end
 
 result.table = table(targets.name, targets.Xmm, targets.Ymm, targets.markXmm, targets.markYmm, x, y, targets.markNo, ...
     shotNo, direction, estimate(:, 1), estimate(:, 2), extrapolated, outsideMm, nearestMm, unseenMark, outsideWafer, ...
-    shotIndex, notes, 'VariableNames', ["name", "Xmm", "Ymm", "markXmm", "markYmm", "x", "y", "markNo", "shotNo", ...
-    "direction", "estimateX", "estimateY", "extrapolated", "outsideMm", "nearestMm", "unseenMark", "outsideWafer", ...
-    "shotIndex", "note"]);
+    shotIndex, notes, variance(:, 1), variance(:, 2), 'VariableNames', ["name", "Xmm", "Ymm", "markXmm", "markYmm", "x", ...
+    "y", "markNo", "shotNo", "direction", "estimateX", "estimateY", "extrapolated", "outsideMm", "nearestMm", "unseenMark", ...
+    "outsideWafer", "shotIndex", "note", "varianceX", "varianceY"]);
 result.messages = messages;
 result.nExtrapolated = nnz(extrapolated);
 result.nUnseenMark = nnz(unseenMark);

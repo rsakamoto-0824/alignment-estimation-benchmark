@@ -7,11 +7,13 @@ function targetMap(ax, result, unit, options)
 %   options.titleText：題名、options.waferRadiusMm：Wafer の半径 [mm]、options.markerSize：色で描く点の大きさ。
 %   options.spec：推定する値（alignest.valueSpec）。1変数なら色で描き、色の範囲は推定値の最小〜最大、目盛りは値の名前。
 %   Wafer の外の点（result.table.outsideWafer。推定の対象外で推定値は 0）は描かない。
+%   options.mode = "varianceX"・"varianceY"：推定値の代わりに、GPR の推定の分散（result.table.varianceX・Y）を色（0〜最大）で
+%   描く（1変数は varianceX）。GPR 以外の手法では分散が無いので、点は描かず題名で知らせる。
 arguments
     ax
     result struct
     unit struct
-    options.mode (1, 1) string {mustBeMember(options.mode, ["vector", "X", "Y"])} = "vector"
+    options.mode (1, 1) string {mustBeMember(options.mode, ["vector", "X", "Y", "varianceX", "varianceY"])} = "vector"
     options.titleText (1, 1) string = ""
     options.waferRadiusMm (1, 1) double = 150
     options.markerSize (1, 1) double {mustBePositive} = 30
@@ -28,6 +30,19 @@ if any(string(estimates.Properties.VariableNames) == "outsideWafer")
 end
 points = [estimates.x, estimates.y];
 values = [estimates.estimateX, estimates.estimateY];
+showVariance = startsWith(options.mode, "variance");
+if showVariance
+    % 推定の分散（GPR）の色の図：X・Y の分散を色（0〜最大）で描く
+    if any(string(estimates.Properties.VariableNames) == "varianceX")
+        values = [estimates.varianceX, estimates.varianceY];
+    else
+        values = nan(height(estimates), 2);
+    end
+    options.mode = extractAfter(options.mode, "variance");
+    if options.spec.scalar
+        options.mode = "X";
+    end
+end
 column = 1 + (options.mode == "Y");
 colorLimit = max(abs(values(isfinite(values(:, column)), column)), [], 'all');
 if isempty(colorLimit) || colorLimit <= 0
@@ -35,7 +50,20 @@ if isempty(colorLimit) || colorLimit <= 0
 end
 colorRange = [NaN, NaN];
 colorTitle = "";
-if options.spec.scalar
+if showVariance
+    finite = values(isfinite(values(:, column)), column);
+    colorRange = [0, max([finite; eps])];
+    axisText = " " + options.mode;
+    if options.spec.scalar
+        axisText = "";
+    end
+    colorTitle = "分散" + axisText + " [" + options.spec.unit + "²]";
+    if isempty(finite)
+        options.titleText = options.titleText + newline + "（推定の分散は GPR の手法だけ）";
+    else
+        options.titleText = options.titleText + newline + "推定の分散" + axisText + "（GPR）";
+    end
+elseif options.spec.scalar
     options.mode = "X";   % 1変数は色で描く（矢印は X・Y の2成分が要る）
     finite = values(isfinite(values(:, 1)), 1);
     if ~isempty(finite)

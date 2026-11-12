@@ -104,7 +104,7 @@ classdef (Abstract) MapTab < appui.Core
             place(c.mapEllipse, 2, 9);
             % 図に重ねるもの：Shot の枠・Scan 方向の色の Shot の枠・同心円の制約の区切りと、「ベクトルを描かない（楕円だけ）」
             % （上の行の右に置くと、手法・図の内容の欄が狭くなるため）
-            extras = uigridlayout(grid, [1, 6], 'ColumnWidth', {'fit', 'fit', 'fit', 'fit', 'fit', '1x'}, 'Padding', 0);
+            extras = uigridlayout(grid, [1, 7], 'ColumnWidth', {'fit', 'fit', 'fit', 'fit', 'fit', 'fit', '1x'}, 'Padding', 0);
             c.mapShotFrames = uicheckbox(extras, 'Text', 'Shot の枠', 'Value', true, 'ValueChangedFcn', onChange);
             c.mapShotNumbers = uicheckbox(extras, 'Text', 'Shot 番号', 'Value', false, 'ValueChangedFcn', onChange, ...
                 'Tooltip', 'Shot 中心に shotNo を重ねて描きます。');
@@ -116,6 +116,10 @@ classdef (Abstract) MapTab < appui.Core
                 'Tooltip', ['評価で I 最適・ランダムの同心円の制約を使ったとき、区切りの半径（Shot 中心の半径 [mm]）を' ...
                 '橙の一点鎖線で描きます。']);
             c.mapEllipseOnly = ellipseOnlyCheckbox(extras, onChange);
+            c.mapVariance = uicheckbox(extras, 'Text', '推定の分散を並べる（GPR）', 'Value', false, ...
+                'ValueChangedFcn', onChange, 'Tooltip', ['GPR の手法で「1つの条件」を描くとき、計測値・推定値・残差の右に、' ...
+                '推定の分散（予測分散。計測のばらつきは含めない）の色の図を並べます。X（色）なら X の分散、Y（色）なら Y の' ...
+                '分散、ベクトルなら X と Y の分散の和です。']);
             c.mapExtrasInfo = uilabel(extras, 'Text', '', 'FontColor', app.Palette.muted);
             c.filterMap = buildFilterControls(app, grid, "map");
             % 図（1つの条件の3枚、または並べて比べる図）と、並べて比べる条件の一覧
@@ -123,8 +127,10 @@ classdef (Abstract) MapTab < appui.Core
             registerResponsiveColumn(app, body, 2);
             c.mapPanel = uipanel(body, 'BorderType', 'none');
             c.mapStack = uigridlayout(c.mapPanel, [2, 1], 'RowHeight', {'1x', 0}, 'Padding', 0, 'RowSpacing', 0);
-            axesGrid = uigridlayout(c.mapStack, [1, 3], 'Padding', 0, 'ColumnSpacing', 8);
+            axesGrid = uigridlayout(c.mapStack, [1, 4], 'ColumnWidth', {'1x', '1x', '1x', 0}, 'Padding', 0, ...
+                'ColumnSpacing', 8);
             c.mapAxes = [uiaxes(axesGrid), uiaxes(axesGrid), uiaxes(axesGrid)];
+            c.mapVarianceAxes = uiaxes(axesGrid, 'Visible', 'off');   % 推定の分散（GPR。「推定の分散を並べる」のとき）
             c.comparePanel = uipanel(c.mapStack, 'BorderType', 'none');
             c.compareAxes = gobjects(1, 0);
             side = uigridlayout(body, [14, 1], 'RowHeight', {'fit', 'fit', 'fit', 'fit', 'fit', 'fit', 'fit', 'fit', '1x', ...
@@ -229,7 +235,99 @@ classdef (Abstract) MapTab < appui.Core
             for k = 1:3
                 drawMapPanel(app, c.mapAxes(k), f, k, scale(k), limits(k), magnitudes(k), f.titles(k), true, ranges{k});
             end
-            c.mapInfo.Text = f.info;
+            c.mapInfo.Text = f.info + drawVariancePanel(app, f, overlayContent);
+        end
+
+        function note = drawVariancePanel(app, f, overlayContent)
+            % 「推定の分散を並べる（GPR）」：GPR の手法なら、4つ目の図に推定の分散を色で描く（X（色）は X、Y（色）は Y、
+            % ベクトルは X と Y の和）。note は図の下の説明に足す文
+            c = app.Controls;
+            ax = c.mapVarianceAxes;
+            axesGrid = ax.Parent;
+            note = "";
+            method = app.Results.methods(c.mapMethod.Value);
+            hasVariance = ~isempty(f.variance) && any(isfinite(f.variance(:)));
+            show = c.mapVariance.Value && ~overlayContent && method.family == "GPR" && hasVariance;
+            if ~show
+                cla(ax, 'reset');
+                delete(ax.Colorbar);
+                legend(ax, 'off');
+                ax.Visible = 'off';
+                axesGrid.ColumnWidth = {'1x', '1x', '1x', 0};
+                if c.mapVariance.Value && ~overlayContent
+                    note = ternary(method.family == "GPR", "（推定の分散は、このセッションで評価した GPR の結果で描けます）", ...
+                        "（推定の分散は GPR の手法だけです）");
+                end
+                return
+            end
+            % 列を開いてから図を作り直す（幅 0 の列にあった図は、列を開いても位置が整わないことがあるため）
+            axesGrid.ColumnWidth = {'1x', '1x', '1x', '1x'};
+            delete(ax);
+            ax = uiaxes(axesGrid);
+            ax.Layout.Row = 1;
+            ax.Layout.Column = 4;
+            app.Controls.mapVarianceAxes = ax;
+            spec = resultSpec(app);
+            mode = string(c.mapMode.Value);
+            if spec.scalar
+                mode = "X";
+            end
+            switch mode
+                case "Y"
+                    values = f.variance;
+                    axisText = " Y";
+                case "X"
+                    values = f.variance;
+                    axisText = " X";
+                otherwise
+                    values = repmat(sum(f.variance, 2), 1, 2);   % ベクトル：X と Y の分散の和
+                    mode = "X";
+                    axisText = " X＋Y";
+            end
+            if spec.scalar
+                axisText = "";
+            end
+            column = 1 + (mode == "Y");
+            finite = values(isfinite(values(:, column)), column);
+            colorRange = [0, max([finite; eps])];
+            unitText = spec.unit + "²";
+            frame = mapFrameOptions(app, f);
+            titleText = ternary(f.isGroup, "推定の分散の平均", "推定の分散") + axisText + "（GPR）";
+            alignest.plot.waferMap(ax, f.points, values, mode=mode, colorRange=colorRange, ...
+                colorTitle="分散 [" + unitText + "]", trainPoints=f.trainPoints, titleText=titleText, ...
+                waferRadiusMm=app.Results.settings.data.waferRadiusMm, markerSize=c.mapMarkerSize.Value, ...
+                markerShape=c.mapMarkerShape.Value, shotCenters=frame.centers, shotSizeMm=frame.sizeMm, ...
+                shotDirections=frame.directions, ringRadiiMm=frame.rings, scanStyle=scanStyle(app), ...
+                numberCenters=frame.numberCenters, shotNumbers=frame.numbers);
+            styleAxes(app, ax, app.AXES_FONT_SIZE);
+            ax.Visible = 'on';   % 作り直した図を確実に見せる（画面を出していないときも）
+            means = mean(f.variance, 1, 'omitnan');
+            if spec.scalar
+                note = sprintf("｜推定の分散（GPR）：平均 %.3g %s", means(1), unitText);
+            else
+                note = sprintf("｜推定の分散（GPR）：平均 X %.3g・Y %.3g %s（標準偏差 X %.3g・Y %.3g %s）", means(1), ...
+                    means(2), unitText, sqrt(means(1)), sqrt(means(2)), spec.unit);
+            end
+        end
+
+        function frame = mapFrameOptions(app, f)
+            % マップに重ねるもの（Shot の枠・Scan 方向の色・同心円の区切り・Shot 番号）の値（画面の選択に従う）
+            c = app.Controls;
+            frame = struct("centers", zeros(0, 2), "sizeMm", [NaN, NaN], "directions", zeros(0, 1), ...
+                "rings", zeros(1, 0), "numberCenters", zeros(0, 2), "numbers", zeros(0, 1));
+            if c.mapShotFrames.Value || c.mapScanFrames.Value
+                frame.centers = f.centers;
+                frame.sizeMm = f.sizeMm;
+                if c.mapScanFrames.Value
+                    frame.directions = f.directions;
+                end
+            end
+            if c.mapRings.Value
+                frame.rings = activeZoneEdges(app.Results.settings);
+            end
+            if c.mapShotNumbers.Value && isfield(f, "shotNos")
+                [frame.numberCenters, frame.numbers] = deal(f.centers, f.shotNos);
+            end
         end
 
         function drawComparison(app)
@@ -406,32 +504,16 @@ classdef (Abstract) MapTab < appui.Core
             if spec.scalar
                 colorTitle = spec.name + " [" + spec.unit + "]";
             end
-            centers = zeros(0, 2);
-            sizeMm = [NaN, NaN];
-            directions = zeros(0, 1);
-            if c.mapShotFrames.Value || c.mapScanFrames.Value
-                centers = f.centers;
-                sizeMm = f.sizeMm;
-                if c.mapScanFrames.Value
-                    directions = f.directions;
-                end
-            end
-            rings = zeros(1, 0);
-            if c.mapRings.Value
-                rings = activeZoneEdges(settings);
-            end
+            frame = mapFrameOptions(app, f);
             ellipseSigma = c.mapEllipse.Value * f.isGroup;
-            [numberCenters, numbers] = deal(zeros(0, 2), zeros(0, 1));
-            if c.mapShotNumbers.Value && isfield(f, "shotNos")
-                [numberCenters, numbers] = deal(f.centers, f.shotNos);
-            end
             alignest.plot.waferMap(ax, f.points, f.values{k}, mode=string(c.mapMode.Value), scaleMmPerNm=scale, ...
                 colorLimit=limit, trainPoints=f.trainPoints, outlierPoints=f.outlierPoints, titleText=titleText, ...
                 waferRadiusMm=settings.data.waferRadiusMm, magnitudeLimit=magnitude, arrowColor=app.ARROW_COLORS(k, :), ...
-                markerSize=c.mapMarkerSize.Value, markerShape=c.mapMarkerShape.Value, shotCenters=centers, ...
-                shotSizeMm=sizeMm, shotDirections=directions, ringRadiiMm=rings, covariance=f.covariance{k}, scanStyle=scanStyle(app), ...
-                ellipseSigma=ellipseSigma, showArrows=~(c.mapEllipseOnly.Value && ellipseSigma > 0), showLegend=showLegend, ...
-                colorRange=colorRange, colorTitle=colorTitle, numberCenters=numberCenters, shotNumbers=numbers);
+                markerSize=c.mapMarkerSize.Value, markerShape=c.mapMarkerShape.Value, shotCenters=frame.centers, ...
+                shotSizeMm=frame.sizeMm, shotDirections=frame.directions, ringRadiiMm=frame.rings, covariance=f.covariance{k}, ...
+                scanStyle=scanStyle(app), ellipseSigma=ellipseSigma, showArrows=~(c.mapEllipseOnly.Value && ellipseSigma > 0), ...
+                showLegend=showLegend, colorRange=colorRange, colorTitle=colorTitle, numberCenters=frame.numberCenters, ...
+                shotNumbers=frame.numbers);
             styleAxes(app, ax, app.AXES_FONT_SIZE);
         end
 
@@ -467,7 +549,7 @@ classdef (Abstract) MapTab < appui.Core
             f = struct("ok", false, "message", "", "points", zeros(0, 2), "values", {cell(1, 3)}, ...
                 "covariance", {repmat({zeros(0, 3)}, 1, 3)}, "titles", strings(1, 3), "trainPoints", zeros(0, 2), ...
                 "outlierPoints", zeros(0, 2), "centers", zeros(0, 2), "sizeMm", [NaN, NaN], "directions", zeros(0, 1), ...
-                "isGroup", option.isGroup, "rmse", NaN, "info", "", "stack", struct("local", zeros(0, 2), ...
+                "isGroup", option.isGroup, "rmse", NaN, "info", "", "variance", zeros(0, 2), "stack", struct("local", zeros(0, 2), ...
                 "values", {cell(1, 3)}, "direction", zeros(0, 1), "parity", zeros(0, 1)));
             overlayContent = string(content) == "overlay";
             if overlayContent && option.isGroup
@@ -505,6 +587,7 @@ classdef (Abstract) MapTab < appui.Core
             end
             pointsList = cell(1, 0);
             panelValues = {cell(1, 0), cell(1, 0), cell(1, 0)};
+            varianceList = cell(1, 0);   % 推定の分散（GPR の評価点。ほかの手法・Overlay 補正は NaN）
             stackParts = cell(3, 0);   % Shot スタックマップ用：Shot 内の座標・Scan 方向・Shot 行の偶奇（点ごと）
             firstUnit = [];
             skipped = 0;
@@ -556,6 +639,16 @@ classdef (Abstract) MapTab < appui.Core
                 for k = 1:3
                     panelValues{k}{end + 1} = values{k}(usable, :);
                 end
+                varianceValues = nan(numel(marks.x), 2);
+                if ~overlayContent && isfield(out, "variance")
+                    axisNames = ["X", "Y"];
+                    for a = 1:2
+                        if numel(out.variance.(axisNames(a))) == numel(out.testIndex.(axisNames(a)))
+                            varianceValues(out.testIndex.(axisNames(a)), a) = out.variance.(axisNames(a));
+                        end
+                    end
+                end
+                varianceList{end + 1} = varianceValues(usable, :); %#ok<AGROW>
                 direction = nan(nnz(usable), 1);
                 if unit.hasDirection
                     direction = marks.direction(usable);
@@ -606,6 +699,7 @@ classdef (Abstract) MapTab < appui.Core
                     f.covariance{k} = average.covariance;
                 end
                 f.points = average.points;
+                f.variance = alignest.averageFields(pointsList, varianceList).mean;   % Wafer 間の推定の分散の平均
                 rows = table_(ismember(table_.unitIndex, option.unitIndex) & table_.plan == planLabel & ...
                     table_.methodIndex == m, :);
                 f.rmse = mean(rows.RMSE_XY, 'omitnan');
@@ -619,6 +713,7 @@ classdef (Abstract) MapTab < appui.Core
             end
             f.points = pointsList{1};
             f.values = cellfun(@(values) values{1}, panelValues, 'UniformOutput', false);
+            f.variance = varianceList{1};
             if overlayContent
                 metrics = firstCorrection.metrics;
                 f.rmse = mean(table_.RMSE_XY(table_.unitIndex == option.unitIndex & table_.planIndex == planIndex & ...

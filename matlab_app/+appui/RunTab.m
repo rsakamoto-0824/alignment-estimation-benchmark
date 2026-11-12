@@ -702,8 +702,25 @@ classdef (Abstract) RunTab < appui.Core
                 nPlans = 0;
             end
             nUnits = 0;
+            unitText = "";
+            selectionInfo = "";
             if ~isempty(app.Data)
-                nUnits = numel(app.Data.units);
+                % 評価に使う Wafer（枚数・割合で決めたときは、その枚数で数える）
+                try
+                    [selected, selectionText] = alignest.evaluationUnitIndex(numel(app.Data.units), ...
+                        app.Settings.evaluation, app.Settings.sampling.seed);
+                    nUnits = numel(selected);
+                    labels = string({app.Data.units(selected).label});
+                    selectionInfo = "→ " + selectionText + "：" + previewList(labels, app.LIST_PREVIEW_COUNT);
+                    if nUnits < numel(app.Data.units)
+                        unitText = "（" + selectionText + "）";
+                    end
+                catch err
+                    selectionInfo = "⚠ " + string(err.message);
+                end
+            end
+            if isfield(c, 'waferSelectionInfo')
+                c.waferSelectionInfo.Text = char(selectionInfo);
             end
             total = numel(methods) * nPlans * nUnits;
             seconds = 0;
@@ -728,8 +745,8 @@ classdef (Abstract) RunTab < appui.Core
                 planText = sprintf("。うち学習パターンを作る時間 約 %s（配置 %d 種類）、1枚あたり 約 %s", ...
                     durationText(detail.planSeconds), detail.nLayouts, durationText(seconds / nUnits));
             end
-            text = sprintf("手法 %d 種類 × 学習パターン %d × Wafer %d 枚 = %d 回の推定（目安 %s%s%s）", ...
-                numel(methods), nPlans, nUnits, total, durationText(seconds), planText, nuText);
+            text = sprintf("手法 %d 種類 × 学習パターン %d × Wafer %d 枚%s = %d 回の推定（目安 %s%s%s）", ...
+                numel(methods), nPlans, nUnits, unitText, total, durationText(seconds), planText, nuText);
             c.countLabel.Text = text;
             if isfield(c, 'exchangeInfo')
                 c.exchangeInfo.Text = exchangeText(app, detail);

@@ -12,6 +12,8 @@ function out = estimateWafer(unit, training, method, settings, testMask)
 %   X・Y の両方の学習データから除く（平均・σ はこの Wafer・この学習 Shot の組で求める。alignest.trainingOutliers）。
 %   除いた Mark は評価にも使わない（学習 Shot の Mark なので）。out.outlierIndex はその Mark 番号。
 %   out.testIndex.X / Y は評価点の Mark 番号（unit.marks の何番目か）、out.estimate.X / Y はその推定値。
+%   out.variance.X / Y は GPR の評価点の推定の分散 [nm²]（alignest.models.gprPredictVariance。1次を除くときは、除いた1次の
+%   分のばらつきは含まない）。GPR 以外の手法は空。
 %   testMask（省略可、Mark ごとの論理ベクトル）を渡すと、評価点をその Mark に限る（処理時間の内訳で、推定する点を
 %   減らして当てはめだけの時間を測るため。alignest.timingBreakdown）。
 %   out.timing は段階ごとの秒数（outliers：異常値の判定、model：モデルの当てはめと評価点の推定、
@@ -63,6 +65,7 @@ if settings.evaluation.removeLinear
 end
 
 methodSettings = alignest.completeMethodSettings(settings.methods);
+variance = struct("X", zeros(0, 1), "Y", zeros(0, 1));   % 推定の分散（GPR だけ。ほかの手法は空）
 options = methodSettings.options;
 out.extra = struct();
 out.converged = true;
@@ -123,6 +126,7 @@ switch method.family
                     out.aux(k) = result.noiseStd;
                     out.converged = out.converged && result.optimizerConverged && result.backfitConverged;
                     out.extra = addGprExtra(out.extra, result, axisNames(k));
+                    variance.(axisNames(k)) = result.predictionVariance;
                 case "TPS"
                     model = alignest.models.tpsSetup(features(train, :), features(test, :), tpsLambdaGrid(method.variant, options));
                     fitSpatial = @(values) alignest.models.tpsFitPredict(model, values, returnSmoother=method.factorMode == "backfit");
@@ -189,6 +193,7 @@ if settings.evaluation.removeLinear
     out.edf(active) = out.edf(active) + 3;
 end
 out.estimate = estimate;
+out.variance = variance;
 out.testIndex = testIndex;
 out.trainIndex = trainIndex;
 out.outlierIndex = find(outlier);

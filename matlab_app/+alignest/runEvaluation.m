@@ -16,6 +16,10 @@ function results = runEvaluation(data, settings, progressFcn, previous, mode)
 %   学習パターン（どの Shot を学習に使うか）は、候補 Shot と計測できた Mark が同じ Wafer どうしで共通にする
 %   （同じ Shot で比べるため。乱数も同じ値から始める）。
 %   1つの手法が失敗しても止めずに、その行の指標を NaN、note に理由を入れて続ける。
+%   評価に使う Wafer は settings.evaluation の waferSelection・waferCount・waferRate・waferOrder で決める
+%   （alignest.evaluationUnitIndex。既定はすべて）。results.evaluatedUnits は評価した Wafer の番号（data.units の何番目か）、
+%   results.unitLabels はすべての Wafer の名前（行の unitIndex はこの番号）。"extend" では枚数・割合を増やして Wafer を
+%   足せる（評価済みの Wafer はすべて含むこと。足した Wafer は、評価済みと足した手法・学習パターンのすべてを計算する）。
 %   settings.evaluation.recordTiming が true なら、各手法を最初に使う前に1回だけ予備の推定をして（結果は捨てる）、
 %   ファイルの読み込みなど初回だけの時間を処理時間に入れない。処理時間（seconds）は1枚の X・Y の推定にかかった秒数。
 if nargin < 3 || isempty(progressFcn)
@@ -35,6 +39,8 @@ if isempty(methods)
 end
 specs = alignest.buildPlanSpecs(settings.sampling);
 units = data.units;
+[selected, selectionText] = alignest.evaluationUnitIndex(numel(units), settings.evaluation, settings.sampling.seed);
+addedUnits = zeros(1, 0);
 columns = alignest.factorColumnsUsed(settings);
 if isfield(data, "attributeNames")
     missingColumns = columns(~ismember(columns, data.attributeNames));
@@ -60,7 +66,17 @@ end
 if ~isempty(previous)
     requestedIds = string({methods.id});
     requestedLabels = string({specs.label});
-    [methods, specs] = checkPrevious(previous, settings, methods, specs, units, mode);
+    previousUnits = alignest.evaluatedUnits(previous);
+    if mode == "extend"
+        if ~all(ismember(previousUnits, selected))
+            error('alignest:extend', ['評価済みの Wafer が、今の「評価に使う Wafer」に含まれていません（Wafer を減らす・' ...
+                '入れ替えることはできません）。枚数・割合を評価したとき以上にするか、「評価を始める」で最初から計算してください。']);
+        end
+        addedUnits = setdiff(selected, previousUnits);
+    elseif ~isequal(previousUnits, selected)
+        selected = previousUnits;   % 続きから再開：中断したときの Wafer のまま
+    end
+    [methods, specs] = checkPrevious(previous, settings, methods, specs, units, mode, ~isempty(addedUnits));
     for k = 1:height(previous.table)
         previousRow(rowKey(previous.table.unitIndex(k), previous.table.plan(k), previous.table.methodId(k))) = k;
     end
@@ -80,9 +96,9 @@ if ~isempty(previous)
         mergedSettings.methods = unionSettings(previous.settings.methods, settings.methods);
         newMethods = setdiff(requestedIds, string({previous.methods.id}), 'stable');
         newPlans = setdiff(requestedLabels, string({specsOf(previous).label}), 'stable');
-        additions(end + 1, 1) = sprintf("%s に追加：手法 %d（%s）・学習パターン %d（%s）", ...
+        additions(end + 1, 1) = sprintf("%s に追加：手法 %d（%s）・学習パターン %d（%s）・Wafer %d（%s）", ...
             string(datetime('now', 'Format', 'yyyy/MM/dd HH:mm:ss')), numel(newMethods), listOrNone(newMethods), ...
-            numel(newPlans), listOrNone(newPlans));
+            numel(newPlans), listOrNone(newPlans), numel(addedUnits), listOrNone(string({units(addedUnits).label})));
         if factorsChanged
             % 結果の設定の質的変数は最初に評価したときの組のまま（足した手法は id の "_fs-" の組を使う）
             mergedSettings.factors = previous.settings.factors;
@@ -95,7 +111,7 @@ if ~isempty(previous)
         mergedSettings = previous.settings;   % 続きから再開：前と同じ（追加した評価の続きなら、合わせた設定）
     end
 end
-nTotal = numel(units) * numel(specs) * numel(methods);
+nTotal = numel(selected) * numel(specs) * numel(methods);
 metricList = alignest.metricNames();
 template = rowTemplate(metricList);
 rows = repmat(template, nTotal, 1);
@@ -115,7 +131,7 @@ end
 done = double(previousRow.Count);
 cancelled = false;
 slot = 0;
-for u = 1:numel(units)
+for u = selected
     unit = units(u);
     for p = 1:numel(specs)
         spec = specs(p);
@@ -220,6 +236,8 @@ results.plans = plans;
 results.methods = methods;
 results.specs = specs;
 results.unitLabels = string({units.label}).';
+results.evaluatedUnits = selected;              % 評価した Wafer（data.units の何番目か）
+results.waferSelectionText = selectionText;      % 評価に使う Wafer の説明（例 "5 枚中 3 枚（先頭から）"）
 results.groups = unique(string({specs.group}), 'stable');
 results.settings = mergedSettings;
 results.runSettings = settings;
@@ -239,8 +257,8 @@ results.overlayDescription = overlay.description;
 results.createdAt = string(datetime('now', 'Format', 'yyyy/MM/dd HH:mm:ss'));
 end
 
-function [methods, specs] = checkPrevious(previous, settings, methods, specs, units, mode)
-% 続きから再開・条件の追加ができる結果か確かめ、手法・学習パターンを評価済みのものと合わせる
+function [methods, specs] = checkPrevious(previous, settings, methods, specs, units, mode, addedUnits)
+% 続きから再開・条件の追加ができる結果か確かめ、手法・学習パターンを評価済みのものと合わせる（addedUnits：Wafer を足すか）
 if ~isequal(string(previous.unitLabels(:)), string({units.label}).')
     error(char("alignest:" + mode), '評価したときと Wafer の並びが違います。同じデータを読み込んでから実行してください。');
 end
@@ -278,9 +296,9 @@ previousIds = string({previous.methods.id});
 methods = [reshape(previous.methods, 1, []), methods(~ismember(string({methods.id}), previousIds))];
 newSpecs = specs(~ismember(string({specs.label}), string({previousSpecs.label})));
 specs = sortSpecs([reshape(previousSpecs, 1, []), reshape(newSpecs, 1, [])]);
-if mode == "extend" && numel(methods) == numel(previous.methods) && isempty(newSpecs)
-    error('alignest:extend', ['評価済みの結果に無い手法・学習パターンがありません。「2. 評価の設定」で手法または' ...
-        '学習 Shot 数（計測率）を増やしてから実行してください。']);
+if mode == "extend" && numel(methods) == numel(previous.methods) && isempty(newSpecs) && ~addedUnits
+    error('alignest:extend', ['評価済みの結果に無い手法・学習パターン・Wafer がありません。「2. 評価の設定」で手法・' ...
+        '学習 Shot 数（計測率）・評価に使う Wafer の枚数（割合）を増やしてから実行してください。']);
 end
 end
 

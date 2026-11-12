@@ -254,11 +254,36 @@ classdef (Abstract) SettingsTab < appui.Core
             c.outlierSigma = uieditfield(outlierGrid, 'numeric', 'Limits', [0, Inf], 'LowerLimitInclusive', 'off', ...
                 'ValueDisplayFormat', '%g', 'ValueChangedFcn', onChange);
             place(c.outlierSigma, 2, 3);
-            c.recordTiming = uicheckbox(s, 'ValueChangedFcn', onChange, ...
+            % 処理時間の記録と、評価に使う Wafer（すべて・枚数・割合、先頭から・ランダム）
+            evaluationGrid = uigridlayout(s, [4, 4], 'ColumnWidth', {'fit', '1x', 70, '1x'}, ...
+                'RowHeight', {'fit', 'fit', 'fit', 'fit'}, 'Padding', 0, 'RowSpacing', 3);
+            place(evaluationGrid, 35, [1, 2]);
+            c.recordTiming = uicheckbox(evaluationGrid, 'ValueChangedFcn', onChange, ...
                 'Text', '処理時間を記録する', ...
                 'Tooltip', ['手法 × 学習パターンごとに、1 枚（X・Y）の推定にかかった秒数を集計し、「4. 結果一覧」の指標と' ...
                 'Excel の「処理時間」シートに出します。各手法の初回は予備の推定を1回して、読み込みの時間を除きます。']);
-            place(c.recordTiming, 35, [1, 2]);
+            place(c.recordTiming, 1, [1, 4]);
+            label(evaluationGrid, '評価に使う Wafer', 2, 1);
+            c.waferSelection = uidropdown(evaluationGrid, 'Items', {'すべて', '枚数で指定', '割合 [%] で指定'}, ...
+                'ItemsData', {'all', 'count', 'rate'}, 'ValueChangedFcn', onChange, 'Tooltip', ['読み込んだ Wafer のうち、' ...
+                '評価に使う Wafer を枚数か割合で決めます。「条件を追加して評価」で枚数・割合を増やすと、足した Wafer だけを' ...
+                '計算して結果に足します。']);
+            place(c.waferSelection, 2, 2);
+            c.waferCount = uispinner(evaluationGrid, 'Limits', [1, 100000], 'RoundFractionalValues', 'on', 'Value', 5, ...
+                'ValueChangedFcn', onChange, 'Tooltip', '評価に使う Wafer の枚数（読み込んだ枚数より多ければすべて）。');
+            place(c.waferCount, 2, 3);
+            c.waferRate = uieditfield(evaluationGrid, 'numeric', 'Limits', [0, 100], 'LowerLimitInclusive', 'off', ...
+                'Value', 50, 'ValueDisplayFormat', '%g %%', 'ValueChangedFcn', onChange, 'Tooltip', ['評価に使う Wafer の割合 [%]' ...
+                '（読み込んだ枚数 × 割合 を四捨五入。1 枚以上）。']);
+            place(c.waferRate, 2, 4);
+            label(evaluationGrid, '選び方', 3, 1);
+            c.waferOrder = uidropdown(evaluationGrid, 'Items', {'先頭から', 'ランダム'}, ...
+                'ItemsData', {'first', 'random'}, 'ValueChangedFcn', onChange, 'Tooltip', ['先頭から：読み込んだ順に先頭から。' ...
+                'ランダム：メニュー「設定」の乱数の種で決まる並びから（同じ種なら同じ Wafer。枚数を増やしても前の Wafer を含む）。']);
+            place(c.waferOrder, 3, 2);
+            c.waferSelectionInfo = uilabel(evaluationGrid, 'WordWrap', 'on', 'Text', '', 'FontColor', app.Palette.muted, ...
+                'UserData', "muted");
+            place(c.waferSelectionInfo, 4, [1, 4]);
             heading(s, 'Overlay 補正の評価', 36);
             label(s, 'Wafer 成分', 37, 1);
             label(s, 'Shot 共通成分', 37, 2);
@@ -570,6 +595,10 @@ classdef (Abstract) SettingsTab < appui.Core
             c.outerRadius.Value = s.evaluation.outerRadiusMm;
             c.removeLinear.Value = s.evaluation.removeLinear;
             c.recordTiming.Value = s.evaluation.recordTiming;
+            c.waferSelection.Value = char(fieldOr(s.evaluation, "waferSelection", "all"));
+            c.waferCount.Value = double(fieldOr(s.evaluation, "waferCount", 5));
+            c.waferRate.Value = double(fieldOr(s.evaluation, "waferRate", 50));
+            c.waferOrder.Value = char(fieldOr(s.evaluation, "waferOrder", "first"));
             c.excludeOutliers.Value = s.evaluation.excludeOutliers;
             c.outlierSigma.Value = s.evaluation.outlierSigma;
             c.outlierMethod.Value = char(alignest.outlierMethod(s));
@@ -748,6 +777,10 @@ classdef (Abstract) SettingsTab < appui.Core
             s.evaluation.outlierSigma = c.outlierSigma.Value;
             s.evaluation.outlierMethod = string(c.outlierMethod.Value);
             s.evaluation.recordTiming = c.recordTiming.Value;
+            s.evaluation.waferSelection = string(c.waferSelection.Value);
+            s.evaluation.waferCount = c.waferCount.Value;
+            s.evaluation.waferRate = c.waferRate.Value;
+            s.evaluation.waferOrder = string(c.waferOrder.Value);
             s.overlay.waferUseFormula = c.overlayWafer.Value == app.FORMULA_CHOICE;
             if ~s.overlay.waferUseFormula
                 s.overlay.waferOrder = c.overlayWafer.Value;
@@ -1018,6 +1051,10 @@ classdef (Abstract) SettingsTab < appui.Core
             set([c.overlayPerShotDx, c.overlayPerShotDy], 'Enable', onOff(string(c.overlayPerShot.Value) == "formula"));
             set([c.zernikeOrders, c.zernikeFactors], 'Enable', onOff(c.zernike.Value));
             c.outlierSigma.Enable = onOff(c.excludeOutliers.Value);
+            waferSelection = string(c.waferSelection.Value);   % 評価に使う Wafer の欄は、決め方に合わせて使える
+            c.waferCount.Enable = onOff(waferSelection == "count");
+            c.waferRate.Enable = onOff(waferSelection == "rate");
+            c.waferOrder.Enable = onOff(waferSelection ~= "all");
             set([c.overlayWaferDx, c.overlayWaferDy], 'Enable', onOff(c.overlayWafer.Value == app.FORMULA_CHOICE));
             set([c.overlayShotDx, c.overlayShotDy], 'Enable', onOff(string(c.overlayShotCommon.Value) == "formula"));
             set([c.kernels, c.factorModes], 'Enable', onOff(c.gpr.Value));

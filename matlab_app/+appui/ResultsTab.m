@@ -26,7 +26,7 @@ classdef (Abstract) ResultsTab < appui.Core
             end
             unitIndex = c.estimatedCorrectionWafer.Value;
             if isequal(unitIndex, 0)
-                unitIndex = 1:numel(app.Data.units);
+                unitIndex = alignest.evaluatedUnits(app.Results);   % 評価した Wafer すべて
             end
             selection = struct("methodIndex", [c.estimatedCorrectionMethods.Value{:}], "groups", ...
                 string(c.estimatedCorrectionGroup.Value), "unitIndex", unitIndex);
@@ -63,6 +63,7 @@ classdef (Abstract) ResultsTab < appui.Core
             app.Results = results;
             clearPointViews(app);
             showFilter(app);
+            updateWaferRanking(app, true);
             refreshResults(app);
             drawMap(app);
         end
@@ -76,7 +77,12 @@ classdef (Abstract) ResultsTab < appui.Core
                 error('alignest:importedResults', ['Excel から読み込んだ結果は書き出せません（読み込んだファイル「%s」を' ...
                     'そのまま使ってください）。'], app.Results.imported);
             end
-            alignest.exportResults(app.Results, filePath, app.FilePath);
+            % Wafer のベスト・ワーストの総合は、画面で選んでいる指標で書き出す
+            overallMetrics = missing;
+            if ~isempty(app.WaferRanking)
+                overallMetrics = app.WaferRanking.overallMetrics;
+            end
+            alignest.exportResults(app.Results, filePath, app.FilePath, overallMetrics);
         end
 
         function results = importResultsFrom(app, filePath)
@@ -294,7 +300,7 @@ classdef (Abstract) ResultsTab < appui.Core
             end
             unitIndex = c.scatterWafer.Value;
             if unitIndex == 0
-                unitIndex = 1:numel(app.Results.unitLabels);
+                unitIndex = alignest.evaluatedUnits(app.Results);   % 評価した Wafer すべて
             end
             selection = struct("methodIndex", c.scatterMethod.Value, "groups", string(c.scatterGroup.Value), ...
                 "unitIndex", unitIndex);
@@ -341,7 +347,7 @@ classdef (Abstract) ResultsTab < appui.Core
             end
             unitIndex = c.residualVariableWafer.Value;
             if unitIndex == 0
-                unitIndex = 1:numel(app.Results.unitLabels);
+                unitIndex = alignest.evaluatedUnits(app.Results);   % 評価した Wafer すべて
             end
             selection = struct("methodIndex", c.residualVariableMethod.Value, "groups", ...
                 string(c.residualVariableGroup.Value), "unitIndex", unitIndex);
@@ -415,7 +421,7 @@ classdef (Abstract) ResultsTab < appui.Core
             end
             unitIndex = c.distributionWafer.Value;
             if unitIndex == 0
-                unitIndex = 1:numel(app.Results.unitLabels);
+                unitIndex = alignest.evaluatedUnits(app.Results);   % 評価した Wafer すべて
             end
             selection = struct("methodIndex", c.distributionMethod.Value, "groups", string(c.distributionGroup.Value), ...
                 "unitIndex", unitIndex);
@@ -470,7 +476,7 @@ classdef (Abstract) ResultsTab < appui.Core
             results = app.Results;
             if scope == "all"
                 selection = struct("methodIndex", 1:numel(results.methods), "groups", results.groups, ...
-                    "unitIndex", 1:numel(results.unitLabels));
+                    "unitIndex", alignest.evaluatedUnits(results));
                 scopeText = "すべての手法・学習パターン・Wafer";
             else
                 selection = analysisSelection(app);
@@ -696,6 +702,34 @@ classdef (Abstract) ResultsTab < appui.Core
             c.comparisonNote = uilabel(compareGrid, 'WordWrap', 'on', 'Text', '');
             c.comparisonTable = uitable(compareGrid, 'RowName', {}, ...
                 'ColumnName', {'手法', '列', '基準との差', '95% 区間', '基準より良かった割合', 'Wafer 数'});
+            % Wafer のベスト・ワースト：指標ごとに、最も良い・平均に近い・最も悪い Wafer（指標でワーストが違うことがある）
+            c.waferRankingTab = uitab(c.resultTabs, 'Title', 'Wafer のベスト・ワースト');
+            rankingGrid = uigridlayout(c.waferRankingTab, [4, 2], 'RowHeight', {'fit', '1x', '1x', 'fit'}, ...
+                'ColumnWidth', {'1x', 300}, 'Padding', 8, 'RowSpacing', 8, 'ColumnSpacing', 12);
+            registerResponsiveColumn(app, rankingGrid, 2);
+            rankingControls = uigridlayout(rankingGrid, [2, 2], 'ColumnWidth', {'1x', 220}, 'RowHeight', {'fit', 'fit'}, ...
+                'Padding', 0);
+            place(rankingControls, 1, 1);
+            label(rankingControls, '手法', 1, 1);
+            label(rankingControls, '学習パターン', 1, 2);
+            c.rankingMethod = uidropdown(rankingControls, 'Items', {'—'}, 'Enable', 'off', ...
+                'ValueChangedFcn', @(~, ~) app.showWaferRanking());
+            place(c.rankingMethod, 2, 1);
+            c.rankingGroup = uidropdown(rankingControls, 'Items', {'—'}, 'Enable', 'off', ...
+                'ValueChangedFcn', @(~, ~) app.showWaferRanking());
+            place(c.rankingGroup, 2, 2);
+            label(rankingGrid, '総合に使う指標', 1, 2);
+            c.rankingOverallMetrics = uilistbox(rankingGrid, 'Items', {}, 'Multiselect', 'on', 'Enable', 'off', ...
+                'ValueChangedFcn', @(~, ~) app.onRankingOverallMetrics(), 'Tooltip', ['総合の行は、選んだ指標それぞれの' ...
+                'Wafer の順位（1 = 最も良い）を平均して決めます（Ctrl・Shift で複数）。']);
+            place(c.rankingOverallMetrics, [2, 3], 2);
+            c.rankingTable = uitable(rankingGrid, 'RowName', {}, 'ColumnName', {'指標', 'ベスト', '値', '平均に近い', ...
+                '値', 'ワースト', '値', 'Wafer の平均', 'Wafer 数'});
+            place(c.rankingTable, 2, 1);
+            c.rankingWaferTable = uitable(rankingGrid, 'RowName', {}, 'ColumnName', {'Wafer'});
+            place(c.rankingWaferTable, 3, 1);
+            c.rankingInfo = uilabel(rankingGrid, 'WordWrap', 'on', 'Text', '');
+            place(c.rankingInfo, 4, [1, 2]);
             % 計測配置の比較：選び方（I 最適・D 最適・Excel で指定など）ごとに、学習点の数に対する指標を比べる
             c.layoutCompareTab = uitab(c.resultTabs, 'Title', '計測配置の比較');
             layoutGrid = uigridlayout(c.layoutCompareTab, [3, 2], 'RowHeight', {'fit', '1x', 'fit'}, ...
@@ -988,6 +1022,94 @@ classdef (Abstract) ResultsTab < appui.Core
                 "手法・学習パターン・Wafer と、「7. Shot高次補正」の②③の設定を確かめてから、もう一度試してください。");
         end
 
+        function updateWaferRanking(app, keepSelection)
+            % 結果が変わったら「Wafer のベスト・ワースト」を求め直す。keepSelection が true なら、総合に使う指標の選択を残す
+            % （評価点の絞り込み。指標の種類は同じ）。false なら既定の指標（新しい結果）
+            c = app.Controls;
+            if keepSelection && ~isempty(app.WaferRanking)
+                ranking = alignest.waferRanking(app.Results, app.WaferRanking.metrics, ...
+                    reshape(string(c.rankingOverallMetrics.Value), 1, []));
+            else
+                ranking = alignest.waferRanking(app.Results);
+            end
+            app.WaferRanking = ranking;
+            c.rankingOverallMetrics.Items = cellstr(shortMetricLabels(ranking.metricLabels));
+            c.rankingOverallMetrics.ItemsData = cellstr(ranking.metrics);
+            c.rankingOverallMetrics.Value = cellstr(ranking.overallMetrics);
+            showWaferRanking(app);
+        end
+
+        function onRankingOverallMetrics(app)
+            % 総合に使う指標を変えたら、総合の順位を求め直す（何も選ばないときは総合を出さない）
+            ranking = app.WaferRanking;
+            if isempty(ranking)
+                return
+            end
+            selected = reshape(string(app.Controls.rankingOverallMetrics.Value), 1, []);
+            app.WaferRanking = alignest.waferRanking(app.Results, ranking.metrics, selected);
+            showWaferRanking(app);
+        end
+
+        function showWaferRanking(app)
+            % 「Wafer のベスト・ワースト」の2つの表：指標ごとのベスト・平均に近い・ワーストの Wafer と、Wafer ごとの値
+            % （ベストの値は最良の色、ワーストの値は注意の色、平均に近い Wafer の値は太字）
+            c = app.Controls;
+            ranking = app.WaferRanking;
+            removeStyle(c.rankingTable);
+            removeStyle(c.rankingWaferTable);
+            if isempty(ranking) || isempty(ranking.units) || isempty(app.Results)
+                c.rankingTable.Data = {};
+                c.rankingWaferTable.Data = {};
+                c.rankingWaferTable.ColumnName = {'Wafer'};
+                c.rankingInfo.Text = '';
+                return
+            end
+            m = c.rankingMethod.Value;
+            group = string(c.rankingGroup.Value);
+            g = find(string(app.Results.groups) == group, 1);
+            rows = ranking.table(ranking.table.methodIndex == m & ranking.table.group == group, :);
+            metricLabels = [shortMetricLabels(ranking.metricLabels), "総合（順位の平均）"];
+            order = [height(rows), 1:height(rows) - 1];   % 表の行・列の順（総合が先）に、ranking.table の行を並べ直す
+            data = cell(height(rows), 9);
+            for position = 1:numel(order)
+                k = order(position);
+                data(position, :) = {char(metricLabels(k)), waferText(rows.bestWafer(k)), numberText(rows.bestValue(k), '%.3f'), ...
+                    waferText(rows.averageWafer(k)), numberText(rows.averageValue(k), '%.3f'), ...
+                    waferText(rows.worstWafer(k)), numberText(rows.worstValue(k), '%.3f'), ...
+                    numberText(rows.mean(k), '%.3f'), sprintf('%d', rows.nWafers(k))};
+            end
+            c.rankingTable.Data = data;
+            c.rankingTable.ColumnWidth = num2cell(scaledPixels(app, [300, 150, 80, 150, 80, 150, 80, 110, 80]));
+            addStyle(c.rankingTable, uistyle('BackgroundColor', app.Palette.best), 'column', [2, 3]);
+            addStyle(c.rankingTable, uistyle('BackgroundColor', app.Palette.warning), 'column', [6, 7]);
+            addStyle(c.rankingTable, uistyle('FontWeight', 'bold'), 'row', 1);
+            % Wafer ごとの値（列：総合の順位の平均、指標）
+            values = [ranking.overallRank{m, g}, ranking.values{m, g}];
+            nUnits = numel(ranking.units);
+            waferData = cell(nUnits, size(values, 2) + 1);
+            waferData(:, 1) = cellstr(ranking.unitLabels);
+            waferData(:, 2:end) = arrayfun(@(value) numberText(value, '%.3f'), values, 'UniformOutput', false);
+            c.rankingWaferTable.Data = waferData;
+            c.rankingWaferTable.ColumnName = cellstr(["Wafer", "総合（順位の平均）", shortMetricLabels(ranking.metricLabels)]);
+            c.rankingWaferTable.ColumnWidth = num2cell(scaledPixels(app, [150, repmat(130, 1, size(values, 2))]));
+            for column = 1:numel(order)
+                row = order(column);
+                [~, best] = ismember(rows.bestUnit(row), ranking.units);
+                [~, worst] = ismember(rows.worstUnit(row), ranking.units);
+                [~, average] = ismember(rows.averageUnit(row), ranking.units);
+                if best > 0
+                    addStyle(c.rankingWaferTable, uistyle('BackgroundColor', app.Palette.best), 'cell', [best, column + 1]);
+                end
+                if worst > 0 && worst ~= best
+                    addStyle(c.rankingWaferTable, uistyle('BackgroundColor', app.Palette.warning), 'cell', [worst, column + 1]);
+                end
+                if average > 0
+                    addStyle(c.rankingWaferTable, uistyle('FontWeight', 'bold'), 'cell', [average, column + 1]);
+                end
+            end
+            c.rankingInfo.Text = rankingSummaryText(rows, metricLabels, ranking);
+        end
+
         function f = buildFilterControls(app, parent, source)
             % 評価点の絞り込みの欄。「4. 結果一覧」と「5. Waferごとのマップ」に同じものを置き、どちらで変えても両方をそろえる
             f.grid = uigridlayout(parent, [2, 14], 'ColumnWidth', {'fit', 64, 'fit', 64, 'fit', 175, 110, 'fit', 80, 'fit', ...
@@ -1162,7 +1284,14 @@ classdef (Abstract) ResultsTab < appui.Core
                 c.resultControls.RowHeight{3} = 0;
             end
             % マップの選択肢
-            setGroupItems(c.mapWafer, alignest.groupOptions(mapUnits(app)));
+            % 評価した Wafer だけを選択肢にする（選択肢の Wafer の番号は data.units の番号に直す）
+            evaluated = alignest.evaluatedUnits(results);
+            mapUnitList = mapUnits(app);
+            options = alignest.groupOptions(mapUnitList(evaluated));
+            for k = 1:numel(options)
+                options(k).unitIndex = evaluated(options(k).unitIndex);
+            end
+            setGroupItems(c.mapWafer, options);
             planLabels = unique(string({results.plans.label}), 'stable');
             c.mapPlan.Items = cellstr(planLabels);
             c.mapMethod.Items = cellstr(labels);
@@ -1170,7 +1299,7 @@ classdef (Abstract) ResultsTab < appui.Core
             set([c.mapWafer, c.mapPlan, c.mapMethod, c.mapMode, c.mapScale, c.mapMarkerSize, c.mapMarkerShape, c.mapEllipse, ...
                 c.mapEllipseOnly, c.mapShotFrames, c.saveMap, c.copyMap, c.mapScanFrames, c.mapRings, c.mapView, c.mapCompareValue, ...
                 c.mapConditions, c.mapAddCondition, c.mapRemoveCondition, c.mapClearConditions, c.mapStackBy, ...
-                c.mapStackAll], 'Enable', 'on');
+                c.mapStackAll, c.mapVariance], 'Enable', 'on');
             app.MapConditions = app.MapConditions([]);   % 結果が変わると Wafer・手法の番号が変わるので、一覧は空にする
             refreshMapConditions(app);
             c.mapView.Value = 'single';
@@ -1186,8 +1315,8 @@ classdef (Abstract) ResultsTab < appui.Core
             c.analysisMethod.Value = {order(1)};
             c.analysisGroup.Items = cellstr(results.groups);
             c.analysisGroup.Value = char(results.groups(end));
-            c.analysisWafer.Items = cellstr(["すべての Wafer"; results.unitLabels(:)]);
-            c.analysisWafer.ItemsData = 0:numel(results.unitLabels);
+            c.analysisWafer.Items = cellstr(["すべての Wafer"; reshape(results.unitLabels(evaluated), [], 1)]);
+            c.analysisWafer.ItemsData = [0, evaluated];
             c.analysisWafer.Value = 0;
             set([c.analysisMethod, c.analysisGroup, c.analysisWafer, c.analyze, c.estimateScope, c.exportEstimates], ...
                 'Enable', 'on');
@@ -1232,9 +1361,9 @@ classdef (Abstract) ResultsTab < appui.Core
             set([c.distributionMethod, c.distributionGroup, c.distributionWafer, c.distributionAxis, ...
                 c.compareDistributionsButton], 'Enable', 'on');
             % 処理時間の内訳（計測データを読み込んで評価した結果だけ。初めは推定値と誤差の分布と同じ手法・最も多い学習 Shot 数）
-            c.timingWafer.Items = cellstr(results.unitLabels);
-            c.timingWafer.ItemsData = 1:numel(results.unitLabels);
-            c.timingWafer.Value = 1;
+            c.timingWafer.Items = cellstr(results.unitLabels(evaluated));
+            c.timingWafer.ItemsData = evaluated;
+            c.timingWafer.Value = evaluated(1);
             c.timingPlan.Items = cellstr(planLabels);
             c.timingPlan.Value = char(planLabels(end));
             c.timingMethods.Items = cellstr(labels);
@@ -1255,6 +1384,14 @@ classdef (Abstract) ResultsTab < appui.Core
                 c.compareEstimatedCorrectionButton], 'Enable', onOff(~imported && ~isempty(app.Data)));
             app.EstimatedCorrection = [];
             showEstimatedCorrection(app);
+            % Wafer のベスト・ワースト（初めは推定値と誤差の分布と同じ手法・最も多い学習 Shot 数、総合の指標は既定）
+            c.rankingMethod.Items = cellstr(labels);
+            c.rankingMethod.ItemsData = 1:numel(labels);
+            c.rankingMethod.Value = order(1);
+            c.rankingGroup.Items = cellstr(results.groups);
+            c.rankingGroup.Value = char(results.groups(end));
+            set([c.rankingMethod, c.rankingGroup, c.rankingOverallMetrics], 'Enable', 'on');
+            updateWaferRanking(app, false);
             set([c.filterResults.apply, c.filterMap.apply], 'Enable', 'on');
             showFilter(app);
             refreshResults(app);
@@ -1493,7 +1630,7 @@ classdef (Abstract) ResultsTab < appui.Core
             c = app.Controls;
             unitIndex = c.analysisWafer.Value;
             if unitIndex == 0
-                unitIndex = 1:numel(app.Results.unitLabels);
+                unitIndex = alignest.evaluatedUnits(app.Results);   % 評価した Wafer すべて
             end
             methodIndex = cell2mat(c.analysisMethod.Value);
             if isempty(methodIndex)
@@ -1860,6 +1997,47 @@ switch kind
     otherwise
         text = "";
 end
+end
+
+function text = waferText(name)
+% 表の Wafer の欄（値のある Wafer が無ければ —）
+text = char(name);
+if isempty(text)
+    text = '—';
+end
+end
+
+function text = rankingSummaryText(rows, metricLabels, ranking)
+% 「Wafer のベスト・ワースト」の表の下の説明：ワースト・ベストになった Wafer と指標の数（指標で違うかが分かる）、総合
+nMetrics = height(rows) - 1;
+overall = rows(end, :);
+if max(rows.nWafers) <= 1
+    text = 'Wafer が 1 枚なので、ベスト・平均・ワーストは同じ Wafer です。';
+    return
+end
+parts = strings(1, 0);
+for kind = ["worst", "best"]
+    names = rows.(kind + "Wafer")(1:nMetrics);
+    names = names(names ~= "");
+    [unique_, ~, index] = unique(names, 'stable');
+    counts = accumarray(index, 1);
+    [counts, order] = sort(counts, 'descend');
+    items = unique_(order) + "（" + string(counts) + " 指標）";
+    prefix = ternary(kind == "worst", "ワースト", "ベスト");
+    if numel(unique_) > 1
+        parts(end + 1) = prefix + "の Wafer は指標で違います：" + strjoin(items, "、") + "。"; %#ok<AGROW>
+    elseif ~isempty(unique_)
+        parts(end + 1) = prefix + "の Wafer はどの指標でも " + unique_ + " です。"; %#ok<AGROW>
+    end
+end
+if isempty(ranking.overallMetrics)
+    parts(end + 1) = "総合：右の「総合に使う指標」を選んでください。";
+else
+    used = metricLabels(ismember(ranking.metrics, ranking.overallMetrics));
+    parts(end + 1) = "総合（" + strjoin(used, "・") + " の順位の平均）：ベスト " + waferText(overall.bestWafer) + ...
+        "、平均 " + waferText(overall.averageWafer) + "、ワースト " + waferText(overall.worstWafer) + "。";
+end
+text = char(strjoin(parts, " "));
 end
 
 function text = statisticLabel(statistic)
