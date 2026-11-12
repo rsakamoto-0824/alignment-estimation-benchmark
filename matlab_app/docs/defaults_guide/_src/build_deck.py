@@ -264,11 +264,12 @@ def build(output: Path, reference: Path):
     notes(s, "初期値はこの2つの関数にまとまっている。設定ファイル（JSON）の項目名は、関数の中の名前と同じ。")
 
     # 9. data・factors
-    s = deck.body("03　設定の項目と初期値", "設定の項目①：data（データの読み込み）・factors（質的変数）")
+    s = deck.body("03　設定の項目と初期値", "設定の項目①：data（データ読込）・factors（質的変数）")
     settings_table(s, [
         ["data.waferRadiusMm・validRadiusMm", "150・150", "座標を割る Wafer 半径・この半径 [mm] 以上の点は除く", "1. 有効半径"],
         ["data.coordinateUnits", "すべて mm", "座標の列ごとの入力の単位（mm・um・nm・m）", "1. 座標の単位"],
         ["data.excludeZeroMeasurements・…Unmeasured…", "false・false", "測定値がともに 0・Sts が −1 の行を除く", "1. 行の除外"],
+        ["data.excludeOutliers・outlierSigma", "false・3", "Wafer ごとに平均 ± nσ の外の Mark を除く（X・Y とも）", "1. 異常値を除外"],
         ["data.directionRule・invertDirection", "\"serpentine\"・false", "Direction が無い行に付ける Scan 方向（一筆書き）・1 と 2 の入れ替え",
          "1. Scan 方向"],
         ["data.coordinateMode", "\"shotMark\"", "座標の定義（shotMark：Shot 中心＋Shot 内、absolute：絶対座標だけ）", "1. 座標の定義"],
@@ -277,9 +278,9 @@ def build(output: Path, reference: Path):
         ["factors.evaluateSingles", "false", "チェックした質的変数を1つだけ使う手法も足して比べる", "2. 1つだけ使う"],
         ["factors.columns", "[]（なし）", "質的変数に使うファイルのその他の列の名前", "2. その他の列"],
         ["factors.separateY ・ factors.y", "true", "Y 成分の質的変数を別に選ぶ（y に同じ形の項目。はじめは X と同じ）", "2. Y 成分は別に"]],
-        widths=(3.75, 1.9, 4.78, 1.7), row_h=0.4)
-    point_bar(s, 6.3, "Wafer 半径を変えるときは validRadiusMm・同心円の区切り・外周の半径（mm）も一緒に見直す",
-              icon="!", icon_color=CORAL, h=0.55, size=13)
+        widths=(3.75, 1.9, 4.78, 1.7), row_h=0.37)
+    point_bar(s, 6.45, "Wafer 半径を変えるときは validRadiusMm・同心円の区切り・外周の半径（mm）も一緒に見直す",
+              icon="!", icon_color=CORAL, h=0.5, size=13)
     notes(s, "data の項目は読み込みの条件。factors は推定に使う質的変数（GPR・GAM・Backfitting）。ANOVA は選ばなくても主な変数を調べる。")
 
     # 10. sampling（選び方・数）

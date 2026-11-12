@@ -37,7 +37,7 @@ classdef (Abstract) TargetTab < appui.Core
             switch string(kind)
                 case "shots"
                     if isempty(app.Data)
-                        error('alignest:noData', '先に「1. データの読み込み」で計測データを読み込んでください（Shot の並びを使います）。');
+                        error('alignest:noData', '先に「1. データ読込」で計測データを読み込んでください（Shot の並びを使います）。');
                     end
                     selected = cell2mat(c.targetWafer.Value);
                     if isempty(selected)
@@ -65,7 +65,7 @@ classdef (Abstract) TargetTab < appui.Core
             %   省略すると画面で選んでいるもの。推定は alignest.predictTargets（評価と同じ推定、条件は今の設定）。
             %   300 mm Wafer の外の点は推定の対象外（推定値は X・Y とも 0。図には描かない）。
             if isempty(app.Data)
-                error('alignest:noData', '先に「1. データの読み込み」で計測データを読み込んでください。');
+                error('alignest:noData', '先に「1. データ読込」で計測データを読み込んでください。');
             end
             refreshTargetChoices(app);
             c = app.Controls;
@@ -314,7 +314,7 @@ classdef (Abstract) TargetTab < appui.Core
                 'ButtonPushedFcn', @(~, ~) app.onExportTargets());
             % メッセージは高さを決めた欄に出す（組み合わせが多くて長くなっても、下の図の場所を取らないように）
             c.targetMessage = uitextarea(right, 'Editable', 'off', 'FontWeight', 'bold', 'Value', ...
-                {'「1. データの読み込み」で計測データを読み込み、左の表に推定する点を決めてから「推定する」を押してください。'});
+                {'「1. データ読込」で計測データを読み込み、左の表に推定する点を決めてから「推定する」を押してください。'});
             place(c.targetMessage, 3, 1);
             combinationGrid = uigridlayout(right, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
             place(combinationGrid, 4, 1);

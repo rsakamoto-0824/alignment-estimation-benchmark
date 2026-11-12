@@ -5,7 +5,7 @@ function [data, mapping] = prepareHighOrderData(raw, mapping, options)
 %   mapping：項目名（alignest.highOrderColumns の name）→ ファイルの列の名前（"" は列なし）。必須の項目（Shot 中心・Shot 内の
 %   座標・X・Y の値）は必ず選ぶ。同じ列を2つの項目に選ばない。任意の項目で、値がすべて空の列は使わない（返す mapping では ""）。
 %   directionRule：Direction（Scan 方向）が無い行に付ける規則（alignest.directionRules。既定は "none" = 付けない）。
-%   前処理は「1. データの読み込み」と同じ alignest.prepareData（座標は mm、値は nm のまま。有効な点は半径 150 mm 未満、
+%   前処理は「1. データ読込」と同じ alignest.prepareData（座標は mm、値は nm のまま。有効な点は半径 150 mm 未満、
 %   StsX・StsY が 0 でない値は使わない、同じ点の行は平均）。data は alignest.prepareData の結果（data.units が Wafer）。
 arguments
     raw table

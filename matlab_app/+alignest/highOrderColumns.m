@@ -4,7 +4,7 @@ function columns = highOrderColumns()
 %   required（必ず列を選ぶ項目）・aliases（見出しがこの名前の列も、その項目と推定する。大文字・小文字は区別しない）。
 %   値は mm・nm（座標の単位は変換しない）。Wafer が無ければ全行を1枚、shotNo が無ければ座標から番号を付ける、
 %   Direction が無ければ「Scan 方向が無いとき」の規則で付ける（規則が「付けない」なら Scan 方向ごとには求められない）、
-%   StsX・StsY が無ければ値のある点を有効とする（「1. データの読み込み」と同じ）。
+%   StsX・StsY が無ければ値のある点を有効とする（「1. データ読込」と同じ）。
 names = ["Wafer", "shotNo", "Direction", "Xmm", "Ymm", "markXmm", "markYmm", "measX", "measY", "StsX", "StsY"];
 meanings = ["Wafer の名前（無ければ全行を1枚）", "Shot の番号（無ければ座標から付ける）", ...
     "Scan 方向（1・2。Scan 方向ごとの補正に使う）", "Shot 中心の X 座標 [mm]（Wafer 中心が原点）", ...

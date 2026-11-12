@@ -19,6 +19,10 @@ function data = prepareData(raw, mapping, options)
 %     （画面で変えた Scan 方向。すべての Wafer の同じ shotNo に当てる。規則やファイルの値より優先）。
 %   - unit.label は Wafer ID。Operation・EqpId・LotID のどれかがデータの中で2種類以上あれば、その値を付けて区別する
 %     （例：SIM01 (EXP01)）。それでも同じ名前の計測があれば測定日時も付ける。
+%   - options.excludeOutliers が true なら、Wafer（評価の単位）ごとに、有効な Mark の計測値の平均と σ（標本標準偏差）を X・Y 別に
+%     1回だけ求め、|値 − 平均| > outlierSigma × σ の軸が1つでもある Mark を異常値として X・Y の両方で無効にする
+%     （alignest.trainingOutliers と同じ判定。重複を平均した後）。除いた数は summary.outlierCounts（Wafer ごと）・
+%     summary.nOutliersExcluded とメッセージに出す。
 %   data.units は評価の単位（Operation × EqpId × LotID × Wafer × DateTime）の構造体配列、data.summary は確認用の件数と注意。
 arguments
     raw table
@@ -33,6 +37,8 @@ arguments
     options.directionOverrideValues double = zeros(1, 0)
     options.coordinateMode (1, 1) string {mustBeMember(options.coordinateMode, ["shotMark", "absolute"])} = "shotMark"
     options.valueColumn (1, 1) string = ""
+    options.excludeOutliers (1, 1) logical = false
+    options.outlierSigma (1, 1) double {mustBePositive, mustBeFinite} = 3
 end
 overrideShots = options.directionOverrideShots(:);
 overrideValues = options.directionOverrideValues(:);
@@ -262,6 +268,7 @@ end
 nShotSizeGuessed = 0;
 units = repmat(emptyUnit(), nUnits, 1);
 summary.nDuplicateRows = 0;
+outlierCounts = zeros(nUnits, 1);   % Wafer ごとの、異常値として除いた Mark の数
 for u = 1:nUnits
     rows = rowsKept(unitOfRow == u);
     % 重複（同じ座標の行）をまとめる
@@ -288,6 +295,13 @@ for u = 1:nUnits
     marks.validX = anyX;
     marks.validY = anyY;
     marks.attributes = attributes(pick, :);
+    if options.excludeOutliers
+        % 異常値：この Wafer の有効な Mark で X・Y 別に平均 ± nσ を求め、外れた軸がある Mark を両方で無効にする
+        outlier = alignest.trainingOutliers(marks, true(numel(marks.x), 1), options.outlierSigma);
+        marks.validX(outlier) = false;
+        marks.validY(outlier) = false;
+        outlierCounts(u) = nnz(outlier);
+    end
     % Shot：Shot 中心の座標が同じ Mark の集まり。番号は shotNo の列、無ければ上の行から左→右
     shotKey = round([marks.Xmm, marks.Ymm], SHOT_COORDINATE_DIGITS);
     [shotCoordinates, firstOfShot, shotOfMark] = unique(shotKey, 'rows');
@@ -369,6 +383,13 @@ end
 if summary.nDuplicateRows > 0
     messages(end + 1) = sprintf("Wafer・DateTime・座標が同じ重複行 %d 行を、計測値の平均にまとめました。", summary.nDuplicateRows);
 end
+summary.outlierCounts = outlierCounts;
+summary.nOutliersExcluded = sum(outlierCounts);
+if options.excludeOutliers
+    messages(end + 1) = sprintf(['異常値の除外（Wafer ごとに平均 ± %g σ の外。X か Y が外れた Mark を両方から除く）：' ...
+        '合計 %d 点（Wafer ごとに %d〜%d 点）。'], options.outlierSigma, summary.nOutliersExcluded, min(outlierCounts), ...
+        max(outlierCounts));
+end
 nShotsPerUnit = arrayfun(@(unit) numel(unit.shots.Xmm), units);
 nMarksPerUnit = arrayfun(@(unit) numel(unit.marks.x), units);
 summary.nUnits = nUnits;
@@ -402,6 +423,8 @@ data.directionOverrideValues = reshape(overrideValues, 1, []);
 data.invertDirection = options.invertDirection;
 data.coordinateMode = options.coordinateMode;
 data.valueColumn = options.valueColumn;
+data.excludeOutliers = options.excludeOutliers;
+data.outlierSigma = options.outlierSigma;
 end
 
 function sizeMm = pointCellSize(x, y)

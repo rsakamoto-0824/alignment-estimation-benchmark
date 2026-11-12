@@ -262,10 +262,11 @@ classdef TestShotHighOrderLevels < matlab.unittest.TestCase
             testCase.verifyTrue(contains(string(c.highOrderAxes.Title.String), "補正前の値"));
             testCase.verifyNotEmpty(c.highOrderAxes3.Children, "補正前・補正量・残差を並べる");
             app.drawHighOrderMap(1, "wafer", "residual", "vector", "", "single");
-            % 補正の評価：残差の列であることを名前に書く
+            % 補正の評価：残差の列であることを名前に書く。補正の段階（Wafer 高次だけ → ＋Shot 共通 → 高次補正）を並べる
             names = string(c.highOrderSummaryTable.Data.Properties.VariableNames);
-            testCase.verifyEqual(names(3:6), ["補正前の値|｜平均｜+3σ [nm]", "Shot ごとの1次の残差|｜平均｜+3σ [nm]", ...
-                "高次補正の残差|｜平均｜+3σ [nm]", "改善 [nm]|1次の残差 −|高次補正の残差"], "「|」は見出しの改行");
+            testCase.verifyEqual(names(3:8), ["補正前の値|｜平均｜+3σ [nm]", "Wafer 高次補正だけ|の残差|｜平均｜+3σ [nm]", ...
+                "＋Shot 共通補正|の残差|｜平均｜+3σ [nm]", "高次補正の残差|｜平均｜+3σ [nm]", ...
+                "Shot ごとの1次の残差|｜平均｜+3σ [nm]", "改善 [nm]|1次の残差 −|高次補正の残差"], "「|」は見出しの改行");
             testCase.verifyTrue(any(names == "外れ値と|みなした点"));
             % Wafer の比較：dx・dy の残差を左右に並べ、5本の棒
             residuals = app.drawHighOrderWaferComparison("residual");

@@ -227,7 +227,7 @@ classdef TestShotHighOrderOutputs < matlab.unittest.TestCase
             c.highOrderOutputKind.ValueChangedFcn(c.highOrderOutputKind, []);
             testCase.verifyTrue(startsWith(string(c.highOrderOutputInfo.Text), "⚠"));
             testCase.verifyEqual(string(c.highOrderOutputWrite.Enable), "off");
-            % 点ごとの残差を CSV に書き、別の画面で「1. データの読み込み」から読み直すと同じ値
+            % 点ごとの残差を CSV に書き、別の画面で「1. データ読込」から読み直すと同じ値
             file = [tempname, '.csv'];
             removeFile = onCleanup(@() delete(file));
             app.exportHighOrderValues("points", "residual", file);

@@ -67,7 +67,7 @@ classdef (Abstract) RunTab < appui.Core
             %   alignest.planComponentDifference の結果の配列。図の右下の表にも出す）。
             c = app.Controls;
             if isempty(app.Data)
-                error('alignest:noData', '先に「1. データの読み込み」でデータを読み込んでください。');
+                error('alignest:noData', '先に「1. データ読込」でデータを読み込んでください。');
             end
             controlsToSettings(app);
             settingsErrors = validateSettings(app);
@@ -183,7 +183,7 @@ classdef (Abstract) RunTab < appui.Core
             %   （|平均|+3σ と最大 [nm]。alignest.planComponentDifference）。「成分の係数」シート：項ごとの係数（全計測・
             %   計測配置の点・差）。
             if isempty(app.Data)
-                error('alignest:noData', '先に「1. データの読み込み」でデータを読み込んでください。');
+                error('alignest:noData', '先に「1. データ読込」でデータを読み込んでください。');
             end
             controlsToSettings(app);
             settingsErrors = validateSettings(app);
@@ -414,7 +414,7 @@ classdef (Abstract) RunTab < appui.Core
 
         function onResetScanDirections(app)
             runWithAlert(app, @() app.setScanDirection([], []), "Scan 方向を元に戻せませんでした", ...
-                "「1. データの読み込み」の設定を確かめてください。");
+                "「1. データ読込」の設定を確かめてください。");
         end
 
         function prepareEvaluation(app)
@@ -424,7 +424,7 @@ classdef (Abstract) RunTab < appui.Core
                 invalidatePreparedData(app);
             end
             if isempty(app.Data)
-                error('alignest:noData', '先に「1. データの読み込み」でデータを読み込んでください。');
+                error('alignest:noData', '先に「1. データ読込」でデータを読み込んでください。');
             end
             controlsToSettings(app);
             settingsErrors = validateSettings(app);
@@ -559,7 +559,7 @@ classdef (Abstract) RunTab < appui.Core
 
         function onDrawMeasurementMap(app)
             runWithAlert(app, @() app.drawMeasurementMap(), "計測マップを作れませんでした", ...
-                "「1. データの読み込み」と「2. 評価の設定」を確かめてから、もう一度試してください。");
+                "「1. データ読込」と「2. 評価の設定」を確かめてから、もう一度試してください。");
         end
 
         function onMeasureDisplayChanged(app)
@@ -681,7 +681,7 @@ classdef (Abstract) RunTab < appui.Core
 
         function onRun(app)
             runWithAlert(app, @() app.runEvaluationNow(true), "評価を実行できませんでした", ...
-                "「1. データの読み込み」と「2. 評価の設定」を確かめてから、もう一度実行してください。");
+                "「1. データ読込」と「2. 評価の設定」を確かめてから、もう一度実行してください。");
         end
 
         function refreshRunSummary(app)
@@ -735,7 +735,7 @@ classdef (Abstract) RunTab < appui.Core
                 c.exchangeInfo.Text = exchangeText(app, detail);
             end
             if nUnits == 0
-                c.runSummary.Text = "データがまだ読み込まれていません。「1. データの読み込み」から始めてください。";
+                c.runSummary.Text = "データがまだ読み込まれていません。「1. データ読込」から始めてください。";
             elseif isempty(methods)
                 c.runSummary.Text = "比べる手法が選ばれていません。「2. 評価の設定」で手法を選んでください。";
             else

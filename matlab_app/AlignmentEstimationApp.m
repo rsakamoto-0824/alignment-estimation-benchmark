@@ -1,10 +1,10 @@
 classdef AlignmentEstimationApp < appui.DataTab & appui.SettingsTab & appui.RunTab & appui.ResultsTab & ...
         appui.MapTab & appui.TargetTab & appui.HighOrderTab & appui.HighOrderCompareTab & appui.HighOrderAnalysisTab & ...
-        appui.HighOrderSweepTab & appui.MarkLayoutTab & appui.Display
+        appui.HighOrderSweepTab & appui.HighOrderHistoryTab & appui.MarkLayoutTab & appui.Display
     %ALIGNMENTESTIMATIONAPP アライメント計測値の面内推定を、実データ（Excel）で比べる画面。
     %   app = AlignmentEstimationApp();       画面を開く
     %   app = AlignmentEstimationApp(false);  画面を出さずに作る（自動テスト用）
-    %   流れ：1. データの読み込み（列の対応・座標の単位・Wafer マップ・Shot レイアウト） → 2. 評価の設定 → 3. 実行
+    %   流れ：1. データ読込（列の対応・座標の単位・Wafer マップ・Shot レイアウト） → 2. 評価の設定 → 3. 実行
     %         （評価の後に条件を足して追加の評価もできる）→ 4. 結果一覧（表・グラフ・基準の手法との比較・推定値と誤差の
     %         分布・残差の箱ひげ図・散布図・分布の比較・処理時間の内訳。評価点を半径・Shot の条件で絞り込んで計算し直せる）
     %         → 5. Waferごとのマップ（1つの条件の計測値・推定値・残差、または複数の条件を並べて比べる）
@@ -20,7 +20,7 @@ classdef AlignmentEstimationApp < appui.DataTab & appui.SettingsTab & appui.RunT
     %
     %   ファイルの分け方（タブごとのファイル。どれも +appui フォルダ）：
     %     Core.m         共通：プロパティ・定数、起動の手順（startApp）、図の画像の保存・コピーなど
-    %     DataTab.m      1. データの読み込み
+    %     DataTab.m      1. データ読込
     %     SettingsTab.m  2. 評価の設定
     %     RunTab.m       3. 実行（計測マップを含む）
     %     ResultsTab.m   4. 結果一覧
