@@ -54,7 +54,7 @@ for c = 1:numel(conditions)
             rows.highOrderOuter(a) = regions.highOrder(regions.axis == AXES(a) & regions.region == "外周");
             notes = strings(1, 0);
             reducedText = "項を絞った（外した項：";
-            if result.options.unit == "shot" && result.options.shotCommon ~= "none"
+            if alignest.highOrderSequential(result.options)
                 reducedText = "Shot ごとの項を絞った（Shot 共通の値だけにした項：";   % Shot 共通の項は減らさない
             end
             for entry = reshape(result.reduction(string({result.reduction.axis}) == FORMULA_AXES(a)), 1, [])

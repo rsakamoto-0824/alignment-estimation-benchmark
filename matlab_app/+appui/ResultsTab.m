@@ -4,6 +4,41 @@ classdef (Abstract) ResultsTab < appui.Core
     %   ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
 
     methods
+        function comparison = compareEstimatedCorrection(app, methodIndex, group, unitIndex)
+            %COMPAREESTIMATEDCORRECTION 「実測値と推定値の補正」：実測値で求めた Shot 高次補正と、推定値で求めた Shot 高次補正を、
+            %   実測値に当てて比べる（alignest.estimatedCorrectionComparison）。補正のモデルは「7. Shot高次補正」の②③の設定
+            %   （Wafer 高次補正・Shot 共通補正・Shot ごとの補正・回帰）。methodIndex：手法の番号（複数可）、group：学習パターンの列、
+            %   unitIndex：Wafer の番号（0 = すべて）。省略すると画面の選択。
+            c = app.Controls;
+            if nargin >= 2
+                c.estimatedCorrectionMethods.Value = num2cell(reshape(methodIndex, 1, []));
+            end
+            if nargin >= 3
+                c.estimatedCorrectionGroup.Value = char(group);
+            end
+            if nargin >= 4
+                c.estimatedCorrectionWafer.Value = unitIndex;
+            end
+            requireEstimates(app);
+            if isImportedResults(app.Results) || isempty(app.Data)
+                error('alignest:importedResults', ['実測値と推定値の補正は、計測データを読み込んで評価した結果で比べます' ...
+                    '（Excel から読み込んだ結果では比べられません）。']);
+            end
+            unitIndex = c.estimatedCorrectionWafer.Value;
+            if isequal(unitIndex, 0)
+                unitIndex = 1:numel(app.Data.units);
+            end
+            selection = struct("methodIndex", [c.estimatedCorrectionMethods.Value{:}], "groups", ...
+                string(c.estimatedCorrectionGroup.Value), "unitIndex", unitIndex);
+            app.Figure.Pointer = 'watch';
+            drawnow;
+            restore = onCleanup(@() set(app.Figure, 'Pointer', 'arrow'));
+            comparison = alignest.estimatedCorrectionComparison(app.Data, app.Results, selection, app.Settings, ...
+                cache=app.MapCache);
+            app.EstimatedCorrection = comparison;
+            showEstimatedCorrection(app);
+        end
+
         function results = applyResultFilter(app, filter)
             %APPLYRESULTFILTER 評価点を半径・Shot の条件で絞り込み、結果一覧の表・グラフ・基準の手法との比較と、
             %   Wafer ごとのマップを描き直す（指標は alignest.filterResults で計算し直す。推定はやり直さない）。
@@ -865,7 +900,92 @@ classdef (Abstract) ResultsTab < appui.Core
             set(c.timingAxes, 'Visible', 'off');
             c.timingTable = uitable(timingGrid, 'RowName', {}, 'ColumnName', {'手法'});
             c.timingInfo = uilabel(timingGrid, 'WordWrap', 'on', 'Text', '');
+            % 実測値と推定値の補正：実測値で求めた Shot 高次補正と、推定値で求めた Shot 高次補正を実測値に当てて比べる
+            c.estimatedCorrectionTab = uitab(c.resultTabs, 'Title', '実測値と推定値の補正');
+            correctionGrid = uigridlayout(c.estimatedCorrectionTab, [5, 1], 'RowHeight', {'fit', 'fit', 190, '1x', 'fit'}, ...
+                'Padding', 8, 'RowSpacing', 6);
+            correctionControls = uigridlayout(correctionGrid, [2, 4], 'ColumnWidth', {'1x', 220, 220, 'fit'}, ...
+                'RowHeight', {'fit', app.ANALYSIS_METHOD_LIST_HEIGHT}, 'Padding', 0);
+            label(correctionControls, '手法', 1, 1);
+            label(correctionControls, '学習パターン', 1, 2);
+            label(correctionControls, 'Wafer', 1, 3);
+            c.estimatedCorrectionMethods = uilistbox(correctionControls, 'Items', {'—'}, 'Multiselect', 'on', ...
+                'Enable', 'off', 'Tooltip', '比べる手法（Ctrl・Shift で複数）。');
+            place(c.estimatedCorrectionMethods, 2, 1);
+            c.estimatedCorrectionGroup = uidropdown(correctionControls, 'Items', {'—'}, 'Enable', 'off');
+            place(c.estimatedCorrectionGroup, 2, 2);
+            c.estimatedCorrectionWafer = uidropdown(correctionControls, 'Items', {'—'}, 'Enable', 'off');
+            place(c.estimatedCorrectionWafer, 2, 3);
+            c.compareEstimatedCorrectionButton = uibutton(correctionControls, 'Text', '比べる', 'Enable', 'off', ...
+                'ButtonPushedFcn', @(~, ~) app.onCompareEstimatedCorrection());
+            place(c.compareEstimatedCorrectionButton, 2, 4);
+            c.estimatedCorrectionModel = uilabel(correctionGrid, 'WordWrap', 'on', 'FontColor', app.Palette.muted, ...
+                'UserData', "muted", 'Text', ['補正のモデルは「7. Shot高次補正」の②③の設定です（Wafer 高次補正・Shot 共通補正・' ...
+                'Shot ごとの補正・回帰）。実測値で補正：全 Mark の計測値で求めた補正。推定値で補正：学習に使った Mark の計測値と' ...
+                'ほかの Mark の推定値で求めた補正。どちらも計測値に当てた残差で比べます。']);
+            c.estimatedCorrectionTable = uitable(correctionGrid, 'RowName', {}, 'Data', table());
+            c.estimatedCorrectionAxes = uiaxes(uigridlayout(uipanel(correctionGrid, 'BorderType', 'none'), [1, 1], ...
+                'Padding', 0));
+            c.estimatedCorrectionInfo = uilabel(correctionGrid, 'WordWrap', 'on', 'Text', '');
             app.Controls = mergeStruct(app.Controls, c);
+        end
+
+        function showEstimatedCorrection(app)
+            % 「実測値と推定値の補正」の表と図（図は、すべての Wafer の行の高次補正の残差を、手法・学習パターンごとに並べる）
+            c = app.Controls;
+            comparison = app.EstimatedCorrection;
+            ax = c.estimatedCorrectionAxes;
+            cla(ax, 'reset');
+            legend(ax, 'off');
+            removeStyle(c.estimatedCorrectionTable);
+            if isempty(comparison)
+                c.estimatedCorrectionTable.Data = table();
+                c.estimatedCorrectionInfo.Text = '';
+                return
+            end
+            t = comparison.table;
+            c.estimatedCorrectionTable.Data = table(t.method, t.plan, t.wafer, t.axis, t.n, round(t.before, 3), ...
+                round(t.measuredWaferStage, 3), round(t.measuredCommonStage, 3), round(t.measured, 3), ...
+                round(t.estimatedWaferStage, 3), round(t.estimatedCommonStage, 3), round(t.estimated, 3), ...
+                round(t.difference, 3), round(t.correctionDifference, 3), 'VariableNames', ["手法", "学習パターン", "Wafer", ...
+                "軸", "比べた点", "補正前の値|｜平均｜+3σ [nm]", "実測値で補正|Wafer 高次だけ", "実測値で補正|＋Shot 共通", ...
+                "実測値で補正|高次補正の残差", "推定値で補正|Wafer 高次だけ", "推定値で補正|＋Shot 共通", ...
+                "推定値で補正|高次補正の残差", "差 [nm]|推定値 − 実測値", "補正量の差|｜平均｜+3σ [nm]"]);
+            c.estimatedCorrectionTable.ColumnWidth = {150, 110, 140, 36, 64, 110, 100, 100, 110, 100, 100, 110, 100, 110};
+            totals = find(t.wafer == "すべての Wafer");
+            if ~isempty(totals)
+                addStyle(c.estimatedCorrectionTable, uistyle('FontWeight', 'bold'), 'row', totals);
+            end
+            all_ = t(t.wafer == "すべての Wafer", :);
+            names = unique(all_.method + "｜" + all_.plan, 'stable');
+            values = nan(numel(names), 4);
+            for k = 1:numel(names)
+                mine = all_(all_.method + "｜" + all_.plan == names(k), :);
+                x = mine(mine.axis == "X", :);
+                y = mine(mine.axis == "Y", :);
+                values(k, :) = [x.measured, x.estimated, y.measured, y.estimated];
+            end
+            bars = bar(ax, 1:numel(names), values, 'grouped');
+            labelsOfBars = ["X 実測値で補正", "X 推定値で補正", "Y 実測値で補正", "Y 推定値で補正"];
+            for k = 1:numel(bars)
+                bars(k).DisplayName = labelsOfBars(k);
+            end
+            xticks(ax, 1:numel(names));
+            xticklabels(ax, cellstr(names));
+            ylabel(ax, '高次補正の残差 |平均|+3σ [nm]');
+            title(ax, 'すべての Wafer：実測値で補正と推定値で補正', 'Interpreter', 'none');
+            grid(ax, 'on');
+            box(ax, 'on');
+            legend(ax, 'Location', 'northeast', 'Interpreter', 'none');
+            styleAxes(app, ax, app.AXES_FONT_SIZE);
+            c.estimatedCorrectionModel.Text = char("補正のモデル（「7. Shot高次補正」の②③の設定）：" + comparison.description);
+            c.estimatedCorrectionInfo.Text = char(strjoin(["差 = 推定値で補正した残差 − 実測値で補正した残差（正なら、推定値で" + ...
+                "補正すると残差が大きい）。補正量の差は、推定値で求めた補正量 − 実測値で求めた補正量。"; comparison.messages], " "));
+        end
+
+        function onCompareEstimatedCorrection(app)
+            runWithAlert(app, @() app.compareEstimatedCorrection(), "実測値と推定値の補正を比べられませんでした", ...
+                "手法・学習パターン・Wafer と、「7. Shot高次補正」の②③の設定を確かめてから、もう一度試してください。");
         end
 
         function f = buildFilterControls(app, parent, source)
@@ -1122,6 +1242,19 @@ classdef (Abstract) ResultsTab < appui.Core
             c.timingMethods.Value = {order(1)};
             set([c.timingWafer, c.timingPlan, c.timingMethods, c.timingRepeats, c.measureTimingButton], ...
                 'Enable', onOff(~imported && ~isempty(app.Data)));
+            % 実測値と推定値の補正（計測データを読み込んで評価した結果だけ。初めは推定値と誤差の分布と同じ手法）
+            c.estimatedCorrectionMethods.Items = cellstr(labels);
+            c.estimatedCorrectionMethods.ItemsData = num2cell(1:numel(labels));
+            c.estimatedCorrectionMethods.Value = {order(1)};
+            c.estimatedCorrectionGroup.Items = cellstr(results.groups);
+            c.estimatedCorrectionGroup.Value = char(results.groups(end));
+            c.estimatedCorrectionWafer.Items = c.analysisWafer.Items;
+            c.estimatedCorrectionWafer.ItemsData = c.analysisWafer.ItemsData;
+            c.estimatedCorrectionWafer.Value = 0;
+            set([c.estimatedCorrectionMethods, c.estimatedCorrectionGroup, c.estimatedCorrectionWafer, ...
+                c.compareEstimatedCorrectionButton], 'Enable', onOff(~imported && ~isempty(app.Data)));
+            app.EstimatedCorrection = [];
+            showEstimatedCorrection(app);
             set([c.filterResults.apply, c.filterMap.apply], 'Enable', 'on');
             showFilter(app);
             refreshResults(app);

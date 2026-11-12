@@ -701,6 +701,14 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             set([c.highOrderTermSetList, c.highOrderTermSetApply, c.highOrderTermSetDelete, c.highOrderCompareTermSet], ...
                 'Enable', onOff(has));
             refreshHighOrderOuterChoices(app);   % 外周の式にも保存した組み合わせを出す
+            % Shot 共通の項の選択肢（先頭は選ぶ前の案内。選ぶと表の「共通」の列に写す）
+            if isfield(c, 'highOrderCommonTermSet')
+                c.highOrderCommonTermSet.Items = [{app.COMMON_SET_PLACEHOLDER}, ...
+                    cellstr(reshape(sets.name + "（" + sets.makerLabel + "・" + sets.count + " 項）", 1, []))];
+                c.highOrderCommonTermSet.ItemsData = [{''}, cellstr(reshape(sets.name, 1, []))];
+                c.highOrderCommonTermSet.Value = '';
+                updateHighOrderEnabled(app);
+            end
         end
 
         function refreshHighOrderConditions(app)
@@ -1000,7 +1008,7 @@ function text = unitLabel(options)
 names = ["common", "scan", "row", "shot"];
 labels = ["Wafer 内で共通", "Scan 方向ごと", "行の偶奇ごと", "Shot ごと"];
 text = labels(names == options.unit);
-if options.unit == "shot" && options.shotCommon ~= "none"
+if alignest.highOrderSequential(options)
     text = ternary(options.shotCommon == "fit", "共通（計算）→ ", "共通（入力）→ ") + text;
     if options.shotEachOrder > 0
         text = text + sprintf(" %d次まで", options.shotEachOrder);

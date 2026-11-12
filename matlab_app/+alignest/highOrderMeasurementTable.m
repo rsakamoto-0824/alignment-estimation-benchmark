@@ -1,6 +1,6 @@
 function data = highOrderMeasurementTable(result, wafers, value)
 %HIGHORDERMEASUREMENTTABLE Shot 高次補正の点ごとの値（補正量・残差など）を、計測データと同じ列の表にする（「7. Shot高次補正」の
-%   「書き出し」。書き出したファイルは「1. データの読み込み」や「Excel・CSV を読み込む…」でそのまま読み直せる）。
+%   「書き出し」。書き出したファイルは「1. データ読込」や「Excel・CSV を読み込む…」でそのまま読み直せる）。
 %   data = alignest.highOrderMeasurementTable(result, wafers, value)
 %   result：alignest.shotHighOrder の結果、wafers：そのときの入力（label・unit。unit は alignest.prepareData の評価の単位。
 %   無ければ Wafer は label、markNo は Shot 内の座標から付ける）、

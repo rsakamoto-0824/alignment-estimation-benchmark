@@ -509,6 +509,9 @@ classdef (Abstract) SettingsTab < appui.Core
             c.validRadius.Value = s.data.validRadiusMm;
             c.excludeZeroMeasurements.Value = s.data.excludeZeroMeasurements;
             c.excludeUnmeasuredRecords.Value = s.data.excludeUnmeasuredRecords;
+            c.dataExcludeOutliers.Value = logical(fieldOr(s.data, "excludeOutliers", false));
+            c.dataOutlierSigma.Value = double(fieldOr(s.data, "outlierSigma", 3));
+            c.dataOutlierSigma.Enable = onOff(c.dataExcludeOutliers.Value);
             c.directionRule.Value = char(s.data.directionRule);
             c.invertDirection.Value = s.data.invertDirection;
             c.invertDirection.Enable = onOff(s.data.directionRule ~= "none");
@@ -659,6 +662,8 @@ classdef (Abstract) SettingsTab < appui.Core
             s.data.coordinateUnits = currentCoordinateUnits(app);
             s.data.excludeZeroMeasurements = c.excludeZeroMeasurements.Value;
             s.data.excludeUnmeasuredRecords = c.excludeUnmeasuredRecords.Value;
+            s.data.excludeOutliers = c.dataExcludeOutliers.Value;
+            s.data.outlierSigma = c.dataOutlierSigma.Value;
             s.data.directionRule = string(c.directionRule.Value);
             s.data.invertDirection = c.invertDirection.Value;
             s.factors.scan = c.factorScan.Value;
@@ -1038,7 +1043,7 @@ classdef (Abstract) SettingsTab < appui.Core
             end
             c.rt.Enable = onOff(~scalar);
             c.rtOrders.Enable = onOff(c.rt.Value && ~scalar);
-            c.overlayHelp.Text = char(ternary(scalar, "1変数の推定（「1. データの読み込み」の「推定する値」）では、" + ...
+            c.overlayHelp.Text = char(ternary(scalar, "1変数の推定（「1. データ読込」の「推定する値」）では、" + ...
                 "Overlay 補正の評価と RT モデルは使いません（X・Y の2成分が要るため）。", ""));
             syncTargetOverlayControls(app);   % 「6. 未知の座標の推定」の「補正のモデル」も同じ値にする
         end

@@ -63,7 +63,7 @@ def section(id, body):
 parts = []
 parts.append(section('overview', '''
 <p>「面内推定評価ツール」の画面を管理者が変更するときに、<strong>どのファイルを開き、どの文字・設定を編集し、何を確認して配布するか</strong>を説明します。対象はローカルの最新版ソースです。過去の管理者仕様書の固定版（84ca419）とは対象版が異なります。</p>
-<div class="card-grid three-columns"><article class="feature-card"><h3>編集するもの</h3><p>MATLABの <code>+appui</code> フォルダにある、タブごとのファイル（例：「1. データの読み込み」は <code>+appui/DataTab.m</code>）。画面の名前、ボタン、入力欄、配置とイベント処理をコードで定義しています。<code>AlignmentEstimationApp.m</code> はそれらをまとめる入口です。</p></article><article class="feature-card"><h3>編集できる環境</h3><p>ソース一式とMATLABを持つ管理者のPC。配布済みexeとMATLAB Runtimeだけでは、元の画面コードを編集できません。</p></article><article class="feature-card"><h3>完了した状態</h3><p>変更した画面を再起動して確認し、読み込み・設定・小規模評価が通ることを確認。exe利用者へは作り直した実行ファイルを配布します。</p></article></div>
+<div class="card-grid three-columns"><article class="feature-card"><h3>編集するもの</h3><p>MATLABの <code>+appui</code> フォルダにある、タブごとのファイル（例：「1. データ読込」は <code>+appui/DataTab.m</code>）。画面の名前、ボタン、入力欄、配置とイベント処理をコードで定義しています。<code>AlignmentEstimationApp.m</code> はそれらをまとめる入口です。</p></article><article class="feature-card"><h3>編集できる環境</h3><p>ソース一式とMATLABを持つ管理者のPC。配布済みexeとMATLAB Runtimeだけでは、元の画面コードを編集できません。</p></article><article class="feature-card"><h3>完了した状態</h3><p>変更した画面を再起動して確認し、読み込み・設定・小規模評価が通ることを確認。exe利用者へは作り直した実行ファイルを配布します。</p></article></div>
 '''+note('App Designerの「Design View」で部品を動かすアプリではありません', 'このリポジトリの画面は <code>classdef</code> と <code>uifigure</code> / <code>uigridlayout</code> で作るプログラム型UIです。<code>.mlapp</code> のデザイン画面へ変換して編集する手順は使いません。タブごとのファイルは、共通部分の <code>+appui/Core.m</code> を受け継ぎ、<code>AlignmentEstimationApp</code> が1つの画面にまとめます。')+
 figure('01_original.png','最新版の起動直後：画面とコードを対応させる','① タブ名は +appui/Core.m の startApp、② ファイル選択ボタンは +appui/DataTab.m の buildDataTab、③ 列対応・単位の領域も buildDataTab で作成。画面画像は合成データ以外の入力を含みません。',[(1,1,4),(2,2,21),(3,1,38)])))
 
@@ -82,7 +82,7 @@ parts.append(section('workflow', '''
 <h3>画面のどこを直すか</h3>
 '''+table(['画面・目的','開くファイル','検索する関数・名前','主な役割'],[
 ('ウィンドウ名・タブ名・メニュー','+appui/Core.m','APP_TITLE / function startApp','起動時のタイトル、9つのタブ、メニュー「設定」（表示の設定・乱数の種・ヘルプ）を作る。'),
-('1. データの読み込み','+appui/DataTab.m','function buildDataTab','ファイル、列対応、座標単位、入力プレビュー。'),
+('1. データ読込','+appui/DataTab.m','function buildDataTab','ファイル、列対応、座標単位、入力プレビュー。'),
 ('2. 評価の設定','+appui/SettingsTab.m','function buildSettingsTab','選び方、計測数、質的変数、手法、補正条件。'),
 ('3. 実行','+appui/RunTab.m','function buildRunTab','開始・再開・条件追加、計測マップ、ログ。'),
 ('4. 結果一覧','+appui/ResultsTab.m','function buildResultsTab','表、グラフ、分析・比較タブ。表示更新はrefreshResults等。'),
@@ -102,7 +102,7 @@ parts.append(section('workflow', '''
 parts.append(section('open', steps([
     '<strong>MATLABで編集用のmatlab_appフォルダを選びます。</strong><p>現在のフォルダーから移動するか、次のコードをコマンドウィンドウで実行します。「matlab_app」そのものを選びます。</p>',
     '<strong>どのコピーが読み込まれるかを確認します。</strong><p><code>which AlignmentEstimationApp -all</code> の先頭が編集用コピーを指すことを確認。別フォルダが先頭なら、そのコピーを閉じてパスを整理します。</p>',
-    '<strong>直すタブのファイルを開きます。</strong><p>第3章の表でファイルを選び、<code>edit appui.DataTab</code>（「1. データの読み込み」の場合）で開きます。検索（WindowsはCtrl+F、MacはCmd+F）へ <code>function buildDataTab</code> と入力し、呼び出し箇所ではなく関数定義へ移動します。</p>',
+    '<strong>直すタブのファイルを開きます。</strong><p>第3章の表でファイルを選び、<code>edit appui.DataTab</code>（「1. データ読込」の場合）で開きます。検索（WindowsはCtrl+F、MacはCmd+F）へ <code>function buildDataTab</code> と入力し、呼び出し箇所ではなく関数定義へ移動します。</p>',
     '<strong>変更前を退避します。</strong><p>下のバックアップ例を実行し、バックアップファイルの存在を確認。バックアップは拡張子を <code>.m</code> 以外にします（<code>+appui</code> の中に <code>.m</code> のコピーを置くと、クラス名とファイル名が合わないファイルになり、<code>checkcode</code> や、<code>+appui</code> をフォルダごと入れるexeの作成で問題になるため）。<code>classdef DataTab</code> とファイル名の組はそのままにします。</p>',
 ]) + code('''appFolder = uigetdir(pwd, '編集用コピーの matlab_app を選ぶ');
 if isequal(appFolder, 0), return; end
@@ -113,7 +113,7 @@ edit appui.DataTab''') + code('''target = fullfile('+appui', 'DataTab.m');
 backupName = [target '.before_' datestr(now,'yyyymmdd_HHMMSS')];   % 拡張子を .m 以外にする
 copyfile(target, backupName)
 isfile(backupName)  % 1なら存在します''') +
-'<h3>検索で関数の定義へ移動した例</h3><p><code>function buildDataTab</code> を検索すると、次の場所へ移動します（「1. データの読み込み」の画面を作る関数の始まり）。</p>' +
+'<h3>検索で関数の定義へ移動した例</h3><p><code>function buildDataTab</code> を検索すると、次の場所へ移動します（「1. データ読込」の画面を作る関数の始まり）。</p>' +
 source('+appui/DataTab.m', 'function buildDataTab', 5)+
 note('行番号は目印です', '機能追加で行番号はずれます。画面に出ている日本語→部品名（例：c.chooseFile）→所属するbuild関数→コールバック、の順に追うと対象を見つけやすくなります。')))
 

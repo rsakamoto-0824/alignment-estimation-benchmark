@@ -1,5 +1,5 @@
 classdef (Abstract) DataTab < appui.Core
-    %DATATAB 「1. データの読み込み」タブ：ファイルの読み込み、列の対応・座標の単位、Wafer マップ・Shot レイアウト・Shot 重ね合わせ、質的変数の交互作用。
+    %DATATAB 「1. データ読込」タブ：ファイルの読み込み、列の対応・座標の単位、Wafer マップ・Shot レイアウト・Shot 重ね合わせ、質的変数の交互作用。
     %   AlignmentEstimationApp（画面の本体）の一部。画面の部品は Controls、データ・結果は Core のプロパティに持つ。
     %   ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
 
@@ -56,7 +56,7 @@ classdef (Abstract) DataTab < appui.Core
                 excludeUnmeasuredRecords=options.excludeUnmeasuredRecords, directionRule=options.directionRule, ...
                 invertDirection=options.invertDirection, directionOverrideShots=options.directionOverrideShots, ...
                 directionOverrideValues=options.directionOverrideValues, coordinateMode=options.coordinateMode, ...
-                valueColumn=options.valueColumn);
+                valueColumn=options.valueColumn, excludeOutliers=options.excludeOutliers, outlierSigma=options.outlierSigma);
             app.AppliedMapping = mapping;
             app.Settings.data = mergeStruct(app.Settings.data, options);
             summary = app.Data.summary;
@@ -250,7 +250,7 @@ classdef (Abstract) DataTab < appui.Core
                 next = 2;
             end
             runWithAlert(app, @() app.setScanDirection(unit.shots.shotNo(inside), next), ...
-                "Scan 方向を変えられませんでした", "「1. データの読み込み」の設定を確かめてください。");
+                "Scan 方向を変えられませんでした", "「1. データ読込」の設定を確かめてください。");
         end
 
         function changed = suggestCoordinateUnits(app)
@@ -281,7 +281,7 @@ classdef (Abstract) DataTab < appui.Core
         end
 
         function analysis = analyzeFactorInteractions(app, unitIndex, trendOrder, columns)
-            %ANALYZEFACTORINTERACTIONS 「1. データの読み込み」の「質的変数の交互作用」：読み込んだ計測値で、質的変数
+            %ANALYZEFACTORINTERACTIONS 「1. データ読込」の「質的変数の交互作用」：読み込んだ計測値で、質的変数
             %   （Scan 方向・Mark 番号・Shot 行の奇偶・選んだその他の列）の主効果と2つずつの交互作用を調べ、表・図と、
             %   説明変数・カーネルの選び方の目安を出す（alignest.factorInteractions）。引数を省くと画面の選択。
             %   unitIndex：Wafer の番号、trendOrder：Wafer ごとに除く面内の傾向（XY 多項式の次数）、columns：その他の列。
@@ -353,7 +353,7 @@ classdef (Abstract) DataTab < appui.Core
     end
 
     methods (Access = {?appui.Core})
-        % ================= 1. データの読み込み =================
+        % ================= 1. データ読込 =================
         function buildDataTab(app)
             grid = uigridlayout(app.Tabs.data, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 12, 'RowSpacing', 12);
             filePanel = uipanel(grid, 'Title', '計測データのファイル');
@@ -384,6 +384,16 @@ classdef (Abstract) DataTab < appui.Core
                 'Tooltip', 'どちらかが−1なら行全体を除外します。オフの場合も、無効な軸の測定値は解析に使いません。', ...
                 'ValueChangedFcn', onDataOption);
             place(c.excludeUnmeasuredRecords, 4, [3, 4]);
+            % 異常値の除外：Wafer ごとに平均 ± nσ の外の Mark（X か Y が外れたら両方）を除く
+            outlierGrid = uigridlayout(fileGrid, [1, 3], 'ColumnWidth', {'fit', 'fit', 60}, 'Padding', 0);
+            place(outlierGrid, 4, 5);
+            c.dataExcludeOutliers = uicheckbox(outlierGrid, 'Text', '異常値を除外（± nσ）', ...
+                'ValueChangedFcn', onDataOption, 'Tooltip', ['Wafer ごとに、計測値の平均と σ を X・Y 別に求め、平均 ± n × σ の' ...
+                '外にある Mark を除きます（X か Y が外れたら両方。重複を平均した後に1回だけ判定）。']);
+            label(outlierGrid, 'n =', 1, 2);
+            c.dataOutlierSigma = uieditfield(outlierGrid, 'numeric', 'Value', 3, 'Limits', [0.1, 100], ...
+                'ValueChangedFcn', onDataOption, 'Tooltip', '異常値とみなす σ の倍数（例：3 なら平均 ± 3σ の外）。');
+            place(c.dataOutlierSigma, 1, 3);
             label(fileGrid, 'Scan 方向の付与', 5, 1);
             [ruleNames, ~, ruleLabels] = alignest.directionRules();
             c.directionRule = uidropdown(fileGrid, 'Items', cellstr(ruleLabels), 'ItemsData', cellstr(ruleNames), ...
@@ -722,7 +732,8 @@ classdef (Abstract) DataTab < appui.Core
                 "directionRule", string(c.directionRule.Value), "invertDirection", c.invertDirection.Value, ...
                 "directionOverrideShots", app.Settings.data.directionOverrideShots, ...
                 "directionOverrideValues", app.Settings.data.directionOverrideValues, ...
-                "coordinateMode", string(c.coordinateMode.Value), "valueColumn", string(c.valueColumn.Value)));
+                "coordinateMode", string(c.coordinateMode.Value), "valueColumn", string(c.valueColumn.Value), ...
+                "excludeOutliers", c.dataExcludeOutliers.Value, "outlierSigma", c.dataOutlierSigma.Value));
         end
 
         function onMappingEdited(app, ~)
@@ -775,6 +786,9 @@ classdef (Abstract) DataTab < appui.Core
             c = app.Controls;
             app.Settings.data.excludeZeroMeasurements = c.excludeZeroMeasurements.Value;
             app.Settings.data.excludeUnmeasuredRecords = c.excludeUnmeasuredRecords.Value;
+            app.Settings.data.excludeOutliers = c.dataExcludeOutliers.Value;
+            app.Settings.data.outlierSigma = c.dataOutlierSigma.Value;
+            c.dataOutlierSigma.Enable = onOff(c.dataExcludeOutliers.Value);
             app.Settings.data.directionRule = string(c.directionRule.Value);
             app.Settings.data.invertDirection = c.invertDirection.Value;
             c.invertDirection.Enable = onOff(app.Settings.data.directionRule ~= "none");

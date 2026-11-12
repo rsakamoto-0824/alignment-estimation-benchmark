@@ -108,6 +108,12 @@ classdef (Abstract) Core < handle
         HighOrderConditions = struct("label", {}, "highOrder", {})  % 「7. Shot高次補正」の補正の比較の条件（名前と settings.highOrder）
         HighOrderConditionSelection = zeros(1, 0)  % 「補正の比較」の条件の表で選んでいる行
         HighOrderComparison = []  % 「7. Shot高次補正」の補正の比較の結果（compareHighOrderConditionsNow。表・条件ごとの結果と、比べた条件・入力）
+        HighOrderHistory = struct("number", {}, "time", {}, "description", {}, "nWafers", {}, "summary", {}, "settings", {})
+                                % 「7. Shot高次補正」の結果の履歴（計算するたびに足す。番号・時刻・説明・Wafer の数・すべての Wafer の評価・設定）
+        HighOrderHistorySelection = zeros(1, 0)  % 「結果の履歴」の表で選んでいる行
+        HighOrderTransfer = []  % 「7. Shot高次補正」の「他の Wafer の補正」の結果（alignest.transferHighOrder）
+        HighOrderTermSelection = []  % 「7. Shot高次補正」の「k の選定」の結果（alignest.highOrderTermSelection）
+        EstimatedCorrection = []     % 「4. 結果一覧」の「実測値と推定値の補正」の結果（alignest.estimatedCorrectionComparison）
         MarkLayoutFile = []     % 「8. Mark配置の最適化」で読み込んだ Excel・CSV（raw・info：alignest.readHighOrderFile、mapping、
                                 %  wafers・coordinates・dataInfo：選んだ列で整理した入力（alignest.markLayoutFileData。まだなら dataInfo は []））
         MarkLayoutInput = []    % 「8. Mark配置の最適化」の今の入力の候補の Mark と Shot ごとの値（alignest.markCandidates。入力が無ければ []）
@@ -169,7 +175,7 @@ classdef (Abstract) Core < handle
             root = uigridlayout(app.Figure, [1, 1], 'Padding', 8, 'Scrollable', 'on');
             app.RootGrid = root;
             app.TabGroup = uitabgroup(root);
-            app.Tabs.data = uitab(app.TabGroup, 'Title', '1. データの読み込み');
+            app.Tabs.data = uitab(app.TabGroup, 'Title', '1. データ読込');
             app.Tabs.settings = uitab(app.TabGroup, 'Title', '2. 評価の設定');
             app.Tabs.run = uitab(app.TabGroup, 'Title', '3. 実行');
             app.Tabs.results = uitab(app.TabGroup, 'Title', '4. 結果一覧');
@@ -379,10 +385,13 @@ classdef (Abstract) Core < handle
                 c.mapCompareValue, c.mapConditions, c.mapAddCondition, c.mapRemoveCondition, c.mapClearConditions, ...
                 c.mapStackBy, c.mapStackAll, c.residualVariableMethod, c.residualVariableGroup, c.residualVariableWafer, ...
                 c.residualVariableName, c.drawResidualVariableButton, c.boxFactor, c.timingWafer, c.timingPlan, c.timingMethods, c.timingRepeats, c.measureTimingButton, ...
+                c.estimatedCorrectionMethods, c.estimatedCorrectionGroup, c.estimatedCorrectionWafer, c.compareEstimatedCorrectionButton, ...
                 c.compareLayoutMethod, c.compareLayoutXAxis, c.compareLayoutErrorBar, ...
                 c.filterResults.apply, c.filterMap.apply], 'Enable', 'off');
             showFilter(app);
             app.Distribution = [];
+            app.EstimatedCorrection = [];
+            c.estimatedCorrectionTable.Data = table();
             c.distributionTable.Data = {};
             c.jsTable.Data = {};
             for ax = [c.distributionAxes, c.residualVariableAxes]

@@ -1,7 +1,7 @@
 classdef (Abstract) MarkLayoutTab < appui.Core
     %MARKLAYOUTTAB 「8. Mark配置の最適化」タブ：Shot 高次補正の計測 Mark の配置を、Mark の数ごとに I 最適計画で選び、選んだ
     %   配置で補正した制御残差を I 効率と比べる（alignest.markLayoutStudy）。
-    %   入力：「1. データの読み込み」の計測データ・「7. Shot高次補正」の入力のデータ・このタブで読み込む Excel・CSV（列は読んだ後で
+    %   入力：「1. データ読込」の計測データ・「7. Shot高次補正」の入力のデータ・このタブで読み込む Excel・CSV（列は読んだ後で
     %   選ぶ。座標だけの表も読める）・画面で入力する座標（格子で置ける）。候補の Mark の表で、必ず計測する Mark を選ぶ（配置の
     %   図をクリックしても選べる）。補正の式（ASML・Canon・Nikon・カスタム、保存した項の組み合わせ。VIF で項を選ぶ）と回帰
     %   （ロバスト回帰・正則化）は「7. Shot高次補正」と同じ。実測値の無い座標は、乱数の Shot の形（最大 1000 通り。次数ごとの
@@ -11,9 +11,9 @@ classdef (Abstract) MarkLayoutTab < appui.Core
     properties (Constant, Access = {?appui.Core})
         MARK_GRID_SPAN_MM = [24, 30]   % 「格子で置く」の、端の Mark どうしの幅・高さ [mm] の初期値
         MARK_GRID_COUNTS = [7, 11]     % 「格子で置く」の列・行の数の初期値
-        MARK_MAX_LABELS = 16           % 制御残差と I 効率の図で、点に Mark の数を書く数の上限（多いときは間引く）
+        MARK_MAX_LABELS = 16           % 制御残差推移の図で、点に Mark の数を書く数の上限（多いときは間引く）
         MARK_SET_PREFIX = "set:"       % 補正の式の選択肢で、保存した項の組み合わせを選ぶ値の頭
-        MARK_Y_COLOR = [0.85, 0.40, 0.10]   % 制御残差と I 効率の図の Y の線の色（X は PRIMARY_COLOR）
+        MARK_Y_COLOR = [0.85, 0.40, 0.10]   % 制御残差推移の図の Y の線の色（X は PRIMARY_COLOR）
         MARK_REQUIRED_COLOR = [0.80, 0.10, 0.10]  % 必ず計測する Mark・飛び値の色
         MARK_ABSENT_COLOR = [0.65, 0.65, 0.65]    % 「使う項と VIF」の表で、その式に無い項のチェック欄の色
         MARK_CRITERION_EMPTY = '「配置を最適化する」を押すと、配置を選んだ I 最適計画の式と使った項が出ます。'
@@ -21,7 +21,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
 
     methods
         function setMarkLayoutSource(app, source)
-            %SETMARKLAYOUTSOURCE 入力を選ぶ："manual"（画面で入力する座標）・"data"（「1. データの読み込み」の計測データ）・
+            %SETMARKLAYOUTSOURCE 入力を選ぶ："manual"（画面で入力する座標）・"data"（「1. データ読込」の計測データ）・
             %   "highOrder"（「7. Shot高次補正」で選んでいる入力のデータと Wafer）・"file"（このタブで読み込んだ Excel・CSV）。
             app.Controls.markOptSource.Value = char(source);
             onMarkLayoutSourceChanged(app);
@@ -376,7 +376,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
         end
 
         function data = drawMarkLayoutChart(app, statistic, points, xAxis)
-            %DRAWMARKLAYOUTCHART 制御残差と I 効率の図：横軸は I 効率 [%]（計測できる Mark をすべて計測したとき 100%）など、縦軸は
+            %DRAWMARKLAYOUTCHART 制御残差推移の図：横軸は I 効率 [%]（計測できる Mark をすべて計測したとき 100%）など、縦軸は
             %   制御残差。X・Y の線に、Mark の数ごとの配置の点（数を書く）と、すべての Mark を計測したとき（★）。
             %   statistic："meanPlus3Sigma"・"p95"・"median"・"rms"、points："all"（すべての Mark の制御残差）・"unmeasured"
             %   （計測しなかった Mark だけ）、xAxis："efficiency"（I 効率）・"criterionI"（I 基準）・"count"（Mark の数）・
@@ -455,6 +455,15 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             data = table(x.count, x.efficiency, x.(xName), x.(column), y.(column), 'VariableNames', ...
                 ["count", "efficiency", "xValue", "X", "Y"]);
             info = sprintf("%d 通りの Mark の数を %.0f 秒で計算しました。", numel(study.counts), study.seconds);
+            if c.markOptChartYManual.Value
+                % 縦軸の範囲を指定したとき（下限が上限以上なら自動のまま知らせる）
+                limits = [c.markOptChartYMin.Value, c.markOptChartYMax.Value];
+                if limits(1) < limits(2)
+                    ylim(ax, limits);
+                else
+                    info = "⚠ 縦軸の下限は上限より小さくしてください（自動の範囲で描きました）。" + info;
+                end
+            end
             if ~isequaln(study.snapshot, markLayoutSnapshot(app))
                 info = "⚠ 計算の後に入力・候補の Mark・設定を変えました。「配置を最適化する」で計算し直してください" + ...
                     "（下は前の結果）。" + info;
@@ -661,11 +670,11 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             inputGrid = uigridlayout(left, [1, 3], 'ColumnWidth', {'fit', '1x', 'fit'}, 'Padding', 0);
             place(inputGrid, 2, 1);
             label(inputGrid, '入力', 1, 1);
-            c.markOptSource = uidropdown(inputGrid, 'Items', {'画面で入力する座標', '1. データの読み込みの計測データ', ...
+            c.markOptSource = uidropdown(inputGrid, 'Items', {'画面で入力する座標', '1. データ読込の計測データ', ...
                 '7. Shot高次補正の入力のデータ', 'Excel・CSV から読み込んだデータ'}, 'ItemsData', {'manual', 'data', ...
                 'highOrder', 'file'}, 'Value', 'manual', 'ValueChangedFcn', @(~, ~) app.onMarkLayoutSourceChanged(), ...
                 'Tooltip', ['画面で入力する座標：右の「候補の Mark」で座標を入れる（格子で置ける）。実測値が無いので、乱数の ' ...
-                'Shot の形で評価します。計測データ：「1. データの読み込み」の計測値。7. の入力：「7. Shot高次補正」で選んでいる' ...
+                'Shot の形で評価します。計測データ：「1. データ読込」の計測値。7. の入力：「7. Shot高次補正」で選んでいる' ...
                 '入力のデータと Wafer。Excel・CSV：右のボタンで読み込んだ表（座標だけの表も読めます）。']);
             place(c.markOptSource, 1, 2);
             c.markOptLoad = uibutton(inputGrid, 'Text', 'Excel・CSV を読み込む…', ...
@@ -898,12 +907,12 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             shapeAxes = uigridlayout(shapePanel, [1, 3], 'Padding', 0, 'ColumnSpacing', 4);
             c.markOptShapeAxes = [uiaxes(shapeAxes), uiaxes(shapeAxes), uiaxes(shapeAxes)];
             c.markOptShapeInfo = label(shapeGrid, '', 3, 1);
-            % 制御残差と I 効率
-            chartTab = uitab(outputs, 'Title', '制御残差と I 効率');
+            % 制御残差推移（Mark の数ごとの配置の制御残差を、I 効率などの横軸で並べる）
+            chartTab = uitab(outputs, 'Title', '制御残差推移');
             c.markOptChartTab = chartTab;
             chartGrid = uigridlayout(chartTab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 6, 'RowSpacing', 4);
-            chartControls = uigridlayout(chartGrid, [2, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1x'}, 'RowHeight', {'fit', 'fit'}, ...
-                'Padding', 0, 'RowSpacing', 3);
+            chartControls = uigridlayout(chartGrid, [3, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1x'}, ...
+                'RowHeight', {'fit', 'fit', 'fit'}, 'Padding', 0, 'RowSpacing', 3);
             onChart = @(~, ~) app.drawMarkLayoutChart();
             label(chartControls, '図の値', 1, 1);
             c.markOptChartStatistic = uidropdown(chartControls, 'Items', {'|平均|+3σ', '|制御残差| 95% 点', ...
@@ -925,6 +934,18 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                 @(~, ~) app.saveFigureWithDialog("markLayoutChart", 'mark_layout_efficiency.png'));
             c.markOptCopyChart = uibutton(chartButtons, 'Text', '図をコピー', 'Tooltip', app.COPY_TOOLTIP, ...
                 'ButtonPushedFcn', @(source, ~) app.onCopyFigure("markLayoutChart", source));
+            % 縦軸の範囲：オフなら自動、オンなら下限〜上限 [nm]
+            label(chartControls, '縦軸', 3, 1);
+            yLimitGrid = uigridlayout(chartControls, [1, 5], 'ColumnWidth', {'fit', 'fit', 90, 'fit', 90}, 'Padding', 0);
+            place(yLimitGrid, 3, [2, 4]);
+            c.markOptChartYManual = uicheckbox(yLimitGrid, 'Text', '範囲を指定する', 'Value', false, ...
+                'ValueChangedFcn', onChart, 'Tooltip', 'オフなら縦軸の範囲は自動。オンなら下限〜上限 [nm] で描きます。');
+            label(yLimitGrid, '下限', 1, 2);
+            c.markOptChartYMin = uieditfield(yLimitGrid, 'numeric', 'Value', 0, 'ValueChangedFcn', onChart);
+            place(c.markOptChartYMin, 1, 3);
+            label(yLimitGrid, '上限', 1, 4);
+            c.markOptChartYMax = uieditfield(yLimitGrid, 'numeric', 'Value', 10, 'ValueChangedFcn', onChart);
+            place(c.markOptChartYMax, 1, 5);
             c.markOptChartAxes = axesInPanel(chartGrid, 2);
             chartEmpty = '「配置を最適化する」で描きます。';
             c.markOptChartInfo = uilabel(chartGrid, 'WordWrap', 'on', 'Text', chartEmpty, 'UserData', chartEmpty);
@@ -1154,7 +1175,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                     text = "画面で入力した座標";
                 case "data"
                     if isempty(app.Data)
-                        error('alignest:noData', '先に「1. データの読み込み」で計測データを読み込んでください。');
+                        error('alignest:noData', '先に「1. データ読込」で計測データを読み込んでください。');
                     end
                     if alignest.valueSpec(app.Settings.data).scalar
                         error('alignest:markLayout', ['Shot 高次補正は X・Y の2成分が要ります（1変数の推定のデータでは' ...
@@ -1167,7 +1188,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                         wafers(end + 1) = struct("label", unit.label, "points", alignest.highOrderUnitPoints(unit)); %#ok<AGROW>
                     end
                     [candidates, shots] = alignest.markCandidates(wafers, zeros(0, 2), required, excluded);
-                    text = sprintf("「1. データの読み込み」の計測データ（%d Wafer）", numel(wafers));
+                    text = sprintf("「1. データ読込」の計測データ（%d Wafer）", numel(wafers));
                 case "highOrder"
                     wafers = highOrderWafers(app);
                     [candidates, shots] = alignest.markCandidates(wafers, zeros(0, 2), required, excluded);

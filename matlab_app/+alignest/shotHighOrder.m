@@ -23,7 +23,8 @@ function result = shotHighOrder(wafers, settings, flags)
 %   1組として k と一緒に求める（正則化はかけない）。Shot ごとのときは、Shot ごとの k1・k2 が Wafer 成分を含むので、先に Wafer 内で
 %   共通の k と一緒に求めて引き、残りを Shot ごとに求める（補正量・残差は Wafer 成分なしと同じで、Shot ごとの k1・k2 が
 %   Wafer 成分を除いた値になる）。
-%   Shot 共通を先に引く（Shot ごとのとき。options.shotCommon が "fit"・"input"）：Shot 共通の k（"fit" は Wafer 成分と一緒に
+%   Shot 共通を先に引く（Shot ごと・Scan 方向ごと・行の偶奇ごとのとき。options.shotCommon が "fit"・"input"。Scan 方向ごと・
+%   行の偶奇ごとでは、下の「Shot ごと」を「k の組ごと」と読む。alignest.highOrderSequential）：Shot 共通の k（"fit" は Wafer 成分と一緒に
 %   Wafer 内の Shot で共通に求めた k、"input" は入力した k の値 options.shotCommonValues・shotCommonOuterValues。外周の式を
 %   分けるときは内周・外周の2組）を先に引き、残りを Shot ごとに求める（Shot ごとの項は次数 options.shotEachOrder まで。
 %   0 なら使う項すべて）。"input" で Wafer 成分があれば、入力した k を引いた残りで（定数と一緒に）求めて引く。結果の
@@ -59,7 +60,9 @@ function result = shotHighOrder(wafers, settings, flags)
 %   ごとの1次と比べた改善（improvement）、高次補正の |残差| の 95% 点・中央値（highOrderP95・highOrderMedian）、高次補正の
 %   残差の RMS、外れ値とみなした点の数（outliers：ロバスト回帰が、残差が大きいため当てはめでの重みを半分未満に下げた点。
 %   alignest.highOrderOutliers。最小二乗では 0）、求めた k の組の数（kSets）と補正しなかった k の組の数（skipped）、回帰の
-%   決定係数（rSquared）と自由度調整済決定係数（adjustedRSquared。alignest.highOrderRSquared）
+%   決定係数（rSquared）と自由度調整済決定係数（adjustedRSquared。alignest.highOrderRSquared）、補正の段階の残差の |平均| + 3σ
+%   （waferStage：Wafer 高次補正だけ、commonStage：Wafer 高次補正＋Shot 共通補正（Shot 共通を先に引くときは、引いた k）。同じ点で。
+%   stages=false なら NaN）
 %   result.regionSummary：result.summary と同じ列で、内周・外周（region = "内周"・"外周"）の Shot だけの行。k の組が内周と
 %   外周にまたがるとき（外周の式を分けない Wafer 内で共通など）は kSets・skipped が NaN
 %   result.points：点ごとの値・k の組（group）・Shot 中心の半径（shotRadius）・内周か外周か（zone）・Wafer RT の補正量
@@ -102,7 +105,7 @@ if isempty(wafers)
     error('alignest:highOrderInput', 'Shot 高次補正を求める点がありません。入力のデータと Wafer を選んでください。');
 end
 zoneSplit = options.outerMaker ~= "none";
-sequential = options.unit == "shot" && options.shotCommon ~= "none";   % Shot 共通を先に引き、残りを Shot ごとに求める
+sequential = alignest.highOrderSequential(options);   % Shot 共通を先に引き、残りを k の組（Shot・Scan 方向・行の偶奇）ごとに求める
 inputCommon = sequential && options.shotCommon == "input";
 inputValues = {options.shotCommonValues, options.shotCommonOuterValues};   % 入力した Shot 共通の k（内周の式・外周の式）
 for w = 1:numel(wafers)
@@ -157,7 +160,7 @@ if ~sequential && (~isempty(dropped) || ~isempty(outerDropped))
 end
 if options.unit == "scan" && ~any(ismember(everything.direction, [1, 2]) & isfinite(everything.shotNo))
     error('alignest:highOrderDirection', ['Scan 方向（Direction）が分からないので、Scan 方向ごとには求められません。' ...
-        '「1. データの読み込み」で Direction の列を対応づけるか「Scan 方向の付与」の規則を選ぶ（Excel・CSV のときは' ...
+        '「1. データ読込」で Direction の列を対応づけるか「Scan 方向の付与」の規則を選ぶ（Excel・CSV のときは' ...
         '「Excel・CSV の列」で Direction の列か規則を選ぶ）と使えます。']);
 end
 vifInfos = cell(1, numel(zoneTerms));
@@ -170,10 +173,11 @@ for z = 1:numel(zoneTerms)
 end
 polynomialOrder = options.waferOrder * (options.waferRtRange ~= "all");   % すべての Shot が RT なら Wafer 成分は使わない
 waferPowers = polynomialPowers(polynomialOrder);
-waferFirst = options.unit == "shot" && polynomialOrder > 0;   % Shot ごと：Wafer 成分を先に求めて引く
+% Shot ごと（と Shot 共通を先に引くとき）：Wafer 成分を先に求めて引く（Shot 共通を先に引くときは Shot 共通の k と一緒に求める）
+waferFirst = (options.unit == "shot" || sequential) && polynomialOrder > 0;
 fitWaferPowers = waferPowers;
-if options.unit == "shot"
-    fitWaferPowers = zeros(0, 2);   % Shot ごとの k と一緒には求めない（k1・k2 が Wafer 成分を含む）
+if options.unit == "shot" || sequential
+    fitWaferPowers = zeros(0, 2);   % k の組ごとの k と一緒には求めない（Shot ごとの k1・k2 が Wafer 成分を含む・先に引いた）
 end
 
 waferRadiusMm = alignest.defaultSettings().data.waferRadiusMm;
@@ -303,8 +307,14 @@ for w = 1:numel(wafers)
             if any(fit.ok)
                 unitRows = coefficientRows(label, fitUnits(u), FORMULA_AXES(a), groupTerms, fitWaferPowers, fit, zoneSplit);
                 if sequential
-                    unitRows = withCommonValues(unitRows, commonTable, ...
-                        ternaryText(zoneSplit, ZONE_NAMES(fitUnits(u).zones(1)), ""));
+                    % k の組（Shot ごとなら1つ、Scan 方向ごと・行の偶奇ごとは組の数）ごとに、同じ式の範囲の Shot 共通の k を足す
+                    for e = 1:numel(unitRows)
+                        zoneText = "";
+                        if zoneSplit && ~isempty(unitRows(e).zone)
+                            zoneText = unitRows(e).zone(1);
+                        end
+                        unitRows(e) = withCommonValues(unitRows(e), commonTable, zoneText);
+                    end
                 end
                 parts{end + 1} = unitRows; %#ok<AGROW>
                 counts.notConverged = counts.notConverged + ~fit.converged;
@@ -533,8 +543,10 @@ switch options.shortage
         consequence = "「補正を計算する」では、点が足りない " + groupName + " は補正しません（正則化をかけた次数の項は、" + ...
             "点が少なくても決まります）。";
 end
-if options.unit == "shot" && options.shotCommon ~= "none"
-    consequence = consequence + "Shot 共通を先に引くので、減らすのは Shot ごとに求める項だけです（Shot 共通の項はすべて使います）。";
+if alignest.highOrderSequential(options)
+    groupWords = struct("shot", "Shot", "scan", "Scan 方向", "row", "行の偶奇");
+    consequence = consequence + "Shot 共通を先に引くので、減らすのは " + groupWords.(options.unit) + ...
+        " ごとに求める項だけです（Shot 共通の項はすべて使います）。";
 end
 messages(end + 1, 1) = consequence;
 end
@@ -873,7 +885,7 @@ values(inside) = vector(kNumbers(inside));
 end
 
 function rows = withCommonValues(rows, common, zone)
-% Shot 共通を先に引いたとき：Shot ごとの k（Shot 共通を引いた残りに当てはめた値。1つの Shot の行）に、同じ式の範囲の
+% Shot 共通を先に引いたとき：k の組ごとの k（Shot 共通を引いた残りに当てはめた値。1つの Shot・k の組の行）に、同じ式の範囲の
 % Shot 共通の k を足して、その Shot に当てる k にする（alignest.highOrderLevels の「Shot 毎」は、ここから Shot 共通を
 % 引いて戻す）。Shot ごとに求めない Shot 共通の項（次数の上限より上・点が足りず減らした項）は、Shot 共通の値の行を足す
 EACH_LEFT_NOTE = "Shot ごとには求めない項（Shot 共通の値）";
@@ -1164,11 +1176,14 @@ if ~isempty(magnitude)
     middle = median(magnitude);
 end
 [rSquared, adjustedRSquared] = alignest.highOrderRSquared(values, residual, points.("leverage" + axisName));
+% 補正の段階：Wafer 高次補正だけ・Wafer 高次補正＋Shot 共通補正の残差（同じ点で。段階を求めないときは NaN）
+waferStage = meanPlus3Sigma(points.("waferResidual" + axisName)(compared));
+commonStage = meanPlus3Sigma(points.("commonResidual" + axisName)(compared));
 row = table(string(label), string(axisName), string(region), nnz(withValue), nnz(compared), shots, kSets, skipped, ...
     before, linear, highOrder, linear - highOrder, p95, middle, rms, nnz(compared & alignest.highOrderOutliers(weights)), ...
-    rSquared, adjustedRSquared, 'VariableNames', ["wafer", "axis", "region", "n", "nCorrected", "shots", "kSets", ...
-    "skipped", "before", "linear", "highOrder", "improvement", "highOrderP95", "highOrderMedian", "rmsHighOrder", ...
-    "outliers", "rSquared", "adjustedRSquared"]);
+    rSquared, adjustedRSquared, waferStage, commonStage, 'VariableNames', ["wafer", "axis", "region", "n", "nCorrected", ...
+    "shots", "kSets", "skipped", "before", "linear", "highOrder", "improvement", "highOrderP95", "highOrderMedian", ...
+    "rmsHighOrder", "outliers", "rSquared", "adjustedRSquared", "waferStage", "commonStage"]);
 end
 
 function value = meanPlus3Sigma(values)
@@ -1237,14 +1252,17 @@ if options.unit == "shot" && options.waferOrder > 0 && options.waferRtRange ~= "
             options.waferOrder);
     end
 end
-if options.unit == "shot" && options.shotCommon ~= "none"
+if alignest.highOrderSequential(options)
     sourceText = ternaryText(options.shotCommon == "fit", "Wafer 内の Shot で共通に求めた k", "入力した k");
     eachText = "使う項";
     if options.shotEachOrder > 0
         eachText = sprintf("%d次までの項", options.shotEachOrder);
     end
-    messages(end + 1, 1) = "Shot ごと：Shot 共通補正（" + sourceText + "）を先に引き、残りを Shot ごとに" + eachText + ...
-        "で求めました。Shot ごとの k は、Shot 共通の k を足した値です（残りの分は書き出しの「補正値」の「Shot 毎」）。";
+    unitLabels = struct("shot", "Shot", "scan", "Scan 方向", "row", "行の偶奇");
+    unitLabel = unitLabels.(options.unit);
+    messages(end + 1, 1) = unitLabel + " ごと：Shot 共通補正（" + sourceText + "）を先に引き、残りを " + unitLabel + ...
+        " ごとに" + eachText + "で求めました。" + unitLabel + " ごとの k は、Shot 共通の k を足した値です" + ...
+        "（残りの分は書き出しの「補正値」の「Shot 毎」）。";
     if options.shotEachOrder == 0 && all(options.regularization == "none" | options.lambda == 0)
         messages(end) = messages(end) + "Shot ごとに使う項をすべて求め、正則化もかけないので、補正量・残差は Shot 共通を" + ...
             "引かないときと同じです（点が足りず項を減らした Shot を除く）。違いを見るときは「Shot ごとの次数」を下げるか、" + ...

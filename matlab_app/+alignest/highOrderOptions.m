@@ -12,10 +12,11 @@ function options = highOrderOptions(settings)
 %                         ない）・"all"（すべての Shot。Wafer 成分は使わない）・"outer"（外周の Shot だけ。Wafer 成分は内周の Shot
 %                         だけ）。X・Y を一緒に、Wafer ごとに先に求めて引き、残りを補正の式で求める
 %   options.waferRtOrder：Wafer RT の次数 K（1〜5）
-%   options.shotCommon：Shot ごと（unit = "shot"）のとき、先に引く Shot 共通の補正。"none"（引かない。Shot ごとの k をその Shot の
-%                       点だけで求める）・"fit"（Wafer 内の Shot で共通の k を Wafer 成分と一緒に求めて引く）・"input"（入力した
-%                       k の値 shotCommonValues・shotCommonOuterValues を引く）。引いた残りを Shot ごとに求める。ほかのくくりでは使わない
-%   options.shotEachOrder：Shot 共通を先に引くとき、Shot ごとに求める項の次数の上限（0 = 使う項すべて。1〜6。k1〜k6 は必ず求める）
+%   options.shotCommon：くくりが Shot ごと・Scan 方向ごと・行の偶奇ごと（unit = "shot"・"scan"・"row"）のとき、先に引く Shot 共通の
+%                       補正。"none"（引かない。k の組ごとの k をその組の点だけで求める）・"fit"（Wafer 内の Shot で共通の k を
+%                       Wafer 成分と一緒に求めて引く）・"input"（入力した k の値 shotCommonValues・shotCommonOuterValues を引く）。
+%                       引いた残りを k の組ごとに求める（alignest.highOrderSequential）。Wafer 内で共通のくくりでは使わない
+%   options.shotEachOrder：Shot 共通を先に引くとき、k の組ごとに求める項の次数の上限（0 = 使う項すべて。1〜6。k1〜k6 は必ず求める）
 %   options.shotCommonTerms・shotCommonOuterTerms：Shot 共通を「計算する」ときに Shot 共通の k に使う項（k の番号。空なら
 %                             使う項と同じ。k1〜k6 は必ず使う。Shot ごとの項は「使う」と shotEachOrder で決まる）
 %   options.shotCommonValues：入力した Shot 共通の k（n 番目が kn の値。mm の座標での値で、k1・k2 は nm、1次は nm/mm、n 次は
@@ -186,12 +187,12 @@ unitText = UNIT_LABELS(UNIT_NAMES == options.unit);
 waferOrder = options.waferOrder * (options.waferRtRange ~= "all");   % すべての Shot が RT なら Wafer 成分は使わない
 if options.unit == "common" && waferOrder > 0
     unitText = unitText + sprintf("（Wafer 成分 %d 次も一緒に求める）", waferOrder);
-elseif options.unit == "shot" && waferOrder > 0
+elseif (options.unit == "shot" || alignest.highOrderSequential(options)) && waferOrder > 0
     unitText = unitText + sprintf("（Wafer 成分 %d 次を先に求めて引く）", waferOrder);
 elseif waferOrder > 0
     unitText = unitText + sprintf("（Wafer 成分 %d 次は Wafer で共通にして一緒に求める）", waferOrder);
 end
-if options.unit == "shot" && options.shotCommon ~= "none"
+if alignest.highOrderSequential(options)
     sourceText = "求めた";
     if options.shotCommon == "input"
         sourceText = "入力した";
@@ -200,7 +201,9 @@ if options.unit == "shot" && options.shotCommon ~= "none"
     if options.shotEachOrder > 0
         eachText = sprintf("%d次までの項を", options.shotEachOrder);
     end
-    unitText = unitText + "、" + sourceText + " Shot 共通の k を先に引いて残りの" + eachText + " Shot ごとに求める";
+    groupLabels = struct("shot", "Shot", "scan", "Scan 方向", "row", "行の偶奇");
+    unitText = unitText + "、" + sourceText + " Shot 共通の k を先に引いて残りの" + eachText + " " + ...
+        groupLabels.(options.unit) + " ごとに求める";
 end
 if options.waferRtRange == "all"
     unitText = unitText + sprintf("、すべての Shot は Wafer RT %d 次を先に求めて引く", options.waferRtOrder);

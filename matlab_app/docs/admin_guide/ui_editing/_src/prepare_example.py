@@ -1,7 +1,7 @@
 """画面だけを変更した説明用コピーをGit管理外に作る。
 
 画面はタブごとのファイル（+appui）に分けてあるので、アプリの画面と計算のファイル一式をコピーし、
-「1. データの読み込み」のファイル（+appui/DataTab.m）だけを書き換える。
+「1. データ読込」のファイル（+appui/DataTab.m）だけを書き換える。
 """
 from pathlib import Path
 import shutil
