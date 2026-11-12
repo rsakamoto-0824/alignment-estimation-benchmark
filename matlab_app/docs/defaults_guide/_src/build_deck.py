@@ -327,8 +327,10 @@ def build(output: Path, reference: Path):
     s = deck.body("03　設定の項目と初期値", "設定の項目④：evaluation・overlay（補正）・display（表示）")
     settings_table(s, [
         ["evaluation.outerRadiusMm", "120", "外周とみなす Mark の半径 [mm]（外周の RMSE の境目）", "2. 外周の半径"],
-        ["evaluation.removeLinear", "false", "XY 1次を除いてから推定する", "2. 評価"],
-        ["evaluation.recordTiming", "false", "条件ごとの処理時間を記録する", "2. 評価"],
+        ["evaluation.removeLinear・recordTiming", "false・false", "XY 1次を除いてから推定する・条件ごとの処理時間を記録する",
+         "2. 評価"],
+        ["evaluation.waferSelection・waferCount・waferRate・waferOrder", "\"all\"・5・50・\"first\"",
+         "評価に使う Wafer（すべて・枚数・割合 [%]、先頭から・ランダム）", "2. 評価に使う Wafer"],
         ["evaluation.excludeOutliers", "false", "学習データの異常値を除く", "2. 異常値"],
         ["evaluation.outlierSigma ・ outlierMethod", "3 ・ \"sigma\"", "異常値の倍数 n と判定（sigma：平均と σ、mad：中央値と MAD）",
          "2. 異常値"],
@@ -340,7 +342,7 @@ def build(output: Path, reference: Path):
         ["display.scan1Up・scan1Color・scan2Color", "true・緑・紫", "表示：Scan 方向 1 を上向き（▲）にするか・1・2 の色（RGB 0〜1）",
          "メニュー「設定」"]],
         widths=(3.85, 1.95, 4.68, 1.65), row_h=0.41)
-    point_bar(s, 6.3, "Overlay 補正をすべて「なし」（waferOrder 0・shotCommon none・perShot none）にすると補正の評価をしない",
+    point_bar(s, 6.4, "Overlay 補正をすべて「なし」（waferOrder 0・shotCommon none・perShot none）にすると補正の評価をしない",
               icon="i", icon_color=BODY, h=0.55, size=13)
     notes(s, "補正の式の書き方と、すべての補正の式はメニュー「ヘルプ」にまとめている。")
 

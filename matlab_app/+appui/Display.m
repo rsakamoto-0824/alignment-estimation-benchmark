@@ -274,6 +274,7 @@ classdef (Abstract) Display < appui.Core
             fillUnitTable(app);
             if ~isempty(app.Results)
                 refreshResults(app);
+                showWaferRanking(app);   % Wafer のベスト・ワーストの色
             end
             if ~isempty(app.TargetRun)
                 showTargetRun(app);   % 外挿の行の色・メッセージの色を新しい色の組にする

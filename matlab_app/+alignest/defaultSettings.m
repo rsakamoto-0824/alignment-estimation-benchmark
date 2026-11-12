@@ -85,6 +85,10 @@ settings.evaluation.recordTiming = false;     % 条件（手法 × 学習パタ�
 settings.evaluation.excludeOutliers = false;  % 学習データの異常値（中心から outlierSigma × ばらつき を超えて離れた Mark）を除いて推定する
 settings.evaluation.outlierSigma = 3;         % 異常値とみなす倍数 n（正の値。ばらつきは Wafer・学習パターンごと）
 settings.evaluation.outlierMethod = "sigma";  % 異常値の判定：sigma（平均と σ）・mad（中央値と 1.4826 × MAD）
+settings.evaluation.waferSelection = "all";  % 評価に使う Wafer：all（すべて）・count（waferCount 枚）・rate（waferRate [%]）
+settings.evaluation.waferCount = 5;          % 評価に使う Wafer の枚数（waferSelection = count）
+settings.evaluation.waferRate = 50;          % 評価に使う Wafer の割合 [%]（waferSelection = rate）
+settings.evaluation.waferOrder = "first";    % 評価に使う Wafer の選び方：first（先頭から）・random（乱数の種で決まる並びから）
 
 % 表示（推定の結果は変えない。alignest.plot.scanStyle）
 settings.display.scan1Up = true;                   % Scan 方向 1 を上向き（▲）にする。false なら 1 が下向き（▼）・2 が上向き（▲）

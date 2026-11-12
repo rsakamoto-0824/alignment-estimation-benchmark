@@ -3,7 +3,8 @@ function conflicts = extensionConflicts(evaluated, requested)
 %   conflicts = alignest.extensionConflicts(評価したときの設定, これから実行する設定)
 %   足してよいのは、手法の選択（説明変数の組・GPR のカーネル・質的変数の扱い、TPS などの有無、次数など）と、
 %   質的変数の組（変えると、足す手法の id に使う組を付ける。alignest.runEvaluation・alignest.tagFactorSet）と、学習パターンの数
-%   （学習 Shot 数・計測率の開始・終了・刻み、Excel で指定したパターン、ランダムの繰り返し回数、Mark 単位の 1 Shot あたりの数）。
+%   （学習 Shot 数・計測率の開始・終了・刻み、Excel で指定したパターン、ランダムの繰り返し回数、Mark 単位の 1 Shot あたりの数）と、
+%   評価に使う Wafer（枚数・割合・選び方。評価済みの Wafer を含むこと。alignest.runEvaluation で確かめる）。
 %   推定の結果を変える次の設定は
 %   同じでなければならない（違うと、評価済みの行と新しい行を同じ条件で比べられないため）。
 %   データの読み込み・学習 Shot の選び方と制約（同心円・4象限・Scan 方向・許容幅・基準モデル・交換法・
@@ -17,6 +18,15 @@ NAMES = ["データの読み込みの条件", "学習 Shot の選び方・制約
     "評価の条件（外周の半径・1次を除く・異常値の除外・処理時間の記録）", "Overlay 補正の評価"];
 evaluated = comparable(evaluated, COUNT_FIELDS);
 requested = comparable(requested, COUNT_FIELDS);
+% 評価に使う Wafer（枚数・割合・選び方）は、評価済みの Wafer を含めば足してよい（alignest.runEvaluation で確かめる）
+for name = ["waferSelection", "waferCount", "waferRate", "waferOrder"]
+    if isfield(evaluated, "evaluation") && isfield(evaluated.evaluation, name)
+        evaluated.evaluation = rmfield(evaluated.evaluation, name);
+    end
+    if isfield(requested, "evaluation") && isfield(requested.evaluation, name)
+        requested.evaluation = rmfield(requested.evaluation, name);
+    end
+end
 conflicts = strings(1, 0);
 for k = 1:numel(GROUPS)
     if ~isequaln(fieldOrEmpty(evaluated, GROUPS(k)), fieldOrEmpty(requested, GROUPS(k)))

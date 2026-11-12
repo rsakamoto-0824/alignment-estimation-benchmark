@@ -8,6 +8,8 @@ function result = gprFitPredict(trainFeatures, testFeatures, groups, y, kernelNa
 %     backfitTolerance      : Backfitting の効果の変化の閾値 [nm]（既定 1e-3）
 %     fixedLogParams        : ハイパーパラメータを固定する（動作確認用。空なら推定する）
 %   基底関数と質的変数のカーネル項の作り方は gprModeSetup。
+%   result.prediction：評価点の推定値、result.predictionVariance：評価点の推定の分散（予測分散。計測のばらつきは含めない。
+%   alignest.models.gprPredictVariance。Backfitting では質的変数の効果も基底に入れた最後の当てはめの分散）
 arguments
     trainFeatures double
     testFeatures double
@@ -33,6 +35,7 @@ if factorMode ~= "backfit"
     end
     prediction = alignest.models.gprPredict(gp, fit, basisTest);
     result = packResult(gp, fit, prediction, 0, true, fit.converged, fit.beta(2:end));
+    result.predictionVariance = alignest.models.gprPredictVariance(gp, fit, basisTrain, basisTest);
     return
 end
 
@@ -84,6 +87,7 @@ final = alignest.models.gprCondition(gp, logParams, y, jointTrain);
 final.nll = lastNll;
 prediction = alignest.models.gprPredict(gp, final, jointTest);
 result = packResult(gp, final, prediction, iteration, converged, optimizerConverged, final.beta(2:end));
+result.predictionVariance = alignest.models.gprPredictVariance(gp, final, jointTrain, jointTest);
 end
 
 function result = packResult(gp, fit, prediction, nBackfit, backfitConverged, optimizerConverged, effects)

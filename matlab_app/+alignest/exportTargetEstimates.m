@@ -58,6 +58,15 @@ sheet = table(estimates.wafer, training, estimates.name, estimates.Xmm, estimate
     'VariableNames', ["Wafer", "学習データ", "名前", "Xmm", "Ymm", "markXmm", "markYmm", "markNo", "shotNo", ...
     "Direction", "x[mm]", "y[mm]", "推定値X[nm]", "推定値Y[nm]", "外挿・対象外", "学習範囲の外[mm]", ...
     "最も近い学習点[mm]", "メモ"]);
+if any(string(estimates.Properties.VariableNames) == "varianceX") && any(isfinite([estimates.varianceX; estimates.varianceY]))
+    % GPR の推定の分散（予測分散。計測のばらつきは含めない）
+    sheet = addvars(sheet, estimates.varianceX, estimates.varianceY, 'After', "推定値Y[nm]", 'NewVariableNames', ...
+        ["推定の分散X[nm2]", "推定の分散Y[nm2]"]);
+    if spec.scalar
+        sheet = removevars(sheet, "推定の分散Y[nm2]");
+        sheet.Properties.VariableNames{'推定の分散X[nm2]'} = char("推定の分散[" + spec.unit + "2]");
+    end
+end
 if spec.scalar
     sheet = removevars(sheet, "推定値Y[nm]");
     sheet.Properties.VariableNames{'推定値X[nm]'} = char("推定値 " + spec.name + "[" + spec.unit + "]");

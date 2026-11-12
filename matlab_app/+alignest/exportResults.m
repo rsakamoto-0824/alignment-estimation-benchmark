@@ -1,13 +1,16 @@
-function exportResults(results, filePath, sourceFile)
+function exportResults(results, filePath, sourceFile, overallMetrics)
 %EXPORTRESULTS 評価結果を Excel ファイル（.xlsx）に書き出す。Excel 本体は不要。
 %   シート：説明／集計_<指標>（XY の RMSE・MAE・R²、X・Y の RMSE、平均値・中央値に対する改善率。Wafer の平均）／
-%   集計_統計量（同じ指標の 平均・中央値・ワースト値・95%値 を縦に並べた表）／Waferごと／学習Shot／
+%   集計_統計量（同じ指標の 平均・中央値・ワースト値・95%値 を縦に並べた表）／Waferごと／
+%   Waferのベスト・ワースト（手法 × 学習パターンの列 × 指標ごとの、最も良い・平均に近い・最も悪い Wafer と総合。
+%   alignest.waferRanking。総合は overallMetrics の順位の平均。省略すると waferRanking の既定の指標）／学習Shot／
 %   処理時間（処理時間を記録したときだけ。手法 × 学習パターンの列ごとの 1 枚あたりの秒数）／設定
 %   同じ名前のファイルがあれば置き換える（Excel で開いているときは書き出せない）。
 arguments
     results struct
     filePath (1, 1) string
     sourceFile (1, 1) string = ""
+    overallMetrics (1, :) string = missing
 end
 SUMMARY_METRICS = ["RMSE_XY", "MAE_XY", "R2_XY", "RMSE_X", "RMSE_Y", "improveMeanPct_XY", ...
     "improveMedianPct_XY"];
@@ -41,10 +44,10 @@ items = ["作成日時"; "読み込んだファイル"; "工程（Operation）";
     "Scan 方向（Direction）"; "質的変数"; ...
     "Wafer（評価の単位）の数"; "学習 Shot の選び方"; "学習パターン"; ...
     "比べた手法の数"; "計算時間 [秒]"; "途中で止めたか"; "処理時間の記録"; "評価の考え方"; "差の割合"; ...
-    "ワースト値・95%値"; "I 基準・D 基準"; "Overlay 補正の評価"; "学習データの異常値"];
+    "ワースト値・95%値"; "Wafer のベスト・ワースト"; "I 基準・D 基準"; "Overlay 補正の評価"; "学習データの異常値"];
 values = [results.createdAt; sourceFile; listText(summaryField(summary, "operations")); ...
     listText(summaryField(summary, "eqpIds")); listText(summaryField(summary, "lotIds")); directionText(summary); ...
-    factorText(choice, choiceY); string(numel(results.unitLabels)); ...
+    factorText(choice, choiceY); string(numel(alignest.evaluatedUnits(results))); ...
     samplingLabel(results.settings.sampling); strjoin(results.groups, "、"); string(numel(results.methods)); ...
     sprintf("%.1f", results.elapsedSeconds); string(results.cancelled); ...
     ternary(timingRecorded, "記録した（「処理時間」シート。各手法の初回は予備の推定をして、読み込みの時間を除いた）", ...
@@ -52,6 +55,7 @@ values = [results.createdAt; sourceFile; listText(summaryField(summary, "operati
     "学習 Shot の計測値で推定し、学習しなかった Shot の計測値（有効な点）と比べる。計測ノイズを含むので値は少し悪く出る。"; ...
     "集計_<指標> シートの値は Wafer ごとの値（ランダムの繰り返しは平均）の平均。中央値・ワースト値・95%値は「集計_統計量」。"; ...
     "ワースト値は最も悪い Wafer の値（RMSE・MAE は最大、R² は最小）。95%値は 95% の Wafer がそれより良い値（RMSE・MAE は 95 パーセント点、R² は 5 パーセント点。Excel の PERCENTILE.INC と同じ補間）。"; ...
+    "「Waferのベスト・ワースト」シート：手法 × 学習パターンの列 × 指標ごとに、最も良い・Wafer の平均に最も近い・最も悪い Wafer（Wafer ごとの値はランダムの繰り返しの平均）。指標によって違うことがある。総合は、使った指標それぞれの Wafer の順位（1 = 最も良い）の平均で決める（値は順位の平均）。"; ...
     "学習 Shot の組の評価指標（XY 多項式の基準モデル、候補の全 Mark で正規直交化）。I 基準 = tr(M⁻¹)、D 基準 = det(M)^(−1/p)。小さいほど良い。全候補を使うと I 基準 = 項数、D 基準 = 1。全計測に対する I 効率 = 項数 / I 基準、D 効率 = 1 / D 基準（0〜1。1 なら全計測と同じ、大きいほど良い）。"; ...
     overlayText(results, overlayEvaluated); outlierText(results.settings)];
 % 評価点の絞り込み（指標を計算し直した表を書き出すとき）と、評価の後に足した条件
@@ -107,6 +111,14 @@ perWafer = results.table(:, keep);
 perWafer.Properties.VariableNames = cellstr(headers);
 writetable(perWafer, filePath, 'Sheet', 'Waferごと');
 
+% Wafer のベスト・平均に近い・ワースト（指標ごとと総合）
+if isscalar(overallMetrics) && ismissing(overallMetrics)
+    ranking = alignest.waferRanking(results);
+else
+    ranking = alignest.waferRanking(results, alignest.waferRanking(results).metrics, overallMetrics);
+end
+writetable(rankingSheet(ranking), filePath, 'Sheet', 'Waferのベスト・ワースト');
+
 % 学習 Shot
 plans = results.plans;
 shotList = strings(numel(plans), 1);
@@ -128,6 +140,23 @@ end
 % 設定（JSON を1行ずつ）
 settingsLines = splitlines(string(jsonencode(results.settings, 'PrettyPrint', true)));
 writetable(table(settingsLines, 'VariableNames', "設定（JSON）"), filePath, 'Sheet', '設定');
+end
+
+function sheet = rankingSheet(ranking)
+% 「Waferのベスト・ワースト」シート（1行 = 手法 × 学習パターンの列 × 指標。総合の行の値は順位の平均）
+rows = ranking.table;
+labels = rows.metricLabel;
+if isempty(ranking.overallMetrics)
+    overallText = "総合（使う指標なし）";
+else
+    used = ranking.metricLabels(ismember(ranking.metrics, ranking.overallMetrics));
+    overallText = "総合（順位の平均：" + strjoin(used, "・") + "）";
+end
+labels(rows.metric == "overall") = overallText;
+sheet = table(rows.method, rows.group, labels, rows.bestWafer, rows.bestValue, rows.averageWafer, rows.averageValue, ...
+    rows.worstWafer, rows.worstValue, rows.mean, rows.nWafers, rows.methodId, 'VariableNames', ["手法", "学習パターン", ...
+    "指標", "ベストのWafer", "ベストの値", "平均に近いWafer", "平均に近い値", "ワーストのWafer", "ワーストの値", ...
+    "Waferの平均", "Wafer数", "手法の識別子"]);
 end
 
 function timing = timingTable(results)

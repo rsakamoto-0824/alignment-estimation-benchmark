@@ -329,8 +329,10 @@ classdef (Abstract) TargetTab < appui.Core
             figureGrid = uigridlayout(figureTab, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 6, 'RowSpacing', 4);
             figureControls = uigridlayout(figureGrid, [1, 4], 'ColumnWidth', {'fit', 140, 'fit', 'fit'}, 'Padding', 0);
             label(figureControls, '表示', 1, 1);
-            c.targetMode = uidropdown(figureControls, 'Items', {'ベクトル', 'X（色）', 'Y（色）'}, ...
-                'ItemsData', {'vector', 'X', 'Y'}, 'ValueChangedFcn', @(~, ~) app.drawTargetMap());
+            c.targetMode = uidropdown(figureControls, 'Items', {'ベクトル', 'X（色）', 'Y（色）', 'X の分散（色・GPR）', ...
+                'Y の分散（色・GPR）'}, 'ItemsData', {'vector', 'X', 'Y', 'varianceX', 'varianceY'}, ...
+                'ValueChangedFcn', @(~, ~) app.drawTargetMap(), 'Tooltip', ['分散：GPR の推定の分散（予測分散。計測のばらつきは' ...
+                '含めない）を色で描きます。学習点から離れるほど大きくなります。GPR 以外の手法には分散がありません。']);
             place(c.targetMode, 1, 2);
             c.targetSaveFigure = uibutton(figureControls, 'Text', '図を画像で保存…', ...
                 'ButtonPushedFcn', @(~, ~) app.onSaveTargetFigure());
@@ -454,7 +456,7 @@ classdef (Abstract) TargetTab < appui.Core
                 trainingData = [trainingData, cellstr(planLabels)];
             end
             setListChoices(c.targetTraining, trainingItems, trainingData);
-            setModeChoices(c.targetMode, alignest.valueSpec(app.Settings.data));
+            setModeChoices(c.targetMode, alignest.valueSpec(app.Settings.data), true);   % GPR の推定の分散も選べる
             methods = alignest.activeMethods(app.Settings);   % 1変数では RT モデルを除く
             if isempty(methods)
                 setChoices(c.targetMethod, "—（「2. 評価の設定」で手法を選んでください）", {1});
@@ -634,6 +636,15 @@ classdef (Abstract) TargetTab < appui.Core
                 round(e.estimateX, 3), round(e.estimateY, 3), mark, round(e.outsideMm, 1), e.note, 'VariableNames', ...
                 ["Wafer", "学習データ", "名前", "x [mm]", "y [mm]", "markNo", "shotNo", "推定値 X [nm]", "推定値 Y [nm]", ...
                 "外挿・対象外", "範囲の外 [mm]", "メモ"]);
+            if any(string(e.Properties.VariableNames) == "varianceX") && any(isfinite([e.varianceX; e.varianceY]))
+                % GPR：推定の分散の列を推定値の右に足す
+                shown = addvars(shown, round(e.varianceX, 4), round(e.varianceY, 4), 'After', "推定値 Y [nm]", ...
+                    'NewVariableNames', ["分散 X [nm²]", "分散 Y [nm²]"]);
+                if spec.scalar
+                    shown = removevars(shown, "分散 Y [nm²]");
+                    shown.Properties.VariableNames{'分散 X [nm²]'} = char("分散 [" + spec.unit + "²]");
+                end
+            end
             if spec.scalar
                 % 1変数：推定値は1列（値の名前と単位）
                 shown = removevars(shown, "推定値 Y [nm]");

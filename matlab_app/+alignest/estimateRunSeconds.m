@@ -11,6 +11,7 @@ function [seconds, detail] = estimateRunSeconds(units, settings)
 %   学習パターンを作る時間 = 配置の種類（alignest.planLayoutKey。使える Mark が同じ Wafer は学習パターンを使い回す）ごとの
 %   alignest.planSecondsGuide の和。交換法で解く I 最適・D 最適（Shot 単位・Mark 単位）だけ数える。Mark 単位の計画は
 %   Mark を1つずつ入れ替えるので長く、値の無い Mark が Wafer ごとに違うと Wafer ごとに作り直すため、1枚あたりの時間が伸びる。
+%   Wafer は評価に使う Wafer（alignest.evaluationUnitIndex。settings.evaluation の枚数・割合）だけを数える。
 %   detail.nRuns は条件の数（推定の回数）、detail.secondsPerRun は1条件あたりの秒数（基本）、
 %   detail.nMaternNuMethods は ν を指定した Matérn の手法の数、detail.maternNuFactor はその倍率、
 %   detail.estimateSeconds は推定の時間、detail.planSeconds は学習パターンを作る時間、detail.nLayouts は配置の種類の数、
@@ -26,6 +27,10 @@ if isempty(units)
 end
 methods = alignest.activeMethods(settings);
 specs = alignest.buildPlanSpecs(settings.sampling);
+if isfield(settings, "evaluation")
+    % 評価に使う Wafer（枚数・割合で決めたとき）だけを数える
+    units = units(alignest.evaluationUnitIndex(numel(units), settings.evaluation, settings.sampling.seed));
+end
 usesNu = contains(string({methods.variant}), "_nu");
 detail.nMaternNuMethods = nnz(usesNu);
 detail.nRuns = numel(units) * numel(specs) * numel(methods);
