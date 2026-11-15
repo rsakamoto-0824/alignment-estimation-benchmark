@@ -41,7 +41,8 @@ end
 n = height(sheet);
 defaults = struct("Operation", strings(n, 1), "EqpId", strings(n, 1), "LotID", strings(n, 1), ...
     "DateTime", strings(n, 1), "methodLabel", sheet.methodId, "shotNo", nan(n, 1), "markNo", nan(n, 1), ...
-    "direction", nan(n, 1), "shotRowParity", nan(n, 1), "r", hypot(sheet.x, sheet.y), "role", repmat("評価", n, 1));
+    "direction", nan(n, 1), "shotRowParity", nan(n, 1), "r", hypot(sheet.x, sheet.y), "role", repmat("評価", n, 1), ...
+    "varianceX", nan(n, 1), "varianceY", nan(n, 1));   % 推定の分散は以前のファイルに無い（GPR 以外も空欄）
 for name = string(fieldnames(defaults)).'
     if ~ismember(name, renamed)
         sheet.(name) = defaults.(name);

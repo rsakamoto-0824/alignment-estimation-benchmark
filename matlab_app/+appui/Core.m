@@ -118,6 +118,7 @@ classdef (Abstract) Core < handle
         EstimatedCorrection = []     % 「4. 結果一覧」の「実測値と推定値の補正」の結果（alignest.estimatedCorrectionComparison）
         WaferRanking = []       % 「4. 結果一覧」の「Wafer のベスト・ワースト」の結果（alignest.waferRanking。結果が変わると求め直す）
         MeasureRangeStart = []  % 「3. 実行」の計測マップで「範囲で選ぶ」の1点目（Wafer・図の種類・角の座標・図・印。無ければ []）
+        MeasurementCandidates = []  % 「4. 結果一覧」の「計測を足す場所」で最後に出した候補（alignest.measurementCandidates の表と条件）
         MarkLayoutFile = []     % 「8. Mark配置の最適化」で読み込んだ Excel・CSV（raw・info：alignest.readHighOrderFile、mapping、
                                 %  wafers・coordinates・dataInfo：選んだ列で整理した入力（alignest.markLayoutFileData。まだなら dataInfo は []））
         MarkLayoutInput = []    % 「8. Mark配置の最適化」の今の入力の候補の Mark と Shot ごとの値（alignest.markCandidates。入力が無ければ []）
@@ -394,11 +395,15 @@ classdef (Abstract) Core < handle
                 c.compareLayoutMethod, c.compareLayoutXAxis, c.compareLayoutErrorBar, ...
                 c.rankingMethod, c.rankingGroup, c.rankingOverallMetrics, ...
                 c.degradationXAxis, c.degradationYAxis, c.degradationWafers, c.degradationMethods, ...
+                c.candidateMethod, c.candidateGroup, c.candidateWafer, c.candidateCriterion, c.candidateAxis, ...
+                c.candidateStatistic, c.candidateLevel, c.candidateCount, c.findCandidatesButton, c.addCandidatesButton, ...
                 c.filterResults.apply, c.filterMap.apply], 'Enable', 'off');
             showFilter(app);
             app.WaferRanking = [];
             showWaferRanking(app);
             drawOverlayDegradation(app);
+            app.MeasurementCandidates = [];
+            showMeasurementCandidates(app);
             app.Distribution = [];
             app.EstimatedCorrection = [];
             c.estimatedCorrectionTable.Data = table();
