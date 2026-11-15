@@ -4,6 +4,7 @@ function [estimates, messages, cancelled, overlayPoints] = collectEstimates(data
 %   selection.methodIndex：手法（results.methods の何番目か）、selection.groups：学習パターンの列（results.groups の値）、
 %   selection.unitIndex：Wafer（data.units の何番目か）。
 %   評価点は学習しなかった Shot の有効な Mark（評価と同じ）。残差 = 計測値 − 推定値。その軸が無効な点は NaN。
+%   varianceX・varianceY は GPR の推定の分散（予測分散 [nm²]。alignest.models.gprPredictVariance）。GPR 以外は NaN。
 %   options.cache       ：推定結果を使い回す containers.Map（キーは 'Wafer|学習パターン|手法' の番号。画面のマップと共通）
 %   options.progressFcn ：progressFcn(完了数, 全体数) が false を返すと途中で止める（cancelled = true）
 %   options.maxRows     ：表の行数の上限。超えそうなら計算する前に止める（Excel の行数の上限のため）
@@ -127,6 +128,19 @@ else
     estimateY = estimateY(index);
 end
 n = numel(index);
+[varianceX, varianceY] = deal(nan(n, 1));
+if n > 0 && isfield(out, "variance")
+    % GPR の推定の分散（評価点の順。ほかの手法・以前の結果は空なので NaN のまま）
+    full = nan(numel(marks.x), 2);
+    if numel(out.variance.X) == numel(out.testIndex.X)
+        full(out.testIndex.X, 1) = out.variance.X;
+    end
+    if numel(out.variance.Y) == numel(out.testIndex.Y)
+        full(out.testIndex.Y, 2) = out.variance.Y;
+    end
+    varianceX = full(index, 1);
+    varianceY = full(index, 2);
+end
 measX = nan(n, 1);
 measY = nan(n, 1);
 if n > 0
@@ -146,6 +160,8 @@ points = table(text(unit.operation), text(unit.eqpId), text(unit.lotId), text(un
     'VariableNames', ["Operation", "EqpId", "LotID", "Wafer", "DateTime", "plan", "group", "methodLabel", "methodId", ...
     "shotNo", "markNo", "direction", "shotRowParity", "x", "y", "r", "role", "measX", "estimateX", "residualX", ...
     "measY", "estimateY", "residualY"]);
+points.varianceX = varianceX;
+points.varianceY = varianceY;
 points.markIndex = index(:);  % unit.marks の何番目か（散布図の色分けで、その他の列の値を引くため。Excel には出さない）
 for column = columns
     values = strings(n, 1);
