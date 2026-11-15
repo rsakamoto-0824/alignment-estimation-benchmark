@@ -16,7 +16,6 @@ classdef (Abstract) MarkLayoutTab < appui.Core
         MARK_Y_COLOR = [0.85, 0.40, 0.10]   % 制御残差推移の図の Y の線の色（X は PRIMARY_COLOR）
         MARK_REQUIRED_COLOR = [0.80, 0.10, 0.10]  % 必ず計測する Mark・飛び値の色
         MARK_ABSENT_COLOR = [0.65, 0.65, 0.65]    % 「使う項と VIF」の表で、その式に無い項のチェック欄の色
-        MARK_CRITERION_EMPTY = '「配置を最適化する」を押すと、配置を選んだ I 最適計画の式と使った項が出ます。'
     end
 
     methods
@@ -986,12 +985,6 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             tableGrid = uigridlayout(tableTab, [1, 1], 'Padding', 6);
             c.markOptResultTable = uitable(tableGrid, 'RowName', {}, 'Data', table());
             place(c.markOptResultTable, 1, 1);
-            % 配置を選んだ I 最適計画の式（採用した演算式と、F の列に使った項）
-            criterionTab = uitab(outputs, 'Title', 'I 最適の式');
-            c.markOptCriterionTab = criterionTab;
-            criterionGrid = uigridlayout(criterionTab, [1, 1], 'Padding', 6);
-            c.markOptCriterion = uitextarea(criterionGrid, 'Editable', 'off', 'Value', {app.MARK_CRITERION_EMPTY});
-            place(c.markOptCriterion, 1, 1);
             outputs.SelectedTab = candidateTab;
             app.Controls = mergeStruct(app.Controls, c);
             refreshMarkLayoutChoices(app);
@@ -1392,8 +1385,6 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             c.markOptExport.Enable = 'on';
             c.markOptExportSelection.Enable = 'on';
             c.markOptResultTable.Data = resultTable(study);
-            rows = alignest.markLayoutCriterion(study);
-            c.markOptCriterion.Value = cellstr(rows(:, 1) + "：" + rows(:, 2));
             drawMarkLayoutChart(app);
             drawMarkLayoutMap(app);
             showMarkLayoutMessages(app);
@@ -1416,7 +1407,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                 end
                 lines = [lines; reshape(study.messages, [], 1)];
                 lines(end + 1, 1) = sprintf("配置は I(S) = Σ trace(M_S⁻¹ W) で選びました（dx %d 項・dy %d 項。" + ...
-                    "式と項は「I 最適の式」タブ）。", study.nTerms(1), study.nTerms(2));
+                    "式は「ヘルプ」、使った項は Excel の「説明」シート）。", study.nTerms(1), study.nTerms(2));
             end
             c.markOptMessage.Value = cellstr(lines);
         end

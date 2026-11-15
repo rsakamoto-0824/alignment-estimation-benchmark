@@ -217,27 +217,54 @@ classdef (Abstract) HighOrderTab < appui.Core
             c.highOrderMappingStatus.FontColor = app.Palette.text;
         end
 
-        function excluded = selectHighOrderTermsByVif(app, threshold)
+        function excluded = selectHighOrderTermsByVif(app, threshold, target)
             %SELECTHIGHORDERTERMSBYVIF 「VIF で選ぶ」：式のすべての項から始めて、VIF がしきい値以上の高次項を外す
-            %   （alignest.highOrderVif）。threshold を省略すると画面のしきい値。外した k の番号を返す（内周の式）。
-            %   外周の式を分けるときは、外周の式も外周の Shot の点で同じように選ぶ（保存した組み合わせの名前は外す）。
+            %   （alignest.highOrderVif）。threshold を省略するか [] なら画面のしきい値。外した k の番号を返す（内周の式）。
+            %   target："terms"（既定。Shot 高次補正の項＝表の「使う」。settings.highOrder.excludedTerms）・"common"（Shot 共通の
+            %   k に使う項＝表の「共通」。shotCommonTerms）。どちらかだけを変え、もう一方は変えない（「使う」を変えるとき、
+            %   Shot 共通の項がまだ「使う項と同じ」なら、変える前の使う項を Shot 共通の項として残す）。
+            %   外周の式を分けるときは、外周の式も外周の Shot の点で同じように選ぶ（「使う」では保存した組み合わせの名前は外す）。
+            arguments
+                app
+                threshold double = []
+                target (1, 1) string {mustBeMember(target, ["terms", "common"])} = "terms"
+            end
             c = app.Controls;
-            if nargin >= 2
+            if ~isempty(threshold)
                 c.highOrderVifThreshold.Value = threshold;
             end
             readHighOrderControls(app);
             options = alignest.highOrderOptions(app.Settings);
-            [local, valid] = highOrderLocal(app, "inner");
-            terms = alignest.highOrderTerms(options.maker);
-            [~, info] = alignest.highOrderVif(terms, local, valid, options.vifThreshold);
-            excluded = info.suggestedExcluded;
-            app.Settings.highOrder.excludedTerms = excluded;
+            zones = "inner";
             if options.outerMaker ~= "none"
-                [local, valid] = highOrderLocal(app, "outer");
-                [~, outerInfo] = alignest.highOrderVif(alignest.highOrderTerms(options.outerMaker), local, valid, ...
-                    options.vifThreshold);
-                app.Settings.highOrder.outerExcludedTerms = outerInfo.suggestedExcluded;
-                app.Settings.highOrder.outerName = "";
+                zones = ["inner", "outer"];
+            end
+            excludedFields = ["excludedTerms", "outerExcludedTerms"];
+            commonFields = ["shotCommonTerms", "shotCommonOuterTerms"];
+            makers = [options.maker, options.outerMaker];
+            for z = 1:numel(zones)
+                [local, valid] = highOrderLocal(app, zones(z));
+                terms = alignest.highOrderTerms(makers(z));
+                [~, info] = alignest.highOrderVif(terms, local, valid, options.vifThreshold);
+                if z == 1
+                    excluded = info.suggestedExcluded;
+                end
+                if target == "common"
+                    kept = setdiff(reshape(terms.k, 1, []), info.suggestedExcluded);
+                    app.Settings.highOrder.(commonFields(z)) = unique([reshape(terms.k(terms.protected), 1, []), kept]);
+                else
+                    if isempty(options.(commonFields(z))) && alignest.highOrderSequential(options) && options.shotCommon == "fit"
+                        % Shot 共通の項は「使う項と同じ」なので、Shot 高次の項だけを変えるよう今の使う項を残す
+                        current = alignest.highOrderTerms(makers(z), options.(excludedFields(z)));
+                        app.Settings.highOrder.(commonFields(z)) = unique(reshape(current.k(current.used), 1, []));
+                    end
+                    app.Settings.highOrder.(excludedFields(z)) = info.suggestedExcluded;
+                    if zones(z) == "outer"
+                        app.Settings.highOrder.outerName = "";
+                    end
+                end
+            end
+            if target == "terms" && options.outerMaker ~= "none"
                 refreshHighOrderOuterChoices(app);
             end
             refreshHighOrderTerms(app);
@@ -498,6 +525,11 @@ classdef (Abstract) HighOrderTab < appui.Core
                     texts(k) = sprintf("%s：%d 点、|平均|+3σ X %.3f nm・Y %.3f nm", valueLabel, panelSummary.n, ...
                         panelSummary.meanPlus3SigmaX, panelSummary.meanPlus3SigmaY);
                 end
+                if view == "shot"
+                    % 1つの Shot：計測点のある位置と、Wafer の縁が近い Shot では Wafer の縁を重ねる
+                    texts(k) = texts(k) + shotContext(ax, panelPoints, app.Settings.data.waferRadiusMm, app.Palette.text, ...
+                        run.source == "target");
+                end
                 if showRing
                     drawOuterRing(ax, run.result.options.outerRadiusMm);
                 end
@@ -687,21 +719,21 @@ classdef (Abstract) HighOrderTab < appui.Core
                 sectionLabel.FontColor = app.Palette.muted;
                 sectionLabel.UserData = "muted";
             end
-            label(modelGrid, '補正の式', 1, 1);
+            label(modelGrid, '補正の式', 10, 1);
             c.highOrderMaker = uidropdown(modelGrid, 'Items', {'ASML', 'Canon', 'Nikon', 'カスタム'}, ...
                 'ItemsData', {'asml', 'canon', 'nikon', 'custom'}, 'ValueChangedFcn', onSetting, 'Tooltip', ['Overlay 計測' ...
                 'ルールの Shot 高次補正の式（Canon・Nikon はルールの式のまま、ASML は k1〜k19 のすべての項）。カスタム：' ...
                 'Nikon・Canon と同じ番号の付け方の k1〜k38（4次までのすべての項と5次の項の一部。使う項は表で選び、' ...
                 '組み合わせを保存できます）。' ...
                 '式は「ヘルプ」。']);
-            place(c.highOrderMaker, 1, 2);
-            label(modelGrid, '補正のくくり', 10, 1);
+            place(c.highOrderMaker, 10, 2);
+            label(modelGrid, '補正のくくり', 1, 1);
             c.highOrderUnit = uidropdown(modelGrid, 'Items', {'Wafer 内で共通', 'Scan 方向ごと', '行の偶奇ごと', ...
                 'Shot ごと'}, 'ItemsData', {'common', 'scan', 'row', 'shot'}, 'ValueChangedFcn', onSetting, 'Tooltip', ...
                 ['k の組をどの Shot で共通にするか。Wafer 内で共通：Wafer ごとに1組。Scan 方向ごと：Scan 方向（Direction 1・2）' ...
                 'ごとに1組ずつ。行の偶奇ごと：Shot 行（上から1行目が奇数行）の奇数行・偶数行ごとに1組ずつ。Shot ごと：Shot ' ...
                 'ごとに1組（その Shot の点だけで求める。項の数より多い点があるとよい）。どれがよいかは「補正の比較」で比べられます。']);
-            place(c.highOrderUnit, 10, 2);
+            place(c.highOrderUnit, 1, 2);
             label(modelGrid, 'Wafer 成分', 4, 1);
             c.highOrderWaferOrder = uidropdown(modelGrid, 'Items', {'なし', '1次', '2次', '3次', '4次', '5次'}, ...
                 'ItemsData', {0, 1, 2, 3, 4, 5}, 'ValueChangedFcn', onSetting, 'Tooltip', ['Shot 中心の座標（Xc・Yc）の' ...
@@ -770,18 +802,25 @@ classdef (Abstract) HighOrderTab < appui.Core
                 '「計算する」とき、Shot 共通の k に使う項を、「使う項と VIF」で保存した項の組み合わせから選びます（表の「共通」' ...
                 'の列に写します。k1〜k6 は必ず使う）。表で1つずつ選び直すこともできます。']);
             place(c.highOrderCommonTermSet, 8, [2, 4]);
-            termButtons = uigridlayout(left, [2, 2], 'ColumnWidth', {'fit', 'fit'}, 'RowHeight', {'fit', 'fit'}, ...
+            % VIF で選ぶ：Shot 高次補正の項（表の「使う」）と Shot 共通の項（表の「共通」）に別々に当てる
+            % 左の欄は狭いので、VIF の2つのボタンを同じ幅で並べ、「すべての項を使う」は次の行にする
+            termButtons = uigridlayout(left, [3, 2], 'ColumnWidth', {'1x', '1x'}, 'RowHeight', {'fit', 'fit', 'fit'}, ...
                 'Padding', 0, 'RowSpacing', 2);
             place(termButtons, 7, 1);
-            c.highOrderVifSelect = uibutton(termButtons, 'Text', 'VIF で選ぶ', 'ButtonPushedFcn', ...
-                @(~, ~) app.onHighOrderVifSelect(), 'Tooltip', ['式のすべての項から始めて、VIF がしきい値以上の高次項を、' ...
-                '次数の高い項から1つずつ外します（k1〜k6 は外しません）。VIF は Shot 内の座標だけで決まります。']);
+            vifTip = ['式のすべての項から始めて、VIF がしきい値以上の高次項を、次数の高い項から1つずつ外します' ...
+                '（k1〜k6 は外しません）。VIF は Shot 内の座標だけで決まります。'];
+            c.highOrderVifSelect = uibutton(termButtons, 'Text', 'VIF で選ぶ：Shot 高次', 'ButtonPushedFcn', ...
+                @(~, ~) app.onHighOrderVifSelect("terms"), 'Tooltip', ['Shot 高次補正に使う項（表の「使う」）だけを選びます' ...
+                '（Shot 共通の項は変えません）。' vifTip]);
+            c.highOrderVifSelectCommon = uibutton(termButtons, 'Text', 'VIF で選ぶ：Shot 共通', 'ButtonPushedFcn', ...
+                @(~, ~) app.onHighOrderVifSelect("common"), 'Enable', 'off', 'Tooltip', ['Shot 共通補正を「計算する」とき、' ...
+                'Shot 共通の k に使う項（表の「共通」）だけを選びます（Shot 高次補正の項は変えません）。' vifTip]);
             c.highOrderAllTerms = uibutton(termButtons, 'Text', 'すべての項を使う', 'ButtonPushedFcn', ...
                 @(~, ~) app.useAllHighOrderTerms());
-
+            place(c.highOrderAllTerms, 2, 1);
             c.highOrderTermInfo = uilabel(termButtons, 'WordWrap', 'on', 'FontColor', app.Palette.muted, 'UserData', "muted", ...
                 'Text', '');
-            place(c.highOrderTermInfo, 2, [1, 2]);   % ボタンの下の行（文が長くてもボタンの高さを変えない）
+            place(c.highOrderTermInfo, 3, [1, 2]);   % ボタンの下の行（文が長くてもボタンの高さを変えない）
 
             c.highOrderRegression = regressionControls(left, onSetting);
             place(c.highOrderRegression.grid, 8, 1);
@@ -1113,6 +1152,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             c.highOrderShotEachOrder.Enable = onOff(grouped && shotCommon ~= "none");
             c.highOrderCopyCommon.Enable = onOff(grouped && shotCommon == "input" && ~isempty(app.HighOrderRun));
             c.highOrderCommonTermSet.Enable = onOff(grouped && shotCommon == "fit" && numel(c.highOrderCommonTermSet.Items) > 1);
+            c.highOrderVifSelectCommon.Enable = onOff(grouped && shotCommon == "fit" && isequal(c.highOrderVifSelectCommon.UserData, true));
         end
 
         function onHighOrderSettingsChanged(app)
@@ -1193,6 +1233,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             c.highOrderInputInfo.Text = char(info);
             hasInput = ~isempty(labels);
             set([c.highOrderCompute, c.highOrderWafer, c.highOrderVifSelect], 'Enable', onOff(hasInput));   % VIF は点の配置で決まる
+            c.highOrderVifSelectCommon.UserData = hasInput;   % Shot 共通の VIF は、入力があり Shot 共通を計算するとき（updateHighOrderEnabled）
             updateHighOrderEnabled(app);
             refreshHighOrderTerms(app);
         end
@@ -1543,8 +1584,8 @@ classdef (Abstract) HighOrderTab < appui.Core
                 "今の補正の式で「補正を計算する」を押してから、もう一度写してください。");
         end
 
-        function onHighOrderVifSelect(app)
-            runWithAlert(app, @() app.selectHighOrderTermsByVif(), "VIF で選べませんでした", ...
+        function onHighOrderVifSelect(app, target)
+            runWithAlert(app, @() app.selectHighOrderTermsByVif([], target), "VIF で選べませんでした", ...
                 "入力のデータと Wafer を選んでください（VIF は点の Shot 内の座標で求めます）。");
         end
 
@@ -2295,4 +2336,48 @@ hold(ax, 'off');
 if ~showLegend
     circles.HandleVisibility = 'off';
 end
+end
+
+function text = shotContext(ax, points, waferRadiusMm, textColor, hasEstimates)
+% 1つの Shot の図（Shot 内の座標）に、計測点のある位置（印）と、Wafer の縁が図の中に入るときは Wafer の縁（実線）を重ねる。
+% 推定値を足した入力（hasEstimates）では、実測値の点を ■、推定値の点を ◇ にする。text は図の下の説明に足す文
+MARKER_SIZE = 7;
+EDGE_WIDTH = 1.5;
+EDGE_COLOR = [0.85, 0.33, 0.10];
+CIRCLE_POINTS = 2000;
+text = "";
+if isempty(points) || height(points) == 0
+    return
+end
+limits = [ax.XLim; ax.YLim];
+set(ax, 'XLimMode', 'manual', 'YLimMode', 'manual');   % 重ねても図の範囲を変えない
+hold(ax, 'on');
+measured = true(height(points), 1);
+if hasEstimates && any(string(points.Properties.VariableNames) == "source")
+    measured = ~startsWith(string(points.source), "推定値");
+end
+plot(ax, points.localX(measured), points.localY(measured), 's', 'MarkerSize', MARKER_SIZE, 'LineWidth', 1, ...
+    'Color', textColor, 'MarkerFaceColor', 'none', 'DisplayName', '実測点の位置');
+if any(~measured)
+    plot(ax, points.localX(~measured), points.localY(~measured), 'd', 'MarkerSize', MARKER_SIZE, 'LineWidth', 1, ...
+        'Color', textColor, 'DisplayName', '推定値の点の位置');
+end
+text = sprintf("（□ は実測点の位置：%d 点", nnz(measured));
+if any(~measured)
+    text = text + sprintf("、◇ は推定値の点：%d 点", nnz(~measured));
+end
+text = text + "）";
+% Wafer の縁：Shot 内の座標では、中心が Shot 中心の反対の位置の円
+center = [points.x(1) - points.localX(1), points.y(1) - points.localY(1)];
+angle = linspace(0, 2 * pi, CIRCLE_POINTS);
+edgeX = waferRadiusMm * cos(angle) - center(1);
+edgeY = waferRadiusMm * sin(angle) - center(2);
+inside = edgeX >= limits(1, 1) & edgeX <= limits(1, 2) & edgeY >= limits(2, 1) & edgeY <= limits(2, 2);
+if any(inside)
+    edgeX(~inside) = NaN;   % 図の外の部分は描かない（線が図の外へ伸びないように）
+    edgeY(~inside) = NaN;
+    plot(ax, edgeX, edgeY, '-', 'Color', EDGE_COLOR, 'LineWidth', EDGE_WIDTH, 'DisplayName', 'Wafer の縁');
+    text = text + sprintf("（実線は Wafer の縁：半径 %g mm）", waferRadiusMm);
+end
+hold(ax, 'off');
 end

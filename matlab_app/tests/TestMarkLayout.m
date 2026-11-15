@@ -211,9 +211,8 @@ classdef TestMarkLayout < matlab.unittest.TestCase
             testCase.verifyEqual(study.counts, (8:12).');
             testCase.verifyEqual(numel(findobj(c.markOptChartAxes, 'Type', 'line')), 4, "X・Y の線と ★ 2つ");
             testCase.verifyEqual(height(c.markOptResultTable.Data), 6);
-            testCase.verifyTrue(startsWith(string(c.markOptCriterion.Value{1}), "採用した式：I(S) = Σ trace(M_S⁻¹ W)"), ...
-                "配置を選んだ I 最適計画の式");
-            testCase.verifyTrue(any(contains(string(c.markOptMessage.Value), "「I 最適の式」タブ")));
+            testCase.verifyFalse(isfield(c, 'markOptCriterion'), "「I 最適の式」のタブは無い（式はヘルプ）");
+            testCase.verifyTrue(any(contains(string(c.markOptMessage.Value), "式は「ヘルプ」")));
             testCase.verifyEqual(c.markOptMapCount.Value, 8);
             app.drawMarkLayoutMap(10);
             testCase.verifyTrue(startsWith(string(c.markOptMapInfo.Text), "計測する Mark："));

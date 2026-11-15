@@ -610,11 +610,13 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyEqual(string(app.Controls.overlayShotCommon.ItemsData), ["none", "linear", "formula"], ...
                 "Shot 共通成分は「なし」「1次」「式を入力」");
             app.Controls.overlayShotCommon.Value = 'linear';
-            app.Controls.overlayPerShot.Value = 'translation';
+            testCase.verifyEqual(string(app.Controls.overlayPerShot.ItemsData), ["none", "linear", "formula"], ...
+                "Shot ごとの成分に並進は無い");
+            app.Controls.overlayPerShot.Value = 'none';
             app.Controls.overlayPerShot.ValueChangedFcn([], []);
             overlay = app.Settings.overlay;
             testCase.verifyEqual([overlay.waferOrder, overlay.waferUseFormula], [2, 0]);
-            testCase.verifyEqual([overlay.shotCommon, overlay.perShot], ["linear", "translation"]);
+            testCase.verifyEqual([overlay.shotCommon, overlay.perShot], ["linear", "none"]);
             testCase.verifyEqual(string(app.Controls.overlayWaferDx.Enable), "off", "式を選ぶまで式の欄は使えない");
             % 補正の式を入れる（Wafer 成分・Shot 共通成分）。読めない式は赤字で出し、評価を始めない
             formulaChoice = app.Controls.overlayWafer.ItemsData{string(app.Controls.overlayWafer.Items) == "式を入力"};

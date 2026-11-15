@@ -56,7 +56,8 @@ classdef (Abstract) DataTab < appui.Core
                 excludeUnmeasuredRecords=options.excludeUnmeasuredRecords, directionRule=options.directionRule, ...
                 invertDirection=options.invertDirection, directionOverrideShots=options.directionOverrideShots, ...
                 directionOverrideValues=options.directionOverrideValues, coordinateMode=options.coordinateMode, ...
-                valueColumn=options.valueColumn, excludeOutliers=options.excludeOutliers, outlierSigma=options.outlierSigma);
+                valueColumn=options.valueColumn, excludeOutliers=options.excludeOutliers, outlierSigma=options.outlierSigma, ...
+                outlierMethod=options.outlierMethod);
             app.AppliedMapping = mapping;
             app.Settings.data = mergeStruct(app.Settings.data, options);
             summary = app.Data.summary;
@@ -384,16 +385,21 @@ classdef (Abstract) DataTab < appui.Core
                 'Tooltip', 'どちらかが−1なら行全体を除外します。オフの場合も、無効な軸の測定値は解析に使いません。', ...
                 'ValueChangedFcn', onDataOption);
             place(c.excludeUnmeasuredRecords, 4, [3, 4]);
-            % 異常値の除外：Wafer ごとに平均 ± nσ の外の Mark（X か Y が外れたら両方）を除く
-            outlierGrid = uigridlayout(fileGrid, [1, 3], 'ColumnWidth', {'fit', 'fit', 60}, 'Padding', 0);
+            % 異常値の除外：Wafer ごとに中心 ± n × ばらつき の外の Mark（X か Y が外れたら両方）を除く（nσ・MAD）
+            outlierGrid = uigridlayout(fileGrid, [1, 4], 'ColumnWidth', {'fit', 120, 'fit', 60}, 'Padding', 0);
             place(outlierGrid, 4, 5);
-            c.dataExcludeOutliers = uicheckbox(outlierGrid, 'Text', '異常値を除外（± nσ）', ...
-                'ValueChangedFcn', onDataOption, 'Tooltip', ['Wafer ごとに、計測値の平均と σ を X・Y 別に求め、平均 ± n × σ の' ...
-                '外にある Mark を除きます（X か Y が外れたら両方。重複を平均した後に1回だけ判定）。']);
-            label(outlierGrid, 'n =', 1, 2);
+            c.dataExcludeOutliers = uicheckbox(outlierGrid, 'Text', '異常値を除外', ...
+                'ValueChangedFcn', onDataOption, 'Tooltip', ['Wafer ごとに、計測値の中心とばらつきを X・Y 別に求め、' ...
+                '中心 ± n × ばらつき の外にある Mark を除きます（X か Y が外れたら両方。重複を平均した後に1回だけ判定）。']);
+            c.dataOutlierMethod = uidropdown(outlierGrid, 'Items', {'平均と σ', '中央値と MAD'}, ...
+                'ItemsData', {'sigma', 'mad'}, 'ValueChangedFcn', onDataOption, 'Tooltip', ['平均と σ：中心 = 平均、' ...
+                'ばらつき = 標準偏差。中央値と MAD：中心 = 中央値、ばらつき = 1.4826 × MAD（中央値からの差の絶対値の中央値。' ...
+                '正規分布では σ と同じ大きさ）。大きな外れ値が混じるときは MAD が外れ値に引きずられにくい。']);
+            place(c.dataOutlierMethod, 1, 2);
+            label(outlierGrid, 'n =', 1, 3);
             c.dataOutlierSigma = uieditfield(outlierGrid, 'numeric', 'Value', 3, 'Limits', [0.1, 100], ...
-                'ValueChangedFcn', onDataOption, 'Tooltip', '異常値とみなす σ の倍数（例：3 なら平均 ± 3σ の外）。');
-            place(c.dataOutlierSigma, 1, 3);
+                'ValueChangedFcn', onDataOption, 'Tooltip', '異常値とみなすばらつきの倍数（例：3 なら中心 ± 3 × ばらつき の外）。');
+            place(c.dataOutlierSigma, 1, 4);
             label(fileGrid, 'Scan 方向の付与', 5, 1);
             [ruleNames, ~, ruleLabels] = alignest.directionRules();
             c.directionRule = uidropdown(fileGrid, 'Items', cellstr(ruleLabels), 'ItemsData', cellstr(ruleNames), ...
@@ -733,7 +739,8 @@ classdef (Abstract) DataTab < appui.Core
                 "directionOverrideShots", app.Settings.data.directionOverrideShots, ...
                 "directionOverrideValues", app.Settings.data.directionOverrideValues, ...
                 "coordinateMode", string(c.coordinateMode.Value), "valueColumn", string(c.valueColumn.Value), ...
-                "excludeOutliers", c.dataExcludeOutliers.Value, "outlierSigma", c.dataOutlierSigma.Value));
+                "excludeOutliers", c.dataExcludeOutliers.Value, "outlierSigma", c.dataOutlierSigma.Value, ...
+                "outlierMethod", string(c.dataOutlierMethod.Value)));
         end
 
         function onMappingEdited(app, ~)
@@ -788,7 +795,8 @@ classdef (Abstract) DataTab < appui.Core
             app.Settings.data.excludeUnmeasuredRecords = c.excludeUnmeasuredRecords.Value;
             app.Settings.data.excludeOutliers = c.dataExcludeOutliers.Value;
             app.Settings.data.outlierSigma = c.dataOutlierSigma.Value;
-            c.dataOutlierSigma.Enable = onOff(c.dataExcludeOutliers.Value);
+            app.Settings.data.outlierMethod = string(c.dataOutlierMethod.Value);
+            set([c.dataOutlierSigma, c.dataOutlierMethod], 'Enable', onOff(c.dataExcludeOutliers.Value));
             app.Settings.data.directionRule = string(c.directionRule.Value);
             app.Settings.data.invertDirection = c.invertDirection.Value;
             c.invertDirection.Enable = onOff(app.Settings.data.directionRule ~= "none");

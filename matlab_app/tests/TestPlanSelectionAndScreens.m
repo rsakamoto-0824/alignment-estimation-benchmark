@@ -256,7 +256,9 @@ classdef TestPlanSelectionAndScreens < matlab.unittest.TestCase
                 'matlab.ui.control.Label') && item.FontWeight == "bold", c.highOrderShotCommon.Parent.Children)).Text});
             testCase.verifyTrue(all(ismember(["Wafer 補正", "Shot 共通補正", "Shot ごとの補正"], sections)));
             testCase.verifyLessThan(c.highOrderWaferOrder.Layout.Row, c.highOrderShotCommon.Layout.Row);
-            testCase.verifyLessThan(c.highOrderShotCommon.Layout.Row, c.highOrderUnit.Layout.Row);
+            % 補正のくくりは一番上、補正の式は「Shot ごとの補正」の行（くくりと補正の式の場所を入れ替えた）
+            testCase.verifyEqual(c.highOrderUnit.Layout.Row, 1);
+            testCase.verifyLessThan(c.highOrderShotCommon.Layout.Row, c.highOrderMaker.Layout.Row);
             testCase.verifyEqual(c.highOrderWafer.Parent.RowHeight{c.highOrderWafer.Layout.Row}, 48);
             testCase.verifyEqual([c.markOptCandidateTable.ColumnWidth{:}], [68, 116, 116, 132, 100, 100]);
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));

@@ -269,7 +269,7 @@ def build(output: Path, reference: Path):
         ["data.waferRadiusMm・validRadiusMm", "150・150", "座標を割る Wafer 半径・この半径 [mm] 以上の点は除く", "1. 有効半径"],
         ["data.coordinateUnits", "すべて mm", "座標の列ごとの入力の単位（mm・um・nm・m）", "1. 座標の単位"],
         ["data.excludeZeroMeasurements・…Unmeasured…", "false・false", "測定値がともに 0・Sts が −1 の行を除く", "1. 行の除外"],
-        ["data.excludeOutliers・outlierSigma", "false・3", "Wafer ごとに平均 ± nσ の外の Mark を除く（X・Y とも）", "1. 異常値を除外"],
+        ["data.excludeOutliers・outlierSigma・outlierMethod", "false・3・\"sigma\"", "Wafer ごとに中心 ± n × ばらつき の外の Mark を除く（sigma：平均と σ、mad：中央値と MAD）", "1. 異常値を除外"],
         ["data.directionRule・invertDirection", "\"serpentine\"・false", "Direction が無い行に付ける Scan 方向（一筆書き）・1 と 2 の入れ替え",
          "1. Scan 方向"],
         ["data.coordinateMode", "\"shotMark\"", "座標の定義（shotMark：Shot 中心＋Shot 内、absolute：絶対座標だけ）", "1. 座標の定義"],
@@ -286,7 +286,7 @@ def build(output: Path, reference: Path):
     # 10. sampling（選び方・数）
     s = deck.body("03　設定の項目と初期値", "設定の項目②：sampling（学習 Shot の選び方・数）")
     settings_table(s, [
-        ["sampling.method", "\"ioptimal\"", "選び方（複数で比べる）：ioptimal・doptimal・random・excel・mark・markd", "2. 選び方"],
+        ["sampling.method", "\"ioptimal\"", "選び方（複数で比べる）：ioptimal・doptimal・random・excel・mark・markd・markrandom", "2. 選び方"],
         ["sampling.nShotsStart・End・Step", "10・40・5", "学習 Shot 数の開始・終了・刻み", "2. Shot 数"],
         ["sampling.nShots", "[10 15 … 40]", "上から作った並び（計算に使う。開始〜刻みと合わせる）", "（自動）"],
         ["sampling.countBy", "\"shots\"", "Shot 数で決める（shots）か計測率で決める（rate）か", "2. 学習 Shot 数"],
@@ -309,7 +309,7 @@ def build(output: Path, reference: Path):
     # 11. sampling（制約・交換法）
     s = deck.body("03　設定の項目と初期値", "設定の項目③：sampling（制約・交換法）")
     settings_table(s, [
-        ["sampling.designOrder", "5", "最適計画の基準モデル（XY 多項式の次数。5次で 21 項）", "2. 基準モデル"],
+        ["sampling.designOrder・designFeatures", "5・\"XYR\"", "最適計画の基準モデル（次数、説明変数 XYR：X・Y・半径（5次で 36 項）・XY（21 項））", "2. 基準モデル"],
         ["sampling.exchangeStarts", "10", "交換法の初期配置の数（時間はほぼ比例）", "2. 初期配置の数"],
         ["sampling.exchangeMaxIterations", "300", "交換法の反復の上限", "（設定ファイルのみ）"],
         ["constraints.radialZoneEdgesMm", "[67.5 105]", "同心円の区切り：半径 [mm]（Mark 単位は Mark の半径）", "2. 同心円の区切り"],
@@ -335,8 +335,8 @@ def build(output: Path, reference: Path):
         ["evaluation.outlierSigma ・ outlierMethod", "3 ・ \"sigma\"", "異常値の倍数 n と判定（sigma：平均と σ、mad：中央値と MAD）",
          "2. 異常値"],
         ["overlay.waferOrder ・ waferUseFormula", "1 ・ false", "Wafer 成分の次数（0 = なし）・式を使うか", "2. Wafer 成分"],
-        ["overlay.shotCommon", "\"linear\"", "Shot 共通成分（none・linear・asml・canon・nikon・formula）", "2. Shot 共通成分"],
-        ["overlay.perShot", "\"none\"", "Shot ごとの成分（none・translation・linear・formula）", "2. Shot ごとの成分"],
+        ["overlay.shotCommon", "\"none\"", "Shot 共通成分（none・linear・asml・canon・nikon・formula）", "2. Shot 共通成分"],
+        ["overlay.perShot", "\"linear\"", "Shot ごとの成分（none・linear・formula）", "2. Shot ごとの成分"],
         ["overlay.waferFormula・shotFormula・perShotFormula", "k1 + k3*x + k5*y\nk2 + k4*y + k6*x",
          "式を入力するときの dx・dy の式", "2. dx・dy"],
         ["display.scan1Up・scan1Color・scan2Color", "true・緑・紫", "表示：Scan 方向 1 を上向き（▲）にするか・1・2 の色（RGB 0〜1）",
@@ -351,7 +351,7 @@ def build(output: Path, reference: Path):
     settings_table(s, [
         ["methods.featureSets", "\"XYR\"", "説明変数（XY：X,Y、XYR：X,Y,半径）", "2. 説明変数"],
         ["methods.gpr.enabled ・ kernels", "true ・ \"matern52\"", "GPR とカーネル（fitrgp の10種類、matern・ardmatern、periodic・ardperiodic）", "2. GPR"],
-        ["methods.gpr.factorModes", "none・basis・additive", "質的変数の扱い（6通りから）", "2. GPR"],
+        ["methods.gpr.factorModes", "additive", "質的変数の扱い（6通りから。推奨の組み合わせは none・basis・additive）", "2. GPR"],
         ["methods.gpr.maternNu", "2", "matern・ardmatern の ν（複数なら ν ごと）", "2. ν"],
         ["methods.tps・rbf", "false ・ false", "TPS・RBF（factorModes：none・backfit。tps.smoothing：gcv・none・fixed）", "2. TPS・RBF"],
         ["methods.kriging", "通常 false・Universal false", "Kriging（variograms：\"exponential\"）", "2. Kriging"],
@@ -369,7 +369,7 @@ def build(output: Path, reference: Path):
     # 14. highOrder（Shot 高次補正）
     s = deck.body("03　設定の項目と初期値", "設定の項目⑥：highOrder（7. Shot高次補正）")
     settings_table(s, [
-        ["highOrder.maker", "\"nikon\"", "補正の式（asml・canon・nikon：ルールの式、custom：k1〜k38）", "7. 補正の式"],
+        ["highOrder.maker", "\"custom\"", "補正の式（asml・canon・nikon：ルールの式、custom：k1〜k38）", "7. 補正の式"],
         ["highOrder.unit", "\"common\"", "k のくくり（common：共通・scan：Scan 方向・row：行の偶奇・shot）", "7. 補正のくくり"],
         ["highOrder.waferOrder", "1", "Wafer 成分の次数（0〜5、0 = なし。shot は先に求めて引く）", "7. Wafer 成分"],
         ["highOrder.waferRtRange ・ waferRtOrder", "\"none\" ・ 3", "Wafer RT を使う Shot（none・all・outer）・次数（1〜5）", "7. Wafer RT"],
@@ -378,8 +378,8 @@ def build(output: Path, reference: Path):
         ["highOrder.shotCommon ・ shotEachOrder", "\"none\" ・ 0", "先に引く Shot 共通（none・fit・input）・Shot ごとの次数", "7. Shot 共通補正"],
         ["highOrder.outerRadiusMm ・ outerMaker", "120 ・ \"none\"", "外周の半径 [mm]・外周の式（none：分けない）", "7. 外周"],
         ["highOrder.vifThreshold", "10", "「VIF で選ぶ」のしきい値（よく使う値は 5〜10）", "7. VIF のしきい値"],
-        ["highOrder.loss ・ huberTuning", "\"huber\" ・ 3", "損失関数（ols・huber・lad）・Huber の定数 c", "7. 回帰・Huber"],
-        ["highOrder.regularization ・ penaltyOrders ・ lambda", "\"l2\" ・ [2〜6] ・ 0.1", "正則化（none・l2・l1）・かける次数（1〜6）・強さ λ", "7. 正則化・λ"],
+        ["highOrder.loss ・ huberTuning", "\"ols\" ・ 3", "損失関数（ols・huber・lad）・Huber の定数 c", "7. 回帰・Huber"],
+        ["highOrder.regularization ・ penaltyOrders ・ lambda", "\"none\" ・ [2〜6] ・ 1e-5", "正則化（none・l2・l1）・かける次数（1〜6）・強さ λ", "7. 正則化・λ"],
         ["highOrder.termSets", "[]（なし）", "保存した項の組み合わせ（1行 = \"名前|式|k の番号 …\"）", "7. 組み合わせ"]],
         widths=(3.3, 1.95, 4.9, 1.98), size=10, row_h=0.32)
     point_bar(s, 6.32, "λ はそろえた係数に対する値（L2 は 1 Shot 7×11 点の標準 0.1。点を減らすときは λ × √(77 / 点の数)）。"
@@ -403,8 +403,8 @@ def build(output: Path, reference: Path):
     settings_table(s, [
         ["markLayout.maker ・ excludedTerms", "\"nikon\" ・ []", "補正の式・使わない k の番号（highOrder と同じ書き方）", "8. 補正の式"],
         ["markLayout.vifThreshold", "10", "「VIF で選ぶ」のしきい値（候補の Mark の位置で求める）", "8. VIF のしきい値"],
-        ["markLayout.loss ・ huberTuning", "\"huber\" ・ 3", "制御残差を求める当てはめの損失関数・Huber の c", "8. 回帰"],
-        ["markLayout.regularization ・ penaltyOrders ・ lambda", "\"l2\" ・ [2〜6] ・ 0.1", "正則化（none・l2・l1）・かける次数・強さ λ", "8. 正則化・λ"],
+        ["markLayout.loss ・ huberTuning", "\"ols\" ・ 3", "制御残差を求める当てはめの損失関数・Huber の c", "8. 回帰"],
+        ["markLayout.regularization ・ penaltyOrders ・ lambda", "\"none\" ・ [2〜6] ・ 1e-5", "正則化（none・l2・l1）・かける次数・強さ λ", "8. 正則化・λ"],
         ["markLayout.minMarks ・ maxMarks", "0 ・ 0", "Mark の数の最低数・最大数（0 = 使う項の数・すべての候補）", "8. 最低数・最大数"],
         ["markLayout.starts", "5", "Mark の数ごとに配置を探す始め方の数（1〜50）", "8. 探す回数"],
         ["markLayout.values", "\"measured\"", "制御残差を求める値（measured：実測値・random：乱数の形）", "8. 評価に使う値"],

@@ -7,12 +7,14 @@ classdef (Abstract) HighOrderAnalysisTab < appui.Core
     %   本体）の一部で、ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
 
     methods
-        function data = drawHighOrderHistogram(app, source, waferIndex, region, series)
-            %DRAWHIGHORDERHISTOGRAM 「ヒストグラム」：値の分布を X・Y を並べて重ねて描く（alignest.plot.residualHistogram。区間の
-            %   幅は、重ねる値のうち最も狭い分布に合わせる）。source："run"（この計算の補正前の値・Shot ごとの1次の残差・Wafer 高次
-            %   補正だけの残差・Wafer 高次補正＋Shot 共通補正の残差・高次補正の残差。補正できた点）・"comparison"（「補正の比較」の
-            %   条件ごとの高次補正の残差）、waferIndex：0 = すべての Wafer、region："all"・"内周"・"外周"、series：重ねる値の番号
-            %   （一覧の番号。複数）。省略すると画面の選択。data は軸・重ねた値ごとの名前・点の数・平均・標準偏差・|平均|+3σ の表。
+        function data = drawHighOrderHistogram(app, source, waferIndex, series)
+            %DRAWHIGHORDERHISTOGRAM 「ヒストグラム」：値の分布を重ねて描く（alignest.plot.residualHistogram。区間の幅は、重ねる値の
+            %   うち最も狭い分布に合わせる）。左が X・右が Y、上段がすべての Shot・中段が内周の Shot・下段が外周の Shot（外周 =
+            %   Shot 中心の半径が「外周の半径」以上。計算したときの値）。source："run"（この計算の補正前の値・Shot ごとの1次の残差・
+            %   Wafer 高次補正だけの残差・Wafer 高次補正＋Shot 共通補正の残差・高次補正の残差。補正できた点）・"comparison"（「補正の
+            %   比較」の条件ごとの高次補正の残差）、waferIndex：0 = すべての Wafer、series：重ねる値の番号（一覧の番号。複数）。
+            %   省略すると画面の選択。data は範囲（region：すべて・内周・外周）・軸・重ねた値ごとの名前・点の数・平均・標準偏差・
+            %   |平均|+3σ の表。
             c = app.Controls;
             if nargin >= 2
                 c.highOrderHistogramSource.Value = char(source);
@@ -22,9 +24,6 @@ classdef (Abstract) HighOrderAnalysisTab < appui.Core
                 c.highOrderHistogramWafer.Value = waferIndex;
             end
             if nargin >= 4
-                c.highOrderHistogramRegion.Value = char(region);
-            end
-            if nargin >= 5
                 c.highOrderHistogramSeries.Value = num2cell(reshape(series, 1, []));
             end
             axesList = c.highOrderHistogramAxes;
@@ -32,6 +31,7 @@ classdef (Abstract) HighOrderAnalysisTab < appui.Core
                 cla(ax, 'reset');
                 legend(ax, 'off');
             end
+            c.highOrderHistogramLegend.Text = '';
             data = table();
             set([c.highOrderHistogramSave, c.highOrderHistogramCopy], 'Enable', 'off');
             [series, names, waferLabels] = highOrderHistogramSeries(app);
@@ -48,47 +48,60 @@ classdef (Abstract) HighOrderAnalysisTab < appui.Core
                 return
             end
             waferChoice = c.highOrderHistogramWafer.Value;
-            region = string(c.highOrderHistogramRegion.Value);
             names = names(chosen);
             shortNames = highOrderHistogramShortNames(names);
             waferText = ternary(waferChoice >= 1, waferLabels(max(waferChoice, 1)), "すべての Wafer");
-            regionText = ternary(region == "all", "", "・" + region + "の Shot");
             axisNames = ["X", "Y"];
-            parts = cell(1, 2);
-            for a = 1:2
-                values = cell(1, numel(chosen));
-                for k = 1:numel(chosen)
-                    points = series{chosen(k)}.points;
-                    keep = true(height(points), 1);
-                    if waferChoice >= 1
-                        keep = points.wafer == waferLabels(waferChoice);
+            regions = ["すべて", "内周", "外周"];
+            regionTitles = ["すべての Shot", "内周の Shot", "外周の Shot"];
+            parts = cell(numel(regions), 2);
+            for r = 1:numel(regions)
+                for a = 1:2
+                    values = cell(1, numel(chosen));
+                    for k = 1:numel(chosen)
+                        points = series{chosen(k)}.points;
+                        keep = true(height(points), 1);
+                        if waferChoice >= 1
+                            keep = points.wafer == waferLabels(waferChoice);
+                        end
+                        if r > 1
+                            keep = keep & points.zone == regions(r);
+                        end
+                        values{k} = series{chosen(k)}.value(keep, a);
+                        values{k} = values{k}(isfinite(values{k}));
                     end
-                    if region ~= "all"
-                        keep = keep & points.zone == region;
+                    ax = axesList((r - 1) * 2 + a);
+                    alignest.plot.residualHistogram(ax, values, regionTitles(r) + "（" + axisNames(a) + "）", "nm", ...
+                        shortNames, xLabelText="値 [nm]", seriesWord="値", finestBins=true, legendLocation="southoutside", ...
+                        compactLegend=true);
+                    legend(ax, 'off');   % 凡例は上の行に1つだけ（3段を同じ高さにするため）
+                    if r < numel(regions)
+                        xlabel(ax, '');
                     end
-                    values{k} = series{chosen(k)}.value(keep, a);
-                    values{k} = values{k}(isfinite(values{k}));
+                    [count, average, spread, overlay] = deal(zeros(numel(values), 1));
+                    for k = 1:numel(values)
+                        count(k) = numel(values{k});
+                        average(k) = mean(values{k});
+                        spread(k) = std(values{k});
+                        overlay(k) = abs(average(k)) + 3 * spread(k);
+                    end
+                    parts{r, a} = table(repmat(regions(r), numel(values), 1), repmat(axisNames(a), numel(values), 1), ...
+                        names(:), count, average, spread, overlay, ...
+                        'VariableNames', ["region", "axis", "name", "n", "mean", "std", "meanPlus3Sigma"]);
                 end
-                alignest.plot.residualHistogram(axesList(a), values, waferText + regionText + "（" + axisNames(a) + "）", ...
-                    "nm", shortNames, xLabelText="値 [nm]", seriesWord="値", finestBins=true, legendLocation="southoutside", ...
-                    compactLegend=true);
-                [count, average, spread, overlay] = deal(zeros(numel(values), 1));
-                for k = 1:numel(values)
-                    count(k) = numel(values{k});
-                    average(k) = mean(values{k});
-                    spread(k) = std(values{k});
-                    overlay(k) = abs(average(k)) + 3 * spread(k);
-                end
-                parts{a} = table(repmat(axisNames(a), numel(values), 1), names(:), count, average, spread, overlay, ...
-                    'VariableNames', ["axis", "name", "n", "mean", "std", "meanPlus3Sigma"]);
             end
             styleAxes(app, axesList, app.AXES_FONT_SIZE);
+            c.highOrderHistogramLegend.Text = char(histogramLegendHtml(axesList(1), waferText));
             set([c.highOrderHistogramSave, c.highOrderHistogramCopy], 'Enable', 'on');
             data = vertcat(parts{:});
-            x = parts{1};
-            y = parts{2};
-            c.highOrderHistogramInfo.Text = char("|平均|+3σ [nm]（X・Y）：" + strjoin(compose("%s %.2f・%.2f", shortNames(:), ...
-                x.meanPlus3Sigma, y.meanPlus3Sigma), "　"));
+            texts = strings(1, numel(regions));
+            for r = 1:numel(regions)
+                x = parts{r, 1};
+                y = parts{r, 2};
+                texts(r) = regionTitles(r) + "：" + strjoin(compose("%s %.2f・%.2f", shortNames(:), x.meanPlus3Sigma, ...
+                    y.meanPlus3Sigma), "　");
+            end
+            c.highOrderHistogramInfo.Text = char("|平均|+3σ [nm]（X・Y）　" + strjoin(texts, "／"));
         end
 
         function data = exportHighOrderValues(app, kind, value, filePath)
@@ -128,7 +141,7 @@ classdef (Abstract) HighOrderAnalysisTab < appui.Core
     methods (Access = {?appui.Core})
         % ================= 7. Shot高次補正：ヒストグラム・書き出し =================
         function buildHighOrderHistogramTab(app, outputs)
-            % 「ヒストグラム」のタブ：重ねる値の種類・Wafer・範囲、重ねる値の一覧と X・Y の図
+            % 「ヒストグラム」のタブ：重ねる値の種類・Wafer、重ねる値の一覧と、X・Y × すべて・内周・外周の Shot の図（3段）
             c = struct();
             tab = uitab(outputs, 'Title', 'ヒストグラム');
             c.highOrderHistogramTab = tab;
@@ -142,29 +155,34 @@ classdef (Abstract) HighOrderAnalysisTab < appui.Core
                 @(~, ~) app.onHighOrderHistogramSourceChanged(), 'Tooltip', ['この計算：「補正を計算する」の結果の、' ...
                 'どちらの補正もできた点の値。補正の比較の条件：「すべて計算して比べる」で計算した条件ごとの残差。']);
             place(c.highOrderHistogramSource, 1, 2);
-            second = uigridlayout(controls, [1, 6], 'ColumnWidth', {'fit', '1.2x', 'fit', '1x', 'fit', 'fit'}, 'Padding', 0);
+            second = uigridlayout(controls, [1, 4], 'ColumnWidth', {'fit', '1x', 'fit', 'fit'}, 'Padding', 0);
             label(second, 'Wafer', 1, 1);
             c.highOrderHistogramWafer = uidropdown(second, 'Items', {'すべての Wafer'}, 'ItemsData', {0}, ...
-                'ValueChangedFcn', onDraw);
+                'ValueChangedFcn', onDraw, 'Tooltip', ['図は上段がすべての Shot、中段が内周の Shot、下段が外周の Shot' ...
+                '（外周：Shot 中心の半径が「外周の半径」以上の Shot。計算したときの値）。']);
             place(c.highOrderHistogramWafer, 1, 2);
-            label(second, '範囲', 1, 3);
-            c.highOrderHistogramRegion = uidropdown(second, 'Items', {'すべての Shot', '内周の Shot', '外周の Shot'}, ...
-                'ItemsData', {'all', '内周', '外周'}, 'ValueChangedFcn', onDraw, 'Tooltip', ['外周：Shot 中心の半径が' ...
-                '「外周の半径」以上の Shot（計算したときの値）。']);
-            place(c.highOrderHistogramRegion, 1, 4);
             c.highOrderHistogramSave = uibutton(second, 'Text', '図を画像で保存…', 'Enable', 'off', 'ButtonPushedFcn', ...
                 @(~, ~) app.saveFigureWithDialog("highOrderHistogram", 'shot_high_order_histogram.png'));
-            place(c.highOrderHistogramSave, 1, 5);
+            place(c.highOrderHistogramSave, 1, 3);
             c.highOrderHistogramCopy = uibutton(second, 'Text', '図をコピー', 'Enable', 'off', 'Tooltip', ...
                 app.COPY_TOOLTIP, 'ButtonPushedFcn', @(source, ~) app.onCopyFigure("highOrderHistogram", source));
-            place(c.highOrderHistogramCopy, 1, 6);
+            place(c.highOrderHistogramCopy, 1, 4);
             body = uigridlayout(grid, [1, 2], 'ColumnWidth', {190, '1x'}, 'Padding', 0, 'ColumnSpacing', 6);
             place(body, 2, 1);
             c.highOrderHistogramSeries = uilistbox(body, 'Items', {'—'}, 'ItemsData', {0}, 'Multiselect', 'on', ...
                 'Value', {}, 'ValueChangedFcn', onDraw, 'Tooltip', '重ねる値（Ctrl・Shift を押しながらクリックで複数）。');
             panel = uipanel(body, 'BorderType', 'none');
-            axesGrid = uigridlayout(panel, [1, 2], 'Padding', 0, 'ColumnSpacing', 6);
-            c.highOrderHistogramAxes = [uiaxes(axesGrid), uiaxes(axesGrid)];
+            % 3段 × X・Y の図（並びは すべての X・Y、内周の X・Y、外周の X・Y）。凡例は図の中に置くと狭いので、上の行に
+            % 色の付いた名前で1つだけ出す
+            axesGrid = uigridlayout(panel, [4, 2], 'Padding', 0, 'ColumnSpacing', 6, 'RowSpacing', 4, ...
+                'RowHeight', {'fit', '1x', '1x', '1x'});
+            c.highOrderHistogramLegend = uilabel(axesGrid, 'Interpreter', 'html', 'WordWrap', 'on', 'Text', '');
+            place(c.highOrderHistogramLegend, 1, [1, 2]);
+            c.highOrderHistogramAxes = gobjects(1, 6);
+            for k = 1:6
+                c.highOrderHistogramAxes(k) = uiaxes(axesGrid);
+                place(c.highOrderHistogramAxes(k), ceil(k / 2) + 1, 2 - mod(k, 2));
+            end
             c.highOrderHistogramInfo = uilabel(grid, 'WordWrap', 'on', 'Text', ...
                 '「補正を計算する」を押すと、補正前の値と残差の分布を重ねます。');
             place(c.highOrderHistogramInfo, 3, 1);
@@ -399,4 +417,19 @@ for k = 1:numel(long)
 end
 numbered = ~ismember(names, short);
 names(numbered) = "条件 " + extractBefore(names(numbered), ".");
+end
+
+function html = histogramLegendHtml(ax, waferText)
+% ヒストグラムの凡例：図の線と同じ色・線種の印と名前を1行に並べる（uilabel の HTML。同じ値の破線は「‥」の印）
+html = "<b>" + waferText + "</b>　";
+items = flipud(findobj(ax, 'Type', 'histogram'));
+for k = 1:numel(items)
+    color = round(255 * items(k).EdgeColor);
+    mark = "━━";
+    if items(k).LineStyle ~= "-"
+        mark = "‥‥";
+    end
+    html = html + sprintf("<span style=""color:rgb(%d,%d,%d)""><b>%s</b></span> %s　", color, mark, ...
+        strrep(strrep(string(items(k).DisplayName), "<", "&lt;"), ">", "&gt;"));
+end
 end

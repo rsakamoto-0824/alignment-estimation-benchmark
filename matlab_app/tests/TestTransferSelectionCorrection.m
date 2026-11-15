@@ -166,6 +166,15 @@ classdef TestTransferSelectionCorrection < matlab.unittest.TestCase
             testCase.verifyTrue(all(ismember([8, 12], stepwise.used{2})), "dy の2次の形の項を足す");
             testCase.verifyTrue(all(steps.change(steps.step > 0) < 0), "足すたびに BIC が下がる");
             testCase.verifyEqual(steps.step(1), 0);
+            testCase.verifyEqual(stepwise.criterion, "bic");
+            % AIC（BIC より罰が小さいので、項は BIC 以上に増える）・自由度調整済 R²（足すたびに上がる）
+            aic = alignest.highOrderTermSelection(wafers, settings, "stepwise", criterion="aic");
+            testCase.verifyTrue(all(aic.steps.change(aic.steps.step > 0) < 0), "足すたびに AIC が下がる");
+            testCase.verifyGreaterThanOrEqual(numel([aic.used{:}]), numel([stepwise.used{:}]));
+            adjusted = alignest.highOrderTermSelection(wafers, settings, "stepwise", criterion="adjr2");
+            testCase.verifyTrue(all(adjusted.steps.change(adjusted.steps.step > 0) > 0), "足すたびに自由度調整済 R² が上がる");
+            testCase.verifyTrue(all(ismember([7, 11], adjusted.used{1})), "自由度調整済 R² でも2次の形の項を足す");
+            testCase.verifyLessThanOrEqual(max(adjusted.steps.value), 1);
         end
 
         function highOrderScreensForNewFeatures(testCase)
@@ -203,7 +212,7 @@ classdef TestTransferSelectionCorrection < matlab.unittest.TestCase
             transfer = app.transferHighOrderCorrection([1, 2], 3, "values");
             testCase.verifyTrue(contains(string(c.highOrderTransferInfo.Text), "実測値の平均から求めた補正値"));
             testCase.verifyEqual(transfer.method, "values");
-            % k の選定と、使う項にする
+            % k の選定と、反映する
             selection = app.selectHighOrderTerms("importance", 2);
             testCase.verifyEqual(c.highOrderSelectMethod.Items{1}, '変数重要度');
             testCase.verifyTrue(any(string(c.highOrderSelectTable.Data.Properties.VariableNames) == "変数重要度"));
@@ -212,6 +221,11 @@ classdef TestTransferSelectionCorrection < matlab.unittest.TestCase
             testCase.verifyTrue(startsWith(string(c.highOrderSelectInfo.Text), "使う項を"));
             app.selectHighOrderTerms("stepwise");
             testCase.verifyTrue(any(string(c.highOrderSelectTable.Data.Properties.VariableNames) == "BIC"));
+            testCase.verifyEqual(c.highOrderSelectApply.Text, '反映する');
+            testCase.verifyEqual(string(c.highOrderSelectCriterion.Enable), "on", "ステップワイズでは指標を選べる");
+            app.selectHighOrderTerms("stepwise", [], "adjr2");
+            testCase.verifyTrue(any(string(c.highOrderSelectTable.Data.Properties.VariableNames) == "自由度調整済 R²"));
+            testCase.verifyTrue(contains(string(c.highOrderSelectInfo.Text), "自由度調整済 R² が上がる"));
             % 保存した組み合わせから Shot 共通の項
             app.setHighOrderSettings(unit="shot", shotCommon="fit");
             app.saveHighOrderTermSet("共通の組");
@@ -276,7 +290,7 @@ classdef TestTransferSelectionCorrection < matlab.unittest.TestCase
             testCase.verifyEqual(first.measured, meanPlus3Sigma(residual), 'RelTol', 0.05);
             testCase.verifyEqual(height(c.estimatedCorrectionTable.Data), height(t));
             testCase.verifyEqual(numel(findobj(c.estimatedCorrectionAxes, 'Type', 'bar')), 4);
-            testCase.verifyTrue(contains(string(c.estimatedCorrectionModel.Text), "Nikon"));
+            testCase.verifyTrue(contains(string(c.estimatedCorrectionModel.Text), "カスタム"), "初期値の補正の式");
         end
     end
 end

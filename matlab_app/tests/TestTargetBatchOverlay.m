@@ -238,10 +238,14 @@ classdef TestTargetBatchOverlay < matlab.unittest.TestCase
             testCase.verifyTrue(contains(c.targetResidualInfo.Text, "補正後の残差"));
             testCase.verifyEqual(c.targetResidualSave.Enable, matlab.lang.OnOffSwitchState('on'));
             % 「補正のモデル」で変える → 設定と「2. 評価の設定」の欄も変わる。補正値は前のモデルなので知らせる
-            c.targetOverlayPerShot.Value = 'translation';
+            newPerShot = 'none';   % 今と違うもの（並進は選べない）
+            if string(c.targetOverlayPerShot.Value) == "none"
+                newPerShot = 'linear';
+            end
+            c.targetOverlayPerShot.Value = newPerShot;
             c.targetOverlayPerShot.ValueChangedFcn([], []);
-            testCase.verifyEqual(app.Settings.overlay.perShot, "translation");
-            testCase.verifyEqual(c.overlayPerShot.Value, 'translation');
+            testCase.verifyEqual(app.Settings.overlay.perShot, string(newPerShot));
+            testCase.verifyEqual(c.overlayPerShot.Value, newPerShot);
             testCase.verifyTrue(startsWith(string(c.targetOverlayInfo.Text), "⚠ 補正モデルを変えました"));
             testCase.verifyTrue(startsWith(string(c.targetResidualInfo.Text), "⚠ 補正モデルを変えました"));
             % 式の誤りは両方の欄の下に出る。「2. 評価の設定」で変えると「補正のモデル」も変わる

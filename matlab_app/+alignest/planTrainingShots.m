@@ -1,7 +1,8 @@
 function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm)
 %PLANTRAININGSHOTS 1つの Wafer（評価の単位）で、学習に使う Shot を選ぶ。
 %   候補は、X か Y の有効な計測値を1点以上持つ Shot。選ばなかった候補 Shot の Mark を評価に使う。
-%   I 最適の基準モデルは XY 多項式（sampling.designOrder 次）。候補の全 Mark で正規直交化して使う。
+%   I 最適の基準モデルは、説明変数 X・Y・半径（sampling.designFeatures = "XYR"、既定）か X・Y（"XY"）の多項式
+%   （sampling.designOrder 次。alignest.basis.designPolynomial）。候補の全 Mark で正規直交化して使う。
 %   制約（sampling.constraints）：同心円の区画（Shot 中心の半径 [mm] を radialZoneEdgesMm で区切る）、
 %   4象限（Shot 中心の偏角、軸上は反時計回りに次の象限）、Scan方向。各区画の Shot 数を割合 × 選ぶ数 ± slack に収める。
 %   乱数は sampling.seed・Shot 数・繰り返し番号から決めるので、候補が同じ Wafer では同じ Shot が選ばれる。
@@ -15,7 +16,9 @@ function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm)
 %   plan.requiredShotIndex は必ず計測した Shot（ファイルの優先順では優先度 1）。
 %   制約付き D 最適（doptimal）は、I 最適と同じ制約・必ず計測する Shot で、det(M) を大きくする組を選ぶ
 %   （alignest.exchangeDesign）。
-%   Mark 単位の I 最適（mark）・D 最適（markd）：計測する Mark を I 最適（D 最適）で選ぶ。
+%   Mark 単位の I 最適（mark）・D 最適（markd）：計測する Mark を I 最適（D 最適）で選ぶ。Mark 単位の制約つきランダム
+%   （markrandom）：同じ制約（各 Shot の点数・Mark 番号・同心円の区画・必ず計測する Mark）を満たす組を乱数で選ぶ
+%   （交換法の初期配置と同じ作り方で、交換はしない。乱数は sampling.seed・Mark の数・繰り返し番号から決める）。
 %   Mark の数 = round(spec.markPerShot × 候補 Shot 数)、計測率で決めるときは round(spec.rate / 100 × 候補の全 Mark の数)。
 %   sampling.markRequirePerShot が true（既定）なら、各 Shot で markMinPerShot 点（既定 1。Mark の少ない Shot は
 %   その Shot の全 Mark）以上を必ず計測する（足りないときは Mark の数を増やし、plan.message に書く）。false なら
@@ -70,7 +73,7 @@ switch spec.type
         if isempty(plan.shotIndex)
             return
         end
-    case {"mark", "markd"}
+    case {"mark", "markd", "markrandom"}
         plan = markPlan(unit, spec, sampling, waferRadiusMm, candidates, plan);
         return
     case {"ioptimal", "doptimal", "random"}
@@ -105,12 +108,12 @@ switch spec.type
             stream = RandStream('mt19937ar', 'Seed', seedFor(sampling.seed, nShots, spec.repeat));
             pool = find(selectable);   % 選べる候補（基底は全候補で正規直交化したまま）
             if spec.type == "ioptimal"
-                blocks = shotBlocks(unit, candidates, sampling.designOrder, waferRadiusMm);
+                blocks = shotBlocks(unit, candidates, sampling, waferRadiusMm);
                 [selected, plan.criterion, plan.violation] = alignest.constrainedIOptimal(blocks(pool), nShots, ...
                     labels(pool, :), sampling.constraints.slack, stream, sampling.exchangeStarts, ...
                     sampling.exchangeMaxIterations, fixed(pool));
             elseif spec.type == "doptimal"
-                blocks = shotBlocks(unit, candidates, sampling.designOrder, waferRadiusMm);
+                blocks = shotBlocks(unit, candidates, sampling, waferRadiusMm);
                 [selected, plan.criterion, plan.violation] = alignest.exchangeDesign(blocks(pool), nShots, ...
                     labels(pool, :), sampling.constraints.slack, stream, sampling.exchangeStarts, ...
                     sampling.exchangeMaxIterations, criterion="D", fixed=fixed(pool));
@@ -143,11 +146,12 @@ plan.nShots = numel(plan.shotIndex);
 plan.nMarks = nnz(ismember(unit.marks.shotIndex, plan.shotIndex) & (unit.marks.validX | unit.marks.validY));
 plan.ok = true;
 [plan.criterionI, plan.criterionD, plan.efficiencyI, plan.efficiencyD] = planCriteria(unit, candidates, plan.shotIndex, ...
-    sampling.designOrder, waferRadiusMm);
+    sampling, waferRadiusMm);
 end
 
 function plan = markPlan(unit, spec, sampling, waferRadiusMm, candidates, plan)
 % Mark 単位の I 最適・D 最適：（各 Shot で n 点以上を計測し、）Mark 番号の割合をそろえて、計測する Mark を交換法で選ぶ。
+% 制約つきランダム（markrandom）は、同じ制約を満たす組を乱数で選ぶ（交換法の初期配置。交換はしない）。
 % Wafer 中心に最も近い Mark・指定した必ず計測する Mark・必ず計測する Shot の Mark は必ず選び、計測しない Shot・Mark は
 % 選ばない。同心円の区切りがあれば、Mark の半径の区画ごとの数もそろえる
 marks = unit.marks;
@@ -212,7 +216,7 @@ if nnz(fixed) >= nMarks
         "必ず計測する Shot の Mark）が %d 個あり、計測する Mark の数 %d 以上です。", nnz(fixed), nMarks));
     return
 end
-blocks = markBlocks(unit, allCandidates, sampling.designOrder, waferRadiusMm);
+blocks = markBlocks(unit, allCandidates, sampling, waferRadiusMm);
 blocks = blocks(pool);
 labels = zeros(numel(markCandidates), 0);
 equal = isfield(sampling.constraints, "markEqual") && sampling.constraints.markEqual;
@@ -239,8 +243,15 @@ if ~isempty(edges)
     equalColumns = [equalColumns, false];
 end
 stream = RandStream('mt19937ar', 'Seed', seedFor(sampling.seed, nMarks, spec.repeat));
+nStarts = sampling.exchangeStarts;
+maxIterations = sampling.exchangeMaxIterations;
+if spec.type == "markrandom"
+    % 制約を満たす初期配置を1つ作るだけ（交換しない）＝制約つきランダム
+    nStarts = 1;
+    maxIterations = 0;
+end
 [selected, plan.criterion, plan.violation] = alignest.exchangeDesign(blocks, nMarks, labels, ...
-    sampling.constraints.slack, stream, sampling.exchangeStarts, sampling.exchangeMaxIterations, criterion=criterion, ...
+    sampling.constraints.slack, stream, nStarts, maxIterations, criterion=criterion, ...
     group=group, minPerGroup=minPerShot, equal=equalColumns, fixed=fixed);
 if plan.violation > 0
     plan.message = strtrim(plan.message + sprintf(" Mark 番号ごと・同心円の区画ごとの数をそろえる制約を満たす組が" + ...
@@ -255,27 +266,22 @@ plan.ok = true;
 [plan.criterionI, plan.criterionD, plan.efficiencyI, plan.efficiencyD] = alignest.designCriteria(blocks(selected));
 end
 
-function blocks = markBlocks(unit, markCandidates, designOrder, waferRadiusMm)
-% 候補 Mark ごとの基底の行（全候補 Mark で正規直交化した XY 多項式。Shot 単位の shotBlocks と同じ正規化）
+function blocks = markBlocks(unit, markCandidates, sampling, waferRadiusMm)
+% 候補 Mark ごとの基底の行（全候補 Mark で正規直交化した基準モデル。Shot 単位の shotBlocks と同じ正規化）
 marks = unit.marks;
-design = alignest.basis.polynomialDesign(marks.x(markCandidates) / waferRadiusMm, ...
-    marks.y(markCandidates) / waferRadiusMm, designOrder);
-if size(design, 1) < size(design, 2)
-    error('alignest:designOrder', 'I 最適の基準モデル（%d 次、%d 項）より候補の Mark（%d 点）が少ないです。次数を下げてください。', ...
-        designOrder, size(design, 2), size(design, 1));
-end
+design = baseDesign(marks.x(markCandidates), marks.y(markCandidates), sampling, waferRadiusMm);
 [q, ~] = qr(design, 0);
 blocks = num2cell(q, 2);
 end
 
-function [iValue, dValue, iEfficiency, dEfficiency] = planCriteria(unit, candidates, shotIndex, designOrder, waferRadiusMm)
+function [iValue, dValue, iEfficiency, dEfficiency] = planCriteria(unit, candidates, shotIndex, sampling, waferRadiusMm)
 % 選んだ組の I 基準・D 基準と全計測に対する効率。候補の Mark が基準モデルの項数より少ないときは NaN
 iValue = NaN;
 dValue = NaN;
 iEfficiency = NaN;
 dEfficiency = NaN;
 try
-    blocks = shotBlocks(unit, candidates, designOrder, waferRadiusMm);
+    blocks = shotBlocks(unit, candidates, sampling, waferRadiusMm);
 catch
     return
 end
@@ -375,7 +381,7 @@ plan.shotNos = unit.shots.shotNo(plan.shotIndex);
 plan.nMarks = numel(plan.markIndex);
 plan.ok = true;
 try
-    blocks = markBlocks(unit, markCandidates, sampling.designOrder, waferRadiusMm);
+    blocks = markBlocks(unit, markCandidates, sampling, waferRadiusMm);
     [~, selected] = ismember(plan.markIndex, markCandidates);
     [plan.criterionI, plan.criterionD, plan.efficiencyI, plan.efficiencyD] = alignest.designCriteria(blocks(selected));
 catch
@@ -416,19 +422,29 @@ for p = 1:size(labels, 2)
 end
 end
 
-function blocks = shotBlocks(unit, candidates, designOrder, waferRadiusMm)
-% 候補 Shot ごとの基底（全候補 Mark で正規直交化した XY 多項式）
+function blocks = shotBlocks(unit, candidates, sampling, waferRadiusMm)
+% 候補 Shot ごとの基底（全候補 Mark で正規直交化した基準モデル）
 marks = unit.marks;
 useMark = ismember(marks.shotIndex, candidates) & (marks.validX | marks.validY);
-design = alignest.basis.polynomialDesign(marks.x(useMark) / waferRadiusMm, marks.y(useMark) / waferRadiusMm, designOrder);
-if size(design, 1) < size(design, 2)
-    error('alignest:designOrder', 'I 最適の基準モデル（%d 次、%d 項）より候補の Mark（%d 点）が少ないです。次数を下げてください。', ...
-        designOrder, size(design, 2), size(design, 1));
-end
+design = baseDesign(marks.x(useMark), marks.y(useMark), sampling, waferRadiusMm);
 [q, ~] = qr(design, 0);
 shotOfRow = marks.shotIndex(useMark);
 blocks = cell(numel(candidates), 1);
 for k = 1:numel(candidates)
     blocks{k} = q(shotOfRow == candidates(k), :);
+end
+end
+
+function design = baseDesign(x, y, sampling, waferRadiusMm)
+% I 最適の基準モデルの設計行列（説明変数 X・Y・半径、または X・Y の designOrder 次の多項式。座標は Wafer 半径で割る）。
+% 以前の設定（designFeatures が無い）は既定の X・Y・半径
+features = "XYR";
+if isfield(sampling, "designFeatures") && ~isempty(sampling.designFeatures)
+    features = string(sampling.designFeatures);
+end
+design = alignest.basis.designPolynomial(x / waferRadiusMm, y / waferRadiusMm, sampling.designOrder, features);
+if size(design, 1) < size(design, 2)
+    error('alignest:designOrder', 'I 最適の基準モデル（%d 次、%d 項）より候補の Mark（%d 点）が少ないです。次数を下げてください。', ...
+        sampling.designOrder, size(design, 2), size(design, 1));
 end
 end
