@@ -1,7 +1,8 @@
 function selection = highOrderTermSelection(wafers, settings, method, options)
 %HIGHORDERTERMSELECTION Shot 高次補正の k パラメータ（補正の式の項）を、単純な回帰で選ぶ。
 %   selection = alignest.highOrderTermSelection(wafers, settings, "importance", threshold=2)
-%   selection = alignest.highOrderTermSelection(wafers, settings, "stepwise")
+%   selection = alignest.highOrderTermSelection(wafers, settings, "stepwise")                  % BIC（既定）
+%   selection = alignest.highOrderTermSelection(wafers, settings, "stepwise", criterion="aic")  % AIC・"adjr2"（自由度調整済 R²）
 %   wafers：alignest.shotHighOrder と同じ Wafer ごとの点（label・points。points は localX・localY・Xc・Yc・valueX・valueY・shotNo）。
 %   settings：設定（settings.highOrder の補正の式 maker・使わない項 excludedTerms・Wafer 成分の次数 waferOrder を使う）。
 %   回帰は、Wafer ごと・式（dx・dy）ごとの最小二乗（Wafer 内の Shot で共通の1組の k。くくり・正則化・ロバスト回帰は使わない）。
@@ -13,9 +14,13 @@ function selection = highOrderTermSelection(wafers, settings, method, options)
 %     selection.importance：項ごとの表（axis・k・term・order・protected・importance（|t| の中央値）・minT・maxT（|t| の最小・
 %     最大）・nWafers（求められた Wafer の数）・keep（使うか））
 %   - "stepwise"（ステップワイズで足す）：今の使う項（settings の excludedTerms を除いた項。k1〜k6 は必ず）から始め、式の残りの
-%     項のうち、BIC（すべての Wafer の Σ [n ln(RSS/n) + p ln n]。n は点の数、p は決まる列の数（Wafer 成分を含む））が最も小さくなる項を
-%     1つずつ足す。BIC が下がらなくなったら止める（式ごと）。
-%     selection.steps：足した順の表（axis・step（0 は始めの項）・k・term・bic・change（1つ前との差））
+%     項のうち、指標 options.criterion が最も良くなる項を1つずつ足す。良くならなくなったら止める（式ごと）。n は点の数、p は
+%     決まる列の数（Wafer 成分を含む）、RSS は残差の二乗和、TSS は平均からの差の二乗和：
+%       "bic"（既定）：すべての Wafer の Σ [n ln(RSS/n) + p ln n]（小さいほど良い）
+%       "aic"        ：すべての Wafer の Σ [n ln(RSS/n) + 2p]（小さいほど良い。BIC より項が増えやすい）
+%       "adjr2"      ：Wafer の自由度調整済 R² = 1 − (RSS/(n − p)) / (TSS/(n − 1)) の平均（大きいほど良い）
+%     selection.steps：足した順の表（axis・step（0 は始めの項）・k・term・value（指標の値）・change（1つ前との差））。
+%     selection.criterion に使った指標
 %   selection.used：式ごとの使う項（k の番号。{dx の k, dy の k}）、selection.excludedTerms：使わない項（k の番号。設定の
 %   excludedTerms にそのまま入れられる）、selection.messages：知らせ、selection.method・threshold・maker
 arguments
@@ -23,10 +28,11 @@ arguments
     settings struct
     method (1, 1) string {mustBeMember(method, ["importance", "stepwise"])}
     options.threshold (1, 1) double {mustBeNonnegative, mustBeFinite} = 2
+    options.criterion (1, 1) string {mustBeMember(options.criterion, ["bic", "aic", "adjr2"])} = "bic"
 end
 FORMULA_AXES = ["dx", "dy"];
 AXIS_NAMES = ["X", "Y"];
-TOLERANCE = 1e-9;   % BIC がこれより下がらなければ足さない
+TOLERANCE = 1e-9;   % 指標がこれより良くならなければ足さない
 highOrder = alignest.highOrderOptions(settings);
 allTerms = alignest.highOrderTerms(highOrder.maker);
 currentTerms = alignest.highOrderTerms(highOrder.maker, highOrder.excludedTerms);
@@ -44,7 +50,7 @@ for w = 1:numel(wafers)
             "wafer", [points.Xc(rows), points.Yc(rows)], "y", points.("value" + AXIS_NAMES(a))(rows));
     end
 end
-% 足しても決まらない（ほかの列で表せる）項は残差が減らず BIC が増えるだけなので、その知らせは出さない
+% 足しても決まらない（ほかの列で表せる）項は残差が減らず指標が悪くなるだけなので、その知らせは出さない
 warningState = warning('off', 'MATLAB:rankDeficientMatrix');
 restoreWarning = onCleanup(@() warning(warningState));
 used = cell(1, 2);
@@ -72,20 +78,23 @@ for a = 1:2
         start = currentTerms.axis == FORMULA_AXES(a) & (currentTerms.used | currentTerms.protected);
         chosen = reshape(currentTerms.k(start), 1, []);
         candidates = setdiff(reshape(terms.k, 1, []), chosen, 'stable');
-        bic = totalBic(data(:, a), terms, chosen, waferPowers);
-        steps = {stepRow(FORMULA_AXES(a), 0, NaN, "始めの項：" + strjoin("k" + string(chosen), "・"), bic, NaN)};
+        % 指標は小さいほど良い形にそろえて比べる（自由度調整済 R² は符号を変える）
+        sign = 1 - 2 * (options.criterion == "adjr2");
+        current = criterionValue(data(:, a), terms, chosen, waferPowers, options.criterion);
+        steps = {stepRow(FORMULA_AXES(a), 0, NaN, "始めの項：" + strjoin("k" + string(chosen), "・"), current, NaN)};
         while ~isempty(candidates)
-            trial = arrayfun(@(k) totalBic(data(:, a), terms, [chosen, k], waferPowers), candidates);
-            [best, position] = min(trial);
-            if ~(best < bic - TOLERANCE)
+            trial = arrayfun(@(k) criterionValue(data(:, a), terms, [chosen, k], waferPowers, options.criterion), candidates);
+            [best, position] = min(sign * trial);
+            best = sign * best;
+            if ~(sign * best < sign * current - TOLERANCE)
                 break
             end
             added = candidates(position);
             chosen = [chosen, added]; %#ok<AGROW>
             candidates(position) = [];
             steps{end + 1} = stepRow(FORMULA_AXES(a), numel(steps), added, terms.term(terms.k == added), best, ...
-                best - bic); %#ok<AGROW>
-            bic = best;
+                best - current); %#ok<AGROW>
+            current = best;
         end
         stepParts{a} = vertcat(steps{:});
         used{a} = sort(chosen);
@@ -93,7 +102,7 @@ for a = 1:2
 end
 excluded = setdiff(reshape(allTerms.k, 1, []), [used{:}]);
 selection = struct("method", method, "threshold", options.threshold, "maker", highOrder.maker, "used", {used}, ...
-    "excludedTerms", excluded, "messages", messages);
+    "excludedTerms", excluded, "messages", messages, "criterion", options.criterion);
 if method == "importance"
     selection.importance = vertcat(importanceParts{:});
 else
@@ -141,9 +150,11 @@ t(keep) = beta ./ standardError;
 tValues = t(1:nTerms);
 end
 
-function bic = totalBic(waferData, terms, chosen, waferPowers)
-% すべての Wafer の BIC の和：Σ [n ln(RSS/n) + p ln n]（点が列の数以下の Wafer は入れない）
-bic = 0;
+function value = criterionValue(waferData, terms, chosen, waferPowers, criterion)
+% ステップワイズの指標（点が列の数以下の Wafer は入れない）。bic・aic はすべての Wafer の和、adjr2 は Wafer の平均。
+% p は決まる列の数（決まらない列は数えない。足しても指標は良くならない）
+total = 0;
+adjusted = zeros(0, 1);
 mine = terms(ismember(terms.k, chosen), :);
 for w = 1:numel(waferData)
     [design, nuisance] = designOf(waferData{w}, mine, waferPowers);
@@ -155,13 +166,29 @@ for w = 1:numel(waferData)
     scale = sqrt(mean(design .^ 2, 1));
     scale(scale == 0) = 1;
     scaled = design ./ scale;
-    residual = waferData{w}.y - scaled * (scaled \ waferData{w}.y);
+    y = waferData{w}.y;
+    residual = y - scaled * (scaled \ y);
     rss = max(sum(residual .^ 2), realmin);
-    bic = bic + n * log(rss / n) + rank(scaled) * log(n);   % 決まらない列は数えない（足しても BIC は下がらない）
+    p = rank(scaled);
+    switch criterion
+        case "aic"
+            total = total + n * log(rss / n) + 2 * p;
+        case "adjr2"
+            tss = sum((y - mean(y)) .^ 2);
+            if tss > 0 && n > p
+                adjusted(end + 1, 1) = 1 - (rss / (n - p)) / (tss / (n - 1)); %#ok<AGROW>
+            end
+        otherwise
+            total = total + n * log(rss / n) + p * log(n);
+    end
+end
+value = total;
+if criterion == "adjr2"
+    value = mean(adjusted);   % 求められる Wafer が無ければ NaN（足さない）
 end
 end
 
-function row = stepRow(axisName, step, k, term, bic, change)
-row = table(string(axisName), step, k, string(term), bic, change, 'VariableNames', ...
-    ["axis", "step", "k", "term", "bic", "change"]);
+function row = stepRow(axisName, step, k, term, value, change)
+row = table(string(axisName), step, k, string(term), value, change, 'VariableNames', ...
+    ["axis", "step", "k", "term", "value", "change"]);
 end

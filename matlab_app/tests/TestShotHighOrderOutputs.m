@@ -93,6 +93,7 @@ classdef TestShotHighOrderOutputs < matlab.unittest.TestCase
                     "highOrderPenaltyOrders"));
             end
             empty = alignest.defaultSettings();
+            empty.highOrder.regularization = "l2";   % 正則化をかけるときは次数が要る（初期値は正則化なし）
             empty.highOrder.penaltyOrders = zeros(1, 0);
             testCase.verifyError(@() alignest.highOrderOptions(empty), 'alignest:highOrderPenaltyOrders');
             empty.highOrder.regularization = "none";
@@ -198,8 +199,9 @@ classdef TestShotHighOrderOutputs < matlab.unittest.TestCase
             cleanup = onCleanup(@() delete(app));
             c = app.Controls;
             regression = c.highOrderRegression;
-            testCase.verifyEqual(regression.regularization(1).Value, 'l2');
-            testCase.verifyEqual(find([regression.orders(1, :).Value]), 2:6, "初期値は2次以上");
+            testCase.verifyEqual(regression.regularization(1).Value, 'none', "初期値は正則化なし");
+            testCase.verifyEqual(regression.loss(1).Value, 'ols', "初期値は最小二乗");
+            testCase.verifyEqual(find([regression.orders(1, :).Value]), 2:6, "かける次数の初期値は2次以上");
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
             app.applyMapping();
             app.setHighOrderSource("data");

@@ -42,6 +42,7 @@ classdef TestOverlay < matlab.unittest.TestCase
             unit.marks.measX = 2 + 5 * marks.Xmm / 150 - 3 * marks.Ymm / 150 + 0.4 * marks.markXmm + shotOffset;
             unit.marks.measY = -1 + 2 * marks.Xmm / 150 + 0.2 * marks.markYmm - 0.1 * marks.markXmm - shotOffset;
             settings = alignest.defaultSettings();
+            settings.overlay.shotCommon = "linear";
             settings.overlay.perShot = "translation";
             choice = alignest.overlayChoice(settings);
             projector = alignest.overlayProjector(unit, choice, 150);
@@ -128,6 +129,7 @@ classdef TestOverlay < matlab.unittest.TestCase
             % 補正の当てはめ：Wafer 成分の式が1次なら次数 1 と、Shot 共通成分の式が Nikon の式なら nikon と同じ補正量
             unit = testCase.Data.units(2);
             settings = alignest.defaultSettings();
+            settings.overlay.perShot = "none";   % Shot ごとの成分を使わない（初期値は 1次）
             settings.overlay.shotCommon = "nikon";
             builtIn = alignest.overlayProjector(unit, alignest.overlayChoice(settings), 150);
             settings.overlay.waferUseFormula = true;

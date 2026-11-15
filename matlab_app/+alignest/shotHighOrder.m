@@ -194,7 +194,7 @@ summaryParts = cell(numel(wafers) + 1, 2);
 regionParts = cell(numel(wafers) + 1, 2, 2);
 counts = struct("skipped", [0, 0], "groups", [0, 0], "notConverged", 0, "noRobust", 0, "waferDropped", 0, ...
     "undetermined", strings(1, 0), "constant", strings(1, 0), "reducedGroups", [0, 0], "reducedTerms", strings(1, 0), ...
-    "rtDropped", 0, "rtNotConverged", 0, "commonMissing", 0);
+    "rtDropped", 0, "rtNotConverged", 0, "commonMissing", 0, "commonDropped", strings(1, 0));
 % 求めた・補正しなかった k の組の数（軸 × 範囲。1列目は内周と外周にまたがる組、2・3列目は内周・外周の組）
 [totalFitted, totalSkipped] = deal(zeros(2, 3));
 for w = 1:numel(wafers)
@@ -248,6 +248,8 @@ for w = 1:numel(wafers)
                 if ~isempty(common) && any(common.fit.ok)
                     commonParts{w, a} = coefficientRows(label, common.unit, FORMULA_AXES(a), common.terms, zeros(0, 2), ...
                         common.fit, zoneSplit, "Shot 共通");
+                    counts.commonDropped = unique([counts.commonDropped, FORMULA_AXES(a) + " の k" + ...
+                        string([common.dropped{:}])], 'stable');
                     if sequential
                         commonPart = commonFitted - commonWaferPart;   % 求めた Shot 共通の k の分（求められない範囲は 0）
                         commonPart(~isfinite(commonPart)) = 0;
@@ -942,12 +944,18 @@ if isempty(fitUnits)
 end
 unit = fitUnits(1);
 terms = axisTerms(unit.zones);
-if reduceGroups
-    terms = reduceGroupTerms(coordinates(unit.members, 1:2), unit.groupIndex, terms);
+% Shot 共通の k は、Wafer のすべての点の配置で決められる項だけにする（k1〜k6 は外さない）。正則化をかけない最小二乗では、
+% 点の位置が少ない（例：Shot の四隅だけ）と高次の項が低次の項と同じ値になって決まらず、Shot 共通をまったく求められないため
+% （正則化をかけた次数の項は、決まらなくても小さな値に決まる）。点が足りない Shot の扱いが「その組だけ項を減らす」でも同じ
+[terms, dropped] = reduceGroupTerms(coordinates(unit.members, 1:2), unit.groupIndex, terms);
+if ~reduceGroups && any(penalty.lambda > 0) && ~isempty(penalty.orders)
+    % 正則化をかけるときは、かけた次数の項は決まるので減らさない（以前と同じ結果）
+    terms = axisTerms(unit.zones);
+    dropped = cell(1, numel(terms));
 end
 fit = fitGroups(coordinates(unit.members, :), values(unit.members), unit.groupIndex, terms, waferPowers, penalty, ...
     fitOptions);
-info = struct("fit", fit, "unit", unit, "terms", {terms});
+info = struct("fit", fit, "unit", unit, "terms", {terms}, "dropped", {dropped});
 if ~any(fit.ok)
     return
 end
@@ -1267,6 +1275,10 @@ if alignest.highOrderSequential(options)
         messages(end) = messages(end) + "Shot ごとに使う項をすべて求め、正則化もかけないので、補正量・残差は Shot 共通を" + ...
             "引かないときと同じです（点が足りず項を減らした Shot を除く）。違いを見るときは「Shot ごとの次数」を下げるか、" + ...
             "正則化をかけてください。";
+    end
+    if ~isempty(counts.commonDropped)
+        messages(end + 1, 1) = "Shot 共通の k は、点の配置で決まらない項を外して求めました（" + ...
+            strjoin(counts.commonDropped, "・") + "）。";
     end
     if counts.commonMissing > 0
         messages(end + 1, 1) = sprintf(['⚠ Shot 共通の k を求められなかった Wafer が %d 個（dx・dy を別に数える）あり、' ...

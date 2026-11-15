@@ -3,6 +3,12 @@ classdef (Abstract) RunTab < appui.Core
     %   AlignmentEstimationApp（画面の本体）の一部。画面の部品は Controls、データ・結果は Core のプロパティに持つ。
     %   ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
 
+    properties (Constant, Access = {?appui.Core})
+        MEASURE_SELECT_NOTE = ['Shot の図では Shot、Mark 単位の図では Mark を指定します。Mark の指定は Mark 単位の計画だけに' ...
+            '効きます（必ず計測する Shot は、Mark 単位ではその Shot の Mark すべて）。「2. 評価の設定」の欄でも指定できます。']
+        MEASURE_BUTTON_WIDTHS = {170, 170, 115, 290}   % 計測マップのボタンの幅 [px]（標準の文字の大きさのとき）
+    end
+
     methods
         function results = runEvaluationNow(app, showProgress, pauseAfter)
             %RUNEVALUATIONNOW 評価を最初から実行して結果の画面を更新する。進み具合の画面の「一時中断」で止められ、
@@ -133,7 +139,7 @@ classdef (Abstract) RunTab < appui.Core
                     excludedShots=excludedShots, requiredMarks=requiredMarks, excludedMarks=excludedMarks);
                 % クリックで Shot（Mark 単位の学習パターンでは Mark）を必ず計測・計測しないに指定する
                 ax.ButtonDownFcn = @(source, event) app.onMeasureMapClicked(source, event, pairs(k, 1), ...
-                    any(spec(1).type == ["mark", "markd"]) || ~isempty(plan.markIndex));
+                    any(spec(1).type == alignest.markPlanTypes()) || ~isempty(plan.markIndex));
                 axesList(k) = ax;
                 plans(end + 1, 1) = orderfields(plan, alignest.planTemplate()); %#ok<AGROW>
                 lines = [lines; measurementLines(app, unit, plan)]; %#ok<AGROW>
@@ -270,19 +276,20 @@ classdef (Abstract) RunTab < appui.Core
 
         function setMeasurementSelection(app, kind, target, mode)
             %SETMEASUREMENTSELECTION 計測マップの指定（画面で Shot・Mark をクリックするのと同じ）。
-            %   kind："shot"（target は shotNo）・"mark"（target は "shotNo-markNo"）。mode："required"（必ず計測する）・
+            %   kind："shot"（target は shotNo）・"mark"（target は "shotNo-markNo"）。target は複数でもよい（範囲で選ぶ）。
+            %   mode："required"（必ず計測する）・
             %   "excluded"（計測しない。学習に使わず評価に使う）・"clear"（指定を外す）。設定 sampling.requiredShots・
             %   excludedShots・requiredMarks・excludedMarks を変え、計測マップを描いてあれば作り直す。
             sampling = app.Settings.sampling;
             if string(kind) == "shot"
-                target = double(target);
+                target = reshape(double(target), 1, []);
                 required = reshape(double(fieldOr(sampling, "requiredShots", zeros(1, 0))), 1, []);
                 excluded = reshape(double(fieldOr(sampling, "excludedShots", zeros(1, 0))), 1, []);
                 [required, excluded] = applySelection(required, excluded, target, string(mode));
                 app.Settings.sampling.requiredShots = unique(required);
                 app.Settings.sampling.excludedShots = unique(excluded);
             elseif string(kind) == "mark"
-                target = string(target);
+                target = reshape(string(target), 1, []);
                 alignest.parseMarkKeys(target);   % 形を確かめる
                 required = reshape(string(fieldOr(sampling, "requiredMarks", strings(1, 0))), 1, []);
                 excluded = reshape(string(fieldOr(sampling, "excludedMarks", strings(1, 0))), 1, []);
@@ -330,17 +337,20 @@ classdef (Abstract) RunTab < appui.Core
             lower = uigridlayout(grid, [1, 2], 'ColumnWidth', {'0.8x', '2.6x'}, 'Padding', 0, 'ColumnSpacing', 12);
             % 計測の指定：計測マップのクリックで、必ず計測する・計測しない Shot・Mark を指定する
             selectPanel = uipanel(lower, 'Title', '計測の指定');
-            selectGrid = uigridlayout(selectPanel, [5, 1], 'RowHeight', {'fit', 'fit', 'fit', '1x', 'fit'}, 'Padding', 8, ...
-                'RowSpacing', 6);
+            selectGrid = uigridlayout(selectPanel, [6, 1], 'RowHeight', {'fit', 'fit', 'fit', 'fit', '1x', 'fit'}, ...
+                'Padding', 8, 'RowSpacing', 6);
             modeGrid = uigridlayout(selectGrid, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
             label(modeGrid, 'クリックで', 1, 1);
             c.measureClickMode = uidropdown(modeGrid, 'Items', {'見るだけ', '必ず計測にする', '計測しないにする', '指定を外す'}, ...
                 'ItemsData', {'none', 'required', 'excluded', 'clear'}, 'Tooltip', ['計測マップの Shot（Mark 単位の学習パターンの' ...
                 '図では Mark）をクリックしたときにすること。計測しない Shot・Mark は学習に使わず、評価には使います。']);
             place(c.measureClickMode, 1, 2);
+            c.measureRange = uicheckbox(selectGrid, 'Text', '範囲で選ぶ（2点をクリック）', ...
+                'ValueChangedFcn', @(~, ~) app.clearMeasureRangeStart(), 'Tooltip', ['オン：図の2点（四角の向かい合う角）を' ...
+                'クリックすると、その四角に中心が入る Shot（Mark 単位の図では四角に入る Mark）をまとめて、上の「クリックで」の' ...
+                '指定にします。']);
             c.measureSelectNote = uilabel(selectGrid, 'WordWrap', 'on', 'FontColor', app.Palette.muted, 'UserData', "muted", ...
-                'Text', ['Shot の図では Shot、Mark 単位の図では Mark を指定します。Mark の指定は Mark 単位の計画だけに効きます' ...
-                '（必ず計測する Shot は、Mark 単位ではその Shot の Mark すべて）。「2. 評価の設定」の欄でも指定できます。']);
+                'Text', app.MEASURE_SELECT_NOTE);
             label(selectGrid, '指定した Shot・Mark');
             c.measureSelectionInfo = uitextarea(selectGrid, 'Editable', 'off', 'Value', {'（なし）'});
             c.clearMeasureSelections = uibutton(selectGrid, 'Text', '指定をすべて外す', ...
@@ -367,7 +377,8 @@ classdef (Abstract) RunTab < appui.Core
                 'ValueChangedFcn', onMeasureDisplay, 'Tooltip', ['同心円の制約を使うとき、区切りの半径（Shot 単位の計画は' ...
                 ' Shot 中心、Mark 単位の計画は Mark の半径で区画を分ける）を橙の一点鎖線で描きます。']);
             place(c.measureRings, 2, [3, 4]);
-            buttons = uigridlayout(mapGrid, [1, 4], 'ColumnWidth', {'fit', 'fit', 'fit', 'fit'}, 'Padding', 0);
+            % 決まった幅 [px]（文字の大きさに合わせて広がる）。'fit' では文字の大きさ・フォントによって文字が切れるため
+            buttons = uigridlayout(mapGrid, [1, 4], 'ColumnWidth', app.MEASURE_BUTTON_WIDTHS, 'Padding', 0);
             c.drawMeasure = uibutton(buttons, 'Text', '計測マップを作る', 'ButtonPushedFcn', onMeasure);
             c.saveMeasure = uibutton(buttons, 'Text', '図を画像で保存…', 'ButtonPushedFcn', @(~, ~) app.onSaveMeasurementMap());
             c.copyMeasure = uibutton(buttons, 'Text', '図をコピー', 'Tooltip', app.COPY_TOOLTIP, ...
@@ -662,7 +673,7 @@ classdef (Abstract) RunTab < appui.Core
                     text = text + "。この Wafer に無い、または計測値の無い shotNo：" + strjoin(string(details.missingNos.'), " ");
                 end
             end
-            if any(ismember(string(c.samplingMethod.Value), ["mark", "markd"]))
+            if any(ismember(string(c.samplingMethod.Value), alignest.markPlanTypes()))
                 % Mark 単位の計画で必ず計測する Mark（Wafer 中心に最も近い Mark・必ず計測する Shot の Mark・指定した Mark）
                 [requiredMarks, okRequired] = parseMarkText(c.requiredMarks.Value);
                 [excludedMarks, okExcluded] = parseMarkText(c.excludedMarks.Value);
@@ -879,7 +890,7 @@ classdef (Abstract) RunTab < appui.Core
             excludedMarks = excludedMarks(:);
         end
 
-        function onMeasureMapClicked(app, ~, event, unitIndex, markLevel)
+        function onMeasureMapClicked(app, source, event, unitIndex, markLevel)
             % 計測マップのクリック：「クリックで」の指定で、クリックした Shot（Mark 単位の図では最も近い Mark）を
             % 必ず計測・計測しない・指定を外すにして、計測マップを作り直す
             mode = string(app.Controls.measureClickMode.Value);
@@ -888,6 +899,10 @@ classdef (Abstract) RunTab < appui.Core
             end
             unit = app.Data.units(unitIndex);
             point = event.IntersectionPoint(1:2);
+            if app.Controls.measureRange.Value
+                onMeasureRangeClicked(app, source, unit, unitIndex, markLevel, point, mode);
+                return
+            end
             if markLevel
                 marks = unit.marks;
                 [distance, nearest] = min(hypot(marks.x - point(1), marks.y - point(2)));
@@ -906,6 +921,56 @@ classdef (Abstract) RunTab < appui.Core
                 runWithAlert(app, @() app.setMeasurementSelection("shot", shots.shotNo(find(inside, 1)), mode), ...
                     "指定できませんでした", "「2. 評価の設定」の学習 Shot の選び方を確かめてください。");
             end
+        end
+
+        function onMeasureRangeClicked(app, ax, unit, unitIndex, markLevel, point, mode)
+            % 範囲で選ぶ：1点目は角を覚えて印を描き、2点目で四角に入る Shot（Mark）をまとめて指定する
+            start = app.MeasureRangeStart;
+            if isempty(start) || start.unitIndex ~= unitIndex || start.markLevel ~= markLevel || ~isvalid(start.axes)
+                clearMeasureRangeStart(app);
+                hold(ax, 'on');
+                marker = plot(ax, point(1), point(2), '+', 'MarkerSize', 14, 'LineWidth', 2, 'Color', app.Palette.error, ...
+                    'HandleVisibility', 'off', 'HitTest', 'off');
+                hold(ax, 'off');
+                app.MeasureRangeStart = struct("unitIndex", unitIndex, "markLevel", markLevel, "point", point, "axes", ax, ...
+                    "marker", marker);
+                app.Controls.measureSelectNote.Text = '四角のもう1つの角をクリックしてください。';
+                return
+            end
+            corners = [start.point; point];
+            low = min(corners, [], 1);
+            high = max(corners, [], 1);
+            clearMeasureRangeStart(app);
+            if markLevel
+                marks = unit.marks;
+                inside = marks.x >= low(1) & marks.x <= high(1) & marks.y >= low(2) & marks.y <= high(2);
+                targets = unique(compose("%d-%d", marks.shotNo(inside), marks.markNo(inside)), 'stable');
+                kind = "mark";
+            else
+                shots = unit.shots;
+                inside = shots.Xmm >= low(1) & shots.Xmm <= high(1) & shots.Ymm >= low(2) & shots.Ymm <= high(2);
+                targets = unique(shots.shotNo(inside));
+                kind = "shot";
+            end
+            if isempty(targets)
+                app.Controls.measureSelectNote.Text = ['四角の中に ' char(ternary(markLevel, "Mark", "Shot の中心")) ...
+                    ' がありません。もう一度、2点をクリックしてください。'];
+                return
+            end
+            runWithAlert(app, @() app.setMeasurementSelection(kind, targets, mode), "指定できませんでした", ...
+                "「2. 評価の設定」の学習 Shot の選び方を確かめてください。");
+            app.Controls.measureSelectNote.Text = char(sprintf("%d 個の %s を指定しました。", numel(targets), ...
+                ternary(markLevel, "Mark", "Shot")));
+        end
+
+        function clearMeasureRangeStart(app)
+            % 範囲で選ぶの1点目（覚えた角と印）を消し、説明の文を元に戻す
+            start = app.MeasureRangeStart;
+            if ~isempty(start) && isvalid(start.marker)
+                delete(start.marker);
+            end
+            app.MeasureRangeStart = [];
+            app.Controls.measureSelectNote.Text = app.MEASURE_SELECT_NOTE;
         end
 
         function onClearMeasureSelections(app)
@@ -989,14 +1054,15 @@ end
 end
 
 function [required, excluded] = applySelection(required, excluded, target, mode)
-% 指定の一覧を変える：必ず計測（計測しないから外す）・計測しない（必ず計測から外す）・外す（どちらからも外す）
-required = required(required ~= target);
-excluded = excluded(excluded ~= target);
+% 指定の一覧を変える：必ず計測（計測しないから外す）・計測しない（必ず計測から外す）・外す（どちらからも外す）。
+% target は1つでも複数でもよい（行ベクトル）
+required = required(~ismember(required, target));
+excluded = excluded(~ismember(excluded, target));
 switch mode
     case "required"
-        required(end + 1) = target;
+        required = [required, target];
     case "excluded"
-        excluded(end + 1) = target;
+        excluded = [excluded, target];
     case "clear"
     otherwise
         error('alignest:measurementSelection', '指定は required・excluded・clear のいずれかです: %s', mode);

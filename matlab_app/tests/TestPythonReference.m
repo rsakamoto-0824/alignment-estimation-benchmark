@@ -213,6 +213,7 @@ classdef TestPythonReference < matlab.unittest.TestCase
 
         function iOptimalIsAsGoodAsPython(testCase)
             sampling = alignest.defaultSettings().sampling;
+            sampling.designFeatures = "XY";   % Python 版の基準モデル（X・Y の多項式）
             for level = levelNames(testCase)
                 nShots = str2double(extractAfter(level, 1));
                 unit = layoutUnit(testCase);

@@ -108,13 +108,16 @@ classdef (Abstract) Core < handle
         HighOrderConditions = struct("label", {}, "highOrder", {})  % 「7. Shot高次補正」の補正の比較の条件（名前と settings.highOrder）
         HighOrderConditionSelection = zeros(1, 0)  % 「補正の比較」の条件の表で選んでいる行
         HighOrderComparison = []  % 「7. Shot高次補正」の補正の比較の結果（compareHighOrderConditionsNow。表・条件ごとの結果と、比べた条件・入力）
-        HighOrderHistory = struct("number", {}, "time", {}, "description", {}, "nWafers", {}, "summary", {}, "settings", {})
-                                % 「7. Shot高次補正」の結果の履歴（計算するたびに足す。番号・時刻・説明・Wafer の数・すべての Wafer の評価・設定）
+        HighOrderHistory = struct("number", {}, "time", {}, "description", {}, "nWafers", {}, "summary", {}, "settings", {}, ...
+            "points", {}, "options", {}, "wafers", {}, "source", {})
+                                % 「7. Shot高次補正」の結果の履歴（計算するたびに足す。番号・時刻・説明・Wafer の数・すべての Wafer の評価・設定と、
+                                %  「2つの条件を並べる」に使う点の残差（必要な列だけ）・計算の設定・Wafer（名前と Shot の配置）・入力のデータの種類）
         HighOrderHistorySelection = zeros(1, 0)  % 「結果の履歴」の表で選んでいる行
         HighOrderTransfer = []  % 「7. Shot高次補正」の「他の Wafer の補正」の結果（alignest.transferHighOrder）
         HighOrderTermSelection = []  % 「7. Shot高次補正」の「k の選定」の結果（alignest.highOrderTermSelection）
         EstimatedCorrection = []     % 「4. 結果一覧」の「実測値と推定値の補正」の結果（alignest.estimatedCorrectionComparison）
         WaferRanking = []       % 「4. 結果一覧」の「Wafer のベスト・ワースト」の結果（alignest.waferRanking。結果が変わると求め直す）
+        MeasureRangeStart = []  % 「3. 実行」の計測マップで「範囲で選ぶ」の1点目（Wafer・図の種類・角の座標・図・印。無ければ []）
         MarkLayoutFile = []     % 「8. Mark配置の最適化」で読み込んだ Excel・CSV（raw・info：alignest.readHighOrderFile、mapping、
                                 %  wafers・coordinates・dataInfo：選んだ列で整理した入力（alignest.markLayoutFileData。まだなら dataInfo は []））
         MarkLayoutInput = []    % 「8. Mark配置の最適化」の今の入力の候補の Mark と Shot ごとの値（alignest.markCandidates。入力が無ければ []）
@@ -390,10 +393,12 @@ classdef (Abstract) Core < handle
                 c.estimatedCorrectionMethods, c.estimatedCorrectionGroup, c.estimatedCorrectionWafer, c.compareEstimatedCorrectionButton, ...
                 c.compareLayoutMethod, c.compareLayoutXAxis, c.compareLayoutErrorBar, ...
                 c.rankingMethod, c.rankingGroup, c.rankingOverallMetrics, ...
+                c.degradationXAxis, c.degradationYAxis, c.degradationWafers, c.degradationMethods, ...
                 c.filterResults.apply, c.filterMap.apply], 'Enable', 'off');
             showFilter(app);
             app.WaferRanking = [];
             showWaferRanking(app);
+            drawOverlayDegradation(app);
             app.Distribution = [];
             app.EstimatedCorrection = [];
             c.estimatedCorrectionTable.Data = table();
@@ -520,12 +525,22 @@ classdef (Abstract) Core < handle
             if isempty(items)
                 error('alignest:noFigure', '図がありません。先に図を描いてください。');
             end
+            % Shot 高次補正のヒストグラム（3段 × X・Y）：画面と同じ3段に並べ、凡例（画面では上の行の文字）は下に足す
+            histogramRows = string(figureName) == "highOrderHistogram" && numel(items) == 6;
             images = cell(1, numel(items));
             for k = 1:numel(items)
                 file = [tempname, '.png'];
                 exportgraphics(items(k), file, 'Resolution', app.IMAGE_RESOLUTION);
                 images{k} = imread(file);
                 delete(file);
+            end
+            if histogramRows
+                rows = {joinImages(images(1:2), app.IMAGE_GAP_PIXELS), joinImages(images(3:4), app.IMAGE_GAP_PIXELS), ...
+                    joinImages(images(5:6), app.IMAGE_GAP_PIXELS), legendImage(items(1), app.IMAGE_RESOLUTION)};
+                % 縦に並べる：行と列を入れ替えて横に並べ、元に戻す
+                turned = cellfun(@(image) permute(image, [2, 1, 3]), rows, 'UniformOutput', false);
+                pixels = permute(joinImages(turned, app.IMAGE_GAP_PIXELS), [2, 1, 3]);
+                return
             end
             pixels = joinImages(images, app.IMAGE_GAP_PIXELS);
         end
@@ -625,6 +640,27 @@ function restoreButtonText(button, text)
 if isvalid(button)
     button.Text = text;
 end
+end
+
+function pixels = legendImage(ax, resolution)
+% 図 ax の凡例だけの画像（同じ色・線種の線と名前。見えない図に描いて書き出す）。ヒストグラムを画像にするときに使う
+LEGEND_COLUMNS = 3;
+LEGEND_FONT_SIZE = 12;
+helper = figure('Visible', 'off', 'Color', 'w', 'Units', 'pixels', 'Position', [0, 0, 1000, 200]);
+cleanup = onCleanup(@() delete(helper));
+target = axes(helper, 'Visible', 'off');
+hold(target, 'on');
+items = flipud(findobj(ax, 'Type', 'histogram'));
+for k = 1:numel(items)
+    plot(target, NaN, NaN, 'Color', items(k).EdgeColor, 'LineStyle', items(k).LineStyle, 'LineWidth', 2, ...
+        'DisplayName', items(k).DisplayName);
+end
+legend(target, 'Location', 'north', 'Orientation', 'horizontal', 'Box', 'off', ...
+    'NumColumns', min(LEGEND_COLUMNS, max(numel(items), 1)), 'FontSize', LEGEND_FONT_SIZE, 'Interpreter', 'none');
+file = [tempname, '.png'];
+exportgraphics(helper, file, 'Resolution', resolution);
+pixels = imread(file);
+delete(file);
 end
 
 function joined = joinImages(images, gap)

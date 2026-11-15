@@ -226,17 +226,23 @@ classdef TestShotHighOrderZones < matlab.unittest.TestCase
             testCase.verifyNotEmpty(findall(c.highOrderAxes, 'Type', 'line', 'LineStyle', '-.'), "外周の境界の円");
             testCase.verifyTrue(contains(string(c.highOrderMapInfo.Text), "外周の境界"));
             % ヒストグラム：外周の Shot の補正前の値・Shot ごとの1次・高次補正の残差（どちらの補正もできた点）
-            histogram_ = app.drawHighOrderHistogram("run", 0, "外周");
+            % 上段・中段・下段 = すべて・内周・外周の Shot
+            histogram_ = app.drawHighOrderHistogram("run", 0);
             outerPoints = result.points(result.points.zone == "外周", :);
-            histogramX = histogram_(histogram_.axis == "X", :);
+            histogramX = histogram_(histogram_.axis == "X" & histogram_.region == "外周", :);
             testCase.verifyEqual(histogramX.n, repmat(nnz(isfinite(outerPoints.residualX + ...
                 outerPoints.linearResidualX)), 5, 1));
             testCase.verifyEqual(histogramX.name.', ["補正前の値", "Shot ごとの1次の残差", "Wafer 高次補正だけの残差", ...
                 "Wafer 高次補正＋Shot 共通補正の残差", "高次補正の残差"]);
             testCase.verifyEqual(unique(histogram_.axis).', ["X", "Y"], "X・Y を並べる");
-            testCase.verifyNotEmpty(c.highOrderHistogramAxes(2).Children);
-            one = app.drawHighOrderHistogram("run", 2, "all", 3);
-            testCase.verifyEqual(height(one), 2);
+            testCase.verifyEqual(unique(histogram_.region, 'stable').', ["すべて", "内周", "外周"], "3段");
+            allX = histogram_(histogram_.axis == "X" & histogram_.region == "すべて", :);
+            innerX = histogram_(histogram_.axis == "X" & histogram_.region == "内周", :);
+            testCase.verifyEqual(allX.n, innerX.n + histogramX.n, "すべて = 内周 + 外周");
+            testCase.verifyEqual(numel(c.highOrderHistogramAxes), 6);
+            testCase.verifyNotEmpty(c.highOrderHistogramAxes(6).Children);
+            one = app.drawHighOrderHistogram("run", 2, 3);
+            testCase.verifyEqual(height(one), 6, "1つの値 × X・Y × 3段");
             % Shot ごと + Wafer 成分（先に引く）
             app.setHighOrderSettings(unit="shot", waferOrder=2, outerMaker="none");
             perShot = app.computeHighOrder(1);
@@ -275,8 +281,8 @@ classdef TestShotHighOrderZones < matlab.unittest.TestCase
             details = c.highOrderPairConditions.Data;
             testCase.verifyEqual(string(details.Properties.VariableNames), ["項目", "基準（左）", "比べる条件（右）"]);
             testCase.verifyTrue(all(ismember(["Wafer レベルの補正", "Shot 共通の補正", "Shot ごとの補正", "X の λ", "Y の Huber の c"], details.("項目"))));
-            fromConditions = app.drawHighOrderHistogram("comparison", 0, "all");
-            testCase.verifyEqual(height(fromConditions), 6);
+            fromConditions = app.drawHighOrderHistogram("comparison", 0);
+            testCase.verifyEqual(height(fromConditions(fromConditions.region == "すべて", :)), 6);
             file = [tempname, '.xlsx'];
             app.exportHighOrderTo(file);
             sheets = string(sheetnames(file));

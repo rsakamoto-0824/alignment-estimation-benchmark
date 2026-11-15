@@ -9,7 +9,8 @@ settings.data.validRadiusMm = 150;      % この半径以上の点は除く
 settings.data.coordinateUnits = alignest.coordinateUnits();
 settings.data.excludeZeroMeasurements = false; % measX・measY がともに0の入力行を除く
 settings.data.excludeOutliers = false;  % Wafer ごとに平均 ± outlierSigma × σ の外の Mark を異常値として除く（X か Y が外れたら両方）
-settings.data.outlierSigma = 3;          % 異常値の除外の n（σ の何倍の外を除くか）
+settings.data.outlierSigma = 3;          % 異常値の除外の n（ばらつきの何倍の外を除くか）
+settings.data.outlierMethod = "sigma";   % 異常値の判定：sigma（平均と σ）・mad（中央値と 1.4826 × MAD）
 settings.data.excludeUnmeasuredRecords = false; % StsX・StsY のどちらかが−1の入力行を除く
 settings.data.directionRule = "serpentine";  % Direction が無い行に Scan 方向を付ける規則（alignest.directionRules。一筆書き）
 settings.data.invertDirection = false;  % 規則で付ける 1 と 2 を入れ替える
@@ -35,7 +36,7 @@ settings.factors.y.columns = strings(1, 0);
 % 学習に使う Shot の選び方
 % 選び方（複数選ぶと、同じ評価の中で選び方どうしを比べる。alignest.buildPlanSpecs）：ioptimal（制約付き I 最適）／
 % doptimal（制約付き D 最適）／random（制約つきランダム）／excel（Excel ファイルで指定：パターン・優先順。Mark 単位も）／
-% mark（Mark 単位の I 最適）／markd（Mark 単位の D 最適）
+% mark（Mark 単位の I 最適）／markd（Mark 単位の D 最適）／markrandom（Mark 単位の制約つきランダム。randomRepeats 回）
 settings.sampling.method = "ioptimal";
 settings.sampling.nShotsStart = 10;     % 学習 Shot 数は 開始・終了・刻み で決める（I 最適・ランダム）
 settings.sampling.nShotsEnd = 40;
@@ -52,7 +53,9 @@ settings.sampling.layoutPlans = strings(0, 1);   % Excel ファイルで指定�
 settings.sampling.layoutFile = "";               % 読み込んだ Excel ファイルの名前（表示・記録用）
 settings.sampling.requiredShots = zeros(1, 0);   % 必ず計測する shotNo（I 最適・ランダム。拡張 I 最適計画）
 settings.sampling.requireOuterShots = false;     % 最外周の Shot（alignest.outerShots）をすべて必ず計測する
-settings.sampling.designOrder = 5;      % I 最適の基準モデル（XY 多項式の次数、5次で21項）
+settings.sampling.designOrder = 5;      % I 最適の基準モデルの多項式の次数
+settings.sampling.designFeatures = "XYR"; % I 最適の基準モデルの説明変数：XYR（X・Y・半径。5次で36項）・XY（X・Y。5次で21項）
+                                        % （alignest.basis.designPolynomial。I 基準・D 基準もこのモデルで求める）
 settings.sampling.exchangeStarts = 10;  % 交換法の初期配置の数（Python 版は30）
 settings.sampling.exchangeMaxIterations = 300;
 settings.sampling.constraints.radialZoneEdgesMm = [67.5, 105];  % 同心円の区切り：Shot 中心の半径 [mm]（半径 150 mm の Wafer が前提）
@@ -97,8 +100,8 @@ settings.display.scan2Color = [0.58, 0.20, 0.70];  % Scan 方向 2 の色（既�
 
 % Overlay 補正の評価（推定誤差で Overlay 残差がどれだけ増えるか。alignest.overlayChoice）。すべて「なし」なら評価しない
 settings.overlay.waferOrder = 1;         % Wafer 成分：Shot 中心の座標の多項式の次数（0 = なし、1 = 並進・倍率・回転・直交度）
-settings.overlay.shotCommon = "linear";  % Shot 共通成分：none・linear（k1〜k6）・asml・canon・nikon・formula（下の式）
-settings.overlay.perShot = "none";       % Shot ごとの成分：none・translation（k1・k2）・linear（k1〜k6）・formula（下の式）
+settings.overlay.shotCommon = "none";    % Shot 共通成分：none・linear（k1〜k6）・asml・canon・nikon・formula（下の式）
+settings.overlay.perShot = "linear";     % Shot ごとの成分：none・linear（k1〜k6）・formula（下の式）。以前の translation（k1・k2）も読める
 % 補正の式を入力するとき（alignest.parseCorrectionFormula）。Wafer 成分は waferUseFormula が true なら次数の代わりに使う。
 % 式の x・y は、Wafer 成分では Shot 中心の座標、Shot 共通成分では Shot 内の座標。係数は最小二乗で求める
 settings.overlay.waferUseFormula = false;
@@ -107,7 +110,7 @@ settings.overlay.shotFormula = struct("dx", "k1 + k3*x + k5*y", "dy", "k2 + k4*y
 settings.overlay.perShotFormula = struct("dx", "k1 + k3*x + k5*y", "dy", "k2 + k4*y + k6*x");  % Shot ごとの成分の式（Shot 内の座標）
 
 % Shot 高次補正の評価（「7. Shot高次補正」のタブ。alignest.highOrderOptions。推定の評価には使わない）
-settings.highOrder.maker = "nikon";        % 補正の式：asml（k1〜k19 の全項）・canon・nikon（Overlay 計測ルールの式）・
+settings.highOrder.maker = "custom";       % 補正の式：asml（k1〜k19 の全項）・canon・nikon（Overlay 計測ルールの式）・
                                            % custom（カスタム：k1〜k38 から選ぶ）
 settings.highOrder.unit = "common";        % k のくくり：common（Wafer 内の Shot で共通）・scan（Scan 方向ごと）・row（Shot 行の
                                            % 偶奇ごと）・shot（Shot ごと）
@@ -135,24 +138,24 @@ settings.highOrder.shortage = "reduceAll";  % 点が足りない k の組：redu
                                            % だけ項を減らす）・skip（その組は補正しない）
 settings.highOrder.vifThreshold = 10;      % 「VIF で選ぶ」のしきい値（すべての項の VIF がこれより小さくなるまで高次項を外す）
 % 回帰（loss・huberTuning・regularization・lambda）は [X, Y] の2つで X・Y 別にできる（1つなら X・Y で同じ）
-settings.highOrder.loss = "huber";         % 回帰の損失関数：ols（最小二乗）・huber（Huber）・lad（最小絶対偏差）
+settings.highOrder.loss = "ols";           % 回帰の損失関数：ols（最小二乗）・huber（Huber）・lad（最小絶対偏差）
 settings.highOrder.huberTuning = 3;        % Huber の定数 c（大きいほど最小二乗に近い。1.345 で正規分布の誤差のとき効率 95%）
-settings.highOrder.regularization = "l2";  % 正則化：none（なし）・l2（係数を小さくする）・l1（効かない項の係数を 0 にする）
+settings.highOrder.regularization = "none"; % 正則化：none（なし）・l2（係数を小さくする）・l1（効かない項の係数を 0 にする）
 settings.highOrder.penaltyOrders = 2:6;    % 正則化をかける項の次数（1〜6 から選ぶ。定数 k1・k2 と Wafer 成分にはかけない）
 settings.highOrder.penaltyOrdersY = -1;    % Y の正則化をかける項の次数（-1 なら X と同じ）
-settings.highOrder.lambda = 0.1;           % 正則化の強さ λ（列を平均0・標準偏差1にそろえた係数に対して）
+settings.highOrder.lambda = 1e-5;          % 正則化の強さ λ（列を平均0・標準偏差1にそろえた係数に対して。正則化をかけるときに使う）
 
 % 「8. Mark配置の最適化」：Shot 高次補正の計測 Mark の配置を、Mark の数ごとに I 最適計画で選び、補正した制御残差と比べる
 % （alignest.markLayoutStudy）。補正の式・回帰の項目の意味は highOrder と同じ
 settings.markLayout.maker = "nikon";        % 補正の式：asml・canon・nikon・custom（k1〜k38 から選ぶ）
 settings.markLayout.excludedTerms = zeros(1, 0);  % 使わない k の番号（「VIF で選ぶ」・画面で外した項。k1〜k6 は外さない）
 settings.markLayout.vifThreshold = 10;      % 「VIF で選ぶ」のしきい値（VIF は候補の Mark の位置で求める）
-settings.markLayout.loss = "huber";         % 回帰の損失関数：ols・huber・lad
+settings.markLayout.loss = "ols";           % 回帰の損失関数：ols・huber・lad（highOrder と同じ初期値）
 settings.markLayout.huberTuning = 3;        % Huber の定数 c
-settings.markLayout.regularization = "l2";  % 正則化：none・l2・l1
+settings.markLayout.regularization = "none"; % 正則化：none・l2・l1
 settings.markLayout.penaltyOrders = 2:6;    % 正則化をかける項の次数（1〜6）
 settings.markLayout.penaltyOrdersY = -1;    % Y の正則化をかける項の次数（-1 なら X と同じ）
-settings.markLayout.lambda = 0.1;           % 正則化の強さ λ
+settings.markLayout.lambda = 1e-5;          % 正則化の強さ λ
 settings.markLayout.minMarks = 0;           % 計測する Mark の数の最低数（0 = 使う項の数。必ず計測する Mark より少なくしない）
 settings.markLayout.maxMarks = 0;           % 計測する Mark の数の最大数（0 = すべての候補の Mark）
 settings.markLayout.starts = 5;             % Mark の数ごとに I 最適な配置を探す始め方の数（多いほどよい配置が見つかりやすい）

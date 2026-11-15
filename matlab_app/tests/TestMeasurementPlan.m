@@ -139,7 +139,7 @@ classdef TestMeasurementPlan < matlab.unittest.TestCase
             spec = struct("type", "ioptimal", "nShots", 20, "repeat", 1, "label", "", "group", "", "shotNos", []);
             sampling.exchangeStarts = 2;
             plan = alignest.planTrainingShots(unit, spec, sampling, 150);
-            nTerms = (sampling.designOrder + 1) * (sampling.designOrder + 2) / 2;
+            nTerms = size(alignest.basis.designPolynomial(0, 0, sampling.designOrder, sampling.designFeatures), 2);   % 基準モデルの項数
             testCase.verifyEqual(plan.efficiencyI, nTerms / plan.criterionI, 'RelTol', 1e-12);
             testCase.verifyEqual(plan.efficiencyD, 1 / plan.criterionD, 'RelTol', 1e-12);
             testCase.verifyTrue(plan.efficiencyI > 0 && plan.efficiencyI < nearlyAll.efficiencyI, ...

@@ -676,7 +676,7 @@ classdef (Abstract) ResultsTab < appui.Core
             label(chartControls, '横軸', 1, 1);
             c.chartXAxis = uidropdown(chartControls, 'Items', {'学習 Shot 数', ...
                 'I 基準と D 基準', 'I 効率と D 効率（全計測に対する）'}, 'ItemsData', {'plan', 'criteria', 'efficiency'}, ...
-                'Tooltip', ['学習 Shot の組の I 基準 tr(M⁻¹) と D 基準 det(M)^(−1/p)（XY 多項式の基準モデル）、または全計測に' ...
+                'Tooltip', ['学習 Shot の組の I 基準 tr(M⁻¹) と D 基準 det(M)^(−1/p)（「2. 評価の設定」の I 最適の基準モデル）、または全計測に' ...
                 '対する I 効率・D 効率 [%] に対する推定誤差。点は学習パターンの列ごとの Wafer の集計。基準・効率は Wafer の平均。'], ...
                 'ValueChangedFcn', @(~, ~) app.drawChart());
             place(c.chartXAxis, 1, 2);
@@ -766,6 +766,40 @@ classdef (Abstract) ResultsTab < appui.Core
             place(c.compareLayoutTable, 2, 2);
             c.compareLayoutInfo = uilabel(layoutGrid, 'WordWrap', 'on', 'Text', '');
             place(c.compareLayoutInfo, 3, [1, 2]);
+            % 補正の悪化：推定誤差・計測数に対する、推定による重ね合わせ補正（Overlay 補正）の悪化（alignest.overlayDegradation）
+            c.degradationTab = uitab(c.resultTabs, 'Title', '補正の悪化');
+            degradationGrid = uigridlayout(c.degradationTab, [3, 2], 'RowHeight', {'fit', '1x', 'fit'}, ...
+                'ColumnWidth', {'1x', 300}, 'Padding', 8, 'ColumnSpacing', 12);
+            registerResponsiveColumn(app, degradationGrid, 2);
+            degradationControls = uigridlayout(degradationGrid, [1, 5], 'ColumnWidth', {'fit', 240, 'fit', 240, 'fit'}, ...
+                'Padding', 0);
+            place(degradationControls, 1, 1);
+            onDegradation = @(~, ~) app.drawOverlayDegradation();
+            label(degradationControls, '横軸', 1, 1);
+            c.degradationXAxis = uidropdown(degradationControls, 'Items', {'推定誤差 RMSE', ...
+                '計測する Mark の数', '学習 Shot 数'}, 'ItemsData', {'error', 'marks', 'shots'}, 'Enable', 'off', ...
+                'ValueChangedFcn', onDegradation, 'Tooltip', ['推定誤差：学習しなかった点の RMSE（X・Y 合計。上の「集計」で' ...
+                'Wafer をまとめる）。計測する Mark の数・学習 Shot 数：学習パターンの列ごとの Wafer の平均。']);
+            place(c.degradationXAxis, 1, 2);
+            label(degradationControls, '縦軸', 1, 3);
+            c.degradationYAxis = uidropdown(degradationControls, 'Items', {'推定による増加', '推定による変化'}, ...
+                'ItemsData', {'overlayIncrease', 'overlayChange'}, 'Enable', 'off', 'ValueChangedFcn', onDegradation, ...
+                'Tooltip', ['推定による増加：推定値で補正した残差の |平均|+3σ − 実測値で補正した残差の |平均|+3σ（推定で' ...
+                '重ね合わせ補正がどれだけ悪くなるか）。推定による変化：推定値で補正した残差 − 実測値で補正した残差 の' ...
+                ' |平均|+3σ。どちらも X・Y 別で、上の「集計」で Wafer をまとめます。']);
+            place(c.degradationYAxis, 1, 4);
+            c.degradationWafers = uicheckbox(degradationControls, 'Text', 'Wafer ごとの点', 'Enable', 'off', ...
+                'ValueChangedFcn', onDegradation);
+            place(c.degradationWafers, 1, 5);
+            degradationAxesGrid = uigridlayout(degradationGrid, [1, 2], 'Padding', 0, 'ColumnSpacing', 8);
+            place(degradationAxesGrid, 2, 1);
+            c.degradationAxes = [uiaxes(degradationAxesGrid), uiaxes(degradationAxesGrid)];
+            label(degradationGrid, '描く手法', 1, 2);
+            c.degradationMethods = uilistbox(degradationGrid, 'Items', {}, 'Multiselect', 'on', 'Enable', 'off', ...
+                'ValueChangedFcn', onDegradation);
+            place(c.degradationMethods, 2, 2);
+            c.degradationInfo = uilabel(degradationGrid, 'WordWrap', 'on', 'Text', '');
+            place(c.degradationInfo, 3, [1, 2]);
 
             analysisTab = uitab(c.resultTabs, 'Title', '推定値と誤差の分布');
             analysisGrid = uigridlayout(analysisTab, [5, 1], 'RowHeight', {'fit', '3x', 96, '1x', 'fit'}, ...
@@ -1257,6 +1291,12 @@ classdef (Abstract) ResultsTab < appui.Core
             c.compareLayoutMethod.ItemsData = 1:numel(labels);
             c.compareLayoutMethod.Value = order(1);
             set([c.compareLayoutMethod, c.compareLayoutXAxis, c.compareLayoutErrorBar], 'Enable', 'on');
+            % 補正の悪化（初めはグラフと同じ手法。Overlay 補正を評価した結果だけ）
+            c.degradationMethods.Items = cellstr(labels);
+            c.degradationMethods.ItemsData = num2cell(1:numel(labels));
+            c.degradationMethods.Value = c.chartMethods.Value;
+            set([c.degradationXAxis, c.degradationYAxis, c.degradationWafers, c.degradationMethods], 'Enable', ...
+                onOff(isfield(results, "overlayEvaluated") && results.overlayEvaluated));
             set([c.export, c.saveChart, c.copyChart], 'Enable', 'on');
             imported = isImportedResults(results);
             c.importEstimates.Enable = onOff(imported);
@@ -1448,6 +1488,7 @@ classdef (Abstract) ResultsTab < appui.Core
             c.comparisonNote.Text = sprintf('基準の手法：%s', comparison.Properties.UserData.referenceLabel);
             drawChart(app);
             drawLayoutComparison(app);
+            drawOverlayDegradation(app);
         end
 
         function drawChart(app)
@@ -1502,6 +1543,74 @@ classdef (Abstract) ResultsTab < appui.Core
                 legend(ax, 'Location', 'northeast', 'NumColumns', 1, 'Interpreter', 'none', 'FontSize', 10, 'Box', 'off');
             end
             styleAxes(app, ax, app.AXES_FONT_SIZE);
+        end
+
+        function degradation = drawOverlayDegradation(app)
+            % 「補正の悪化」：推定誤差（または計測する Mark の数・学習 Shot 数）に対する、推定による重ね合わせ補正の悪化
+            % （X・Y の2つの図）。点は手法 × 学習パターンの列（上の「集計」で Wafer をまとめた値）、線は手法ごと。
+            % 「Wafer ごとの点」で Wafer の点も薄く重ねる。degradation は alignest.overlayDegradation の結果（描けなければ []）
+            MARKERS = {'o', 's', 'd', '^', 'v', '>', '<', 'p', 'h', 'x'};
+            c = app.Controls;
+            axesList = c.degradationAxes;
+            for ax = axesList
+                cla(ax, 'reset');
+                legend(ax, 'off');
+            end
+            degradation = [];
+            if isempty(app.Results)
+                c.degradationInfo.Text = '';
+                return
+            end
+            results = app.Results;
+            if ~(isfield(results, "overlayEvaluated") && results.overlayEvaluated)
+                c.degradationInfo.Text = ['Overlay 補正を評価していない結果です（「2. 評価の設定」の Overlay 補正の評価を' ...
+                    '「なし」以外にして評価すると描けます）。'];
+                return
+            end
+            xKind = string(c.degradationXAxis.Value);
+            yKind = string(c.degradationYAxis.Value);
+            statistic = string(c.statistic.Value);
+            degradation = alignest.overlayDegradation(results, xKind, yKind, statistic);
+            selected = cell2mat(c.degradationMethods.Value);
+            xLabels = struct("error", "推定誤差 RMSE（X・Y 合計） [nm]", "marks", "計測する Mark の数", "shots", "学習 Shot 数");
+            yLabels = struct("overlayIncrease", "推定による増加 [nm]", "overlayChange", "推定による変化 |m|+3σ [nm]");
+            axisNames = ["X", "Y"];
+            for a = 1:2
+                ax = axesList(a);
+                hold(ax, 'on');
+                colors = ax.ColorOrder;
+                for k = 1:numel(selected)
+                    m = selected(k);
+                    color = colors(mod(k - 1, size(colors, 1)) + 1, :);
+                    if c.degradationWafers.Value
+                        mine = degradation.wafers(degradation.wafers.methodIndex == m, :);
+                        scatter(ax, mine.x, mine.("value" + axisNames(a)), 18, color, 'filled', 'MarkerFaceAlpha', 0.3, ...
+                            'HandleVisibility', 'off');
+                    end
+                    rows = degradation.points(degradation.points.methodIndex == m, :);
+                    [~, order] = sort(rows.x);
+                    rows = rows(order, :);
+                    plot(ax, rows.x, rows.("value" + axisNames(a)), ['-', MARKERS{mod(k - 1, numel(MARKERS)) + 1}], ...
+                        'Color', color, 'LineWidth', 1.5, 'MarkerSize', 7, 'DisplayName', results.methods(m).label);
+                end
+                yline(ax, 0, ':', 'HandleVisibility', 'off');
+                hold(ax, 'off');
+                xlabel(ax, xLabels.(xKind));
+                ylabel(ax, yLabels.(yKind));
+                title(ax, axisNames(a) + " 成分（Wafer の" + statisticLabel(statistic) + "）");
+                grid(ax, 'on');
+            end
+            if ~isempty(selected)
+                legend(axesList(1), 'Location', 'best', 'Interpreter', 'none', 'FontSize', 10, 'Box', 'off');
+            end
+            styleAxes(app, axesList, app.AXES_FONT_SIZE);
+            if isempty(selected)
+                c.degradationInfo.Text = '右の一覧で描く手法を選んでください。';
+            else
+                c.degradationInfo.Text = char(sprintf(['点は手法 × 学習パターンの列（%d 点）、線は手法ごと。縦軸が 0 なら推定値で' ...
+                    '補正しても実測値で補正したのと同じ、大きいほど推定で重ね合わせ補正が悪くなります。'], ...
+                    nnz(ismember(degradation.points.methodIndex, selected))));
+            end
         end
 
         function drawCriteriaChart(app, kind)

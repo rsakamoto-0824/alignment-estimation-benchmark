@@ -235,6 +235,7 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
                 points.(column) = points.(column) + (points.direction == 2) .* shift;   % Scan 方向 2 の Shot は other の k
             end
             settings = alignest.defaultSettings();
+            settings.highOrder.maker = "nikon";   % 点は Nikon の式の項で作った
             settings.highOrder.loss = "ols";
             settings.highOrder.l2 = false;
             settings.highOrder.unit = "scan";
@@ -336,6 +337,7 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             testCase.verifyTrue(all(isnan(result.points.residualX(~first))));
             testCase.verifyTrue(any(contains(result.messages, "補正しなかった Shot")));
             settings.highOrder.l2 = true;
+            settings.highOrder.regularization = "l2";   % 初期値は正則化なしなので、L2 を選ぶ
             settings.highOrder.lambda = 0.1;
             result = alignest.shotHighOrder(struct("label", "W1", "points", mixed), settings);
             testCase.verifyTrue(all(isfinite(result.points.residualX)));
@@ -396,7 +398,12 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
         function optionsAreValidated(testCase)
             settings = alignest.defaultSettings();
             options = alignest.highOrderOptions(settings);
-            testCase.verifyEqual(options.maker, "nikon");
+            testCase.verifyEqual(options.maker, "custom", "初期値はカスタムの式");
+            testCase.verifyEqual([options.loss, options.regularization], ["ols", "ols", "none", "none"], ...
+                "初期値は最小二乗・正則化なし（X・Y）");
+            testCase.verifyEqual(options.lambda, [1e-5, 1e-5]);
+            settings.highOrder.maker = "nikon";
+            options = alignest.highOrderOptions(settings);
             testCase.verifyTrue(contains(options.description, "Nikon の式（dx 12 / 12 項・dy 15 / 15 項）"));
             settings.highOrder.unit = "shot";
             options = alignest.highOrderOptions(settings);
@@ -419,7 +426,7 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
                 testCase.verifyError(@() alignest.highOrderOptions(broken), bad{k, 3});
             end
             old = rmfield(alignest.defaultSettings(), "highOrder");
-            testCase.verifyEqual(alignest.highOrderOptions(old).maker, "nikon", "以前の設定は初期値");
+            testCase.verifyEqual(alignest.highOrderOptions(old).maker, "custom", "以前の設定は初期値");
             % 設定ファイルの読み書きで highOrder が残る。評価を続きから再開できるかの比較には使わない
             settings.highOrder.excludedTerms = [55, 41];
             file = [tempname, '.json'];
@@ -493,6 +500,8 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
             app.applyMapping();
             app.setHighOrderSource("data");
+            % 以前の初期値（Nikon の式・Huber・L2 λ = 0.1）で確かめる
+            app.setHighOrderSettings(maker="nikon", loss="huber", regularization="l2", lambda=0.1);
             testCase.verifyEqual(numel(c.highOrderWafer.Items), 5);
             testCase.verifyEqual(size(c.highOrderTermTable.Data, 1), 27, "Nikon の dx 12 項・dy 15 項");
             result = app.computeHighOrder(0);

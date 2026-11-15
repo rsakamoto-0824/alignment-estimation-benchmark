@@ -69,8 +69,8 @@ classdef (Abstract) SettingsTab < appui.Core
             label(s, '選び方', 1, [1, 2]);
             c.samplingMethod = uilistbox(s, 'Items', {'制約付き I 最適', '制約付き D 最適', ...
                 '制約つきランダム', 'Excel ファイルで指定', ...
-                'Mark 単位の I 最適', 'Mark 単位の D 最適'}, ...
-                'ItemsData', {'ioptimal', 'doptimal', 'random', 'excel', 'mark', 'markd'}, ...
+                'Mark 単位の I 最適', 'Mark 単位の D 最適', 'Mark 単位の制約つきランダム'}, ...
+                'ItemsData', {'ioptimal', 'doptimal', 'random', 'excel', 'mark', 'markd', 'markrandom'}, ...
                 'Multiselect', 'on', 'Value', {'ioptimal'}, 'ValueChangedFcn', onChange, ...
                 'Tooltip', ['D 最適：I 最適と同じ制約で det(M) を大きくする組。Mark 単位：計測する Shot ではなく Mark を選ぶ' ...
                 '（既定では全 Shot を1点以上計測し、Mark 番号の割合を全計測とそろえる）。複数選ぶと、結果一覧の' ...
@@ -165,8 +165,15 @@ classdef (Abstract) SettingsTab < appui.Core
             label(s, 'I 最適の基準モデル', 26, 2);
             c.slack = uispinner(s, 'Limits', [0, 10], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
             place(c.slack, 27, 1);
-            c.designOrder = uispinner(s, 'Limits', [1, 8], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
-            place(c.designOrder, 27, 2);
+            % I 最適の基準モデル：次数と説明変数（X・Y・半径、または X・Y の多項式。alignest.basis.designPolynomial）
+            designGrid = uigridlayout(s, [1, 2], 'ColumnWidth', {70, '1x'}, 'Padding', 0);
+            place(designGrid, 27, 2);
+            c.designOrder = uispinner(designGrid, 'Limits', [1, 8], 'RoundFractionalValues', 'on', 'ValueChangedFcn', ...
+                onChange, 'Tooltip', '基準モデルの多項式の次数。');
+            c.designFeatures = uidropdown(designGrid, 'Items', {'X, Y, 半径', 'X, Y'}, 'ItemsData', {'XYR', 'XY'}, ...
+                'ValueChangedFcn', onChange, 'Tooltip', ['基準モデルの説明変数。X, Y, 半径：X・Y・半径 r の多項式' ...
+                '（r の偶数乗は X・Y の多項式と同じなので、X・Y の多項式と r × X・Y の多項式。5次で 36 項）。X, Y：X・Y の' ...
+                '多項式（5次で 21 項）。']);
             label(s, '交換法の初期配置の数', 28, [1, 2]);
             % 入力欄と時間の目安（目安の文が長くても入力欄が縦に伸びないように、小さな格子に入れる）と、Mark 単位の計画
             exchangeGrid = uigridlayout(s, [10, 2], 'ColumnWidth', {'1x', '1x'}, 'RowHeight', repmat({'fit'}, 1, 10), ...
@@ -302,8 +309,8 @@ classdef (Abstract) SettingsTab < appui.Core
             [c.overlayShotDx, c.overlayShotDy] = formulaFields(s, 39, 2, onChange, ['x・y は Shot 内の座標' ...
                 '（markXmm・markYmm、Shot 中心から）。' formulaHelp]);
             label(s, 'Shot ごとの成分', 40, 1);
-            c.overlayPerShot = uidropdown(s, 'Items', {'なし', '並進', '1次', '式を入力'}, ...
-                'ItemsData', {'none', 'translation', 'linear', 'formula'}, 'ValueChangedFcn', onChange, ...
+            c.overlayPerShot = uidropdown(s, 'Items', {'なし', '1次', '式を入力'}, ...
+                'ItemsData', {'none', 'linear', 'formula'}, 'ValueChangedFcn', onChange, ...
                 'Tooltip', '式を入力：下の dx・dy の式の係数を、Shot ごとに別々に求めます（x・y は Shot 内の座標）。');
             place(c.overlayPerShot, 41, 1);
             [c.overlayPerShotDx, c.overlayPerShotDy] = formulaFields(s, 42, 1, onChange, ['x・y は Shot 内の座標' ...
@@ -536,7 +543,8 @@ classdef (Abstract) SettingsTab < appui.Core
             c.excludeUnmeasuredRecords.Value = s.data.excludeUnmeasuredRecords;
             c.dataExcludeOutliers.Value = logical(fieldOr(s.data, "excludeOutliers", false));
             c.dataOutlierSigma.Value = double(fieldOr(s.data, "outlierSigma", 3));
-            c.dataOutlierSigma.Enable = onOff(c.dataExcludeOutliers.Value);
+            c.dataOutlierMethod.Value = char(string(fieldOr(s.data, "outlierMethod", "sigma")));
+            set([c.dataOutlierSigma, c.dataOutlierMethod], 'Enable', onOff(c.dataExcludeOutliers.Value));
             c.directionRule.Value = char(s.data.directionRule);
             c.invertDirection.Value = s.data.invertDirection;
             c.invertDirection.Enable = onOff(s.data.directionRule ~= "none");
@@ -591,6 +599,7 @@ classdef (Abstract) SettingsTab < appui.Core
             c.scanConstraint.Value = s.sampling.constraints.scanDirection;
             c.slack.Value = s.sampling.constraints.slack;
             c.designOrder.Value = s.sampling.designOrder;
+            c.designFeatures.Value = char(string(fieldOr(s.sampling, "designFeatures", "XYR")));
             c.exchangeStarts.Value = s.sampling.exchangeStarts;
             c.outerRadius.Value = s.evaluation.outerRadiusMm;
             c.removeLinear.Value = s.evaluation.removeLinear;
@@ -623,7 +632,12 @@ classdef (Abstract) SettingsTab < appui.Core
                 shotCommon = "linear";
             end
             c.overlayShotCommon.Value = char(shotCommon);
-            c.overlayPerShot.Value = char(string(fieldOr(rawOverlay, "perShot", overlay.perShot)));
+            % 画面で選べる Shot ごとの成分は「なし」「1次」「式を入力」（以前の設定の並進は 1次にする）
+            perShot = string(fieldOr(rawOverlay, "perShot", overlay.perShot));
+            if ~any(perShot == ["none", "linear", "formula"])
+                perShot = "linear";
+            end
+            c.overlayPerShot.Value = char(perShot);
             perShotFormula = fieldOr(rawOverlay, "perShotFormula", defaultOverlay.perShotFormula);
             c.overlayPerShotDx.Value = char(perShotFormula.dx);
             c.overlayPerShotDy.Value = char(perShotFormula.dy);
@@ -693,6 +707,7 @@ classdef (Abstract) SettingsTab < appui.Core
             s.data.excludeUnmeasuredRecords = c.excludeUnmeasuredRecords.Value;
             s.data.excludeOutliers = c.dataExcludeOutliers.Value;
             s.data.outlierSigma = c.dataOutlierSigma.Value;
+            s.data.outlierMethod = string(c.dataOutlierMethod.Value);
             s.data.directionRule = string(c.directionRule.Value);
             s.data.invertDirection = c.invertDirection.Value;
             s.factors.scan = c.factorScan.Value;
@@ -770,6 +785,7 @@ classdef (Abstract) SettingsTab < appui.Core
             s.sampling.constraints.scanDirection = c.scanConstraint.Value;
             s.sampling.constraints.slack = c.slack.Value;
             s.sampling.designOrder = c.designOrder.Value;
+            s.sampling.designFeatures = string(c.designFeatures.Value);
             s.sampling.exchangeStarts = c.exchangeStarts.Value;
             s.evaluation.outerRadiusMm = c.outerRadius.Value;
             s.evaluation.removeLinear = c.removeLinear.Value;
@@ -862,7 +878,7 @@ classdef (Abstract) SettingsTab < appui.Core
             catch err
                 usesCounts = any(ismember(method, ["ioptimal", "doptimal", "random"])) || ...
                     (any(method == "excel") && hasPriorityPlans(app.Settings.sampling)) || ...
-                    (any(ismember(method, ["mark", "markd"])) && string(c.countBy.Value) == "rate");
+                    (any(ismember(method, alignest.markPlanTypes())) && string(c.countBy.Value) == "rate");
                 if usesCounts
                     text = "⚠ " + string(err.message);
                 end
@@ -887,7 +903,7 @@ classdef (Abstract) SettingsTab < appui.Core
             messages = [messages; text(text ~= "")];
             [values, ok] = parseNumbers(c.requiredShots.Value);
             text = "";
-            if any(ismember(method, ["ioptimal", "doptimal", "random", "mark", "markd"])) && (~ok || any(values ~= round(values)))
+            if any(ismember(method, ["ioptimal", "doptimal", "random", alignest.markPlanTypes()])) && (~ok || any(values ~= round(values)))
                 text = "⚠ 必ず計測する shotNo は整数を空白またはカンマで区切って入れてください（使わないなら空欄）。";
             end
             [values, ok] = parseNumbers(c.excludedShots.Value);
@@ -951,9 +967,9 @@ classdef (Abstract) SettingsTab < appui.Core
             text = "";
             byRate = string(c.countBy.Value) == "rate";
             byTotal = string(c.markCountBy.Value) == "total";
-            if any(ismember(method, ["mark", "markd"])) && ~byRate && ~byTotal && (~ok || isempty(values) || any(values <= 0))
+            if any(ismember(method, alignest.markPlanTypes())) && ~byRate && ~byTotal && (~ok || isempty(values) || any(values <= 0))
                 text = "⚠ 1 Shot あたりの計測 Mark 数は 0 より大きい数を空白で区切って入れてください（例：1 1.5 2）。";
-            elseif any(ismember(method, ["mark", "markd"])) && ~byRate && byTotal
+            elseif any(ismember(method, alignest.markPlanTypes())) && ~byRate && byTotal
                 counts = c.markCountStart.Value:c.markCountStep.Value:c.markCountEnd.Value;
                 if isempty(counts)
                     text = "⚠ 計測する Mark の数の終了は、開始以上にしてください。";
@@ -1016,7 +1032,7 @@ classdef (Abstract) SettingsTab < appui.Core
             method = string(c.samplingMethod.Value);
             constrained = any(ismember(method, ["ioptimal", "doptimal", "random"])) || ...
                 (any(method == "excel") && hasPriorityPlans(app.Settings.sampling));   % Excel の優先順も Shot 数ごと
-            markPlans = any(ismember(method, ["mark", "markd"]));   % Mark 単位の計画も計測率でスイープできる
+            markPlans = any(ismember(method, alignest.markPlanTypes()));   % Mark 単位の計画も計測率でスイープできる
             optimal = any(ismember(method, ["ioptimal", "doptimal", "mark", "markd"]));
             shotConstraints = any(ismember(method, ["ioptimal", "doptimal", "random"]));
             byRate = string(c.countBy.Value) == "rate";
@@ -1030,8 +1046,8 @@ classdef (Abstract) SettingsTab < appui.Core
             set([c.requiredMarks, c.excludedMarks], 'Enable', onOff(markPlans));
             set([c.quadrants, c.scanConstraint], 'Enable', onOff(shotConstraints));
             c.slack.Enable = onOff(shotConstraints || markPlans);
-            set([c.randomRepeats], 'Enable', onOff(any(method == "random")));
-            set([c.designOrder, c.exchangeStarts], 'Enable', onOff(optimal));
+            set([c.randomRepeats], 'Enable', onOff(any(ismember(method, ["random", "markrandom"]))));
+            set([c.designOrder, c.designFeatures, c.exchangeStarts], 'Enable', onOff(optimal));
             set([c.markBalance, c.markRequirePerShot], 'Enable', onOff(markPlans));
             byTotal = string(c.markCountBy.Value) == "total";
             c.markCountBy.Enable = onOff(markPlans && ~byRate);

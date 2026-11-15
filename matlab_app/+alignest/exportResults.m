@@ -56,7 +56,7 @@ values = [results.createdAt; sourceFile; listText(summaryField(summary, "operati
     "集計_<指標> シートの値は Wafer ごとの値（ランダムの繰り返しは平均）の平均。中央値・ワースト値・95%値は「集計_統計量」。"; ...
     "ワースト値は最も悪い Wafer の値（RMSE・MAE は最大、R² は最小）。95%値は 95% の Wafer がそれより良い値（RMSE・MAE は 95 パーセント点、R² は 5 パーセント点。Excel の PERCENTILE.INC と同じ補間）。"; ...
     "「Waferのベスト・ワースト」シート：手法 × 学習パターンの列 × 指標ごとに、最も良い・Wafer の平均に最も近い・最も悪い Wafer（Wafer ごとの値はランダムの繰り返しの平均）。指標によって違うことがある。総合は、使った指標それぞれの Wafer の順位（1 = 最も良い）の平均で決める（値は順位の平均）。"; ...
-    "学習 Shot の組の評価指標（XY 多項式の基準モデル、候補の全 Mark で正規直交化）。I 基準 = tr(M⁻¹)、D 基準 = det(M)^(−1/p)。小さいほど良い。全候補を使うと I 基準 = 項数、D 基準 = 1。全計測に対する I 効率 = 項数 / I 基準、D 効率 = 1 / D 基準（0〜1。1 なら全計測と同じ、大きいほど良い）。"; ...
+    "学習 Shot の組の評価指標（I 最適の基準モデル（X・Y・半径または X・Y の多項式。設定の designFeatures・designOrder）、候補の全 Mark で正規直交化）。I 基準 = tr(M⁻¹)、D 基準 = det(M)^(−1/p)。小さいほど良い。全候補を使うと I 基準 = 項数、D 基準 = 1。全計測に対する I 効率 = 項数 / I 基準、D 効率 = 1 / D 基準（0〜1。1 なら全計測と同じ、大きいほど良い）。"; ...
     overlayText(results, overlayEvaluated); outlierText(results.settings)];
 % 評価点の絞り込み（指標を計算し直した表を書き出すとき）と、評価の後に足した条件
 if isfield(results, "filterText") && results.filterText ~= "絞り込みなし"
@@ -293,6 +293,9 @@ for method = methods
         case {"mark", "markd"}
             parts(end + 1) = "Mark 単位の " + ternary(method == "markd", "D", "I") + " 最適（" + markText(sampling) + ...
                 "）"; %#ok<AGROW>
+        case "markrandom"
+            parts(end + 1) = sprintf("Mark 単位の制約つきランダム（%d 回。", sampling.randomRepeats) + markText(sampling) + ...
+                "）"; %#ok<AGROW>
         otherwise
             parts(end + 1) = method; %#ok<AGROW>
     end
@@ -305,7 +308,7 @@ if any(ismember(methods, ["ioptimal", "doptimal", "random", "excel"])) && isfiel
         sampling.countBy == "rate"
     label = label + "。学習 Shot 数は計測率（Wafer の候補 Shot 数に対する割合）で決めた";
 end
-if any(ismember(methods, ["mark", "markd"])) && isfield(sampling, "countBy") && sampling.countBy == "rate"
+if any(ismember(methods, alignest.markPlanTypes())) && isfield(sampling, "countBy") && sampling.countBy == "rate"
     label = label + "。Mark 単位の計画の Mark の数は計測率（候補の全 Mark の数に対する割合）で決めた";
 end
 if any(ismember(methods, ["ioptimal", "doptimal", "random"]))

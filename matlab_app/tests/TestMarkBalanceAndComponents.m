@@ -147,6 +147,7 @@ classdef TestMarkBalanceAndComponents < matlab.unittest.TestCase
             settings.sampling.method = "mark";
             settings.sampling.exchangeStarts = 2;
             settings.overlay.waferOrder = 2;
+            settings.overlay.shotCommon = "linear";   % 初期値は Shot 共通成分なしなので、1次を選ぶ
             app.setSettings(settings);
             c.markBalance.Value = 'equal';
             c.markBalance.ValueChangedFcn([], []);

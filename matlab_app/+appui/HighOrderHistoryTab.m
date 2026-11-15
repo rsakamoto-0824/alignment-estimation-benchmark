@@ -1,7 +1,7 @@
 classdef (Abstract) HighOrderHistoryTab < appui.Core
     %HIGHORDERHISTORYTAB 「7. Shot高次補正」の3つのタブ：
     %   - 「k の選定」：単純な回帰で k パラメータ（補正の式の項）を選ぶ（変数重要度 |t| で一括して外す・BIC でステップワイズに
-    %     足す。alignest.highOrderTermSelection）。結果を見てから「使う項にする」で表の「使う」に写す
+    %     足す（指標は BIC・AIC・自由度調整済 R²）。alignest.highOrderTermSelection）。結果を見てから「反映する」で表の「使う」に写す
     %   - 「結果の履歴」：「補正を計算する」を押すたびに結果（すべての Wafer の評価と設定）を足し、条件どうしを表と図で比べる。
     %     選んだ結果の設定を左の設定に戻せる
     %   - 「他の Wafer の補正」：補正元の Wafer で求めた補正値を補正先の Wafer に当てて評価する（補正元が複数なら、補正値を
@@ -15,21 +15,26 @@ classdef (Abstract) HighOrderHistoryTab < appui.Core
     end
 
     methods
-        function selection = selectHighOrderTerms(app, method, threshold)
+        function selection = selectHighOrderTerms(app, method, threshold, criterion)
             %SELECTHIGHORDERTERMS 「k の選定」：今の入力のデータ・選んだ Wafer で k パラメータを選ぶ（表の「使う」はまだ変えない）。
-            %   method："importance"（変数重要度 |t| がしきい値より小さい項を一括して外す）・"stepwise"（今の使う項から、BIC が
-            %   最も下がる項を1つずつ足す）。threshold：|t| のしきい値。省略すると画面の選択。
+            %   method："importance"（変数重要度 |t| がしきい値より小さい項を一括して外す）・"stepwise"（今の使う項から、指標が
+            %   最も良くなる項を1つずつ足す）。threshold：|t| のしきい値（[] なら画面の値）。criterion：ステップワイズの指標
+            %   "bic"・"aic"・"adjr2"（自由度調整済 R²）。省略すると画面の選択。
             c = app.Controls;
             if nargin >= 2
                 c.highOrderSelectMethod.Value = char(method);
             end
-            if nargin >= 3
+            if nargin >= 3 && ~isempty(threshold)
                 c.highOrderSelectThreshold.Value = threshold;
             end
+            if nargin >= 4
+                c.highOrderSelectCriterion.Value = char(criterion);
+            end
+            updateHighOrderSelectionEnabled(app);
             readHighOrderControls(app);
             wafers = highOrderWafers(app);
             selection = alignest.highOrderTermSelection(wafers, app.Settings, string(c.highOrderSelectMethod.Value), ...
-                threshold=c.highOrderSelectThreshold.Value);
+                threshold=c.highOrderSelectThreshold.Value, criterion=string(c.highOrderSelectCriterion.Value));
             app.HighOrderTermSelection = selection;
             showHighOrderTermSelection(app);
         end
@@ -73,6 +78,7 @@ classdef (Abstract) HighOrderHistoryTab < appui.Core
             end
             app.HighOrderHistorySelection = zeros(1, 0);
             showHighOrderHistory(app);
+            refreshHighOrderPairChoices(app);
         end
 
         function restoreHighOrderHistory(app, row)
@@ -118,20 +124,26 @@ classdef (Abstract) HighOrderHistoryTab < appui.Core
 
     methods (Access = {?appui.Core})
         function buildHighOrderSelectionTab(app, outputs)
-            % 「k の選定」のタブ：方法・しきい値・計算する・使う項にする、結果の表
+            % 「k の選定」のタブ：方法・しきい値・ステップワイズの指標・計算する・反映する、結果の表
             c = struct();
             tab = uitab(outputs, 'Title', 'k の選定');
             c.highOrderSelectTab = tab;
             grid = uigridlayout(tab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 6, 'RowSpacing', 4);
-            controls = uigridlayout(grid, [1, 6], 'ColumnWidth', {'fit', 260, 'fit', 70, 'fit', 'fit'}, 'Padding', 0);
+            controls = uigridlayout(grid, [1, 8], 'ColumnWidth', {'fit', 220, 'fit', 70, 'fit', 190, 'fit', 'fit'}, ...
+                'Padding', 0);
             label(controls, '方法', 1, 1);
             c.highOrderSelectMethod = uidropdown(controls, 'Items', {'変数重要度', ...
-                'ステップワイズ（BIC）で足す'}, 'ItemsData', {'importance', 'stepwise'}, ...
+                'ステップワイズで足す'}, 'ItemsData', {'importance', 'stepwise'}, ...
                 'ValueChangedFcn', @(~, ~) app.updateHighOrderSelectionEnabled(), 'Tooltip', ['変数重要度：式のすべての項で' ...
                 '当てはめ、項ごとの |t 値|（係数 ÷ 標準誤差）の Wafer の間の中央値がしきい値より小さい項を外します。' ...
-                'ステップワイズ：今の「使う」項から始め、BIC が最も下がる項を1つずつ足します。どちらも Wafer ごとの最小二乗' ...
+                'ステップワイズ：今の「使う」項から始め、右の指標が最も良くなる項を1つずつ足します。どちらも Wafer ごとの最小二乗' ...
                 '（Wafer 内で共通の1組）で、k1〜k6 は必ず使います。詳しくは「ヘルプ」。']);
             place(c.highOrderSelectMethod, 1, 2);
+            label(controls, '指標', 1, 5);
+            c.highOrderSelectCriterion = uidropdown(controls, 'Items', {'BIC', 'AIC', '自由度調整済 R²'}, ...
+                'ItemsData', {'bic', 'aic', 'adjr2'}, 'Enable', 'off', 'Tooltip', ['ステップワイズで項を足す基準。BIC・AIC は' ...
+                '小さいほど良い（AIC は BIC より項が増えやすい）。自由度調整済 R² は大きいほど良い（Wafer の平均）。']);
+            place(c.highOrderSelectCriterion, 1, 6);
             label(controls, 'しきい値', 1, 3);
             c.highOrderSelectThreshold = uieditfield(controls, 'numeric', 'Value', 2, 'Limits', [0, Inf], ...
                 'Tooltip', ['変数重要度がこの値より小さい項を外します（変数重要度は |t 値| の Wafer の間の中央値。' ...
@@ -139,10 +151,10 @@ classdef (Abstract) HighOrderHistoryTab < appui.Core
             place(c.highOrderSelectThreshold, 1, 4);
             c.highOrderSelectRun = uibutton(controls, 'Text', '計算する', 'ButtonPushedFcn', ...
                 @(~, ~) app.onSelectHighOrderTerms());
-            place(c.highOrderSelectRun, 1, 5);
-            c.highOrderSelectApply = uibutton(controls, 'Text', '使う項にする', 'Enable', 'off', 'ButtonPushedFcn', ...
+            place(c.highOrderSelectRun, 1, 7);
+            c.highOrderSelectApply = uibutton(controls, 'Text', '反映する', 'Enable', 'off', 'ButtonPushedFcn', ...
                 @(~, ~) app.onApplyHighOrderTermSelection(), 'Tooltip', '選んだ結果を「使う項と VIF」の表の「使う」に写します。');
-            place(c.highOrderSelectApply, 1, 6);
+            place(c.highOrderSelectApply, 1, 8);
             c.highOrderSelectTable = uitable(grid, 'RowName', {}, 'Data', table());
             place(c.highOrderSelectTable, 2, 1);
             c.highOrderSelectInfo = uilabel(grid, 'WordWrap', 'on', 'Text', ['左の①の入力のデータと Wafer で、' ...
@@ -234,15 +246,20 @@ classdef (Abstract) HighOrderHistoryTab < appui.Core
             end
             numbers = [app.HighOrderHistory.number];
             totals = run.result.summary(run.result.summary.wafer == "すべての Wafer", :);
+            % 「2つの条件を並べる」で履歴の結果どうしを比べられるように、点の残差（図と Shot ごとの比較に使う列だけ）を残す
+            columns = intersect(["wafer", "shotNo", "x", "y", "localX", "localY", "zone", "residualX", "residualY", ...
+                "weightX", "weightY", "source"], string(run.result.points.Properties.VariableNames), 'stable');
             entry = struct("number", max([numbers, 0]) + 1, "time", string(datetime('now', 'Format', 'HH:mm:ss')), ...
                 "description", string(run.result.description), "nWafers", numel(run.wafers), "summary", totals, ...
-                "settings", run.settings);
+                "settings", run.settings, "points", run.result.points(:, columns), "options", run.result.options, ...
+                "wafers", rmfield(run.wafers, intersect(fieldnames(run.wafers), {'points'})), "source", run.source);
             app.HighOrderHistory(end + 1) = entry;
             if numel(app.HighOrderHistory) > app.HIGH_ORDER_HISTORY_MAX
                 app.HighOrderHistory(1:end - app.HIGH_ORDER_HISTORY_MAX) = [];   % 古い結果から消す
             end
             app.HighOrderHistorySelection = zeros(1, 0);
             showHighOrderHistory(app);
+            refreshHighOrderPairChoices(app);
         end
 
         function showHighOrderHistory(app)
@@ -399,15 +416,20 @@ classdef (Abstract) HighOrderHistoryTab < appui.Core
                     "変数重要度", "Wafer 間の|最小", "Wafer 間の|最大", "Wafer の数", "判定"]);
                 c.highOrderSelectTable.ColumnWidth = {40, 50, 80, 50, 110, 80, 80, 70, 'auto'};
                 text = sprintf(['変数重要度が %g より小さい項を外すと、dx %d 項・dy %d 項になります。' ...
-                    '「使う項にする」で表に写します。'], selection.threshold, numel(selection.used{1}), numel(selection.used{2}));
+                    '「反映する」で表に写します。'], selection.threshold, numel(selection.used{1}), numel(selection.used{2}));
             else
                 t = selection.steps;
                 kText = "k" + string(t.k);
                 kText(~isfinite(t.k)) = "";
-                c.highOrderSelectTable.Data = table(t.axis, t.step, kText, t.term, round(t.bic, 2), round(t.change, 2), ...
-                    'VariableNames', ["式", "手順", "足した k", "項", "BIC", "1つ前との差"]);
-                text = sprintf(['今の使う項から、BIC が下がる項を足すと dx %d 項・dy %d 項になります（BIC が下がらなくなったら' ...
-                    '止める）。「使う項にする」で表に写します。'], numel(selection.used{1}), numel(selection.used{2}));
+                names = struct("bic", "BIC", "aic", "AIC", "adjr2", "自由度調整済 R²");
+                criterionName = names.(selection.criterion);
+                digits = 2 + 2 * (selection.criterion == "adjr2");   % R² は小さな差も見えるように桁を増やす
+                c.highOrderSelectTable.Data = table(t.axis, t.step, kText, t.term, round(t.value, digits), ...
+                    round(t.change, digits), 'VariableNames', ["式", "手順", "足した k", "項", criterionName, "1つ前との差"]);
+                rising = selection.criterion == "adjr2";   % 自由度調整済 R² は大きいほど良い
+                text = sprintf(['今の使う項から、%s が%s項を足すと dx %d 項・dy %d 項になります（%s が%sなくなったら' ...
+                    '止める）。「反映する」で表に写します。'], criterionName, ternary(rising, "上がる", "下がる"), ...
+                    numel(selection.used{1}), numel(selection.used{2}), criterionName, ternary(rising, "上がら", "下がら"));
             end
             c.highOrderSelectInfo.Text = char(strjoin([text; selection.messages], " "));
             c.highOrderSelectApply.Enable = 'on';
@@ -416,7 +438,9 @@ classdef (Abstract) HighOrderHistoryTab < appui.Core
         function updateHighOrderSelectionEnabled(app)
             % しきい値は変数重要度のときだけ使う
             c = app.Controls;
-            c.highOrderSelectThreshold.Enable = onOff(string(c.highOrderSelectMethod.Value) == "importance");
+            importance = string(c.highOrderSelectMethod.Value) == "importance";
+            c.highOrderSelectThreshold.Enable = onOff(importance);
+            c.highOrderSelectCriterion.Enable = onOff(~importance);
         end
 
         function onSelectHighOrderTerms(app)

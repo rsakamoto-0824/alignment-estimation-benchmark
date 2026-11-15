@@ -15,6 +15,8 @@ function specs = buildPlanSpecs(sampling)
 %                1点以上。sampling.markRequirePerShot・markMinPerShot）。markPerShot（1 Shot あたりの平均の Mark 数）
 %                ごとに1つ（"Mark最適 1 点/Shot"・"MarkD最適 1 点/Shot"）。sampling.markCountBy = "total" なら、計測する Mark の数
 %                （markCountStart〜markCountEnd を markCountStep ごと）ごとに1つ（"Mark最適 120 点"。spec.markCount）
+%     "markrandom"（Mark 単位の制約つきランダム）：Mark 単位の I 最適と同じ制約・Mark の数で、randomRepeats 回
+%                （"Markランダム 1 点/Shot #1"）
 %   sampling.countBy = "rate" なら、Shot 数の代わりに計測率 [%]（rateStart・rateEnd・rateStep）ごとに作る
 %   （"I最適 計測率 20%" のように。Shot 数は Wafer の候補 Shot 数から planTrainingShots で決める。nShots は NaN）。
 %   Mark 単位の計画も計測率ごとに作る（"Mark最適 計測率 20%"。計測する Mark の数 = 計測率 × 候補の全 Mark の数。
@@ -22,10 +24,10 @@ function specs = buildPlanSpecs(sampling)
 %   group は結果を集計するときの列（ランダムの繰り返しは同じ group にまとめる）。選び方が1つなら "20 Shot"、
 %   2つ以上なら選び方の名前を付けて "I最適 20 Shot"・"D最適 20 Shot" のようにする（Excel のパターンは名前、優先順は
 %   名前と Shot 数。Excel の列が2つ以上の優先順・パターンと優先順が混ざるときも名前を付ける）。
-%   選び方は、選んだ順によらず I 最適 → D 最適 → ランダム → Excel → Mark 単位（I・D）の順に並べる。
-ORDER = ["ioptimal", "doptimal", "random", "excel", "mark", "markd"];
+%   選び方は、選んだ順によらず I 最適 → D 最適 → ランダム → Excel → Mark 単位（I・D・ランダム）の順に並べる。
+ORDER = ["ioptimal", "doptimal", "random", "excel", alignest.markPlanTypes()];
 PREFIX = struct("ioptimal", "I最適", "doptimal", "D最適", "random", "ランダム", "excel", "", ...
-    "mark", "Mark最適", "markd", "MarkD最適");
+    "mark", "Mark最適", "markd", "MarkD最適", "markrandom", "Markランダム");
 sampling = alignest.upgradeLayoutSettings(sampling);
 methods = unique(reshape(string(sampling.method), 1, []), 'stable');
 unknown = methods(~ismember(methods, ORDER));
@@ -63,6 +65,15 @@ for method = methods
             for k = 1:numel(sizeTexts)
                 specs(end + 1) = spec(method, NaN, rates(k), 1, prefix + " " + sizeTexts(k), ...
                     groupName(compare, prefix, sizeTexts(k)), [], perShot(k), zeros(1, 0), false(1, 0), counts(k)); %#ok<AGROW>
+            end
+        case "markrandom"
+            [perShot, rates, sizeTexts, counts] = markSizes(sampling);
+            for k = 1:numel(sizeTexts)
+                for repeat = 1:sampling.randomRepeats
+                    specs(end + 1) = spec(method, NaN, rates(k), repeat, sprintf("%s %s #%d", prefix, sizeTexts(k), ...
+                        repeat), groupName(compare, prefix, sizeTexts(k)), [], perShot(k), zeros(1, 0), false(1, 0), ...
+                        counts(k)); %#ok<AGROW>
+                end
             end
     end
 end

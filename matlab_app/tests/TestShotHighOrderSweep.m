@@ -189,7 +189,7 @@ classdef TestShotHighOrderSweep < matlab.unittest.TestCase
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
             app.applyMapping();
             app.setHighOrderSource("data");
-            app.setHighOrderSettings(unit="common", lambda=0.1);
+            app.setHighOrderSettings(unit="common", lambda=0.1, maker="nikon", loss="huber", regularization="l2");   % 以前の初期値
             c.highOrderWafer.Value = {1, 2};
             sweep = app.sweepHighOrderParameters("lambda", lambdaRange=[0.01, 1, 3], lambdaScale="log");
             testCase.verifyEqual(sweep.lambda, [0.01, 0.1, 1]);
