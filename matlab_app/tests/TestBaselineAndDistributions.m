@@ -1,6 +1,6 @@
 classdef TestBaselineAndDistributions < matlab.unittest.TestCase
     %TESTBASELINEANDDISTRIBUTIONS 平均値・中央値をそのまま推定値にした場合との改善量・改善率と、
-    %   分布の比較（代表統計値・JS ダイバージェンス）を確かめる。
+    %   分布の比較（代表統計値・JS ダイバージェンス）を確かめる。1 Mark の最大誤差・最小誤差（ワースト・ベストの Mark）も。
 
     properties
         Data
@@ -70,6 +70,48 @@ classdef TestBaselineAndDistributions < matlab.unittest.TestCase
             testCase.verifyFalse(summary.lowerIsBetter);
             perUnit = alignest.perUnitValues(testCase.Results, "improveMeanPct_XY");
             testCase.verifyEqual(summary.values(1, 1), min(perUnit{1, 1}), 'AbsTol', 1e-12, "ワーストは最も小さい改善率");
+        end
+
+        function perMarkWorstAndBestErrors(testCase)
+            % 1 Mark の最大誤差・最小誤差：|計測値 − 推定値| の最大と最小。XY は X と Y の誤差をまとめた中の最大・最小
+            metrics = alignest.computeMetrics([1; 2; 3], [1.5; 2; 1], NaN, [0; 0], [1; -3], NaN, false(3, 1), false(2, 1));
+            testCase.verifyEqual([metrics.MaxAE_X, metrics.MinAE_X], [2, 0], 'AbsTol', 1e-12);
+            testCase.verifyEqual([metrics.MaxAE_Y, metrics.MinAE_Y], [3, 1], 'AbsTol', 1e-12);
+            testCase.verifyEqual([metrics.MaxAE_XY, metrics.MinAE_XY], [3, 0], 'AbsTol', 1e-12);
+            empty = alignest.computeMetrics(zeros(0, 1), zeros(0, 1), NaN, zeros(0, 1), zeros(0, 1), NaN, false(0, 1), ...
+                false(0, 1));
+            testCase.verifyTrue(isnan(empty.MaxAE_XY) && isnan(empty.MinAE_X), "評価点が無ければ NaN");
+            % 指標の名前（小さいほど良い）。1変数では X・Y 合計の列だけを値の名前で出す
+            [names, labels] = alignest.metricNames();
+            testCase.verifyTrue(all(ismember(["MaxAE_X", "MaxAE_Y", "MaxAE_XY", "MinAE_X", "MinAE_Y", "MinAE_XY"], names)));
+            testCase.verifyEqual(labels(names == "MaxAE_XY"), "1 Mark の最大誤差 [nm]（X・Y 合計）");
+            testCase.verifyFalse(any(alignest.metricHigherIsBetter(["MaxAE_XY", "MinAE_XY"])));
+            scalarSpec = alignest.valueSpec(struct("valueColumn", "Thickness_nm", "valueUnit", "nm"));
+            [scalarNames, scalarLabels] = alignest.metricNames(false, false, scalarSpec);
+            testCase.verifyTrue(any(scalarNames == "MinAE_XY") && ~any(scalarNames == "MinAE_X"));
+            testCase.verifyEqual(scalarLabels(scalarNames == "MinAE_XY"), "1 Mark の最小誤差 [nm]（Thickness_nm）");
+            % 評価の結果：1行を評価点から直接計算して確かめる
+            table_ = testCase.Results.table;
+            testCase.verifyTrue(all(table_.MaxAE_XY >= table_.RMSE_XY - 1e-12 & table_.RMSE_XY >= table_.MinAE_XY - 1e-12));
+            row = table_(1, :);
+            plan = testCase.Results.plans(row.planIndex);
+            unit = testCase.Data.units(row.unitIndex);
+            out = alignest.estimateWafer(unit, plan.shotIndex, testCase.Results.methods(row.methodIndex), ...
+                testCase.Results.settings);
+            marks = unit.marks;
+            errorX = abs(marks.measX(out.testIndex.X) - out.estimate.X);
+            errorY = abs(marks.measY(out.testIndex.Y) - out.estimate.Y);
+            testCase.verifyEqual([row.MaxAE_X, row.MinAE_X], [max(errorX), min(errorX)], 'AbsTol', 1e-10);
+            testCase.verifyEqual([row.MaxAE_XY, row.MinAE_XY], [max([errorX; errorY]), min([errorX; errorY])], ...
+                'AbsTol', 1e-10);
+            % Wafer のベスト・ワーストの指標に入る
+            ranking = alignest.waferRanking(testCase.Results);
+            testCase.verifyTrue(all(ismember(["MaxAE_XY", "MinAE_XY", "MaxAE_X", "MinAE_Y"], ranking.metrics)));
+            worstRow = ranking.table(ranking.table.metric == "MaxAE_XY", :);
+            perUnit = alignest.perUnitValues(testCase.Results, "MaxAE_XY");
+            testCase.verifyEqual(worstRow.worstValue(1), max(perUnit{1, 1}), 'AbsTol', 1e-12, ...
+                "ワーストの Wafer は最大誤差が最も大きい Wafer");
+            testCase.verifyEqual(worstRow.bestValue(1), min(perUnit{1, 1}), 'AbsTol', 1e-12);
         end
 
         function jsDivergenceMeasuresOverlap(testCase)

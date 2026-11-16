@@ -76,10 +76,11 @@ classdef (Abstract) ResultsTab < appui.Core
 
         function candidates = findMeasurementCandidates(app, options)
             %FINDMEASUREMENTCANDIDATES 「計測を足す場所」：選んだ手法・学習パターン・Wafer の評価点で、推定誤差（または GPR の
-            %   推定の分散）の大きい上位 n の場所（Shot か Mark）を出す（alignest.measurementCandidates）。既に必ず計測・計測しない
-            %   にした場所は候補にしない。名前と値の組で画面の欄を変えられる：method（手法の番号）・group（学習パターンの列）・
-            %   wafer（Wafer の番号。0 = すべての Wafer）・criterion（"error"・"variance"）・axis（"xy"・"X"・"Y"）・statistic
-            %   （"mean"・"max"）・level（"shot"・"mark"）・count（上位の数）。省略すると画面の選択。candidates は候補の表。
+            %   推定の分散）の大きい上位 n の場所、または閾値より大きい場所（Shot か Mark）を出す（alignest.measurementCandidates）。
+            %   既に必ず計測・計測しないにした場所は候補にしない。名前と値の組で画面の欄を変えられる：method（手法の番号）・group
+            %   （学習パターンの列）・wafer（Wafer の番号。0 = すべての Wafer）・criterion（"error"・"variance"）・axis（"xy"・
+            %   "X"・"Y"）・statistic（"mean"・"max"）・level（"shot"・"mark"）・mode（"top"：上位 n・"threshold"：閾値より大きい）・
+            %   count（上位の数）・threshold（閾値。推定誤差は nm、分散は nm²）。省略すると画面の選択。candidates は候補の表。
             arguments
                 app
                 options.method (1, 1) double
@@ -89,15 +90,17 @@ classdef (Abstract) ResultsTab < appui.Core
                 options.axis (1, 1) string
                 options.statistic (1, 1) string
                 options.level (1, 1) string
+                options.mode (1, 1) string
                 options.count (1, 1) double
+                options.threshold (1, 1) double
             end
             c = app.Controls;
             if isempty(app.Results)
                 error('alignest:noResults', '先に「3. 実行」で評価してください。');
             end
-            fields = ["method", "group", "wafer", "criterion", "axis", "statistic", "level", "count"];
+            fields = ["method", "group", "wafer", "criterion", "axis", "statistic", "level", "mode", "count", "threshold"];
             controls = [c.candidateMethod, c.candidateGroup, c.candidateWafer, c.candidateCriterion, c.candidateAxis, ...
-                c.candidateStatistic, c.candidateLevel, c.candidateCount];
+                c.candidateStatistic, c.candidateLevel, c.candidateMode, c.candidateCount, c.candidateThreshold];
             for k = 1:numel(fields)
                 if isfield(options, fields(k))
                     value = options.(fields(k));
@@ -107,6 +110,7 @@ classdef (Abstract) ResultsTab < appui.Core
                     controls(k).Value = value;
                 end
             end
+            updateCandidateModeControls(app);
             methodIndex = c.candidateMethod.Value;
             criterion = string(c.candidateCriterion.Value);
             if criterion == "variance" && string(app.Results.methods(methodIndex).family) ~= "GPR"
@@ -130,28 +134,74 @@ classdef (Abstract) ResultsTab < appui.Core
             end
             axisName = string(c.candidateAxis.Value);
             statistic = string(c.candidateStatistic.Value);
+            chooseMode = string(c.candidateMode.Value);
+            threshold = NaN;
+            if chooseMode == "threshold"
+                threshold = c.candidateThreshold.Value;
+            end
             candidates = alignest.measurementCandidates(estimates, criterion, level, c.candidateCount.Value, ...
-                axis=axisName, statistic=statistic, exclude=exclude);
+                axis=axisName, statistic=statistic, exclude=exclude, threshold=threshold);
+            % 閾値より大きい場所が無いときは、いちばん大きい場所の値を知らせる（閾値を決める目安。除く場所は入れない）
+            largestValue = NaN;
+            if chooseMode == "threshold" && height(candidates) == 0
+                largest = alignest.measurementCandidates(estimates, criterion, level, 1, axis=axisName, ...
+                    statistic=statistic, exclude=exclude);
+                if height(largest) > 0
+                    largestValue = largest.value(1);
+                end
+            end
             % ヒートマップの値：すべての Mark の場所の値（同じ基準・値・集計。除く場所も入れる）
             locations = alignest.measurementCandidates(estimates, criterion, "mark", max(height(estimates), 1), ...
                 axis=axisName, statistic=statistic);
             app.MeasurementCandidates = struct("table", candidates, "level", level, "criterion", criterion, ...
-                "axis", axisName, "locations", locations, "nExcluded", numel(exclude));
+                "axis", axisName, "locations", locations, "nExcluded", numel(exclude), "mode", chooseMode, ...
+                "threshold", threshold, "largest", largestValue, "selected", true(height(candidates), 1));
             showMeasurementCandidates(app);
         end
 
+        function selectMeasurementCandidates(app, selection)
+            %SELECTMEASUREMENTCANDIDATES 「計測を足す場所」の候補のうち、必ず計測に足す候補を選ぶ（表の「足す」のチェック）。
+            %   selection：true・false（すべて選ぶ・すべて外す）、候補の行ごとの true・false、または選ぶ候補の key（shot は
+            %   "12"、mark は "12-3"）。「必ず計測の欄に入れる」では、選んだ候補だけを足す。
+            found = app.MeasurementCandidates;
+            if isempty(found) || height(found.table) == 0
+                return
+            end
+            nCandidates = height(found.table);
+            if islogical(selection) && isscalar(selection)
+                selected = repmat(selection, nCandidates, 1);
+            elseif islogical(selection)
+                if numel(selection) ~= nCandidates
+                    error('alignest:candidateSelection', '候補の数（%d）と選ぶ印の数（%d）が違います。', ...
+                        nCandidates, numel(selection));
+                end
+                selected = reshape(selection, [], 1);
+            else
+                selected = ismember(found.table.key, string(selection));
+            end
+            found.selected = selected;
+            app.MeasurementCandidates = found;
+            table_ = app.Controls.candidateTable;
+            table_.Data(:, 1) = num2cell(selected);
+            drawMeasurementCandidates(app);
+        end
+
         function added = addMeasurementCandidates(app)
-            %ADDMEASUREMENTCANDIDATES 「必ず計測の欄に入れる」：出した候補を「2. 評価の設定」の必ず計測する shotNo（単位が Mark
-            %   なら必ず計測する Mark）に足す（setMeasurementSelection と同じ。3. 実行の計測の指定にも出る）。added は足した場所
-            %   （shotNo の数、または "shotNo-markNo" の文字）。
+            %ADDMEASUREMENTCANDIDATES 「必ず計測の欄に入れる」：出した候補のうち「足す」にチェックを入れた候補を「2. 評価の設定」の
+            %   必ず計測する shotNo（単位が Mark なら必ず計測する Mark）に足す（setMeasurementSelection と同じ。3. 実行の計測の
+            %   指定にも出る）。added は足した場所（shotNo の数、または "shotNo-markNo" の文字）。
             found = app.MeasurementCandidates;
             if isempty(found) || height(found.table) == 0
                 error('alignest:noCandidates', '先に「候補を出す」で、計測を足す場所を出してください。');
             end
+            chosen = found.table(found.selected, :);
+            if height(chosen) == 0
+                error('alignest:noCandidates', '必ず計測に足す候補の「足す」にチェックを入れてください。');
+            end
             if found.level == "mark"
-                added = reshape(found.table.key, 1, []);
+                added = reshape(chosen.key, 1, []);
             else
-                added = reshape(found.table.shotNo, 1, []);
+                added = reshape(chosen.shotNo, 1, []);
             end
             setMeasurementSelection(app, found.level, added, "required");
             where = ternary(found.level == "mark", "必ず計測する Mark", "必ず計測する shotNo");
@@ -839,14 +889,16 @@ classdef (Abstract) ResultsTab < appui.Core
             c.candidateWafer = uidropdown(chooseGrid, 'Items', {'—'}, 'Enable', 'off', 'Tooltip', ['すべての Wafer：場所ごとに、' ...
                 '評価した Wafer の点をまとめて比べます（必ず計測する Shot・Mark はすべての Wafer に当てるため）。']);
             place(c.candidateWafer, 2, 3);
-            ruleGrid = uigridlayout(candidateGrid, [2, 7], 'ColumnWidth', {170, 140, 90, 90, 80, 'fit', 'fit'}, ...
+            ruleGrid = uigridlayout(candidateGrid, [2, 9], 'ColumnWidth', {170, 150, 90, 90, 150, 80, 90, 'fit', 'fit'}, ...
                 'RowHeight', {'fit', 'fit'}, 'Padding', 0);
             place(ruleGrid, 2, [1, 2]);
             label(ruleGrid, '基準', 1, 1);
             label(ruleGrid, '値', 1, 2);
             label(ruleGrid, '集計', 1, 3);
             label(ruleGrid, '単位', 1, 4);
-            label(ruleGrid, '上位 n', 1, 5);
+            label(ruleGrid, '選び方', 1, 5);
+            label(ruleGrid, '上位 n', 1, 6);
+            label(ruleGrid, '閾値', 1, 7);
             c.candidateCriterion = uidropdown(ruleGrid, 'Items', {'推定誤差', 'GPR の推定の分散'}, ...
                 'ItemsData', {'error', 'variance'}, 'Enable', 'off', 'Tooltip', ['推定誤差：評価点の |計測値 − 推定値|。' ...
                 'GPR の推定の分散：推定した面のばらつき（GPR の手法だけ。計測値に依らず、点の配置で決まる）。']);
@@ -861,19 +913,40 @@ classdef (Abstract) ResultsTab < appui.Core
                 'Enable', 'off', 'Tooltip', ['Shot：shotNo ごとの場所（「必ず計測する shotNo」に入れる）。Mark：shotNo と ' ...
                 'markNo の組ごとの場所（「必ず計測する Mark」に入れる。Mark 単位の学習パターンだけに効く）。']);
             place(c.candidateLevel, 2, 4);
+            c.candidateMode = uidropdown(ruleGrid, 'Items', {'上位 n', '閾値より大きい'}, 'ItemsData', {'top', 'threshold'}, ...
+                'Enable', 'off', 'ValueChangedFcn', @(~, ~) app.updateCandidateModeControls(), 'Tooltip', ['上位 n：値の大きい順に ' ...
+                'n 個。閾値より大きい：場所の値が閾値より大きい場所をすべて。']);
+            place(c.candidateMode, 2, 5);
             c.candidateCount = uispinner(ruleGrid, 'Limits', [1, 1000], 'RoundFractionalValues', 'on', 'Value', 10, ...
                 'Enable', 'off');
-            place(c.candidateCount, 2, 5);
+            place(c.candidateCount, 2, 6);
+            c.candidateThreshold = uieditfield(ruleGrid, 'numeric', 'Limits', [0, Inf], 'Value', 10, 'Enable', 'off', ...
+                'Tooltip', '推定誤差は nm、GPR の推定の分散は nm²。場所の値（集計した値）と比べます。');
+            place(c.candidateThreshold, 2, 7);
             c.findCandidatesButton = uibutton(ruleGrid, 'Text', '候補を出す', 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~, ~) app.onFindMeasurementCandidates());
-            place(c.findCandidatesButton, 2, 6);
+            place(c.findCandidatesButton, 2, 8);
             c.addCandidatesButton = uibutton(ruleGrid, 'Text', '必ず計測の欄に入れる', 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~, ~) app.onAddMeasurementCandidates(), 'Tooltip', ['出した候補を「2. 評価の設定」の' ...
                 '「必ず計測する shotNo」（単位が Mark なら「必ず計測する Mark」）に足します（3. 実行の計測の指定にも出ます）。']);
-            place(c.addCandidatesButton, 2, 7);
-            c.candidateTable = uitable(candidateGrid, 'RowName', {}, 'ColumnName', {'順位', 'shotNo', 'markNo', '値', ...
-                '点の数', 'Wafer 数'}, 'Data', cell(0, 6));
-            place(c.candidateTable, 3, 1);
+            place(c.addCandidatesButton, 2, 9);
+            candidateTableGrid = uigridlayout(candidateGrid, [2, 1], 'RowHeight', {'1x', 'fit'}, 'Padding', 0, ...
+                'RowSpacing', 4);
+            place(candidateTableGrid, 3, 1);
+            c.candidateTable = uitable(candidateTableGrid, 'RowName', {}, 'ColumnName', {'足す', '順位', 'shotNo', 'markNo', ...
+                '値', '点の数', 'Wafer 数'}, 'ColumnFormat', {'logical', 'numeric', 'numeric', 'char', 'char', 'numeric', ...
+                'numeric'}, 'ColumnEditable', [true, false(1, 6)], 'Data', cell(0, 7), ...
+                'CellEditCallback', @(~, event) app.onCandidateChecked(event), 'Tooltip', ['「足す」にチェックを入れた候補だけを、' ...
+                '「必ず計測の欄に入れる」で必ず計測に足します。']);
+            place(c.candidateTable, 1, 1);
+            selectGrid = uigridlayout(candidateTableGrid, [1, 3], 'ColumnWidth', {'fit', 'fit', '1x'}, 'Padding', 0);
+            place(selectGrid, 2, 1);
+            c.selectAllCandidatesButton = uibutton(selectGrid, 'Text', 'すべて選ぶ', 'Enable', 'off', ...
+                'ButtonPushedFcn', @(~, ~) app.selectMeasurementCandidates(true));
+            place(c.selectAllCandidatesButton, 1, 1);
+            c.clearCandidatesButton = uibutton(selectGrid, 'Text', 'すべて外す', 'Enable', 'off', ...
+                'ButtonPushedFcn', @(~, ~) app.selectMeasurementCandidates(false));
+            place(c.clearCandidatesButton, 1, 2);
             c.candidateAxes = uiaxes(candidateGrid);
             place(c.candidateAxes, 3, 2);
             c.candidateInfo = uilabel(candidateGrid, 'WordWrap', 'on', 'Text', '');
@@ -1242,34 +1315,70 @@ classdef (Abstract) ResultsTab < appui.Core
 
         function onAddMeasurementCandidates(app)
             runWithAlert(app, @() app.addMeasurementCandidates(), "必ず計測の欄に入れられませんでした", ...
-                "「候補を出す」で候補を出してから、もう一度試してください。");
+                "「候補を出す」で候補を出し、足す候補にチェックを入れてから、もう一度試してください。");
+        end
+
+        function onCandidateChecked(app, event)
+            % 候補の表の「足す」のチェックを変えたら、選んだ候補を覚えて図と説明を描き直す（表はそのまま）
+            found = app.MeasurementCandidates;
+            row = event.Indices(1);
+            if isempty(found) || event.Indices(2) ~= 1 || row > height(found.table)
+                return
+            end
+            found.selected(row) = logical(event.NewData);
+            app.MeasurementCandidates = found;
+            drawMeasurementCandidates(app);
+        end
+
+        function updateCandidateModeControls(app)
+            % 「計測を足す場所」の選び方に合わせて、上位 n か閾値の欄だけを使えるようにする（結果が無いうちはどちらも使わない）
+            c = app.Controls;
+            available = string(c.candidateMode.Enable) == "on";
+            byThreshold = string(c.candidateMode.Value) == "threshold";
+            c.candidateCount.Enable = onOff(available && ~byThreshold);
+            c.candidateThreshold.Enable = onOff(available && byThreshold);
         end
 
         function showMeasurementCandidates(app)
-            % 「計測を足す場所」の表と図：候補（値の大きい順）と、Wafer 上の値のヒートマップ（すべての Mark の場所の値を
-            % 内挿した色）・候補の場所（赤。数は順位）
+            % 「計測を足す場所」の表（候補を値の大きい順。「足す」のチェックつき）と、図・説明
+            c = app.Controls;
+            found = app.MeasurementCandidates;
+            if isempty(found)
+                c.candidateTable.Data = cell(0, 7);
+            else
+                t = found.table;
+                markText = strings(height(t), 1);
+                markText(isfinite(t.markNo)) = string(t.markNo(isfinite(t.markNo)));
+                c.candidateTable.Data = [num2cell(found.selected), num2cell(t.rank), num2cell(t.shotNo), cellstr(markText), ...
+                    arrayfun(@(value) sprintf('%.3f', value), t.value, 'UniformOutput', false), num2cell(t.nPoints), ...
+                    num2cell(t.nWafers)];
+                c.candidateTable.ColumnName = {'足す', '順位', 'shotNo', 'markNo', ...
+                    char("値 " + ternary(found.criterion == "variance", "[nm²]", "[nm]")), '点の数', 'Wafer 数'};
+            end
+            drawMeasurementCandidates(app);
+        end
+
+        function drawMeasurementCandidates(app)
+            % 「計測を足す場所」の図と説明：Wafer 上の値のヒートマップ（すべての Mark の場所の値を内挿した色）と、候補の場所
+            % （「足す」にチェックを入れた候補は赤、外した候補は灰。数は順位）
             CANDIDATE_COLOR = [0.85, 0.15, 0.10];
+            UNSELECTED_COLOR = [0.50, 0.50, 0.50];
             c = app.Controls;
             ax = c.candidateAxes;
             cla(ax, 'reset');
             legend(ax, 'off');
             found = app.MeasurementCandidates;
-            c.addCandidatesButton.Enable = onOff(~isempty(found) && height(found.table) > 0);
+            hasCandidates = ~isempty(found) && height(found.table) > 0;
+            c.addCandidatesButton.Enable = onOff(hasCandidates && any(found.selected));
+            set([c.selectAllCandidatesButton, c.clearCandidatesButton], 'Enable', onOff(hasCandidates));
             if isempty(found)
-                c.candidateTable.Data = cell(0, 6);
-                c.candidateInfo.Text = ['手法・学習パターン・Wafer と基準・上位 n を選んで「候補を出す」を押すと、推定誤差' ...
-                    '（GPR の推定の分散）の大きい場所を出します。「必ず計測の欄に入れる」で必ず計測する Shot・Mark に足せます。'];
+                c.candidateInfo.Text = ['手法・学習パターン・Wafer と基準・選び方（上位 n か閾値）を選んで「候補を出す」を押すと、' ...
+                    '推定誤差（GPR の推定の分散）の大きい場所を出します。「足す」にチェックを入れた候補を「必ず計測の欄に入れる」で' ...
+                    '必ず計測する Shot・Mark に足せます。'];
                 return
             end
             t = found.table;
-            markText = strings(height(t), 1);
-            markText(isfinite(t.markNo)) = string(t.markNo(isfinite(t.markNo)));
             unitText = ternary(found.criterion == "variance", "[nm²]", "[nm]");
-            c.candidateTable.Data = [num2cell(t.rank), num2cell(t.shotNo), cellstr(markText), ...
-                arrayfun(@(value) sprintf('%.3f', value), t.value, 'UniformOutput', false), num2cell(t.nPoints), ...
-                num2cell(t.nWafers)];
-            c.candidateTable.ColumnName = {'順位', 'shotNo', 'markNo', char("値 " + unitText), '点の数', 'Wafer 数'};
-            % 図：すべての Mark の場所の値のヒートマップと、候補の場所
             criterionText = ternary(found.criterion == "variance", "GPR の推定の分散", "推定誤差");
             axisText = struct("xy", "X・Y の大きさ", "X", "X", "Y", "Y");
             radius = app.Settings.data.waferRadiusMm;
@@ -1277,30 +1386,51 @@ classdef (Abstract) ResultsTab < appui.Core
             alignest.plot.valueHeatmap(ax, [places.x, places.y], places.value, waferRadiusMm=radius, ...
                 colorTitle=criterionText + "（" + axisText.(found.axis) + "）" + unitText);
             hold(ax, 'on');
-            if height(t) > 0
-                marker = ternary(found.level == "mark", "o", "s");
-                plot(ax, t.x, t.y, char(marker), 'MarkerSize', 9, 'LineWidth', 1.5, 'Color', CANDIDATE_COLOR, ...
-                    'MarkerFaceColor', 'none', 'DisplayName', "計測を足す候補（" + ternary(found.level == "mark", ...
-                    "Mark", "Shot の点の中心") + "）");
-                text(ax, t.x, t.y, "  " + string(t.rank), 'Color', CANDIDATE_COLOR, 'FontSize', 9, ...
-                    'VerticalAlignment', 'bottom', 'HandleVisibility', 'off');
+            marker = char(ternary(found.level == "mark", "o", "s"));
+            where = ternary(found.level == "mark", "Mark", "Shot の点の中心");
+            kinds = struct("rows", {found.selected, ~found.selected}, "color", {CANDIDATE_COLOR, UNSELECTED_COLOR}, ...
+                "name", {"計測を足す候補（" + where + "）", "外した候補"});
+            for kind = kinds
+                rows = kind.rows;
+                if any(rows)
+                    plot(ax, t.x(rows), t.y(rows), marker, 'MarkerSize', 9, 'LineWidth', 1.5, 'Color', kind.color, ...
+                        'MarkerFaceColor', 'none', 'DisplayName', kind.name);
+                    text(ax, t.x(rows), t.y(rows), "  " + string(t.rank(rows)), 'Color', kind.color, 'FontSize', 9, ...
+                        'VerticalAlignment', 'bottom', 'HandleVisibility', 'off');
+                end
             end
             hold(ax, 'off');
-            title(ax, sprintf("%sの大きい上位 %d の場所", criterionText, height(t)));
+            byThreshold = isfield(found, "mode") && found.mode == "threshold";
+            if byThreshold
+                thresholdText = sprintf("閾値 %s %s", numberText(found.threshold, '%g'), unitText);
+                title(ax, sprintf("%sが%sより大きい場所（%d 個）", criterionText, thresholdText, height(t)));
+            else
+                title(ax, sprintf("%sの大きい上位 %d の場所", criterionText, height(t)));
+            end
             legend(ax, 'Location', 'southoutside', 'Box', 'off', 'FontSize', 10);
             styleAxes(app, ax, app.AXES_FONT_SIZE);
             if height(t) == 0
+                if byThreshold && isfinite(found.largest)
+                    c.candidateInfo.Text = char(sprintf("%sより大きい場所はありません（いちばん大きい場所の値は %.3f %s）。" + ...
+                        "閾値を下げてください。", thresholdText, found.largest, unitText));
+                    return
+                end
                 c.candidateInfo.Text = char("候補がありません（" + ternary(found.criterion == "variance", ...
                     "選んだ結果に GPR の推定の分散がありません", "評価点の推定誤差がありません") + "）。");
                 return
             end
-            text_ = sprintf("%sの大きい順に %d 個の場所（%s）。", criterionText, height(t), ...
-                ternary(found.level == "mark", "Mark", "Shot"));
+            if byThreshold
+                text_ = sprintf("%sが%sより大きい %d 個の場所（%s。大きい順）。", criterionText, thresholdText, height(t), ...
+                    ternary(found.level == "mark", "Mark", "Shot"));
+            else
+                text_ = sprintf("%sの大きい順に %d 個の場所（%s）。", criterionText, height(t), ...
+                    ternary(found.level == "mark", "Mark", "Shot"));
+            end
             if found.nExcluded > 0
                 text_ = text_ + "既に必ず計測・計測しないにした場所は除きました。";
             end
-            c.candidateInfo.Text = char(text_ + "「必ず計測の欄に入れる」で、この場所を必ず計測する " + ...
-                ternary(found.level == "mark", "Mark", "shotNo") + " に足します。");
+            c.candidateInfo.Text = char(text_ + sprintf("「足す」にチェックを入れた %d 個を、「必ず計測の欄に入れる」で" + ...
+                "必ず計測する %s に足します。", nnz(found.selected), ternary(found.level == "mark", "Mark", "shotNo")));
         end
 
         function updateWaferRanking(app, keepSelection)
@@ -1695,7 +1825,8 @@ classdef (Abstract) ResultsTab < appui.Core
             c.candidateWafer.ItemsData = [0, evaluated];
             c.candidateWafer.Value = 0;
             set([c.candidateMethod, c.candidateGroup, c.candidateWafer, c.candidateCriterion, c.candidateAxis, ...
-                c.candidateStatistic, c.candidateLevel, c.candidateCount, c.findCandidatesButton], 'Enable', 'on');
+                c.candidateStatistic, c.candidateLevel, c.candidateMode, c.findCandidatesButton], 'Enable', 'on');
+            updateCandidateModeControls(app);
             app.MeasurementCandidates = [];
             showMeasurementCandidates(app);
             set([c.filterResults.apply, c.filterMap.apply], 'Enable', 'on');
