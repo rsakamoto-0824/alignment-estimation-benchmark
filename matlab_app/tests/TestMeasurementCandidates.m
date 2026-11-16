@@ -1,7 +1,7 @@
 classdef TestMeasurementCandidates < matlab.unittest.TestCase
     %TESTMEASUREMENTCANDIDATES 計測を足す場所（alignest.measurementCandidates）：推定誤差・GPR の推定の分散の大きい上位 n の
-    %   場所（Shot・Mark）、平均・最大、軸、除く場所、学習の行を使わないこと。評価の推定値の表の推定の分散の列。
-    %   「4. 結果一覧」の「計測を足す場所」と、必ず計測する Shot・Mark の欄に入れること。
+    %   場所（Shot・Mark）と閾値より大きい場所、平均・最大、軸、除く場所、学習の行を使わないこと。評価の推定値の表の推定の分散の列。
+    %   「4. 結果一覧」の「計測を足す場所」と、「足す」にチェックを入れた候補だけを必ず計測する Shot・Mark の欄に入れること。
 
     properties
         Root
@@ -37,6 +37,15 @@ classdef TestMeasurementCandidates < matlab.unittest.TestCase
             % 除く場所（既に必ず計測・計測しないにした場所）
             testCase.verifyEqual(alignest.measurementCandidates(estimates, "error", "shot", 5, exclude=2).shotNo, 1);
             testCase.verifyEqual(alignest.measurementCandidates(estimates, "error", "mark", 1, exclude="2-1").key, "1-1");
+            % 閾値より大きい場所すべて（上位の数は使わない。閾値と同じ値は入れない）
+            byThreshold = alignest.measurementCandidates(estimates, "error", "mark", 1, threshold=3);
+            testCase.verifyEqual(byThreshold.key.', ["2-1", "1-1"]);
+            testCase.verifyEqual(byThreshold.rank.', [1, 2]);
+            testCase.verifyEmpty(alignest.measurementCandidates(estimates, "error", "mark", 5, threshold=6));
+            testCase.verifyEqual(height(alignest.measurementCandidates(estimates, "error", "mark", 1, threshold=0)), 3);
+            testCase.verifyEqual(alignest.measurementCandidates(estimates, "error", "mark", 1, threshold=3, ...
+                exclude="2-1").key, "1-1");
+            testCase.verifyEqual(alignest.measurementCandidates(estimates, "error", "shot", 1, threshold=2).shotNo.', [2, 1]);
             % 推定の分散：X + Y の大きい順。学習の行（分散 100）は使わない
             variance = alignest.measurementCandidates(estimates, "variance", "mark", 2);
             testCase.verifyEqual(variance.key.', ["1-2", "1-1"]);
@@ -100,11 +109,52 @@ classdef TestMeasurementCandidates < matlab.unittest.TestCase
             marks = app.findMeasurementCandidates(criterion="variance", level="mark", count=4, wafer=1);
             testCase.verifyEqual(height(marks), 4);
             testCase.verifyTrue(all(contains(marks.key, "-")));
-            app.addMeasurementCandidates();
-            testCase.verifyTrue(all(ismember(marks.key, app.Settings.sampling.requiredMarks)), "必ず計測する Mark に入る");
+            testCase.verifyEqual(c.candidateTable.Data(:, 1), num2cell(true(4, 1)), "初めはすべての候補にチェック");
+            % 表の「足す」のチェックを外した候補は足さない（図では灰色）
+            c.candidateTable.Data{2, 1} = false;
+            c.candidateTable.CellEditCallback(c.candidateTable, struct("Indices", [2, 1], "NewData", false));
+            testCase.verifyNotEmpty(findobj(c.candidateAxes, 'DisplayName', '外した候補'));
+            testCase.verifyTrue(contains(string(c.candidateInfo.Text), "チェックを入れた 3 個"));
+            added = app.addMeasurementCandidates();
+            testCase.verifyEqual(added, marks.key([1, 3, 4]).');
+            testCase.verifyTrue(all(ismember(marks.key([1, 3, 4]), app.Settings.sampling.requiredMarks)), ...
+                "必ず計測する Mark に入る");
+            testCase.verifyFalse(ismember(marks.key(2), app.Settings.sampling.requiredMarks), "外した候補は入れない");
+            % すべて外すと足せない。key で選ぶこともできる
+            c.clearCandidatesButton.ButtonPushedFcn([], []);
+            testCase.verifyEqual(c.candidateTable.Data(:, 1), num2cell(false(4, 1)));
+            testCase.verifyEqual(string(c.addCandidatesButton.Enable), "off");
+            testCase.verifyError(@() app.addMeasurementCandidates(), 'alignest:noCandidates');
+            app.selectMeasurementCandidates(marks.key(2));
+            testCase.verifyEqual(c.candidateTable.Data(:, 1), num2cell([false; true; false; false]));
+            testCase.verifyEqual(app.addMeasurementCandidates(), marks.key(2));
+            c.selectAllCandidatesButton.ButtonPushedFcn([], []);
+            testCase.verifyEqual(c.candidateTable.Data(:, 1), num2cell(true(4, 1)));
             polynomial = find(string({results.methods.family}) == "XY", 1);
             testCase.verifyError(@() app.findMeasurementCandidates(method=polynomial, criterion="variance"), ...
                 'alignest:candidateVariance');
+            % 閾値より大きい場所：上位 n の欄は使わず、閾値の欄を使う。閾値より大きい場所がすべて出る
+            testCase.verifyEqual(string(c.candidateThreshold.Enable), "off", "初めは上位 n");
+            reference = app.findMeasurementCandidates(method=gpr, criterion="error", level="shot", wafer=0, mode="top", ...
+                count=8);
+            threshold = reference.value(4);
+            byThreshold = app.findMeasurementCandidates(mode="threshold", threshold=threshold);
+            testCase.verifyEqual(byThreshold.key, reference.key(reference.value > threshold));
+            testCase.verifyEqual(string(c.candidateCount.Enable), "off");
+            testCase.verifyEqual(string(c.candidateThreshold.Enable), "on");
+            testCase.verifyTrue(contains(string(c.candidateInfo.Text), "より大きい " + height(byThreshold) + " 個の場所"));
+            testCase.verifyTrue(contains(string(c.candidateAxes.Title.String), "閾値"));
+            % 閾値より大きい場所が無いときは、いちばん大きい場所の値を知らせる
+            none = app.findMeasurementCandidates(threshold=1e9);
+            testCase.verifyEmpty(none);
+            testCase.verifyEqual(string(c.addCandidatesButton.Enable), "off");
+            testCase.verifyTrue(contains(string(c.candidateInfo.Text), "より大きい場所はありません"));
+            testCase.verifyTrue(contains(string(c.candidateInfo.Text), sprintf("%.3f", reference.value(1))));
+            % 上位 n に戻すと、上位 n の欄を使う
+            c.candidateMode.Value = 'top';
+            c.candidateMode.ValueChangedFcn([], []);
+            testCase.verifyEqual(string(c.candidateCount.Enable), "on");
+            testCase.verifyEqual(string(c.candidateThreshold.Enable), "off");
         end
     end
 end

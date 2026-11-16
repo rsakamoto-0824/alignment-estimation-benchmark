@@ -13,8 +13,9 @@ end
 if nargin < 3
     spec = alignest.valueSpec(struct());
 end
-kinds = ["R2", "RMSE", "MAE"];
-kindLabels = ["R²", "RMSE [nm]", "MAE [nm]"];
+% MaxAE・MinAE：1 Mark（評価点）ごとの誤差の絶対値の最大（ワーストの Mark）・最小（ベストの Mark）。alignest.computeMetrics
+kinds = ["R2", "RMSE", "MAE", "MaxAE", "MinAE"];
+kindLabels = ["R²", "RMSE [nm]", "MAE [nm]", "1 Mark の最大誤差 [nm]", "1 Mark の最小誤差 [nm]"];
 axisNames = ["X", "Y", "XY"];
 axisLabels = ["X", "Y", "X・Y 合計"];
 names = strings(1, 0);

@@ -1,7 +1,9 @@
 function candidates = measurementCandidates(estimates, criterion, level, count, options)
-%MEASUREMENTCANDIDATES 計測を足す候補：推定誤差の大きい場所、GPR の推定の分散の大きい場所の上位 n（計測の最適化に使う）。
+%MEASUREMENTCANDIDATES 計測を足す候補：推定誤差の大きい場所、GPR の推定の分散の大きい場所の上位 n、または閾値より大きい
+%   場所（計測の最適化に使う）。
 %   candidates = alignest.measurementCandidates(estimates, "error", "shot", 10)
 %   candidates = alignest.measurementCandidates(estimates, "variance", "mark", 20, axis="X", statistic="max")
+%   candidates = alignest.measurementCandidates(estimates, "error", "mark", 1, threshold=15)
 %   estimates：alignest.collectEstimates の表（評価の行を使う。学習の行は推定誤差が無いので除く）。
 %   criterion："error"（推定誤差の大きさ |計測値 − 推定値|）・"variance"（GPR の推定の分散。GPR 以外は値が無い）。
 %   level："shot"（shotNo ごとの場所）・"mark"（shotNo と markNo の組ごとの場所）。count：上位の数 n（1 以上）。
@@ -10,6 +12,8 @@ function candidates = measurementCandidates(estimates, criterion, level, count, 
 %     平均するか、最大を取るか
 %   options.exclude：候補にしない場所（shot は shotNo の数、mark は "shotNo-markNo" の文字。既に必ず計測・計測しないに
 %     した場所）
+%   options.threshold：閾値（推定誤差は nm、分散は nm²）。数を渡すと、場所の値（集計した値）がこれより大きい場所を
+%     すべて候補にする（count は使わない）。NaN（既定）なら上位 count。
 %   candidates：値の大きい順の表（rank・key（shot は "12"、mark は "12-3"）・shotNo・markNo（shot は NaN）・value・nPoints
 %   （使った点の数）・nWafers（Wafer の数）・x・y（場所の点の平均の座標 [mm]））。値のある場所が n より少なければその数だけ。
 arguments
@@ -20,6 +24,7 @@ arguments
     options.axis (1, 1) string {mustBeMember(options.axis, ["xy", "X", "Y"])} = "xy"
     options.statistic (1, 1) string {mustBeMember(options.statistic, ["mean", "max"])} = "mean"
     options.exclude = []
+    options.threshold (1, 1) double = NaN
 end
 candidates = table(zeros(0, 1), strings(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), ...
     zeros(0, 1), zeros(0, 1), 'VariableNames', ["rank", "key", "shotNo", "markNo", "value", "nPoints", "nWafers", "x", "y"]);
@@ -66,7 +71,11 @@ end
 excluded = ismember(uniqueKeys, excludedKeys(options.exclude, level));
 [~, order] = sort(groupValue, 'descend');
 order = order(~excluded(order));
-order = order(1:min(count, numel(order)));
+if isfinite(options.threshold)
+    order = order(groupValue(order) > options.threshold);   % 閾値より大きい場所すべて（上位の数は使わない）
+else
+    order = order(1:min(count, numel(order)));
+end
 candidates = table((1:numel(order)).', uniqueKeys(order), shotNo(order), markNo(order), groupValue(order), ...
     nPoints(order), nWafers(order), meanX(order), meanY(order), 'VariableNames', candidates.Properties.VariableNames);
 end

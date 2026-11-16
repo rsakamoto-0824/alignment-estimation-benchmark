@@ -1,9 +1,11 @@
 function metrics = computeMetrics(truthX, estimateX, edfX, truthY, estimateY, edfY, outerX, outerY, trainX, trainY)
-%COMPUTEMETRICS 推定精度の指標：決定係数 R²、RMSE、MAE（X・Y・XY）。
+%COMPUTEMETRICS 推定精度の指標：決定係数 R²、RMSE、MAE、1 Mark の最大誤差・最小誤差（X・Y・XY）。
 %   評価点は学習に使わなかった Shot の Mark。実データでは計測値を「真の値」の代わりに使う
 %   （計測ノイズを含むので、模擬データの評価より指標は少し悪く出る）。
 %   - R²          = 1 − Σ(計測値 − 推定値)² / Σ(計測値 − 計測値の平均)²
 %   - XY は X と Y を合わせた評価。R² の分母は軸ごとの平均からの偏差。
+%   - MaxAE / MinAE：評価点（1 Mark）ごとの |計測値 − 推定値| の最大（ワーストの Mark）と最小（ベストの Mark）。
+%     XY は X と Y の誤差をまとめた中の最大・最小（MAE_XY と同じまとめ方）。評価点が無ければ NaN。
 %   edfX・edfY（有効自由度）は使わない（以前の呼び出しとの互換のため残す）。
 %   - RMSE_XY_outer / inner：外周（outerX / outerY が true の点）とそれ以外の RMSE（X・Y 合わせて）。
 %   - 学習点の計測値 trainX・trainY を渡すと、学習点の平均値・中央値（軸ごと）をそのまま全評価点の推定値にした場合の
@@ -23,6 +25,8 @@ end
 metrics.R2_XY = r2;
 metrics.RMSE_XY = sqrt(sse / max(n, 1));
 metrics.MAE_XY = mean(abs(errorAll));
+metrics.MaxAE_XY = maxOrNan(abs(errorAll));
+metrics.MinAE_XY = minOrNan(abs(errorAll));
 outer = [outerX(:); outerY(:)];
 metrics.RMSE_XY_outer = rmseOf(errorAll(outer));
 metrics.RMSE_XY_inner = rmseOf(errorAll(~outer));
@@ -56,6 +60,8 @@ end
 metrics.("R2_" + axisName) = r2;
 metrics.("RMSE_" + axisName) = rmseOf(errorValues);
 metrics.("MAE_" + axisName) = meanOrNan(abs(errorValues));
+metrics.("MaxAE_" + axisName) = maxOrNan(abs(errorValues));
+metrics.("MinAE_" + axisName) = minOrNan(abs(errorValues));
 end
 
 function value = rmseOf(errorValues)
@@ -69,5 +75,19 @@ function value = meanOrNan(values)
 value = NaN;
 if ~isempty(values)
     value = mean(values);
+end
+end
+
+function value = maxOrNan(values)
+value = NaN;
+if ~isempty(values)
+    value = max(values);
+end
+end
+
+function value = minOrNan(values)
+value = NaN;
+if ~isempty(values)
+    value = min(values);
 end
 end
