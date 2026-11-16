@@ -123,6 +123,9 @@ classdef TestPlanModelAndDefaults < matlab.unittest.TestCase
             testCase.verifyEqual(points.x.', rmse.values(1, :), 'AbsTol', 1e-12);
             testCase.verifyEqual(points.valueX.', increase.values(1, :), 'AbsTol', 1e-12);
             testCase.verifyEqual(height(degradation.wafers), 2 * numel(results.unitLabels));
+            first = degradation.wafers(degradation.wafers.group == points.group(1), :);
+            testCase.verifyEqual(points.sdX(1), std(first.valueX), 'AbsTol', 1e-12, "エラーバーの標準偏差");
+            testCase.verifyEqual([points.minY(1), points.maxY(1)], [min(first.valueY), max(first.valueY)]);
             byShots = alignest.overlayDegradation(results, "shots", "overlayChange", "median");
             testCase.verifyEqual(byShots.points.x.', [10, 20]);
             byMarks = alignest.overlayDegradation(results, "marks", "overlayIncrease", "mean");

@@ -68,7 +68,8 @@ function result = shotHighOrder(wafers, settings, flags)
 %   result.points：点ごとの値・k の組（group）・Shot 中心の半径（shotRadius）・内周か外周か（zone）・Wafer RT の補正量
 %   （waferRtX・Y。RT で補正しない Shot は 0）・RT で補正する Shot か（waferRtUsed）・補正量・残差・Shot
 %   ごとの1次で補正した残差・Wafer 高次補正だけの残差（waferResidualX・Y）・Wafer 高次補正＋Shot 共通補正の残差
-%   （commonResidualX・Y）・1点抜きの予測の誤差（looResidualX・Y。高次補正の当てはめで、その点を除いて当てはめたときの、
+%   （commonResidualX・Y）・Shot 共通補正をかけた残りを Shot ごとの1次（k1〜k6）で補正した残差（commonLinearResidualX・Y。
+%   Shot 共通を先に引くときだけ。ほかは NaN）・1点抜きの予測の誤差（looResidualX・Y。高次補正の当てはめで、その点を除いて当てはめたときの、
 %   その点の誤差。alignest.robustRidgeFit の looResidual。Shot ごとで Wafer 成分を先に引くときは、Wafer 成分は除かずに
 %   求める。その点だけで決まる項があれば NaN）・ロバスト回帰の重み・ハット行列の対角（leverageX・Y。足すと回帰の自由度。
 %   Shot ごとで Wafer 成分を先に引くときは、Wafer 成分の項の数を点で等分して足す。Wafer RT の分も足す）（wafer の列を足して
@@ -107,6 +108,7 @@ end
 zoneSplit = options.outerMaker ~= "none";
 sequential = alignest.highOrderSequential(options);   % Shot 共通を先に引き、残りを k の組（Shot・Scan 方向・行の偶奇）ごとに求める
 inputCommon = sequential && options.shotCommon == "input";
+commonFirst = sequential;   % Shot 共通補正をかけるとき、「Shot ごとの1次＋Shot 共通補正」の残差も求めて比べる
 inputValues = {options.shotCommonValues, options.shotCommonOuterValues};   % 入力した Shot 共通の k（内周の式・外周の式）
 for w = 1:numel(wafers)
     wafers(w).points = withGroupColumns(wafers(w).points, options.outerRadiusMm);
@@ -121,6 +123,10 @@ end
 everything = vertcat(wafers.points);
 commonZoneTerms = zoneTerms;   % Shot 共通の k に使う項（Shot 共通を「計算する」で項を選んだときは、選んだ項と k1〜k6）
 if sequential && options.shotCommon == "fit"
+    if options.shotCommonMaker ~= "same"
+        % Shot 共通の式を別に選んだとき：Shot 共通はその式の項（外周の式を分けるときも同じ式）、残りは maker の式で求める
+        commonZoneTerms = repmat({alignest.highOrderTerms(options.shotCommonMaker)}, 1, numel(zoneTerms));
+    end
     commonLists = {options.shotCommonTerms, options.shotCommonOuterTerms};
     for z = 1:numel(zoneTerms)
         if ~isempty(commonLists{z})
@@ -146,7 +152,9 @@ if ~sequential
     zoneTerms = eachTerms;   % Shot 共通を先に引くときだけ、Shot 共通の項は減らさない
 else
     for z = 1:numel(zoneTerms)
-        zoneTerms{z}.used = zoneTerms{z}.used | commonZoneTerms{z}.used;   % 結果の項の表：Shot ごと・Shot 共通のどちらかで使う項
+        if isequal(zoneTerms{z}.k, commonZoneTerms{z}.k) && isequal(zoneTerms{z}.axis, commonZoneTerms{z}.axis)
+            zoneTerms{z}.used = zoneTerms{z}.used | commonZoneTerms{z}.used;   % 結果の項の表：Shot ごと・Shot 共通のどちらかで使う項
+        end   % Shot 共通の式を別にしたときは、項の表は Shot ごとの式の項（Shot 共通の k は commonCoefficients）
     end
 end
 reduceGroups = options.shortage == "reduceGroup";
@@ -210,7 +218,8 @@ for w = 1:numel(wafers)
     fitValues = values - rt.part;   % RT の分を引いた残りを補正の式で求める（RT なしなら values のまま）
     % 表より速く切り出せる数の配列で回帰に渡す。5列目：Wafer 成分を使う点は 1、RT で補正する Shot の点は 0
     coordinates = [points.localX, points.localY, points.Xc, points.Yc, double(~rt.inScope)];
-    [correction, linearCorrection, weights, waferOnlyCorrection, commonCorrection, looResidual, leverage] = deal(nan(nPoints, 2));
+    [correction, linearCorrection, weights, waferOnlyCorrection, commonCorrection, looResidual, leverage, ...
+        commonLinearCorrection] = deal(nan(nPoints, 2));
     [fitted, skipped] = deal(zeros(2, 3));
     for a = 1:2
         fitOptions = axisFits(a).options;
@@ -354,12 +363,26 @@ for w = 1:numel(wafers)
             if linearFit.ok
                 linearCorrection(members, a) = linearFit.fitted;
             end
+            % 比べる補正：Shot 共通補正（Wafer 高次補正＋Shot 共通補正）をかけた残りを、Shot ごとに 1次（k1〜k6）で補正
+            if commonFirst
+                remainder = values(members, a) - commonCorrection(members, a);
+                usable = isfinite(remainder);
+                if nnz(usable) >= 3
+                    remainderFit = fitGroups(coordinates(members(usable), :), remainder(usable), ones(nnz(usable), 1), ...
+                        {linearTerms}, zeros(0, 2), noPenalty, fitOptions);
+                    if remainderFit.ok
+                        commonLinearCorrection(members(usable), a) = commonCorrection(members(usable), a) + ...
+                            remainderFit.fitted;
+                    end
+                end
+            end
         end
     end
     totalFitted = totalFitted + fitted;
     totalSkipped = totalSkipped + skipped;
     residual = values - correction;
     linearResidual = values - linearCorrection;
+    commonLinearResidual = values - commonLinearCorrection;
     waferResidual = values - waferOnlyCorrection;
     commonResidual = values - commonCorrection;
     groupText = strings(nPoints, 1);
@@ -373,10 +396,11 @@ for w = 1:numel(wafers)
         correction(:, 1), correction(:, 2), residual(:, 1), ...
         residual(:, 2), linearResidual(:, 1), linearResidual(:, 2), waferResidual(:, 1), waferResidual(:, 2), ...
         commonResidual(:, 1), commonResidual(:, 2), looResidual(:, 1), looResidual(:, 2), weights(:, 1), ...
-        weights(:, 2), leverage(:, 1), leverage(:, 2), 'VariableNames', ["group", "shotRadius", "zone", "waferRtX", ...
+        weights(:, 2), leverage(:, 1), leverage(:, 2), commonLinearResidual(:, 1), commonLinearResidual(:, 2), ...
+        'VariableNames', ["group", "shotRadius", "zone", "waferRtX", ...
         "waferRtY", "waferRtUsed", "correctionX", "correctionY", "residualX", "residualY", "linearResidualX", "linearResidualY", "waferResidualX", ...
         "waferResidualY", "commonResidualX", "commonResidualY", "looResidualX", "looResidualY", "weightX", "weightY", ...
-        "leverageX", "leverageY"])];
+        "leverageX", "leverageY", "commonLinearResidualX", "commonLinearResidualY"])];
     for a = 1:2
         summaryParts{w, a} = summaryRow(label, AXIS_NAMES(a), ALL_REGION, points.shotNo, pointParts{w}, ...
             sum(fitted(a, :)), sum(skipped(a, :)));

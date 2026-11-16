@@ -118,6 +118,8 @@ settings.highOrder.waferOrder = 1;         % Wafer 成分（Shot 中心の座標
                                            % shot は先に求めて引く）
 settings.highOrder.shotCommon = "none";     % Shot ごと（unit = shot）のとき、先に引く Shot 共通の補正：none（引かない。Shot ごとに
                                            % 求める）・fit（Wafer 内の Shot で共通の k を求めて引く）・input（入力した値を引く）
+settings.highOrder.shotCommonMaker = "same";  % Shot 共通を「計算する」ときの Shot 共通の補正の式：same（Shot ごとと同じ maker）・
+                                           % asml・canon・nikon・custom（Shot 共通はその式、残りを Shot ごとに maker の式で求める）
 settings.highOrder.shotEachOrder = 0;      % Shot 共通を先に引くとき、Shot ごとに求める項の次数の上限（0 = 使う項すべて。1〜6）
 settings.highOrder.shotCommonValues = zeros(1, 0);  % 入力した Shot 共通の k（n 番目が kn の値。k1・k2 は nm、1次は nm/mm、
                                            % n 次は nm/mm^n。無い k は 0）

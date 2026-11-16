@@ -75,6 +75,10 @@ classdef TestRangeVifHistoryScreens < matlab.unittest.TestCase
             c.degradationXAxis.Value = 'marks';
             c.degradationXAxis.ValueChangedFcn([], []);
             testCase.verifyEqual(string(c.degradationAxes(2).XLabel.String), "計測する Mark の数");
+            % エラーバー（Wafer 間のばらつき）
+            c.degradationErrorBar.Value = 'sd';
+            c.degradationErrorBar.ValueChangedFcn([], []);
+            testCase.verifyEqual(numel(findobj(c.degradationAxes(1), 'Type', 'errorbar')), numel(c.degradationMethods.Value));
         end
 
         function highOrderScreens(testCase)
@@ -82,11 +86,14 @@ classdef TestRangeVifHistoryScreens < matlab.unittest.TestCase
             cleanup = onCleanup(@() delete(app));
             c = app.Controls;
             % 補正のくくりが上、補正の式が「Shot ごとの補正」の行。初期値はカスタム・最小二乗・正則化なし
-            testCase.verifyEqual([c.highOrderUnit.Layout.Row, c.highOrderMaker.Layout.Row], [1, 10]);
+            testCase.verifyEqual([c.highOrderUnit.Layout.Row, c.highOrderMaker.Layout.Row], [1, 11]);
             testCase.verifyEqual(c.highOrderMaker.Value, 'custom');
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
             app.applyMapping();
             app.setHighOrderSource("data");
+            % VIF で選ぶ・すべての項を使うのボタンは、Shot 共通補正と Shot ごとの補正の欄に別々に置く
+            testCase.verifyEqual([c.highOrderVifSelectCommon.Parent.Layout.Row, c.highOrderAllCommonTerms.Parent.Layout.Row], [9, 9]);
+            testCase.verifyEqual([c.highOrderVifSelect.Parent.Layout.Row, c.highOrderAllTerms.Parent.Layout.Row], [13, 13]);
             % VIF で選ぶ：Shot 共通と Shot 高次を別々に
             app.setHighOrderSettings(maker="nikon", unit="shot", shotCommon="fit");
             testCase.verifyEqual(string(c.highOrderVifSelectCommon.Enable), "on");
@@ -97,8 +104,25 @@ classdef TestRangeVifHistoryScreens < matlab.unittest.TestCase
             app.selectHighOrderTermsByVif(2, "terms");
             testCase.verifyNotEmpty(app.Settings.highOrder.excludedTerms);
             testCase.verifyEqual(app.Settings.highOrder.shotCommonTerms, common, "Shot 共通の項は変えない");
-            app.setHighOrderSettings(unit="common");
+            % Shot 共通の補正の式を別にする（Shot ごとはカスタム、Shot 共通は Nikon）
+            app.useAllHighOrderTerms();
+            app.setHighOrderSettings(maker="custom", shotCommonMaker="nikon", shotEachOrder=1);
+            testCase.verifyEqual(string(c.highOrderCommonMaker.Enable), "on");
+            testCase.verifyTrue(contains(string(c.highOrderVifInfo.Text), "Shot 共通は Nikon の式"));
+            app.useAllHighOrderTerms("common");
+            nikon = alignest.highOrderTerms("nikon");
+            testCase.verifyEqual(app.Settings.highOrder.shotCommonTerms, unique(nikon.k.'), "Shot 共通の式のすべての項");
+            separate = app.computeHighOrder(1);
+            testCase.verifyTrue(contains(separate.description, "Shot 共通は Nikon"));
+            testCase.verifyTrue(all(ismember(separate.commonCoefficients.k, nikon.k)), "Shot 共通の k は Nikon の式の項");
+            % Wafer の比較：Shot 共通補正をかけたときは「Shot ごとの1次＋Shot 共通補正」も並べる
+            residuals = app.drawHighOrderWaferComparison("residual");
+            testCase.verifyTrue(any(string(residuals.Properties.VariableNames) == "Shot ごとの1次＋Shot 共通補正"));
+            testCase.verifyEqual(numel(findobj(c.highOrderWaferAxes(1), 'Type', 'bar')), 6);
+            testCase.verifyTrue(all(isfinite(separate.points.commonLinearResidualX(isfinite(separate.points.residualX)))));
+            app.setHighOrderSettings(unit="common", shotCommonMaker="same");
             testCase.verifyEqual(string(c.highOrderVifSelectCommon.Enable), "off", "Wafer 内で共通では使わない");
+            testCase.verifyEqual(string(c.highOrderCommonMaker.Enable), "off");
             % 1つの Shot の図：実測点の位置と、外周の Shot では Wafer の縁
             app.useAllHighOrderTerms();
             app.setHighOrderSettings(loss="ols", regularization="none");
@@ -119,6 +143,8 @@ classdef TestRangeVifHistoryScreens < matlab.unittest.TestCase
             testCase.verifyEqual(numel(c.highOrderHistogramAxes), 6);
             testCase.verifyTrue(all(arrayfun(@(ax) ~isempty(ax.Children), c.highOrderHistogramAxes)));
             testCase.verifyEqual(unique(histogram_.region, 'stable').', ["すべて", "内周", "外周"]);
+            testCase.verifyTrue(contains(string(c.highOrderHistogramLegend.Text), '<font color="#'), "凡例に線の色");
+            testCase.verifyFalse(contains(string(c.highOrderHistogramLegend.Text), '#000000'), "黒くしない");
             % 結果の履歴から2つの条件を並べる（同じ Wafer の最小二乗と Huber）
             app.setHighOrderSettings(loss="huber");
             app.computeHighOrder(1);

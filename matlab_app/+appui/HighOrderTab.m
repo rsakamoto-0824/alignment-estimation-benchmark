@@ -22,12 +22,13 @@ classdef (Abstract) HighOrderTab < appui.Core
                 error('alignest:highOrderTermSet', '保存した項の組み合わせ「%s」がありません。', name);
             end
             options = alignest.highOrderOptions(app.Settings);
-            terms = alignest.highOrderTerms(options.maker);
+            makers = commonMakers(options);   % Shot 共通の補正の式（別に選んだときはその式）
+            terms = alignest.highOrderTerms(makers(1));
             chosen = intersect(sets.terms{index}, terms.k.');
             app.Settings.highOrder.shotCommonTerms = unique([reshape(terms.k(terms.protected), 1, []), chosen]);
             refreshHighOrderTerms(app);
             text = sprintf('保存した組み合わせ「%s」の %d 項を Shot 共通の項にしました（k1〜k6 は必ず使う）。', name, numel(chosen));
-            if sets.maker(index) ~= options.maker
+            if sets.maker(index) ~= makers(1)
                 text = [text, '式が違う組み合わせなので、今の式にある k の番号だけを使いました。'];
             end
             app.Controls.highOrderTermInfo.Text = text;
@@ -46,6 +47,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             %   maker（"asml"・"canon"・"nikon"・"custom"）・unit（k の組のくくり："common"・"scan"・"row"・"shot"）・
             %   waferOrder（0〜5）・waferRtRange（Wafer RT を使う Shot："none"・"all"・"outer"）・waferRtOrder（1〜5）・
             %   shotCommon（Shot ごとのとき先に引く Shot 共通の補正："none"・"fit"（計算する）・"input"（入力した値））・
+            %   shotCommonMaker（計算する Shot 共通の補正の式："same"（Shot ごとと同じ）・"asml"・"canon"・"nikon"・"custom"）・
             %   shotEachOrder（Shot 共通を先に引くとき、Shot ごとに求める項の次数の上限。0 = 使う項すべて）・
             %   shotCommonValues・shotCommonOuterValues（入力する Shot 共通の k の値。n 番目が kn。外周は外周の式）・
             %   outerRadiusMm（外周の Shot の半径 [mm]）・outerMaker（外周の式："none"（分けない）・
@@ -63,6 +65,7 @@ classdef (Abstract) HighOrderTab < appui.Core
                 options.waferRtRange (1, 1) string
                 options.waferRtOrder (1, 1) double
                 options.shotCommon (1, 1) string
+                options.shotCommonMaker (1, 1) string
                 options.shotEachOrder (1, 1) double
                 options.shotCommonValues (1, :) double
                 options.shotCommonOuterValues (1, :) double
@@ -82,6 +85,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             c = app.Controls;
             controls = struct("maker", c.highOrderMaker, "unit", c.highOrderUnit, "waferOrder", c.highOrderWaferOrder, ...
                 "waferRtRange", c.highOrderRtRange, "waferRtOrder", c.highOrderRtOrder, "shotCommon", c.highOrderShotCommon, ...
+                "shotCommonMaker", c.highOrderCommonMaker, ...
                 "shotEachOrder", c.highOrderShotEachOrder, "outerRadiusMm", c.highOrderOuterRadius, "outerMaker", ...
                 c.highOrderOuterFormula, "outerTermSet", c.highOrderOuterFormula, "shortage", c.highOrderShortage, ...
                 "vifThreshold", c.highOrderVifThreshold, "measured", c.highOrderMeasured);
@@ -242,6 +246,11 @@ classdef (Abstract) HighOrderTab < appui.Core
             excludedFields = ["excludedTerms", "outerExcludedTerms"];
             commonFields = ["shotCommonTerms", "shotCommonOuterTerms"];
             makers = [options.maker, options.outerMaker];
+            if target == "common"
+                makers = commonMakers(options);   % Shot 共通の補正の式（別に選んだときはその式）
+            else
+                keepCommonTerms(app, options);   % Shot 共通の項は変えない
+            end
             for z = 1:numel(zones)
                 [local, valid] = highOrderLocal(app, zones(z));
                 terms = alignest.highOrderTerms(makers(z));
@@ -253,11 +262,6 @@ classdef (Abstract) HighOrderTab < appui.Core
                     kept = setdiff(reshape(terms.k, 1, []), info.suggestedExcluded);
                     app.Settings.highOrder.(commonFields(z)) = unique([reshape(terms.k(terms.protected), 1, []), kept]);
                 else
-                    if isempty(options.(commonFields(z))) && alignest.highOrderSequential(options) && options.shotCommon == "fit"
-                        % Shot 共通の項は「使う項と同じ」なので、Shot 高次の項だけを変えるよう今の使う項を残す
-                        current = alignest.highOrderTerms(makers(z), options.(excludedFields(z)));
-                        app.Settings.highOrder.(commonFields(z)) = unique(reshape(current.k(current.used), 1, []));
-                    end
                     app.Settings.highOrder.(excludedFields(z)) = info.suggestedExcluded;
                     if zones(z) == "outer"
                         app.Settings.highOrder.outerName = "";
@@ -271,19 +275,56 @@ classdef (Abstract) HighOrderTab < appui.Core
             markHighOrderStale(app);
         end
 
-        function useAllHighOrderTerms(app)
-            %USEALLHIGHORDERTERMS 「すべての項を使う」：外した項を戻す（外周の式を分けるときは外周の式も、式の全項にする）。
-            %   Shot 共通の k に選んだ項も、使う項と同じ（すべての項）に戻す
-            app.Settings.highOrder.excludedTerms = zeros(1, 0);
-            app.Settings.highOrder.shotCommonTerms = zeros(1, 0);
-            app.Settings.highOrder.shotCommonOuterTerms = zeros(1, 0);
-            if lower(string(fieldOr(app.Settings.highOrder, "outerMaker", "none"))) ~= "none"
-                app.Settings.highOrder.outerExcludedTerms = zeros(1, 0);
-                app.Settings.highOrder.outerName = "";
-                refreshHighOrderOuterChoices(app);
+        function useAllHighOrderTerms(app, target)
+            %USEALLHIGHORDERTERMS 「すべての項を使う」：外した項を戻す。target："both"（既定。Shot 高次の使う項と Shot 共通の項の
+            %   両方）・"terms"（Shot 高次（Shot ごとの補正）の使う項だけ。外周の式を分けるときは外周の式も、式の全項にする。
+            %   Shot 共通の項がまだ「使う項と同じ」なら、変える前の使う項を Shot 共通の項として残す）・"common"（Shot 共通の項
+            %   だけ。Shot 共通の補正の式のすべての項にする）
+            arguments
+                app
+                target (1, 1) string {mustBeMember(target, ["both", "terms", "common"])} = "both"
+            end
+            options = alignest.highOrderOptions(app.Settings);
+            if target == "terms"
+                keepCommonTerms(app, options);
+            end
+            if target ~= "common"
+                app.Settings.highOrder.excludedTerms = zeros(1, 0);
+                if options.outerMaker ~= "none"
+                    app.Settings.highOrder.outerExcludedTerms = zeros(1, 0);
+                    app.Settings.highOrder.outerName = "";
+                    refreshHighOrderOuterChoices(app);
+                end
+            end
+            if target == "both"
+                app.Settings.highOrder.shotCommonTerms = zeros(1, 0);   % 使う項と同じ（すべての項）
+                app.Settings.highOrder.shotCommonOuterTerms = zeros(1, 0);
+            elseif target == "common"
+                makers = commonMakers(options);
+                app.Settings.highOrder.shotCommonTerms = unique(reshape(alignest.highOrderTerms(makers(1)).k, 1, []));
+                if options.outerMaker ~= "none"
+                    app.Settings.highOrder.shotCommonOuterTerms = unique(reshape(alignest.highOrderTerms(makers(2)).k, 1, []));
+                end
             end
             refreshHighOrderTerms(app);
             markHighOrderStale(app);
+        end
+
+        function keepCommonTerms(app, options)
+            % Shot 高次の使う項だけを変える前に、Shot 共通の項が「使う項と同じ」（空）なら、今の使う項を Shot 共通の項として
+            % 残す（Shot 共通を計算するときだけ。Shot 共通の式が別なら使う項に依らないので何もしない）
+            if ~(alignest.highOrderSequential(options) && options.shotCommon == "fit" && options.shotCommonMaker == "same")
+                return
+            end
+            fields = ["shotCommonTerms", "shotCommonOuterTerms"];
+            excludedFields = ["excludedTerms", "outerExcludedTerms"];
+            makers = [options.maker, options.outerMaker];
+            for z = 1:1 + (options.outerMaker ~= "none")
+                if isempty(options.(fields(z)))
+                    current = alignest.highOrderTerms(makers(z), options.(excludedFields(z)));
+                    app.Settings.highOrder.(fields(z)) = unique(reshape(current.k(current.used), 1, []));
+                end
+            end
         end
 
         function setHighOrderTermUsed(app, k, used, zone)
@@ -708,25 +749,26 @@ classdef (Abstract) HighOrderTab < appui.Core
             place(uilabel(left, 'Text', '② 補正の式と k パラメータ', 'FontWeight', 'bold'), 5, 1);
             onSetting = @(~, ~) app.onHighOrderSettingsChanged();
             % 並び：式と範囲 → Wafer 補正 → Shot 共通補正 → Shot ごとの補正
-            modelGrid = uigridlayout(left, [11, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1x'}, 'RowHeight', ...
-                repmat({'fit'}, 1, 11), 'Padding', 0);
+            % Shot 共通補正（6〜9行）と Shot ごとの補正（10〜13行）は、それぞれの補正の式・VIF で選ぶ・すべての項を使うを並べる
+            modelGrid = uigridlayout(left, [13, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1x'}, 'RowHeight', ...
+                repmat({'fit'}, 1, 13), 'Padding', 0);
             place(modelGrid, 6, 1);
             sectionNames = ["Wafer 補正", "Shot 共通補正", "Shot ごとの補正"];
-            sectionRows = [3, 6, 9];
+            sectionRows = [3, 6, 10];
             for k = 1:numel(sectionNames)
                 sectionLabel = label(modelGrid, sectionNames(k), sectionRows(k), [1, 4]);
                 sectionLabel.FontWeight = 'bold';
                 sectionLabel.FontColor = app.Palette.muted;
                 sectionLabel.UserData = "muted";
             end
-            label(modelGrid, '補正の式', 10, 1);
+            label(modelGrid, '補正の式', 11, 1);
             c.highOrderMaker = uidropdown(modelGrid, 'Items', {'ASML', 'Canon', 'Nikon', 'カスタム'}, ...
                 'ItemsData', {'asml', 'canon', 'nikon', 'custom'}, 'ValueChangedFcn', onSetting, 'Tooltip', ['Overlay 計測' ...
                 'ルールの Shot 高次補正の式（Canon・Nikon はルールの式のまま、ASML は k1〜k19 のすべての項）。カスタム：' ...
                 'Nikon・Canon と同じ番号の付け方の k1〜k38（4次までのすべての項と5次の項の一部。使う項は表で選び、' ...
                 '組み合わせを保存できます）。' ...
                 '式は「ヘルプ」。']);
-            place(c.highOrderMaker, 10, 2);
+            place(c.highOrderMaker, 11, 2);
             label(modelGrid, '補正のくくり', 1, 1);
             c.highOrderUnit = uidropdown(modelGrid, 'Items', {'Wafer 内で共通', 'Scan 方向ごと', '行の偶奇ごと', ...
                 'Shot ごと'}, 'ItemsData', {'common', 'scan', 'row', 'shot'}, 'ValueChangedFcn', onSetting, 'Tooltip', ...
@@ -768,7 +810,7 @@ classdef (Abstract) HighOrderTab < appui.Core
                 'Nikon やカスタム）。k の組は内周と外周で別に求めます（くくりの組ごと。Wafer 成分は共通）。式の全項か、' ...
                 '「使う項と VIF」で保存した項の組み合わせを選べます。']);
             place(c.highOrderOuterFormula, 1, 4);
-            label(modelGrid, '点が足りない Shot', 11, 1);
+            label(modelGrid, '点が足りない Shot', 12, 1);
             c.highOrderShortage = uidropdown(modelGrid, 'Items', {'全体の項を減らす', ...
                 'その Shot だけ項を減らす', 'その Shot は補正しない'}, 'ItemsData', {'reduceAll', 'reduceGroup', ...
                 'skip'}, 'ValueChangedFcn', onSetting, 'Tooltip', ['選んだ項を決めるのに点が足りない Shot（Shot ごと' ...
@@ -777,7 +819,7 @@ classdef (Abstract) HighOrderTab < appui.Core
                 'だけ、その点で決められる項（k の小さい順）で補正し、ほかの Shot は選んだ項をすべて使います。その Shot は' ...
                 '補正しない：項は減らさず、足りない Shot は補正しません（評価からも外れます）。どれでも、k1〜k6 も決まらない' ...
                 ' Shot は補正しません。']);
-            place(c.highOrderShortage, 11, [2, 4]);
+            place(c.highOrderShortage, 12, [2, 4]);
             label(modelGrid, 'Shot 共通補正', 7, 1);
             c.highOrderShotCommon = uidropdown(modelGrid, 'Items', {'なし', '計算する', '値を入力'}, ...
                 'ItemsData', {'none', 'fit', 'input'}, 'ValueChangedFcn', onSetting, 'Tooltip', ['補正のくくりが Shot ごと・' ...
@@ -785,42 +827,53 @@ classdef (Abstract) HighOrderTab < appui.Core
                 '全 Shot で共通の k を求める（使う項は表の「共通」の列か、下の保存した組み合わせ）。値を入力：「使う項と VIF」の' ...
                 '表の「共通の値」の k。詳しくは「ヘルプ」。']);
             place(c.highOrderShotCommon, 7, 2);
-            label(modelGrid, 'Shot ごとの次数', 10, 3);
+            label(modelGrid, 'Shot ごとの次数', 11, 3);
             c.highOrderShotEachOrder = uidropdown(modelGrid, 'Items', {'すべての項', '1次まで', '2次まで', '3次まで', ...
                 '4次まで', '5次まで', '6次まで'}, 'ItemsData', {0, 1, 2, 3, 4, 5, 6}, 'ValueChangedFcn', onSetting, 'Tooltip', ...
                 ['Shot 共通を先にかけたあと、Shot ごとに求める項の次数の上限（k1〜k6 は必ず求めます）。それより高い次数の項は' ...
                 ' Shot 共通の値のままです。']);
-            place(c.highOrderShotEachOrder, 10, 4);
+            place(c.highOrderShotEachOrder, 11, 4);
             c.highOrderCopyCommon = uibutton(modelGrid, 'Text', '計算した値を写す', 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~, ~) app.onCopyHighOrderCommon(), 'Tooltip', ['直近の計算の Shot 共通の k（Wafer の' ...
                 '平均）を、「使う項と VIF」の表の「共通の値」に写します（補正の式が同じときだけ）。']);
             place(c.highOrderCopyCommon, 7, [3, 4]);
+            % Shot 共通の補正の式（Shot ごとの補正の式と別に選べる。「Shot ごとと同じ」なら同じ式）
+            label(modelGrid, '補正の式', 8, 1);
+            c.highOrderCommonMaker = uidropdown(modelGrid, 'Items', {'Shot ごとと同じ', 'ASML', 'Canon', 'Nikon', 'カスタム'}, ...
+                'ItemsData', {'same', 'asml', 'canon', 'nikon', 'custom'}, 'ValueChangedFcn', onSetting, 'Enable', 'off', ...
+                'Tooltip', ['Shot 共通の k に使う補正の式。Shot ごとと同じ：下の「Shot ごとの補正」の補正の式。ほかの式を選ぶと、' ...
+                'Shot 共通はその式で求め（VIF で選ぶ：Shot 共通・保存した組み合わせでその式の項を選べる）、残りを Shot ごとの' ...
+                '補正の式で求めます。']);
+            place(c.highOrderCommonMaker, 8, 2);
             % Shot 共通の k に使う項：保存した項の組み合わせから写す（選ぶと表の「共通」の列に写し、選択は元に戻す）
-            label(modelGrid, '共通の項', 8, 1);
+            label(modelGrid, '共通の項', 8, 3);
             c.highOrderCommonTermSet = uidropdown(modelGrid, 'Items', {app.COMMON_SET_PLACEHOLDER}, 'ItemsData', {''}, ...
                 'ValueChangedFcn', @(~, ~) app.onHighOrderCommonTermSet(), 'Enable', 'off', 'Tooltip', ['Shot 共通を' ...
                 '「計算する」とき、Shot 共通の k に使う項を、「使う項と VIF」で保存した項の組み合わせから選びます（表の「共通」' ...
                 'の列に写します。k1〜k6 は必ず使う）。表で1つずつ選び直すこともできます。']);
-            place(c.highOrderCommonTermSet, 8, [2, 4]);
-            % VIF で選ぶ：Shot 高次補正の項（表の「使う」）と Shot 共通の項（表の「共通」）に別々に当てる
-            % 左の欄は狭いので、VIF の2つのボタンを同じ幅で並べ、「すべての項を使う」は次の行にする
-            termButtons = uigridlayout(left, [3, 2], 'ColumnWidth', {'1x', '1x'}, 'RowHeight', {'fit', 'fit', 'fit'}, ...
-                'Padding', 0, 'RowSpacing', 2);
-            place(termButtons, 7, 1);
+            place(c.highOrderCommonTermSet, 8, 4);
+            % VIF で選ぶ・すべての項を使う：Shot 共通補正（表の「共通」）と Shot ごとの補正（表の「使う」）に、別々のボタン
             vifTip = ['式のすべての項から始めて、VIF がしきい値以上の高次項を、次数の高い項から1つずつ外します' ...
                 '（k1〜k6 は外しません）。VIF は Shot 内の座標だけで決まります。'];
-            c.highOrderVifSelect = uibutton(termButtons, 'Text', 'VIF で選ぶ：Shot 高次', 'ButtonPushedFcn', ...
-                @(~, ~) app.onHighOrderVifSelect("terms"), 'Tooltip', ['Shot 高次補正に使う項（表の「使う」）だけを選びます' ...
-                '（Shot 共通の項は変えません）。' vifTip]);
-            c.highOrderVifSelectCommon = uibutton(termButtons, 'Text', 'VIF で選ぶ：Shot 共通', 'ButtonPushedFcn', ...
+            commonButtons = uigridlayout(modelGrid, [1, 2], 'ColumnWidth', {'1x', '1x'}, 'Padding', 0);
+            place(commonButtons, 9, [1, 4]);
+            c.highOrderVifSelectCommon = uibutton(commonButtons, 'Text', 'VIF で選ぶ：Shot 共通', 'ButtonPushedFcn', ...
                 @(~, ~) app.onHighOrderVifSelect("common"), 'Enable', 'off', 'Tooltip', ['Shot 共通補正を「計算する」とき、' ...
-                'Shot 共通の k に使う項（表の「共通」）だけを選びます（Shot 高次補正の項は変えません）。' vifTip]);
-            c.highOrderAllTerms = uibutton(termButtons, 'Text', 'すべての項を使う', 'ButtonPushedFcn', ...
-                @(~, ~) app.useAllHighOrderTerms());
-            place(c.highOrderAllTerms, 2, 1);
-            c.highOrderTermInfo = uilabel(termButtons, 'WordWrap', 'on', 'FontColor', app.Palette.muted, 'UserData', "muted", ...
+                'Shot 共通の k に使う項（表の「共通」）だけを選びます（Shot ごとの補正の項は変えません）。' vifTip]);
+            c.highOrderAllCommonTerms = uibutton(commonButtons, 'Text', 'すべての項を使う：Shot 共通', 'Enable', 'off', ...
+                'ButtonPushedFcn', @(~, ~) app.useAllHighOrderTerms("common"), 'Tooltip', ['Shot 共通の k に、Shot 共通の' ...
+                '補正の式のすべての項を使います（Shot ごとの補正の項は変えません）。']);
+            eachButtons = uigridlayout(modelGrid, [1, 2], 'ColumnWidth', {'1x', '1x'}, 'Padding', 0);
+            place(eachButtons, 13, [1, 4]);
+            c.highOrderVifSelect = uibutton(eachButtons, 'Text', 'VIF で選ぶ：Shot 高次', 'ButtonPushedFcn', ...
+                @(~, ~) app.onHighOrderVifSelect("terms"), 'Tooltip', ['Shot 高次補正（Shot ごとの補正）に使う項（表の' ...
+                '「使う」）だけを選びます（Shot 共通の項は変えません）。' vifTip]);
+            c.highOrderAllTerms = uibutton(eachButtons, 'Text', 'すべての項を使う：Shot 高次', 'ButtonPushedFcn', ...
+                @(~, ~) app.useAllHighOrderTerms("terms"), 'Tooltip', ['Shot 高次補正（Shot ごとの補正）に、補正の式の' ...
+                'すべての項を使います（外周の式を分けるときは外周の式も。Shot 共通の項は変えません）。']);
+            c.highOrderTermInfo = uilabel(left, 'WordWrap', 'on', 'FontColor', app.Palette.muted, 'UserData', "muted", ...
                 'Text', '');
-            place(c.highOrderTermInfo, 3, [1, 2]);   % ボタンの下の行（文が長くてもボタンの高さを変えない）
+            place(c.highOrderTermInfo, 7, 1);   % ②の下の行（項を選んだときの知らせ）
 
             c.highOrderRegression = regressionControls(left, onSetting);
             place(c.highOrderRegression.grid, 8, 1);
@@ -1049,6 +1102,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             c.highOrderRtRange.Value = char(options.waferRtRange);
             c.highOrderRtOrder.Value = double(options.waferRtOrder);
             c.highOrderShotCommon.Value = char(options.shotCommon);
+            c.highOrderCommonMaker.Value = char(options.shotCommonMaker);
             c.highOrderShotEachOrder.Value = double(options.shotEachOrder);
             c.highOrderOuterRadius.Value = options.outerRadiusMm;
             c.highOrderShortage.Value = char(options.shortage);
@@ -1127,6 +1181,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             app.Settings.highOrder.waferRtRange = string(c.highOrderRtRange.Value);
             app.Settings.highOrder.waferRtOrder = c.highOrderRtOrder.Value;
             app.Settings.highOrder.shotCommon = string(c.highOrderShotCommon.Value);
+            app.Settings.highOrder.shotCommonMaker = string(c.highOrderCommonMaker.Value);
             app.Settings.highOrder.shotEachOrder = c.highOrderShotEachOrder.Value;
             app.Settings.highOrder.outerRadiusMm = c.highOrderOuterRadius.Value;
             readHighOrderOuterFormula(app);
@@ -1153,6 +1208,8 @@ classdef (Abstract) HighOrderTab < appui.Core
             c.highOrderCopyCommon.Enable = onOff(grouped && shotCommon == "input" && ~isempty(app.HighOrderRun));
             c.highOrderCommonTermSet.Enable = onOff(grouped && shotCommon == "fit" && numel(c.highOrderCommonTermSet.Items) > 1);
             c.highOrderVifSelectCommon.Enable = onOff(grouped && shotCommon == "fit" && isequal(c.highOrderVifSelectCommon.UserData, true));
+            c.highOrderAllCommonTerms.Enable = onOff(grouped && shotCommon == "fit");
+            c.highOrderCommonMaker.Enable = onOff(grouped && shotCommon == "fit");   % 値を入力するときは表の項の値
         end
 
         function onHighOrderSettingsChanged(app)
@@ -1292,7 +1349,8 @@ classdef (Abstract) HighOrderTab < appui.Core
             showValues = alignest.highOrderSequential(options) && options.shotCommon == "input";
             inputValues = {options.shotCommonValues, options.shotCommonOuterValues};
             % Shot 共通を「計算する」ときは、Shot 共通の k に使う項を選ぶ列（「使う」は Shot ごとの項）を足す
-            showCommonTerms = alignest.highOrderSequential(options) && options.shotCommon == "fit";
+            showCommonTerms = alignest.highOrderSequential(options) && options.shotCommon == "fit" && ...
+                options.shotCommonMaker == "same";   % Shot 共通の式を別にしたときは、その式の項を下の知らせに出す
             commonLists = {options.shotCommonTerms, options.shotCommonOuterTerms};
             if split
                 % 内周・外周を1つの項の行にまとめ、使うチェックを内周・外周の列に分ける
@@ -1408,6 +1466,9 @@ classdef (Abstract) HighOrderTab < appui.Core
             end
             c.highOrderTermInfo.Text = char(termText);
             c.highOrderTermInfo.FontColor = ternary(any(short), app.Palette.error, app.Palette.muted);
+            if alignest.highOrderSequential(options) && options.shotCommon == "fit" && options.shotCommonMaker ~= "same"
+                pointText = pointText + " " + commonFormulaText(options);
+            end
             c.highOrderVifInfo.Text = char(pointText);
             showHighOrderCheck(app);
         end
@@ -2380,4 +2441,25 @@ if any(inside)
     text = text + sprintf("（実線は Wafer の縁：半径 %g mm）", waferRadiusMm);
 end
 hold(ax, 'off');
+end
+
+function makers = commonMakers(options)
+% Shot 共通の k に使う補正の式（内周・外周）。Shot 共通の式を別に選んだときは、その式（外周の式を分けるときも同じ式）
+makers = [options.maker, options.outerMaker];
+if options.shotCommonMaker ~= "same"
+    makers = [options.shotCommonMaker, options.shotCommonMaker];
+end
+end
+
+function text = commonFormulaText(options)
+% Shot 共通の式を別に選んだときの知らせ：式の名前と、Shot 共通の k に使う項（k の番号）
+names = struct("asml", "ASML", "canon", "Canon", "nikon", "Nikon", "custom", "カスタム");
+terms = alignest.highOrderTerms(options.shotCommonMaker);
+used = terms.k;
+if ~isempty(options.shotCommonTerms)
+    used = terms.k(terms.protected | ismember(terms.k, options.shotCommonTerms));
+end
+used = unique(used(:).');
+text = "Shot 共通は " + names.(options.shotCommonMaker) + " の式の " + numel(used) + " 項（" + ...
+    strjoin("k" + string(used), "・") + "）で求めます。";
 end

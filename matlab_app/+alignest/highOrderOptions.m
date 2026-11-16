@@ -16,6 +16,9 @@ function options = highOrderOptions(settings)
 %                       補正。"none"（引かない。k の組ごとの k をその組の点だけで求める）・"fit"（Wafer 内の Shot で共通の k を
 %                       Wafer 成分と一緒に求めて引く）・"input"（入力した k の値 shotCommonValues・shotCommonOuterValues を引く）。
 %                       引いた残りを k の組ごとに求める（alignest.highOrderSequential）。Wafer 内で共通のくくりでは使わない
+%   options.shotCommonMaker：Shot 共通を「計算する」ときの Shot 共通の補正の式。"same"（Shot ごとと同じ options.maker。既定）・
+%                       "asml"・"canon"・"nikon"・"custom"（Shot 共通の k はこの式の項で求め、残りを options.maker の式で k の組ごとに
+%                       求める。外周の式を分けるときも、Shot 共通はこの式。shotCommonTerms はこの式の k の番号）
 %   options.shotEachOrder：Shot 共通を先に引くとき、k の組ごとに求める項の次数の上限（0 = 使う項すべて。1〜6。k1〜k6 は必ず求める）
 %   options.shotCommonTerms・shotCommonOuterTerms：Shot 共通を「計算する」ときに Shot 共通の k に使う項（k の番号。空なら
 %                             使う項と同じ。k1〜k6 は必ず使う。Shot ごとの項は「使う」と shotEachOrder で決まる）
@@ -93,6 +96,7 @@ options.outerName = string(options.outerName);
 options.shortage = string(options.shortage);
 options.waferRtRange = string(options.waferRtRange);
 options.shotCommon = lower(string(options.shotCommon));
+options.shotCommonMaker = lower(string(options.shotCommonMaker));
 options.shotCommonValues = reshape(double(options.shotCommonValues), 1, []);
 options.shotCommonOuterValues = reshape(double(options.shotCommonOuterValues), 1, []);
 options.shotCommonTerms = reshape(double(options.shotCommonTerms), 1, []);
@@ -175,6 +179,10 @@ if ~isscalar(options.outerMaker) || ~any(options.outerMaker == ["none", MAKER_NA
     error('alignest:highOrderModel', '外周の式は none（分けない）・%s のいずれかです: %s', strjoin(MAKER_NAMES, "・"), ...
         strjoin(options.outerMaker, "・"));
 end
+if ~isscalar(options.shotCommonMaker) || ~any(options.shotCommonMaker == ["same", MAKER_NAMES])
+    error('alignest:highOrderModel', 'Shot 共通の補正の式は same（Shot ごとと同じ）・%s のいずれかです: %s', ...
+        strjoin(MAKER_NAMES, "・"), strjoin(options.shotCommonMaker, "・"));
+end
 if ~isscalar(options.outerName)
     error('alignest:highOrderOuter', '外周の式の組み合わせの名前は1つの文字列にしてください。');
 end
@@ -202,7 +210,11 @@ if alignest.highOrderSequential(options)
         eachText = sprintf("%d次までの項を", options.shotEachOrder);
     end
     groupLabels = struct("shot", "Shot", "scan", "Scan 方向", "row", "行の偶奇");
-    unitText = unitText + "、" + sourceText + " Shot 共通の k を先に引いて残りの" + eachText + " " + ...
+    commonText = "";
+    if options.shotCommon == "fit" && options.shotCommonMaker ~= "same"
+        commonText = "（Shot 共通は " + MAKER_LABELS(MAKER_NAMES == options.shotCommonMaker) + " の式）";
+    end
+    unitText = unitText + "、" + sourceText + " Shot 共通の k" + commonText + " を先に引いて残りの" + eachText + " " + ...
         groupLabels.(options.unit) + " ごとに求める";
 end
 if options.waferRtRange == "all"
