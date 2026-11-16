@@ -274,8 +274,13 @@ classdef TestPlanSelectionAndScreens < matlab.unittest.TestCase
             row = find(string(c.highOrderTermTable.Data(:, 3)) == "k1", 1);
             c.highOrderTermTable.CellEditCallback(c.highOrderTermTable, struct("Indices", [row, 6], "NewData", false));
             testCase.verifyEqual(string(c.highOrderTermInfo.Text), "k1〜k6 は外せません");
+            % すべての項を使う：Shot 共通と Shot 高次に別々のボタン（もう一方は変えない）
+            c.highOrderAllCommonTerms.ButtonPushedFcn([], []);
+            testCase.verifyTrue(ismember(9, app.Settings.highOrder.shotCommonTerms), "Shot 共通の式のすべての項に戻す");
+            app.setHighOrderTermUsed(9, false);
             c.highOrderAllTerms.ButtonPushedFcn([], []);
-            testCase.verifyEmpty(app.Settings.highOrder.shotCommonTerms, "すべての項を使うで戻す");
+            testCase.verifyEmpty(app.Settings.highOrder.excludedTerms, "Shot 高次の項をすべての項に戻す");
+            testCase.verifyTrue(ismember(9, app.Settings.highOrder.shotCommonTerms), "Shot 共通の項は変えない");
             app.setHighOrderSettings(unit="row");
             app.computeHighOrder(1);
             c.highOrderMapShotNumbers.Value = true;

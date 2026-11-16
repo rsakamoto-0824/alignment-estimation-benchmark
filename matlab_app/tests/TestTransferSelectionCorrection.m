@@ -261,7 +261,8 @@ classdef TestTransferSelectionCorrection < matlab.unittest.TestCase
         end
 
         function measuredAndEstimatedCorrection(testCase)
-            % 結果一覧：実測値で求めた補正と推定値で求めた補正を、実測値に当てて比べる（補正のモデルは「7. Shot高次補正」の設定）
+            % 結果一覧：実測値で求めた補正と推定値で求めた補正を、実測値に当てて比べる（補正のモデルは「2. 評価の設定」の
+            % Overlay 補正の評価）。すべての点と推定対象の点（学習に使わなかった Mark）で比べ、X・Y の図を分けて2色の棒で描く
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
             c = app.Controls;
@@ -273,24 +274,48 @@ classdef TestTransferSelectionCorrection < matlab.unittest.TestCase
             settings.sampling.nShots = 30;
             settings.sampling.exchangeStarts = 2;
             app.setSettings(settings);
-            app.runEvaluationNow(false);
+            results = app.runEvaluationNow(false);
             testCase.verifyEqual(string(c.compareEstimatedCorrectionButton.Enable), "on");
             comparison = app.compareEstimatedCorrection(1, c.estimatedCorrectionGroup.Items{1}, 0);
             t = comparison.table;
-            testCase.verifyEqual(height(t), 2 * (numel(app.Data.units) + 1), "Wafer（とすべて）× X・Y");
+            testCase.verifyEqual(height(t), 2 * 2 * (numel(app.Data.units) + 1), "Wafer（とすべて）× 範囲 × X・Y");
+            testCase.verifyEqual(unique(t.scope, 'stable').', ["すべての点", "推定対象の点"]);
             testCase.verifyEqual(t.difference, t.estimated - t.measured, 'AbsTol', 1e-12);
             testCase.verifyTrue(all(t.measured <= t.before), "補正すると残差が小さい");
             testCase.verifyTrue(all(t.correctionDifference > 0));
-            % 実測値で補正した残差は、同じ設定で計測値から求めた Shot 高次補正と同じ
-            wafers = arrayfun(@(unit) struct("label", string(unit.label), "points", alignest.highOrderUnitPoints(unit)), ...
-                app.Data.units);
-            direct = alignest.shotHighOrder(wafers, app.Settings);
-            first = t(t.wafer == string(app.Data.units(1).label) & t.axis == "X", :);
-            residual = direct.points.residualX(direct.points.wafer == string(app.Data.units(1).label));
-            testCase.verifyEqual(first.measured, meanPlus3Sigma(residual), 'RelTol', 0.05);
+            % 実測値・推定値で補正した残差は、評価の Overlay 補正（alignest.overlayCorrection）と同じ
+            unit = app.Data.units(1);
+            plan = results.plans(find([results.plans.unitIndex] == 1 & string({results.plans.group}) == ...
+                string(c.estimatedCorrectionGroup.Items{1}), 1));
+            out = alignest.estimateWafer(unit, plan, results.methods(1), results.settings);
+            projector = alignest.overlayProjector(unit, alignest.overlayChoice(app.Settings), app.Settings.data.waferRadiusMm);
+            direct = alignest.overlayCorrection(unit, out, projector);
+            mine = t(t.wafer == string(unit.label) & t.axis == "X", :);
+            residualActual = direct.fields.residualActual(:, 1);
+            residualEstimated = direct.fields.residualEstimated(:, 1);
+            target = ~alignest.trainingMarks(unit, plan);
+            both = isfinite(residualActual) & isfinite(residualEstimated);
+            testCase.verifyEqual(mine.measured(mine.scope == "すべての点"), meanPlus3Sigma(residualActual(both)), 'RelTol', 1e-9);
+            testCase.verifyEqual(mine.estimated(mine.scope == "推定対象の点"), ...
+                meanPlus3Sigma(residualEstimated(both & target)), 'RelTol', 1e-9);
+            testCase.verifyLessThan(mine.n(mine.scope == "推定対象の点"), mine.n(mine.scope == "すべての点"));
+            % 初期値の Overlay 補正（Shot 共通成分なし・Shot ごとの成分 1次）：＋Shot 共通の段階は Wafer 成分だけと同じ
+            testCase.verifyEqual(t.measuredCommonStage, t.measuredWaferStage, 'AbsTol', 1e-12);
             testCase.verifyEqual(height(c.estimatedCorrectionTable.Data), height(t));
-            testCase.verifyEqual(numel(findobj(c.estimatedCorrectionAxes, 'Type', 'bar')), 4);
-            testCase.verifyTrue(contains(string(c.estimatedCorrectionModel.Text), "カスタム"), "初期値の補正の式");
+            testCase.verifyEqual(numel(c.estimatedCorrectionAxes), 4, "すべての点・推定対象の点 × X・Y");
+            bars = findobj(c.estimatedCorrectionAxes(1), 'Type', 'bar');
+            testCase.verifyEqual(numel(bars), 2, "実測値で補正・推定値で補正");
+            testCase.verifyNotEqual(bars(1).FaceColor, bars(2).FaceColor, "2色");
+            testCase.verifyTrue(contains(string(c.estimatedCorrectionAxes(3).Title.String), "推定対象の点（X）"));
+            testCase.verifyTrue(contains(string(c.estimatedCorrectionModel.Text), "「2. 評価の設定」の Overlay 補正の評価"));
+            % Overlay 補正の評価がすべて「なし」なら比べられない
+            none = app.Settings;
+            none.overlay.waferOrder = 0;
+            none.overlay.shotCommon = "none";
+            none.overlay.perShot = "none";
+            selection = struct("methodIndex", 1, "groups", string(c.estimatedCorrectionGroup.Items{1}), "unitIndex", 1);
+            testCase.verifyError(@() alignest.estimatedCorrectionComparison(app.Data, app.Results, selection, none), ...
+                'alignest:estimatedCorrection');
         end
     end
 end

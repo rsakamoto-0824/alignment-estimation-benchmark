@@ -3,12 +3,18 @@ classdef (Abstract) ResultsTab < appui.Core
     %   AlignmentEstimationApp（画面の本体）の一部。画面の部品は Controls、データ・結果は Core のプロパティに持つ。
     %   ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
 
+    properties (Constant, Access = {?appui.Core})
+        CORRECTION_MODEL_NOTE = ['補正のモデルは「2. 評価の設定」の Overlay 補正の評価です（Wafer 成分・Shot 共通成分・Shot ごとの' ...
+            '成分）。実測値で補正：全 Mark の計測値で求めた補正。推定値で補正：学習に使った Mark の計測値とほかの Mark の推定値で' ...
+            '求めた補正。どちらも計測値に当てた残差で、すべての点と推定対象の点（学習に使わなかった Mark）で比べます。']
+    end
+
     methods
         function comparison = compareEstimatedCorrection(app, methodIndex, group, unitIndex)
-            %COMPAREESTIMATEDCORRECTION 「実測値と推定値の補正」：実測値で求めた Shot 高次補正と、推定値で求めた Shot 高次補正を、
-            %   実測値に当てて比べる（alignest.estimatedCorrectionComparison）。補正のモデルは「7. Shot高次補正」の②③の設定
-            %   （Wafer 高次補正・Shot 共通補正・Shot ごとの補正・回帰）。methodIndex：手法の番号（複数可）、group：学習パターンの列、
-            %   unitIndex：Wafer の番号（0 = すべて）。省略すると画面の選択。
+            %COMPAREESTIMATEDCORRECTION 「実測値と推定値の補正」：実測値で求めた補正と、推定値で求めた補正を、実測値に当てて
+            %   比べる（alignest.estimatedCorrectionComparison）。補正のモデルは「2. 評価の設定」の Overlay 補正の評価（Wafer 成分・
+            %   Shot 共通成分・Shot ごとの成分）。すべての点と推定対象の点（学習に使わなかった Mark）で比べる。methodIndex：手法の
+            %   番号（複数可）、group：学習パターンの列、unitIndex：Wafer の番号（0 = すべて）。省略すると画面の選択。
             c = app.Controls;
             if nargin >= 2
                 c.estimatedCorrectionMethods.Value = num2cell(reshape(methodIndex, 1, []));
@@ -122,11 +128,15 @@ classdef (Abstract) ResultsTab < appui.Core
                 exclude = [reshape(double(fieldOr(sampling, "requiredShots", zeros(1, 0))), 1, []), ...
                     reshape(double(fieldOr(sampling, "excludedShots", zeros(1, 0))), 1, [])];
             end
+            axisName = string(c.candidateAxis.Value);
+            statistic = string(c.candidateStatistic.Value);
             candidates = alignest.measurementCandidates(estimates, criterion, level, c.candidateCount.Value, ...
-                axis=string(c.candidateAxis.Value), statistic=string(c.candidateStatistic.Value), exclude=exclude);
+                axis=axisName, statistic=statistic, exclude=exclude);
+            % ヒートマップの値：すべての Mark の場所の値（同じ基準・値・集計。除く場所も入れる）
+            locations = alignest.measurementCandidates(estimates, criterion, "mark", max(height(estimates), 1), ...
+                axis=axisName, statistic=statistic);
             app.MeasurementCandidates = struct("table", candidates, "level", level, "criterion", criterion, ...
-                "estimates", estimates(:, intersect(["x", "y", "shotNo", "markNo", "role"], ...
-                string(estimates.Properties.VariableNames), 'stable')), "nExcluded", numel(exclude));
+                "axis", axisName, "locations", locations, "nExcluded", numel(exclude));
             showMeasurementCandidates(app);
         end
 
@@ -909,8 +919,8 @@ classdef (Abstract) ResultsTab < appui.Core
             degradationGrid = uigridlayout(c.degradationTab, [3, 2], 'RowHeight', {'fit', '1x', 'fit'}, ...
                 'ColumnWidth', {'1x', 300}, 'Padding', 8, 'ColumnSpacing', 12);
             registerResponsiveColumn(app, degradationGrid, 2);
-            degradationControls = uigridlayout(degradationGrid, [1, 5], 'ColumnWidth', {'fit', 240, 'fit', 240, 'fit'}, ...
-                'Padding', 0);
+            degradationControls = uigridlayout(degradationGrid, [1, 7], 'ColumnWidth', {'fit', 200, 'fit', 170, 'fit', ...
+                220, 'fit'}, 'Padding', 0);
             place(degradationControls, 1, 1);
             onDegradation = @(~, ~) app.drawOverlayDegradation();
             label(degradationControls, '横軸', 1, 1);
@@ -926,9 +936,17 @@ classdef (Abstract) ResultsTab < appui.Core
                 '重ね合わせ補正がどれだけ悪くなるか）。推定による変化：推定値で補正した残差 − 実測値で補正した残差 の' ...
                 ' |平均|+3σ。どちらも X・Y 別で、上の「集計」で Wafer をまとめます。']);
             place(c.degradationYAxis, 1, 4);
+            label(degradationControls, 'エラーバー', 1, 5);
+            [errorKinds, errorLabels] = alignest.errorBarKinds();
+            c.degradationErrorBar = uidropdown(degradationControls, 'Items', cellstr(plainLabels(errorLabels)), ...
+                'ItemsData', cellstr(errorKinds), 'Enable', 'off', 'ValueChangedFcn', onDegradation, 'Tooltip', ...
+                ['縦軸の値の Wafer 間のばらつき（「計測配置の比較」と同じ）。標準偏差：Wafer 間のばらつき。95% 信頼区間：' ...
+                '平均の確からしさ（± 1.96 × 標準誤差）。最小〜最大：Wafer の値の範囲。Wafer が1枚の点は標準偏差・信頼区間を' ...
+                '描きません。']);
+            place(c.degradationErrorBar, 1, 6);
             c.degradationWafers = uicheckbox(degradationControls, 'Text', 'Wafer ごとの点', 'Enable', 'off', ...
                 'ValueChangedFcn', onDegradation);
-            place(c.degradationWafers, 1, 5);
+            place(c.degradationWafers, 1, 7);
             degradationAxesGrid = uigridlayout(degradationGrid, [1, 2], 'Padding', 0, 'ColumnSpacing', 8);
             place(degradationAxesGrid, 2, 1);
             c.degradationAxes = [uiaxes(degradationAxesGrid), uiaxes(degradationAxesGrid)];
@@ -1108,7 +1126,7 @@ classdef (Abstract) ResultsTab < appui.Core
             c.timingInfo = uilabel(timingGrid, 'WordWrap', 'on', 'Text', '');
             % 実測値と推定値の補正：実測値で求めた Shot 高次補正と、推定値で求めた Shot 高次補正を実測値に当てて比べる
             c.estimatedCorrectionTab = uitab(c.resultTabs, 'Title', '実測値と推定値の補正');
-            correctionGrid = uigridlayout(c.estimatedCorrectionTab, [5, 1], 'RowHeight', {'fit', 'fit', 190, '1x', 'fit'}, ...
+            correctionGrid = uigridlayout(c.estimatedCorrectionTab, [4, 1], 'RowHeight', {'fit', 'fit', '1x', 'fit'}, ...
                 'Padding', 8, 'RowSpacing', 6);
             correctionControls = uigridlayout(correctionGrid, [2, 4], 'ColumnWidth', {'1x', 220, 220, 'fit'}, ...
                 'RowHeight', {'fit', app.ANALYSIS_METHOD_LIST_HEIGHT}, 'Padding', 0);
@@ -1126,72 +1144,95 @@ classdef (Abstract) ResultsTab < appui.Core
                 'ButtonPushedFcn', @(~, ~) app.onCompareEstimatedCorrection());
             place(c.compareEstimatedCorrectionButton, 2, 4);
             c.estimatedCorrectionModel = uilabel(correctionGrid, 'WordWrap', 'on', 'FontColor', app.Palette.muted, ...
-                'UserData', "muted", 'Text', ['補正のモデルは「7. Shot高次補正」の②③の設定です（Wafer 高次補正・Shot 共通補正・' ...
-                'Shot ごとの補正・回帰）。実測値で補正：全 Mark の計測値で求めた補正。推定値で補正：学習に使った Mark の計測値と' ...
-                'ほかの Mark の推定値で求めた補正。どちらも計測値に当てた残差で比べます。']);
-            c.estimatedCorrectionTable = uitable(correctionGrid, 'RowName', {}, 'Data', table());
-            c.estimatedCorrectionAxes = uiaxes(uigridlayout(uipanel(correctionGrid, 'BorderType', 'none'), [1, 1], ...
-                'Padding', 0));
+                'UserData', "muted", 'Text', app.CORRECTION_MODEL_NOTE);
+            % 図と表は中のタブで切り替える（図を4つ並べるので、表と縦に並べると図が狭くなる）
+            correctionViews = uitabgroup(correctionGrid);
+            c.estimatedCorrectionChartTab = uitab(correctionViews, 'Title', '図');
+            tableTab = uitab(correctionViews, 'Title', '表');
+            c.estimatedCorrectionTable = uitable(uigridlayout(tableTab, [1, 1], 'Padding', 4), 'RowName', {}, 'Data', table());
+            % 図：上がすべての点、下が推定対象の点。左が X、右が Y（実測値で補正・推定値で補正の2色の棒）
+            correctionAxesGrid = uigridlayout(c.estimatedCorrectionChartTab, [2, 2], 'Padding', 4, ...
+                'RowSpacing', 6, 'ColumnSpacing', 8);
+            c.estimatedCorrectionAxes = [uiaxes(correctionAxesGrid), uiaxes(correctionAxesGrid), ...
+                uiaxes(correctionAxesGrid), uiaxes(correctionAxesGrid)];
             c.estimatedCorrectionInfo = uilabel(correctionGrid, 'WordWrap', 'on', 'Text', '');
             app.Controls = mergeStruct(app.Controls, c);
         end
 
         function showEstimatedCorrection(app)
-            % 「実測値と推定値の補正」の表と図（図は、すべての Wafer の行の高次補正の残差を、手法・学習パターンごとに並べる）
+            % 「実測値と推定値の補正」の表と図。図は、すべての Wafer の行の全成分の残差を、手法・学習パターンごとに並べる
+            % （上：すべての点、下：推定対象の点。左：X、右：Y。棒の色は実測値で補正・推定値で補正の2色）
+            MEASURED_COLOR = [0.00, 0.45, 0.74];
+            ESTIMATED_COLOR = [0.85, 0.33, 0.10];
             c = app.Controls;
             comparison = app.EstimatedCorrection;
-            ax = c.estimatedCorrectionAxes;
-            cla(ax, 'reset');
-            legend(ax, 'off');
+            for ax = c.estimatedCorrectionAxes
+                cla(ax, 'reset');
+                legend(ax, 'off');
+            end
             removeStyle(c.estimatedCorrectionTable);
             if isempty(comparison)
                 c.estimatedCorrectionTable.Data = table();
                 c.estimatedCorrectionInfo.Text = '';
+                c.estimatedCorrectionModel.Text = app.CORRECTION_MODEL_NOTE;
                 return
             end
             t = comparison.table;
-            c.estimatedCorrectionTable.Data = table(t.method, t.plan, t.wafer, t.axis, t.n, round(t.before, 3), ...
+            c.estimatedCorrectionTable.Data = table(t.method, t.plan, t.wafer, t.scope, t.axis, t.n, round(t.before, 3), ...
                 round(t.measuredWaferStage, 3), round(t.measuredCommonStage, 3), round(t.measured, 3), ...
                 round(t.estimatedWaferStage, 3), round(t.estimatedCommonStage, 3), round(t.estimated, 3), ...
                 round(t.difference, 3), round(t.correctionDifference, 3), 'VariableNames', ["手法", "学習パターン", "Wafer", ...
-                "軸", "比べた点", "補正前の値|｜平均｜+3σ [nm]", "実測値で補正|Wafer 高次だけ", "実測値で補正|＋Shot 共通", ...
-                "実測値で補正|高次補正の残差", "推定値で補正|Wafer 高次だけ", "推定値で補正|＋Shot 共通", ...
-                "推定値で補正|高次補正の残差", "差 [nm]|推定値 − 実測値", "補正量の差|｜平均｜+3σ [nm]"]);
-            c.estimatedCorrectionTable.ColumnWidth = {150, 110, 140, 36, 64, 110, 100, 100, 110, 100, 100, 110, 100, 110};
+                "範囲", "軸", "比べた点", "補正前の値|｜平均｜+3σ [nm]", "実測値で補正|Wafer 成分だけ", "実測値で補正|＋Shot 共通", ...
+                "実測値で補正|全成分", "推定値で補正|Wafer 成分だけ", "推定値で補正|＋Shot 共通", ...
+                "推定値で補正|全成分", "差 [nm]|推定値 − 実測値", "補正量の差|｜平均｜+3σ [nm]"]);
+            c.estimatedCorrectionTable.ColumnWidth = {150, 110, 140, 100, 36, 64, 110, 100, 100, 100, 100, 100, 100, 100, 110};
             totals = find(t.wafer == "すべての Wafer");
             if ~isempty(totals)
                 addStyle(c.estimatedCorrectionTable, uistyle('FontWeight', 'bold'), 'row', totals);
             end
             all_ = t(t.wafer == "すべての Wafer", :);
             names = unique(all_.method + "｜" + all_.plan, 'stable');
-            values = nan(numel(names), 4);
-            for k = 1:numel(names)
-                mine = all_(all_.method + "｜" + all_.plan == names(k), :);
-                x = mine(mine.axis == "X", :);
-                y = mine(mine.axis == "Y", :);
-                values(k, :) = [x.measured, x.estimated, y.measured, y.estimated];
+            scopes = ["すべての点", "推定対象の点"];
+            axisNames = ["X", "Y"];
+            for s = 1:numel(scopes)
+                for a = 1:numel(axisNames)
+                    ax = c.estimatedCorrectionAxes((s - 1) * 2 + a);
+                    values = nan(numel(names), 2);
+                    for k = 1:numel(names)
+                        row = all_(all_.method + "｜" + all_.plan == names(k) & all_.scope == scopes(s) & ...
+                            all_.axis == axisNames(a), :);
+                        if ~isempty(row)
+                            values(k, :) = [row.measured(1), row.estimated(1)];
+                        end
+                    end
+                    bars = bar(ax, 1:numel(names), values, 'grouped');
+                    set(bars(1), 'FaceColor', MEASURED_COLOR, 'DisplayName', '実測値で補正');
+                    set(bars(2), 'FaceColor', ESTIMATED_COLOR, 'DisplayName', '推定値で補正');
+                    % 手法・学習パターンの名前は長いので、横軸は番号にして、番号の意味は図の下の説明に出す
+                    xticks(ax, 1:numel(names));
+                    xticklabels(ax, cellstr(string(1:numel(names))));
+                    ax.XTickLabelRotation = 0;
+                    xlabel(ax, '手法｜学習パターン（番号）');
+                    ylabel(ax, '残差 |平均|+3σ [nm]');
+                    title(ax, scopes(s) + "（" + axisNames(a) + "）", 'Interpreter', 'none');
+                    grid(ax, 'on');
+                    box(ax, 'on');
+                    if s == 1 && a == 2
+                        legend(ax, 'Location', 'northeast', 'Interpreter', 'none', 'Box', 'off');
+                    end
+                end
             end
-            bars = bar(ax, 1:numel(names), values, 'grouped');
-            labelsOfBars = ["X 実測値で補正", "X 推定値で補正", "Y 実測値で補正", "Y 推定値で補正"];
-            for k = 1:numel(bars)
-                bars(k).DisplayName = labelsOfBars(k);
-            end
-            xticks(ax, 1:numel(names));
-            xticklabels(ax, cellstr(names));
-            ylabel(ax, '高次補正の残差 |平均|+3σ [nm]');
-            title(ax, 'すべての Wafer：実測値で補正と推定値で補正', 'Interpreter', 'none');
-            grid(ax, 'on');
-            box(ax, 'on');
-            legend(ax, 'Location', 'northeast', 'Interpreter', 'none');
-            styleAxes(app, ax, app.AXES_FONT_SIZE);
-            c.estimatedCorrectionModel.Text = char("補正のモデル（「7. Shot高次補正」の②③の設定）：" + comparison.description);
-            c.estimatedCorrectionInfo.Text = char(strjoin(["差 = 推定値で補正した残差 − 実測値で補正した残差（正なら、推定値で" + ...
-                "補正すると残差が大きい）。補正量の差は、推定値で求めた補正量 − 実測値で求めた補正量。"; comparison.messages], " "));
+            styleAxes(app, c.estimatedCorrectionAxes, app.AXES_FONT_SIZE);
+            c.estimatedCorrectionModel.Text = char("補正のモデル（「2. 評価の設定」の Overlay 補正の評価）：" + comparison.description);
+            numberText = "図の番号：" + strjoin(string(1:numel(names)) + " = " + names(:).', "、") + "。";
+            c.estimatedCorrectionInfo.Text = char(strjoin([numberText; "すべての点：残差のある全 Mark。推定対象の点：学習に使わなかった" + ...
+                " Mark（推定値が補正に入る点）。差 = 推定値で補正した残差 − 実測値で補正した残差（正なら、推定値で補正すると" + ...
+                "残差が大きい）。補正量の差は、推定値で求めた補正量 − 実測値で求めた補正量。"; comparison.messages], " "));
         end
 
         function onCompareEstimatedCorrection(app)
             runWithAlert(app, @() app.compareEstimatedCorrection(), "実測値と推定値の補正を比べられませんでした", ...
-                "手法・学習パターン・Wafer と、「7. Shot高次補正」の②③の設定を確かめてから、もう一度試してください。");
+                "手法・学習パターン・Wafer と、「2. 評価の設定」の Overlay 補正の評価を確かめてから、もう一度試してください。");
         end
 
         function onFindMeasurementCandidates(app)
@@ -1205,9 +1246,9 @@ classdef (Abstract) ResultsTab < appui.Core
         end
 
         function showMeasurementCandidates(app)
-            % 「計測を足す場所」の表と図：候補（値の大きい順）と、Wafer 上の評価点（灰）・候補の場所（赤。数は順位）
+            % 「計測を足す場所」の表と図：候補（値の大きい順）と、Wafer 上の値のヒートマップ（すべての Mark の場所の値を
+            % 内挿した色）・候補の場所（赤。数は順位）
             CANDIDATE_COLOR = [0.85, 0.15, 0.10];
-            POINT_COLOR = [0.65, 0.65, 0.65];
             c = app.Controls;
             ax = c.candidateAxes;
             cla(ax, 'reset');
@@ -1228,16 +1269,14 @@ classdef (Abstract) ResultsTab < appui.Core
                 arrayfun(@(value) sprintf('%.3f', value), t.value, 'UniformOutput', false), num2cell(t.nPoints), ...
                 num2cell(t.nWafers)];
             c.candidateTable.ColumnName = {'順位', 'shotNo', 'markNo', char("値 " + unitText), '点の数', 'Wafer 数'};
-            % 図：評価点（同じ場所は1つ）と候補の場所
-            points = found.estimates;
-            hold(ax, 'on');
-            angle = linspace(0, 2 * pi, 361);
+            % 図：すべての Mark の場所の値のヒートマップと、候補の場所
+            criterionText = ternary(found.criterion == "variance", "GPR の推定の分散", "推定誤差");
+            axisText = struct("xy", "X・Y の大きさ", "X", "X", "Y", "Y");
             radius = app.Settings.data.waferRadiusMm;
-            plot(ax, radius * cos(angle), radius * sin(angle), '-', 'Color', POINT_COLOR, 'HandleVisibility', 'off');
-            if ~isempty(points)
-                where = unique(round([points.x, points.y], 3), 'rows');
-                plot(ax, where(:, 1), where(:, 2), '.', 'Color', POINT_COLOR, 'MarkerSize', 6, 'DisplayName', '評価点');
-            end
+            places = found.locations;
+            alignest.plot.valueHeatmap(ax, [places.x, places.y], places.value, waferRadiusMm=radius, ...
+                colorTitle=criterionText + "（" + axisText.(found.axis) + "）" + unitText);
+            hold(ax, 'on');
             if height(t) > 0
                 marker = ternary(found.level == "mark", "o", "s");
                 plot(ax, t.x, t.y, char(marker), 'MarkerSize', 9, 'LineWidth', 1.5, 'Color', CANDIDATE_COLOR, ...
@@ -1247,15 +1286,8 @@ classdef (Abstract) ResultsTab < appui.Core
                     'VerticalAlignment', 'bottom', 'HandleVisibility', 'off');
             end
             hold(ax, 'off');
-            axis(ax, 'equal');
-            xlim(ax, [-1, 1] * radius * 1.05);
-            ylim(ax, [-1, 1] * radius * 1.05);
-            xlabel(ax, 'x [mm]');
-            ylabel(ax, 'y [mm]');
-            criterionText = ternary(found.criterion == "variance", "GPR の推定の分散", "推定誤差");
             title(ax, sprintf("%sの大きい上位 %d の場所", criterionText, height(t)));
             legend(ax, 'Location', 'southoutside', 'Box', 'off', 'FontSize', 10);
-            grid(ax, 'on');
             styleAxes(app, ax, app.AXES_FONT_SIZE);
             if height(t) == 0
                 c.candidateInfo.Text = char("候補がありません（" + ternary(found.criterion == "variance", ...
@@ -1510,7 +1542,8 @@ classdef (Abstract) ResultsTab < appui.Core
             c.degradationMethods.Items = cellstr(labels);
             c.degradationMethods.ItemsData = num2cell(1:numel(labels));
             c.degradationMethods.Value = c.chartMethods.Value;
-            set([c.degradationXAxis, c.degradationYAxis, c.degradationWafers, c.degradationMethods], 'Enable', ...
+            set([c.degradationXAxis, c.degradationYAxis, c.degradationErrorBar, c.degradationWafers, ...
+                c.degradationMethods], 'Enable', ...
                 onOff(isfield(results, "overlayEvaluated") && results.overlayEvaluated));
             set([c.export, c.saveChart, c.copyChart], 'Enable', 'on');
             imported = isImportedResults(results);
@@ -1802,6 +1835,7 @@ classdef (Abstract) ResultsTab < appui.Core
             end
             xKind = string(c.degradationXAxis.Value);
             yKind = string(c.degradationYAxis.Value);
+            errorKind = string(c.degradationErrorBar.Value);
             statistic = string(c.statistic.Value);
             degradation = alignest.overlayDegradation(results, xKind, yKind, statistic);
             selected = cell2mat(c.degradationMethods.Value);
@@ -1823,8 +1857,20 @@ classdef (Abstract) ResultsTab < appui.Core
                     rows = degradation.points(degradation.points.methodIndex == m, :);
                     [~, order] = sort(rows.x);
                     rows = rows(order, :);
-                    plot(ax, rows.x, rows.("value" + axisNames(a)), ['-', MARKERS{mod(k - 1, numel(MARKERS)) + 1}], ...
-                        'Color', color, 'LineWidth', 1.5, 'MarkerSize', 7, 'DisplayName', results.methods(m).label);
+                    style = ['-', MARKERS{mod(k - 1, numel(MARKERS)) + 1}];
+                    value = rows.("value" + axisNames(a));
+                    if errorKind == "none"
+                        plot(ax, rows.x, value, style, 'Color', color, 'LineWidth', 1.5, 'MarkerSize', 7, ...
+                            'DisplayName', results.methods(m).label);
+                    else
+                        % エラーバー：Wafer ごとの値のばらつき（alignest.layoutErrorBars と同じ求め方）
+                        spread = table(value, rows.("sd" + axisNames(a)), rows.("se" + axisNames(a)), ...
+                            rows.("min" + axisNames(a)), rows.("max" + axisNames(a)), 'VariableNames', ...
+                            ["value", "sd", "se", "minValue", "maxValue"]);
+                        [lower, upper] = alignest.layoutErrorBars(spread, errorKind);
+                        errorbar(ax, rows.x, value, lower, upper, style, 'Color', color, 'LineWidth', 1.5, ...
+                            'MarkerSize', 7, 'CapSize', 6, 'DisplayName', results.methods(m).label);
+                    end
                 end
                 yline(ax, 0, ':', 'HandleVisibility', 'off');
                 hold(ax, 'off');

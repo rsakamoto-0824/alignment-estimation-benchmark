@@ -86,6 +86,8 @@ classdef TestMeasurementCandidates < matlab.unittest.TestCase
             testCase.verifyEqual(size(c.candidateTable.Data, 1), 5);
             testCase.verifyEqual(string(c.addCandidatesButton.Enable), "on");
             testCase.verifyNotEmpty(findobj(c.candidateAxes, 'DisplayName', '計測を足す候補（Shot の点の中心）'));
+            testCase.verifyNotEmpty(findall(c.candidateAxes, 'Type', 'image'), "値のヒートマップ");
+            testCase.verifyTrue(contains(string(c.candidateAxes.Colorbar.Label.String), "推定誤差"));
             added = app.addMeasurementCandidates();
             testCase.verifyEqual(sort(added), sort(top.shotNo.'));
             testCase.verifyTrue(all(ismember(top.shotNo, app.Settings.sampling.requiredShots)), "必ず計測する shotNo に入る");

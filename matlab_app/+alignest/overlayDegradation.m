@@ -6,8 +6,9 @@ function degradation = overlayDegradation(results, xKind, yKind, statistic)
 %          "overlayChange"（推定による残差の変化（推定値で補正 − 実測値で補正）の |平均|+3σ）。X・Y 別（_X・_Y の列）
 %   statistic：Wafer 間の集計（alignest.summarizeResults と同じ。推定誤差の横軸も同じ集計。計測数は Wafer の平均）。
 %   Wafer ごとの値は、ランダムのくり返しを平均した値（alignest.perUnitValues）。
-%   degradation.points：手法 × 学習パターンの列の表（methodIndex・method・group・x・valueX・valueY・nWafers）。
-%     値の無い組（Overlay 補正を評価していない・推定できなかった）は入れない
+%   degradation.points：手法 × 学習パターンの列の表（methodIndex・method・group・x・valueX・valueY・nWafers と、Wafer ごとの
+%     値のばらつき sdX・sdY（標準偏差。2枚未満は NaN）・seX・seY（平均の標準誤差）・minX・maxX・minY・maxY（最小・最大）。
+%     エラーバーは alignest.layoutErrorBars と同じ求め方）。値の無い組（Overlay 補正を評価していない・推定できなかった）は入れない
 %   degradation.wafers：Wafer ごとの点の表（methodIndex・group・unitIndex・x・valueX・valueY）
 %   Overlay 補正を評価していない結果（results.overlayEvaluated が false）では、どちらも空の表。
 arguments
@@ -17,7 +18,9 @@ arguments
     statistic (1, 1) string = "mean"
 end
 points = table(zeros(0, 1), strings(0, 1), strings(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), ...
-    'VariableNames', ["methodIndex", "method", "group", "x", "valueX", "valueY", "nWafers"]);
+    zeros(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), ...
+    'VariableNames', ["methodIndex", "method", "group", "x", "valueX", "valueY", "nWafers", "sdX", "sdY", "seX", "seY", ...
+    "minX", "maxX", "minY", "maxY"]);
 wafers = table(zeros(0, 1), strings(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), zeros(0, 1), ...
     'VariableNames', ["methodIndex", "group", "unitIndex", "x", "valueX", "valueY"]);
 degradation = struct("points", points, "wafers", wafers, "xKind", xKind, "yKind", yKind, "statistic", statistic);
@@ -45,8 +48,11 @@ for m = 1:nMethods
     for g = 1:numel(groups)
         index = (m - 1) * numel(groups) + g;
         if isfinite(groupAxis(m, g)) && (isfinite(summaryX.values(m, g)) || isfinite(summaryY.values(m, g)))
+            spreadX = waferSpread(perX{m, g}(units));
+            spreadY = waferSpread(perY{m, g}(units));
             pointRows{index} = table(m, methodLabels(m), groups(g), groupAxis(m, g), summaryX.values(m, g), ...
-                summaryY.values(m, g), max(summaryX.counts(m, g), summaryY.counts(m, g)), 'VariableNames', ...
+                summaryY.values(m, g), max(summaryX.counts(m, g), summaryY.counts(m, g)), spreadX.sd, spreadY.sd, ...
+                spreadX.se, spreadY.se, spreadX.min, spreadX.max, spreadY.min, spreadY.max, 'VariableNames', ...
                 points.Properties.VariableNames);
         end
         x = perAxis{m, g}(units);
@@ -61,6 +67,21 @@ for m = 1:nMethods
 end
 degradation.points = [points; vertcat(pointRows{:})];
 degradation.wafers = [wafers; vertcat(waferRows{:})];
+end
+
+function spread = waferSpread(values)
+% Wafer ごとの値のばらつき：標準偏差（2枚未満は NaN）・平均の標準誤差・最小・最大
+values = values(isfinite(values));
+spread = struct("sd", NaN, "se", NaN, "min", NaN, "max", NaN);
+if isempty(values)
+    return
+end
+spread.min = min(values);
+spread.max = max(values);
+if numel(values) >= 2
+    spread.sd = std(values);
+    spread.se = spread.sd / sqrt(numel(values));
+end
 end
 
 function perAxis = unitAxisValues(results, xKind, groups)

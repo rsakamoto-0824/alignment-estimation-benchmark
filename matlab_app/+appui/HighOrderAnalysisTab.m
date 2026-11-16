@@ -420,16 +420,29 @@ names(numbered) = "条件 " + extractBefore(names(numbered), ".");
 end
 
 function html = histogramLegendHtml(ax, waferText)
-% ヒストグラムの凡例：図の線と同じ色・線種の印と名前を1行に並べる（uilabel の HTML。同じ値の破線は「‥」の印）
+% ヒストグラムの凡例：図の線と同じ色・線種の印と名前を1行に並べる（uilabel の HTML。同じ値の破線は「‥」の印）。
+% uilabel の HTML は style 属性の色を描かないので、<font color="#RRGGBB"> で色を付ける
 html = "<b>" + waferText + "</b>　";
 items = flipud(findobj(ax, 'Type', 'histogram'));
 for k = 1:numel(items)
-    color = round(255 * items(k).EdgeColor);
-    mark = "━━";
-    if items(k).LineStyle ~= "-"
-        mark = "‥‥";
-    end
-    html = html + sprintf("<span style=""color:rgb(%d,%d,%d)""><b>%s</b></span> %s　", color, mark, ...
+    html = html + sprintf("<font color=""%s""><b>%s</b></font> %s　", hexColor(lineColor(items(k))), ...
+        ternary(items(k).LineStyle == "-", "━━", "‥‥"), ...
         strrep(strrep(string(items(k).DisplayName), "<", "&lt;"), ">", "&gt;"));
 end
+end
+
+function color = lineColor(item)
+% ヒストグラムの線の色（重ねた線は EdgeColor、1つだけ描いた棒は FaceColor。'auto' などの文字なら黒）
+color = item.EdgeColor;
+if ~isnumeric(color) || isequal(color, [1, 1, 1])
+    color = item.FaceColor;   % 1つだけのときは白い縁の棒なので、棒の色
+end
+if ~isnumeric(color)
+    color = [0, 0, 0];
+end
+end
+
+function text = hexColor(color)
+% RGB（0〜1）を "#RRGGBB" にする
+text = string(sprintf('#%02X%02X%02X', round(255 * color)));
 end

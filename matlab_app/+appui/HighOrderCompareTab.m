@@ -221,7 +221,8 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
                 formulaAxes = ["dx", "dy"];
                 parts = cell(2, 1);
                 for k = 1:2
-                    part = residualByWafer(run.result.points, labels, formulaAxes(k), statistic);
+                    part = residualByWafer(run.result.points, labels, formulaAxes(k), statistic, ...
+                        alignest.highOrderSequential(run.result.options));
                     item = c.highOrderWaferAxes(k);
                     bars = bar(item, categorical(labels, labels), part{:, 3:end}, 'grouped');
                     for b = 1:numel(bars)
@@ -233,7 +234,8 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
                     box(item, 'on');
                     styleAxes(app, item, app.AXES_FONT_SIZE);
                     % 凡例は両方の図に同じ形で出す（片方だけだと、その図だけ小さくなって左右の高さがそろわない）
-                    legend(item, 'Location', 'northoutside', 'NumColumns', 2, 'Box', 'off', 'Interpreter', 'none');
+                    legend(item, 'Location', 'northoutside', 'NumColumns', 2, 'Box', 'off', 'Interpreter', 'none', ...
+                        'FontSize', 9);   % 6本（Shot 共通補正をかけたとき）でも図の幅に収まる大きさ
                     parts{k} = part;
                 end
                 data = vertcat(parts{:});
@@ -1091,14 +1093,23 @@ if alignest.highOrderSequential(options)
 end
 end
 
-function data = residualByWafer(points, labels, axisName, statistic)
+function data = residualByWafer(points, labels, axisName, statistic, commonFirst)
 % Wafer ごとの補正前・Wafer 高次補正だけ・Wafer 高次補正＋Shot 共通補正・Shot ごとの1次・高次補正の残差の値（高次補正と
-% Shot ごとの1次の両方ができた点。それぞれの補正ができなかった点は除く）
+% Shot ごとの1次の両方ができた点。それぞれの補正ができなかった点は除く）。commonFirst（Shot 共通補正をかけたとき）なら、
+% Shot ごとの1次の後に「Shot ごとの1次＋Shot 共通補正」（Shot 共通補正の残りを Shot ごとの1次で補正した残差）も並べる
+if nargin < 5
+    commonFirst = false;
+end
 suffix = "X";
 if axisName == "dy"
     suffix = "Y";
 end
 columns = ["value", "waferResidual", "commonResidual", "linearResidual", "residual"] + suffix;
+names = ["補正前", "Wafer 高次補正だけ", "Wafer 高次補正＋Shot 共通補正", "Shot ごとの1次", "高次補正"];
+if commonFirst && any(string(points.Properties.VariableNames) == "commonLinearResidual" + suffix)
+    columns = [columns(1:4), "commonLinearResidual" + suffix, columns(5)];
+    names = [names(1:4), "Shot ごとの1次＋Shot 共通補正", names(5)];
+end
 values = nan(numel(labels), numel(columns));
 for w = 1:numel(labels)
     rows = points(points.wafer == labels(w), :);
@@ -1108,8 +1119,7 @@ for w = 1:numel(labels)
     end
 end
 data = [table(labels, repmat(axisName, numel(labels), 1), 'VariableNames', ["Wafer", "式"]), ...
-    array2table(values, 'VariableNames', ["補正前", "Wafer 高次補正だけ", "Wafer 高次補正＋Shot 共通補正", ...
-    "Shot ごとの1次", "高次補正"])];
+    array2table(values, 'VariableNames', names)];
 end
 
 function names = residualStageNames(options)
@@ -1118,8 +1128,12 @@ orderText = waferOrderLabel(options);
 if options.waferOrder == 0 && options.waferRtRange == "none"
     orderText = "0次：平均だけ";
 end
-names = ["補正前", "Wafer 高次補正だけ（" + orderText + "）", "Wafer 高次補正＋Shot 共通補正", ...
+% 凡例は2つの図の上に2列で並べるので、図の幅に収まるよう短い名前にする（表の列名は residualByWafer の名前）
+names = ["補正前", "Wafer 高次だけ（" + orderText + "）", "Wafer 高次＋Shot 共通", ...
     "Shot ごとの1次", "高次補正（" + unitLabel(options) + "）"];
+if alignest.highOrderSequential(options)
+    names = [names(1:4), "Shot ごとの1次＋Shot 共通", names(5)];   % Shot 共通補正をかけたときは6本
+end
 end
 
 function value = statisticOf(values, statistic)
