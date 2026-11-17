@@ -4,7 +4,8 @@ function selection = highOrderTermSelection(wafers, settings, method, options)
 %   selection = alignest.highOrderTermSelection(wafers, settings, "stepwise")                  % BIC（既定）
 %   selection = alignest.highOrderTermSelection(wafers, settings, "stepwise", criterion="aic")  % AIC・"adjr2"（自由度調整済 R²）
 %   wafers：alignest.shotHighOrder と同じ Wafer ごとの点（label・points。points は localX・localY・Xc・Yc・valueX・valueY・shotNo）。
-%   settings：設定（settings.highOrder の補正の式 maker・使わない項 excludedTerms・Wafer 成分の次数 waferOrder を使う）。
+%   settings：設定（settings.highOrder の補正の式 maker・使わない項 excludedTerms・Wafer 成分の次数 waferOrder を使う。くくりが
+%   Wafer 内・選択 Wafer で共通なら、Shot 共通補正の式・項）。
 %   回帰は、Wafer ごと・式（dx・dy）ごとの最小二乗（Wafer 内の Shot で共通の1組の k。くくり・正則化・ロバスト回帰は使わない）。
 %   Wafer 成分（Shot 中心の座標 Xc・Yc の 1〜waferOrder 次の項）があれば、一緒に当てはめる（選ぶ対象にはしない）。
 %   列は大きさをそろえてから解く（t 値・残差は変わらない）。外周の式（outerMaker）は対象にせず、内周の式の項で全 Shot の点を使う。
@@ -33,7 +34,8 @@ end
 FORMULA_AXES = ["dx", "dy"];
 AXIS_NAMES = ["X", "Y"];
 TOLERANCE = 1e-9;   % 指標がこれより良くならなければ足さない
-highOrder = alignest.highOrderOptions(settings);
+% くくりが Wafer 内・選択 Wafer で共通なら、k の組の式・項は Shot 共通補正の式・項（alignest.highOrderSharedFormula）
+highOrder = alignest.highOrderSharedFormula(alignest.highOrderOptions(settings));
 allTerms = alignest.highOrderTerms(highOrder.maker);
 currentTerms = alignest.highOrderTerms(highOrder.maker, highOrder.excludedTerms);
 waferPowers = powersUpTo(highOrder.waferOrder);

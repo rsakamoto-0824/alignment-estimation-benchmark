@@ -150,7 +150,7 @@
   <li><strong>4. 結果一覧</strong>：表・グラフ・基準の手法との比較・Wafer のベスト・ワースト・計測を足す場所・計測配置の比較・誤差の分布（ANOVA・箱ひげ図）・散布図・分布の比較・処理時間の内訳。</li>
   <li><strong>5. Wafer ごとのマップ</strong>：計測値・推定値・残差（または Overlay 補正）を Wafer 上で見る。条件を並べて比べられる。</li>
   <li><strong>6. 未知の座標の推定</strong>：計測していない座標（新しい Mark の位置・Wafer 上の任意の点）の推定値を求める。点は Excel・CSV から読むか、画面で入力・作成する。外挿の点は知らせる（<a href="#tab-target">下</a>）。</li>
-  <li><strong>7. Shot高次補正</strong>：計測値・未知の座標の推定値・Excel の値で、Shot 高次補正（ASML・Canon・Nikon・カスタムの式）の k パラメータを求め、Shot ごとの1次（k1〜k6）の補正と比べて効果を評価する。外周の Shot だけ別の式にでき、内周・外周に分けて評価する。Shot 共通の補正（計算した値・入力した値）を先にかけてから Shot ごとに補正することもできる。くくり・λ・回帰・項の組み合わせを変えた補正をまとめて比べ、2つの条件の Wafer を並べて改善・悪化した Shot を見る。Wafer ごとの k パラメータ・残差、残差のヒストグラムも見られる（<a href="#high-order">下</a>）。</li>
+  <li><strong>7. Shot高次補正</strong>：計測値・未知の座標の推定値・Excel の値で、Shot 高次補正（ASML・Canon・Nikon・カスタム・1次・2次の式）の k パラメータを求め、Shot ごとの1次（k1〜k6）の補正と比べて効果を評価する。外周の Shot だけ別の式にでき、内周・外周に分けて評価する。Shot 共通の補正（計算した値・入力した値）を先にかけてから Shot ごとに補正することもできる。くくり・λ・回帰・項の組み合わせを変えた補正をまとめて比べ、2つの条件の Wafer を並べて改善・悪化した Shot を見る。Wafer ごとの k パラメータ・残差、残差のヒストグラムも見られる（<a href="#high-order">下</a>）。</li>
   <li><strong>8. Mark配置の最適化</strong>：Shot 高次補正の計測 Mark の配置を、Mark の数（最低数から1点ずつ）ごとに I 最適計画で選び、選んだ配置で補正した制御残差を I 効率と比べる。必ず計測する Mark を指定でき、実測値の無い座標は乱数 Shotで評価する（<a href="#mark-layout">下</a>）。</li>
 </ul>
 
@@ -176,7 +176,7 @@
 <tr><td class="term">異常値を除外</td><td>Wafer ごとに、計測値の中心とばらつきを X・Y 別に求め、中心 ± n × ばらつき の外にある Mark を除きます（X か Y が外れたら両方。重複を平均した後に1回だけ判定）。判定は <strong>平均と σ</strong>（中心 = 平均、ばらつき = 標本標準偏差）か <strong>中央値と MAD</strong>（中心 = 中央値、ばらつき = 1.4826 × MAD。大きな外れ値に引きずられにくい）から選べます。除いた数は読み込みの結果の欄に出ます。n は「n =」に入れます（初期値 3）。</td></tr>
 <tr><td class="term">Scan 方向の付与</td><td>Direction が無い行に付ける値。付けない（Scan 方向を使わない）・一筆書き（最小の shotNo を 1 として、行ごとに折り返す道順で交互）・shotNo の奇偶（奇数 = 1・偶数 = 2。露光順に交互）・市松模様（上の行・左の列の Shot = 1）・Shot 行ごとに交互（上から1行目 = 1）・Shot 列ごとに交互（左から1列目 = 1）。Direction の列に値がある行はそのまま使います。</td></tr>
 <tr><td class="term">座標の単位</td><td>読み込むときに、選んだ単位から mm に変換します（ファイルは変更しません）。mm でない列は「入力の単位」を選び直します（列名が Xmm でも中身が µm なら µm）。「値の大きさから単位を推定」で選ぶこともできます。測定値 measX・measY は nm のまま変換しません。</td></tr>
-<tr><td class="term">Wafer マップ</td><td>計測値を Wafer 上に描きます。ALL は全 Wafer の平均です。点線は有効半径、灰色の枠は Shot です。平均の図では、座標ごとに Wafer 間で平均し、楕円で Wafer 間のばらつきを示します（色は X・Y の相関係数の絶対値 |r|）。「楕円だけ描く」は矢印を消します。Shot の枠は Scan 方向で色分けできます（▲ 上・▼ 下の印つき）。同心円の区切りは「2. 評価の設定」の制約の区切りです。</td></tr>
+<tr><td class="term">Wafer マップ</td><td>計測値を Wafer 上に描きます（窓の大きさを変えたときは、変え終えてから描き直します。ほかのタブ・Shot レイアウト・Shot 重ね合わせ・Wafer ごとのマップなども、開いたときに描き直します）。ALL は全 Wafer の平均です。点線は有効半径、灰色の枠は Shot です。平均の図では、座標ごとに Wafer 間で平均し、楕円で Wafer 間のばらつきを示します（色は X・Y の相関係数の絶対値 |r|）。「楕円だけ描く」は矢印を消します。Shot の枠は Scan 方向で色分けできます（▲ 上・▼ 下の印つき）。同心円の区切りは「2. 評価の設定」の制約の区切りです。</td></tr>
 <tr><td class="term">Shot レイアウト</td><td>左の図の数字は shotNo、右の図は Shot 中心から見た Mark の位置（M の後が markNo）です（Scan 方向は S1・S2 で表示）。左の図の Shot をクリックすると、その shotNo の Scan 方向を 1 ↔ 2 で入れ替えます（すべての Wafer の同じ shotNo）。</td></tr>
 <tr><td class="term">Shot 重ね合わせ</td><td>選んだ Wafer の全 Shot を Shot 内の座標で重ねます。Wafer は Ctrl・Shift で複数選べます。「Wafer 成分を除く」は Shot 中心の座標の多項式を引きます（1次は並進・倍率・回転・直交度）。共分散楕円は Shot・Wafer 間のばらつきです（色は |相関係数|）。矢印の倍率は 0 で自動です。</td></tr>
 <tr><td class="term">質的変数の交互作用</td><td>Wafer ごとの面内の傾向（XY 多項式の次数。「平均だけ」は平均だけ除く）を除いた計測値で、質的変数の主効果と交互作用を調べます。「その他の列」で質的変数を足せます（Ctrl・Shift で複数）。図は水準の組ごとの箱ひげ図で、平均（◆）を結ぶ線がほぼ平行なら交互作用は小さいと見ます。</td></tr>
@@ -301,8 +301,9 @@
 <p class="note">外挿の点でも推定値は出します。Wafer の外周より外、学習した Shot から離れた点は、手法によって値が大きく違うことがあるので、複数の手法で比べてから使ってください。</p>
 
 <h2 id="high-order">7. Shot高次補正</h2>
-<p>Shot 内の座標の補正の式（ASML・Canon・Nikon・カスタム）の係数（k パラメータ）を求め、補正した後の残差を、Shot ごとの1次（k1〜k6）で補正した残差と比べます。左で入力のデータ・補正の式・回帰を決めて「補正を計算する」を押します。式は<a href="#tech-high-order">技術編</a>にあります。</p>
-<p>「Shot 共通補正」の欄の <strong>補正の式</strong> で、Shot 共通補正を「計算する」ときの式を、Shot ごとの補正の式と別に選べます（初期値「Shot ごとと同じ」）。別の式を選ぶと、Shot 共通の k はその式の項で求め、残りを Shot ごとの補正の式で求めます（その式の項は②の下の知らせに出ます）。「VIF で選ぶ」「すべての項を使う」のボタンは、Shot 共通補正の欄（表の「共通」の項）と Shot ごとの補正の欄（表の「使う」の項）に別々にあります。②の一番上の「補正のくくり」は k の組をどの Shot で共通にするかです：Wafer 内で共通（Wafer ごとに1組）・Scan 方向ごと・行の偶奇ごと・Shot ごと（Shot ごとに1組）。「補正の式」（初期値はカスタム）は「Shot ごとの補正」の行にあります。回帰の初期値は最小二乗・正則化なし（λ = 1e-5）です（「8. Mark配置の最適化」も同じ）。「Wafer 成分」は Shot 中心の座標の多項式（0〜5次）で、Wafer の倍率・回転が Shot の k に混ざらないように一緒に求めます。補正の式の「カスタム」は k1〜k38 から項を選ぶ式です。</p>
+<p>Shot 内の座標の補正の式（ASML・Canon・Nikon・カスタム・1次・2次）の係数（k パラメータ）を求め、補正した後の残差を、Shot ごとの1次（k1〜k6）で補正した残差と比べます。左で入力のデータ・補正の式・回帰を決めて「補正を計算する」を押します。式は<a href="#tech-high-order">技術編</a>にあります。</p>
+<p>「Shot 共通補正」の欄の <strong>補正の式</strong> で、Shot 共通補正を「計算する」ときの式を、Shot ごとの補正の式と別に選べます（初期値「Shot ごとと同じ」）。別の式を選ぶと、Shot 共通の k はその式の項で求め、残りを Shot ごとの補正の式で求めます（その式の項は②の下の知らせに出ます）。「VIF で選ぶ」「すべての項を使う」のボタンは、Shot 共通補正の欄（表の「共通」の項）と Shot ごとの補正の欄（表の「使う」の項）に別々にあります。②の一番上の「補正のくくり」は k の組をどの Shot で共通にするかです：Wafer 内で共通（Wafer ごとに1組）・選択 Wafer で共通（画面の表示は「選択 Wafer 共通」。①で選んだすべての Wafer で1組）・Scan 方向ごと・行の偶奇ごと・Shot ごと（Shot ごとに1組）。「補正の式」（初期値はカスタム）は「Shot ごとの補正」の行にあります。くくりが <strong>Wafer 内で共通</strong>・<strong>選択 Wafer で共通</strong>のときは、k の組が Shot 共通補正そのものなので、補正の式と項は「Shot 共通補正」の欄で選びます（「Shot 共通補正」は「計算する」に固定し、「Shot ごとの補正」の欄の補正の式・次数・VIF・すべての項は使いません）。表の「使う」は Shot 共通の項です。保存した項の組み合わせの保存・呼び出しと「k の選定」の反映も、Shot 共通補正の式・項が対象です。Shot 共通の「補正の式」が「Shot ごとと同じ（…）」なら、かっこの中の式（「Shot ごとの補正」の欄の式）を使います。回帰の初期値は最小二乗・正則化なし（λ = 1e-5）です（「8. Mark配置の最適化」も同じ）。「Wafer 成分」は Shot 中心の座標の多項式（0〜5次）で、Wafer の倍率・回転が Shot の k に混ざらないように一緒に求めます。補正の式の「カスタム」は k1〜k38 から項を選ぶ式、「1次」は k1〜k6（並進・倍率・回転）、「2次」は k1〜k12（1次と2次のすべての項）の式です。</p>
+<p><strong>選択 Wafer で共通</strong>は、①で選んだすべての Wafer の点で1組の k を求めます（例：同じレチクル・同じ露光の Wafer に共通の Shot の形を1組で表す）。Wafer 成分は Wafer ごとに別の係数で、k と一緒に求めます（Wafer RT は Wafer ごとに先に引きます）。「補正値」の表と書き出しには、同じ k を Wafer ごとの行に出し、残差は Wafer ごとに出します。1枚だけ選んだときは「Wafer 内で共通」と同じ結果です。式は<a href="#tech-high-order-unit">技術編</a>にあります。</p>
 <p>「Wafer RT」は Wafer レベルの補正に RT モデル（1〜5次）を使う指定です。<strong>すべての Shot</strong>：Wafer 成分の代わりに RT モデルで補正します。<strong>外周だけ</strong>：外周の Shot は RT モデル、内周の Shot は Wafer 成分で補正します（外周は「外周の半径」で決まります）。「外周の式」とは別の指定で、一緒に使えます。Shot が少なくて決まらない項は 0 にして、メッセージで知らせます。式は技術編の「Wafer RT」です。</p>
 <p>「Shot 共通補正」は、補正のくくりが「Shot ごと」「Scan 方向ごと」「行の偶奇ごと」のときに、Shot 共通の補正を先にかけ、残りを k の組（Shot・Scan 方向・行の偶奇）ごとに求める指定です（Wafer 高次補正 → Shot 共通補正 → k の組ごとの補正の順）。<strong>なし</strong>：Shot ごとの k をその Shot の点だけで求めます。<strong>計算する</strong>：Wafer 内の全 Shot で共通の k を求めて先に引きます（正則化をかけないときは、点の配置で決まらない項を外して求め、外した項を右上に知らせます）。<strong>値を入力</strong>：「使う項と VIF」の表の「共通の値」の列に入れた k を先に引きます（外周の式を分けるときは内周・外周の2列。単位は k1・k2 が nm、1次が nm/mm、n 次が nm/mm<sup>n</sup>）。「計算した値を写す」で、直近の計算の Shot 共通の k（Wafer の平均）を写せます。「計算する」のときは、「使う項と VIF」の表の「共通」の列で、Shot 共通の k に使う項を「使う」（Shot ごとの項）とは別に選べます（k1〜k6 は必ず使う。「すべての項を使う」で使う項と同じに戻す）。「共通の項」で、保存した項の組み合わせを選ぶと、その k を「共通」の列に写します（今の式にある k の番号だけ）。左の②は、式と範囲・Wafer 補正・Shot 共通補正・Shot ごとの補正の順に並んでいます。「Shot ごとの次数」では、Shot ごとに求める項の次数の上限を選びます（例：1次までなら Shot ごとは k1〜k6 だけを求め、高次の項は Shot 共通の値のまま）。Shot ごとに使う項をすべて求めて正則化もかけないときは、補正量・残差は「なし」と同じで、Shot ごとの k の内訳だけが変わります。式は技術編の「Shot 共通を先に引く」です。</p>
 
@@ -404,7 +405,7 @@
 <table>
 <tr><th>足す条件</th><th>内容</th></tr>
 <tr><td class="term">今の設定</td><td>左の設定のまま1つ。設定を変えて何回か足すと、補正の内容をまとめて比べられる。</td></tr>
-<tr><td class="term">くくりを変える</td><td>くくりだけを Wafer 内で共通・Scan 方向ごと・行の偶奇ごと・Shot ごとにした4つ。</td></tr>
+<tr><td class="term">くくりを変える</td><td>くくりだけを Wafer 内で共通・選択 Wafer で共通・Scan 方向ごと・行の偶奇ごと・Shot ごとにした5つ。</td></tr>
 <tr><td class="term">損失関数を変える</td><td>損失関数だけを最小二乗・Huber・LAD にした3つ（X・Y 両方。<a href="#high-order-pair">2つの条件を並べる</a>で、ロバスト回帰が最小二乗よりよかった Shot を見るときに）。</td></tr>
 <tr><td class="term">λ を変える</td><td>λ だけを右に入れた値（空白で区切る。0 は正則化なし）にした条件（今の正則化の種類と次数。正則化なしの軸は L2）。</td></tr>
 <tr><td class="term">項の組み合わせ</td><td>右で選んだ保存した項の組み合わせ（補正の式と使う項）を、今のくくり・回帰の設定で。</td></tr>
@@ -433,7 +434,7 @@
 
 <h3 id="high-order-wafers">Wafer の比較</h3>
 <p>複数の Wafer を選んで計算したとき、「Wafer の比較」で Wafer ごとの k パラメータ（使う項ごと。Shot の端での大きさ [nm] = 係数 × (Shot の幅/2)<sup>x のべき</sup> × (Shot の高さ/2)<sup>y のべき</sup>、または係数そのもの）や、残差を並べて描きます。Shot 共通補正をかけたとき（くくりが Shot ごと・Scan 方向ごと・行の偶奇ごとで、Shot 共通補正が「計算する」「値を入力」）は、残差に <strong>Shot ごとの1次＋Shot 共通補正</strong>（Shot 共通補正をかけた残りを、Shot ごとの1次（k1〜k6）で補正した残差）も並べます。1つの Wafer に k の組が複数あるとき（Shot ごと・Scan 方向ごと・行の偶奇ごと・内周と外周）は、k パラメータは組の平均と標準偏差（ひげ）です。</p>
-<p>残差は、dx と dy の棒グラフを左右に並べ、Wafer ごとに5本の棒（|平均|+3σ・|残差| の 95% 点・中央値）を描きます：補正前・<strong>Wafer 高次補正だけ</strong>・<strong>Wafer 高次補正＋Shot 共通補正</strong>・Shot ごとの1次・高次補正（式は<a href="#high-order-eval">評価のしかた</a>）。左から補正を足していくと残差がどれだけ減るかで、Wafer の形・Shot 共通の形・Shot ごとの違いのどれが大きいかが分かります。くくりが Wafer 内で共通なら、Wafer 高次補正＋Shot 共通補正は高次補正と同じです。</p>
+<p>残差は、dx と dy の棒グラフを左右に並べ、Wafer ごとに5本の棒（|平均|+3σ・|残差| の 95% 点・中央値）を描きます：補正前・<strong>Wafer 高次補正だけ</strong>・<strong>Wafer 高次補正＋Shot 共通補正</strong>・Shot ごとの1次・高次補正（式は<a href="#high-order-eval">評価のしかた</a>）。左から補正を足していくと残差がどれだけ減るかで、Wafer の形・Shot 共通の形・Shot ごとの違いのどれが大きいかが分かります。くくりが Wafer 内で共通・選択 Wafer で共通なら、Wafer 高次補正＋Shot 共通補正は高次補正と同じです。</p>
 
 <h3 id="high-order-histogram">ヒストグラム</h3>
 <p>値の分布（確率密度）を、左が X 成分・右が Y 成分、上段がすべての Shot・中段が内周の Shot・下段が外周の Shot の3段に並べ、同じ区間の輪郭で重ねます（外周：Shot 中心の半径が「外周の半径」以上。計算したときの値）。区間の幅は、重ねる値のうち最も狭い分布に合わせます。</p>
@@ -713,7 +714,7 @@ Fringe 番号は、Fringe の次数 k = (n + |m|)/2 の小さい順、同じ k �
 <tr><td class="term">Nikon</td><td><div class="formula">k1 + k3·x + k5·y + k7·x² + k9·x·y + k11·y² + k13·x³ + k17·x·y² + k19·y³ + k29·y⁴ + k41·y⁵ + k55·y⁶</div></td><td><div class="formula">k2 + k4·y + k6·x + k8·y² + k10·x·y + k12·x² + k14·y³ + k16·x·y² + k18·x²·y + k22·y⁴ + k24·x·y³ + k32·y⁵ + k34·x·y⁴ + k44·y⁶ + k46·x·y⁵</div></td></tr>
 <tr><td class="term">カスタム</td><td><div class="formula">k1 + k3·x + k5·y + k7·x² + k9·x·y + k11·y² + k13·x³ + k15·x²·y + k17·x·y² + k19·y³ + k21·x⁴ + k23·x³·y + k25·x²·y² + k27·x·y³ + k29·y⁴ + k31·x⁵ + k33·x⁴·y + k35·x³·y² + k37·x²·y³</div></td><td><div class="formula">k2 + k4·y + k6·x + k8·y² + k10·x·y + k12·x² + k14·y³ + k16·x·y² + k18·x²·y + k20·x³ + k22·y⁴ + k24·x·y³ + k26·x²·y² + k28·x³·y + k30·x⁴ + k32·y⁵ + k34·x·y⁴ + k36·x²·y³ + k38·x³·y²</div></td></tr>
 </table>
-<p>Canon・Nikon は Overlay 計測ルールの式のまま（項・係数番号・変数・符号は変えない）です。ASML は k1〜k19 のすべての項（3次までの全項）を使います（ルールの式に、Canon・Nikon と同じ番号の付け方で k9・k15・k17・k18 を足したもの）。カスタムは、メーカーの式とは別に選べる式で、Canon・Nikon と同じ番号の付け方（dx は奇数の k で x<sup>n</sup>, x<sup>n−1</sup>y, …, y<sup>n</sup> の順、dy は偶数の k で y<sup>n</sup>, x·y<sup>n−1</sup>, …, x<sup>n</sup> の順）の k1〜k38（4次までのすべての項と、5次の項の一部）です。使う項は表の「使う」で選び、組み合わせに名前を付けて保存できます（<a href="#high-order-vif">機能編</a>）。</p>
+<p>Canon・Nikon は Overlay 計測ルールの式のまま（項・係数番号・変数・符号は変えない）です。ASML は k1〜k19 のすべての項（3次までの全項）を使います（ルールの式に、Canon・Nikon と同じ番号の付け方で k9・k15・k17・k18 を足したもの）。カスタムは、メーカーの式とは別に選べる式で、Canon・Nikon と同じ番号の付け方（dx は奇数の k で x<sup>n</sup>, x<sup>n−1</sup>y, …, y<sup>n</sup> の順、dy は偶数の k で y<sup>n</sup>, x·y<sup>n−1</sup>, …, x<sup>n</sup> の順）の k1〜k38（4次までのすべての項と、5次の項の一部）です。1次は同じ番号の付け方の k1〜k6（dx = k1 + k3·x + k5·y、dy = k2 + k4·y + k6·x）、2次は k1〜k12（1次に dx の k7·x<sup>2</sup> + k9·xy + k11·y<sup>2</sup>、dy の k8·y<sup>2</sup> + k10·xy + k12·x<sup>2</sup> を足した式）です。使う項は表の「使う」で選び、組み合わせに名前を付けて保存できます（<a href="#high-order-vif">機能編</a>）。</p>
 
 <h3 id="overlay-eval">評価のしかた</h3>
 <div class="formula">A：全 Mark の計測値、 E：学習点は計測値・評価点は推定値（実際の運用で補正に使う値）
@@ -754,6 +755,7 @@ Fringe 番号は、Fringe の次数 k = (n + |m|)/2 の小さい順、同じ k �
 <table>
 <tr><th>補正のくくり</th><th>式</th></tr>
 <tr><td class="term">Wafer 内で共通（Wafer 内の Shot で共通）</td><td><div class="formula">値(Mark) = Σ<sub>使う項</sub> k<sub>j</sub>·x<sup>m</sup>y<sup>n</sup> + Wafer 成分(Xc, Yc)</div>Wafer ごとに1組の k を、その Wafer のすべての点で求める。Wafer 成分は Shot 中心の座標 Xc・Yc [mm] の 1〜N 次の項（N は 0〜5。定数は k1・k2 に含める）。Wafer の倍率・回転が Shot の k に混ざらないように一緒に求める。</td></tr>
+<tr><td class="term">選択 Wafer で共通</td><td><div class="formula">値(Mark, Wafer w) = Σ<sub>使う項</sub> k<sub>j</sub>·x<sup>m</sup>y<sup>n</sup> + Wafer 成分<sub>w</sub>(Xc, Yc)</div>選んだすべての Wafer の点で、1組の k と Wafer ごとの Wafer 成分（定数は k1・k2 に含める）を一緒に1回で求める（損失関数・正則化は「Wafer 内で共通」と同じ）。Wafer RT は Wafer ごとに先に求めて引く。1枚だけなら「Wafer 内で共通」と同じ。このくくりと「Wafer 内で共通」では、使う項は Shot 共通補正の式・項（「Shot 共通補正」の欄）。</td></tr>
 <tr><td class="term">Scan 方向ごと</td><td><div class="formula">値(Mark) = Σ<sub>使う項</sub> k<sub>j,Scan</sub>·x<sup>m</sup>y<sup>n</sup> + Wafer 成分(Xc, Yc)</div>Wafer ごとに、Scan 方向（Direction 1・2）ごとに1組ずつの k を求める。Wafer 成分は Wafer で共通の1組。それぞれの k はその Scan 方向の Shot の点だけで決まり、Wafer 成分と一緒に1回で求める。Scan 方向は「1. データ読込」の Direction の列か「Scan 方向の付与」の規則（Excel・CSV のときは「Excel・CSV の列」で選ぶ）。Scan 方向の分からない点は使わない。</td></tr>
 <tr><td class="term">行の偶奇ごと</td><td><div class="formula">値(Mark) = Σ<sub>使う項</sub> k<sub>j,奇数行／偶数行</sub>·x<sup>m</sup>y<sup>n</sup> + Wafer 成分(Xc, Yc)</div>Shot 行（Shot 中心の Y 座標が同じ Shot の並び。Wafer ごとに上の行から 1, 2, 3, … と数える。「1. データ読込」の Shot 行と同じ）の奇数行・偶数行ごとに1組ずつの k を求める。Wafer 成分は Wafer で共通の1組。</td></tr>
 <tr><td class="term">Shot ごと</td><td><div class="formula">値(Mark) = Wafer 成分(Xc, Yc) + Σ<sub>使う項</sub> k<sub>j,Shot</sub>·x<sup>m</sup>y<sup>n</sup></div>Shot ごとに1組の k を、その Shot の点だけで求める。Wafer 成分（1次以上を選んだとき）は、Shot ごとの k1・k2 が Shot 中心の座標の関数をすべて含むので一緒には求められず、先に「Wafer 内で共通」と同じ求め方（Wafer 内で共通の k と一緒に全点で）で求めて引き、残りを Shot ごとに求める。補正量・残差は Wafer 成分なしと同じで、Shot ごとの k1・k2 が Wafer 成分を除いた値（Shot ごとの並進の残り）になる。</td></tr>

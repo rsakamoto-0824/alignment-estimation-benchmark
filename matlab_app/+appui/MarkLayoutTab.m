@@ -28,7 +28,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
 
         function setMarkLayoutSettings(app, options)
             %SETMARKLAYOUTSETTINGS 補正の式・回帰・配置の選び方・乱数の形の欄を変える（画面で選ぶのと同じ）。名前と値の組で渡す：
-            %   maker（"asml"・"canon"・"nikon"・"custom"）・termSet（保存した項の組み合わせの名前）・vifThreshold・loss
+            %   maker（"asml"・"canon"・"nikon"・"custom"・"linear"・"quadratic"）・termSet（保存した項の組み合わせの名前）・vifThreshold・loss
             %   （"ols"・"huber"・"lad"）・huberTuning・regularization（"none"・"l2"・"l1"）・lambda（1つなら X・Y 両方、[X, Y] なら
             %   軸ごと）・penaltyOrders（1〜6 の並び。X・Y 両方）・penaltyOrdersY（Y だけ）・minMarks・maxMarks（0 = 使う項の数・
             %   すべての候補）・starts・values（"measured"・"random"）・shapes・
@@ -305,9 +305,9 @@ classdef (Abstract) MarkLayoutTab < appui.Core
 
         function copyHighOrderFormula(app)
             %COPYHIGHORDERFORMULA 「7. の式を写す」：「7. Shot高次補正」の補正の式（内周の式）・使う項・VIF のしきい値・回帰の
-            %   設定を、このタブの設定にする。
+            %   設定を、このタブの設定にする（くくりが Wafer 内・選択 Wafer で共通なら、Shot 共通補正の式・項）。
             readHighOrderControls(app);
-            source = alignest.highOrderOptions(app.Settings);
+            source = alignest.highOrderSharedFormula(alignest.highOrderOptions(app.Settings));
             for name = ["maker", "excludedTerms", "vifThreshold", "loss", "huberTuning", "regularization", ...
                     "penaltyOrders", "penaltyOrdersY", "lambda"]
                 app.Settings.markLayout.(name) = source.(name);
@@ -695,10 +695,10 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                 'Padding', 0);
             place(modelGrid, 6, 1);
             label(modelGrid, '補正の式', 1, 1);
-            c.markOptMaker = uidropdown(modelGrid, 'Items', {'ASML', 'Canon', 'Nikon', 'カスタム'}, ...
-                'ItemsData', {'asml', 'canon', 'nikon', 'custom'}, 'ValueChangedFcn', onSetting, 'Tooltip', ['Overlay 計測' ...
+            c.markOptMaker = uidropdown(modelGrid, 'Items', app.HIGH_ORDER_MAKER_LABELS, ...
+                'ItemsData', app.HIGH_ORDER_MAKER_NAMES, 'ValueChangedFcn', onSetting, 'Tooltip', ['Overlay 計測' ...
                 'ルールの Shot 高次補正の式（「7. Shot高次補正」と同じ）。カスタム：k1〜k38 から使う項を右の「使う項と VIF」で' ...
-                '選びます。「7. Shot高次補正」で保存した項の組み合わせも選べます。式は「ヘルプ」。']);
+                '選びます。1次：k1〜k6、2次：k1〜k12。「7. Shot高次補正」で保存した項の組み合わせも選べます。式は「ヘルプ」。']);
             place(c.markOptMaker, 1, 2);
             label(modelGrid, 'VIF のしきい値', 1, 3);
             c.markOptVifThreshold = uieditfield(modelGrid, 'numeric', 'Limits', [1, Inf], 'LowerLimitInclusive', 'off', ...
@@ -1066,12 +1066,12 @@ classdef (Abstract) MarkLayoutTab < appui.Core
         end
 
         function refreshMarkLayoutFormulaChoices(app)
-            % 補正の式の選択肢：ASML・Canon・Nikon・カスタムと、「7. Shot高次補正」で保存した項の組み合わせ
+            % 補正の式の選択肢：ASML・Canon・Nikon・カスタム・1次・2次と、「7. Shot高次補正」で保存した項の組み合わせ
             c = app.Controls;
             sets = termSetTable(fieldOr(app.Settings.highOrder, "termSets", strings(0, 1)));
-            items = ["ASML", "Canon", "Nikon", "カスタム", ...
+            items = [string(app.HIGH_ORDER_MAKER_LABELS), ...
                 reshape("組み合わせ：" + sets.name + "（" + sets.makerLabel + "・" + sets.count + " 項）", 1, [])];
-            values = ["asml", "canon", "nikon", "custom", reshape(app.MARK_SET_PREFIX + sets.name, 1, [])];
+            values = [string(app.HIGH_ORDER_MAKER_NAMES), reshape(app.MARK_SET_PREFIX + sets.name, 1, [])];
             setChoices(c.markOptMaker, items, cellstr(values));
         end
 

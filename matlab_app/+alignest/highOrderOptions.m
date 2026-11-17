@@ -1,9 +1,12 @@
 function options = highOrderOptions(settings)
 %HIGHORDEROPTIONS Shot 高次補正の評価（「7. Shot高次補正」）の設定 settings.highOrder を確かめ、説明の文を付けて返す。
-%   options.maker：補正の式（"asml"・"canon"・"nikon"（Shot 高次補正の式）・"custom"（k1〜k38 から選ぶ）。alignest.highOrderTerms）
+%   options.maker：補正の式（"asml"・"canon"・"nikon"（Shot 高次補正の式）・"custom"（k1〜k38 から選ぶ）・"linear"（1次：
+%                 k1〜k6）・"quadratic"（2次：k1〜k12）。alignest.highOrderTerms）
 %   options.termSets：保存した項の組み合わせ（1行 = "名前|式|k の番号 …"。画面の「組み合わせを保存」）
 %   options.unit：k の組のくくり。"common"（Wafer 内の Shot で共通の1組の k）・"scan"（Scan 方向ごとに1組ずつ）・
-%                 "row"（Shot 行の偶奇ごとに1組ずつ）・"shot"（Shot ごとに1組の k）
+%                 "row"（Shot 行の偶奇ごとに1組ずつ）・"shot"（Shot ごとに1組の k）・"wafers"（選んだすべての Wafer で
+%                 共通の1組の k。Wafer 成分は Wafer ごと）。"common"・"wafers" では、補正の式・使う項は Shot 共通補正の
+%                 設定（shotCommonMaker・shotCommonTerms。alignest.highOrderSharedFormula）
 %   options.waferOrder：Wafer 成分（Shot 中心の座標の多項式。定数を除く 1〜waferOrder 次の項。最大5次）の次数。0 なら
 %                       使わない。Shot ごとのほかは、Wafer で共通の1組として Shot の k と一緒に求める。Shot ごとのときは、
 %                       Shot ごとの k1・k2 が Wafer 成分を含むので、先に（Wafer 内で共通の k と一緒に）求めて引き、残りを
@@ -15,7 +18,8 @@ function options = highOrderOptions(settings)
 %   options.shotCommon：くくりが Shot ごと・Scan 方向ごと・行の偶奇ごと（unit = "shot"・"scan"・"row"）のとき、先に引く Shot 共通の
 %                       補正。"none"（引かない。k の組ごとの k をその組の点だけで求める）・"fit"（Wafer 内の Shot で共通の k を
 %                       Wafer 成分と一緒に求めて引く）・"input"（入力した k の値 shotCommonValues・shotCommonOuterValues を引く）。
-%                       引いた残りを k の組ごとに求める（alignest.highOrderSequential）。Wafer 内で共通のくくりでは使わない
+%                       引いた残りを k の組ごとに求める（alignest.highOrderSequential）。Wafer 内・選択 Wafer で共通の
+%                       くくりでは使わない（k の組が Shot 共通補正そのもの）
 %   options.shotCommonMaker：Shot 共通を「計算する」ときの Shot 共通の補正の式。"same"（Shot ごとと同じ options.maker。既定）・
 %                       "asml"・"canon"・"nikon"・"custom"（Shot 共通の k はこの式の項で求め、残りを options.maker の式で k の組ごとに
 %                       求める。外周の式を分けるときも、Shot 共通はこの式。shotCommonTerms はこの式の k の番号）
@@ -48,10 +52,10 @@ MAX_RT_ORDER = 5;
 SHOT_COMMON_NAMES = ["none", "fit", "input"];
 MAX_EACH_ORDER = 6;   % Shot ごとに求める項の次数の上限の最大（Nikon の式の6次まで）
 RT_RANGE_NAMES = ["none", "all", "outer"];
-MAKER_NAMES = ["asml", "canon", "nikon", "custom"];
-MAKER_LABELS = ["ASML", "Canon", "Nikon", "カスタム（k1〜k38）"];
-UNIT_NAMES = ["common", "scan", "row", "shot"];
-UNIT_LABELS = ["Wafer 内の Shot で共通", "Scan 方向ごと", "Shot 行の偶奇ごと", "Shot ごと"];
+MAKER_NAMES = ["asml", "canon", "nikon", "custom", "linear", "quadratic"];
+MAKER_LABELS = ["ASML", "Canon", "Nikon", "カスタム（k1〜k38）", "1次（k1〜k6）", "2次（k1〜k12）"];
+UNIT_NAMES = ["common", "scan", "row", "shot", "wafers"];
+UNIT_LABELS = ["Wafer 内の Shot で共通", "Scan 方向ごと", "Shot 行の偶奇ごと", "Shot ごと", "選択 Wafer で共通"];
 LOSS_NAMES = ["ols", "huber", "lad"];
 LOSS_LABELS = ["最小二乗", "Huber（ロバスト回帰）", "LAD（ロバスト回帰）"];
 REGULARIZATION_NAMES = ["none", "l2", "l1"];
@@ -107,7 +111,8 @@ if ~isscalar(options.maker) || ~any(options.maker == MAKER_NAMES)
 end
 if ~isscalar(options.unit) || ~any(options.unit == UNIT_NAMES)
     error('alignest:highOrderUnit', ['補正のくくりは common（Wafer 内の Shot で共通）・scan（Scan 方向ごと）・' ...
-        'row（Shot 行の偶奇ごと）・shot（Shot ごと）のいずれかです: %s'], strjoin(options.unit, "・"));
+        'row（Shot 行の偶奇ごと）・shot（Shot ごと）・wafers（選択 Wafer で共通）のいずれかです: %s'], ...
+        strjoin(options.unit, "・"));
 end
 if ~isscalar(options.shortage) || ~any(options.shortage == SHORTAGE_NAMES)
     error('alignest:highOrderShortage', ['点が足りない組の扱いは reduceAll（全体の項を減らす）・reduceGroup（その組だけ' ...
@@ -195,6 +200,8 @@ unitText = UNIT_LABELS(UNIT_NAMES == options.unit);
 waferOrder = options.waferOrder * (options.waferRtRange ~= "all");   % すべての Shot が RT なら Wafer 成分は使わない
 if options.unit == "common" && waferOrder > 0
     unitText = unitText + sprintf("（Wafer 成分 %d 次も一緒に求める）", waferOrder);
+elseif options.unit == "wafers" && waferOrder > 0
+    unitText = unitText + sprintf("（Wafer 成分 %d 次は Wafer ごとにして一緒に求める）", waferOrder);
 elseif (options.unit == "shot" || alignest.highOrderSequential(options)) && waferOrder > 0
     unitText = unitText + sprintf("（Wafer 成分 %d 次を先に求めて引く）", waferOrder);
 elseif waferOrder > 0

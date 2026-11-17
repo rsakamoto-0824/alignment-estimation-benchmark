@@ -111,9 +111,10 @@ settings.overlay.perShotFormula = struct("dx", "k1 + k3*x + k5*y", "dy", "k2 + k
 
 % Shot 高次補正の評価（「7. Shot高次補正」のタブ。alignest.highOrderOptions。推定の評価には使わない）
 settings.highOrder.maker = "custom";       % 補正の式：asml（k1〜k19 の全項）・canon・nikon（Overlay 計測ルールの式）・
-                                           % custom（カスタム：k1〜k38 から選ぶ）
-settings.highOrder.unit = "common";        % k のくくり：common（Wafer 内の Shot で共通）・scan（Scan 方向ごと）・row（Shot 行の
-                                           % 偶奇ごと）・shot（Shot ごと）
+                                           % custom（カスタム：k1〜k38 から選ぶ）・linear（1次：k1〜k6）・quadratic（2次：k1〜k12）
+settings.highOrder.unit = "common";        % k のくくり：common（Wafer 内の Shot で共通）・wafers（選択 Wafer で共通）・
+                                           % scan（Scan 方向ごと）・row（Shot 行の偶奇ごと）・shot（Shot ごと）。common・wafers の
+                                           % 式・項は Shot 共通補正の設定（shotCommonMaker・shotCommonTerms）
 settings.highOrder.waferOrder = 1;         % Wafer 成分（Shot 中心の座標の多項式の次数。0〜5、0 = なし。shot のほかは k と一緒に、
                                            % shot は先に求めて引く）
 settings.highOrder.shotCommon = "none";     % Shot ごと（unit = shot）のとき、先に引く Shot 共通の補正：none（引かない。Shot ごとに

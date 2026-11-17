@@ -121,8 +121,10 @@ classdef TestRangeVifHistoryScreens < matlab.unittest.TestCase
             testCase.verifyEqual(numel(findobj(c.highOrderWaferAxes(1), 'Type', 'bar')), 6);
             testCase.verifyTrue(all(isfinite(separate.points.commonLinearResidualX(isfinite(separate.points.residualX)))));
             app.setHighOrderSettings(unit="common", shotCommonMaker="same");
-            testCase.verifyEqual(string(c.highOrderVifSelectCommon.Enable), "off", "Wafer 内で共通では使わない");
-            testCase.verifyEqual(string(c.highOrderCommonMaker.Enable), "off");
+            testCase.verifyEqual(string({c.highOrderVifSelectCommon.Enable, c.highOrderCommonMaker.Enable}), ["on", "on"], ...
+                "Wafer 内で共通では、k の組の式・項を Shot 共通補正の欄で選ぶ");
+            testCase.verifyEqual(string({c.highOrderVifSelect.Enable, c.highOrderMaker.Enable}), ["off", "off"], ...
+                "Shot ごとの補正の欄は使わない");
             % 1つの Shot の図：実測点の位置と、外周の Shot では Wafer の縁
             app.useAllHighOrderTerms();
             app.setHighOrderSettings(loss="ols", regularization="none");

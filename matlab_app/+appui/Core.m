@@ -21,6 +21,8 @@ classdef (Abstract) Core < handle
         SCREEN_MARGIN = 40
         MIN_FIGURE_SIZE = [800, 600]       % 窓の大きさの下限（画面がこれより小さいときは画面の大きさ）
         SCREEN_CHECK_SECONDS = 1           % 窓が別の画面（モニター）に移ったかを調べる間隔 [秒]
+        RESIZE_SETTLE_SECONDS = 0.5        % 窓の大きさがこの間変わらなければ、変え終えたとみなして図を描き直す [秒]
+        RESIZE_CHARTS = ["preview", "layout", "overlay", "map", "target", "highOrder"]   % 窓の大きさを変えたあと描き直す図
         MIN_CONTENT_SIZE = [1200, 700]     % 窓がこれより小さいときは、中身をこの大きさに保ってスクロールで見る（欄が詰まって崩れないように）
         PRIMARY_COLOR = [0.0, 0.36, 0.67]
         ARROW_COLORS = [0.0, 0.33, 0.62; 0.0, 0.33, 0.62; 0.75, 0.25, 0.10]  % 楕円と重ねるときの矢印（計測値・推定値・残差）
@@ -89,6 +91,8 @@ classdef (Abstract) Core < handle
         TargetRun = []          % 「6. 未知の座標の推定」で最後に推定した結果（estimateTargets）
         Interactions = []       % 「質的変数の交互作用」で最後に調べた結果（alignest.factorInteractions）
         ScreenTimer = []        % 窓が別の画面（モニター）に移ったかを調べるタイマー（画面を出すときだけ）
+        ResizeTimer = []        % 窓の大きさを変え終えたかを待つタイマー（画面を出すときだけ。scheduleChartRefresh）
+        ResizedCharts = strings(1, 0)  % 窓の大きさを変えたあと、まだ描き直していない図（RESIZE_CHARTS の名前。開いたときに描き直す）
         CurrentMonitor = 0      % 窓の中心がある画面の番号（get(groot, 'MonitorPositions') の行）
         ResponsiveColumns = struct("grid", {}, "column", {}, "width", {})  % 窓の幅に合わせて狭める欄（registerResponsiveColumn）
         TargetSelection = zeros(0, 1)  % 推定する点の表で選んでいる行（「選んだ行を削除」で使う）
@@ -144,9 +148,11 @@ classdef (Abstract) Core < handle
         end
 
         function delete(app)
-            if ~isempty(app.ScreenTimer) && isvalid(app.ScreenTimer)
-                stop(app.ScreenTimer);
-                delete(app.ScreenTimer);
+            for watcher = {app.ScreenTimer, app.ResizeTimer}
+                if ~isempty(watcher{1}) && isvalid(watcher{1})
+                    stop(watcher{1});
+                    delete(watcher{1});
+                end
             end
             if ~isempty(app.HelpWindow) && isvalid(app.HelpWindow)
                 delete(app.HelpWindow);
@@ -157,6 +163,15 @@ classdef (Abstract) Core < handle
             if ~isempty(app.Figure) && isvalid(app.Figure)
                 delete(app.Figure);
             end
+        end
+
+        function refreshChartsAfterResize(app)
+            %REFRESHCHARTSAFTERRESIZE 窓の大きさを変え終えたときの処理（タイマーから呼ぶ。動作確認でも呼べる）：
+            %   欄の幅を最後の大きさに合わせ直し、Wafer マップなどの図（RESIZE_CHARTS）を描き直す。今見えている図は
+            %   すぐに、見えていない図はそのタブを開いたときに描き直す（見えていない図は大きさが決まらないため）。
+            applyResponsiveLayout(app);
+            app.ResizedCharts = app.RESIZE_CHARTS;
+            redrawShownResizedCharts(app);
         end
     end
 
@@ -293,7 +308,7 @@ classdef (Abstract) Core < handle
             % 画面（モニター）の大きさ・解像度に合わせる：窓の幅に合わせて決まった幅の欄を狭め、別の画面に移したら
             % 窓をその画面に収まる大きさにする（画面の大きさが違う画面の間で動かしても、つり合いが崩れないように）
             app.Figure.AutoResizeChildren = 'off';   % 中は uigridlayout が合わせる（on のままだと SizeChangedFcn が動かない）
-            app.Figure.SizeChangedFcn = @(~, ~) app.applyResponsiveLayout();
+            app.Figure.SizeChangedFcn = @(~, ~) app.onFigureResized();
             applyResponsiveLayout(app);
             app.CurrentMonitor = monitorIndexOf(app.Figure.Position);
             if visible
@@ -480,15 +495,116 @@ classdef (Abstract) Core < handle
             for k = find(figureSize < minContentSize)
                 sizes{k} = {minContentSize(k) - padding};
             end
-            set(app.RootGrid, 'ColumnWidth', sizes{1}, 'RowHeight', sizes{2});
+            % 変わったときだけ入れる（窓をドラッグしている間に、同じ値で中身の配置を何度もやり直さないように）
+            if ~isequal(app.RootGrid.ColumnWidth, sizes{1}) || ~isequal(app.RootGrid.RowHeight, sizes{2})
+                set(app.RootGrid, 'ColumnWidth', sizes{1}, 'RowHeight', sizes{2});
+            end
             scale = min(1, contentSize(1) / app.FIGURE_SIZE(1)) * app.FontScale;
             for item = app.ResponsiveColumns
                 if ~isvalid(item.grid)
                     continue
                 end
                 widths = item.grid.ColumnWidth;
-                widths{item.column} = round(item.width * scale);
-                item.grid.ColumnWidth = widths;
+                width = round(item.width * scale);
+                if ~isequal(widths{item.column}, width)
+                    widths{item.column} = width;
+                    item.grid.ColumnWidth = widths;
+                end
+            end
+        end
+
+        function onFigureResized(app)
+            % 窓の大きさが変わった：欄の幅を合わせ、変え終えたら図を描き直す
+            applyResponsiveLayout(app);
+            scheduleChartRefresh(app);
+        end
+
+        function scheduleChartRefresh(app)
+            % 窓の大きさを変え終えたら（RESIZE_SETTLE_SECONDS の間変わらなければ）図を描き直す。ドラッグしている間の
+            % 途中の大きさで配置した図（軸・色の目盛り・凡例）が、窓を戻しても崩れたまま残ることがあるため
+            if isempty(app.Figure) || ~isvalid(app.Figure) || app.Figure.Visible == "off"
+                return
+            end
+            if isempty(app.ResizeTimer) || ~isvalid(app.ResizeTimer)
+                app.ResizeTimer = timer('ExecutionMode', 'singleShot', 'StartDelay', app.RESIZE_SETTLE_SECONDS, ...
+                    'Name', 'AlignmentEstimationApp:resize', 'TimerFcn', @(~, ~) app.onResizeSettled());
+            end
+            stop(app.ResizeTimer);   % まだ変えている途中：待ち直す
+            start(app.ResizeTimer);
+        end
+
+        function onResizeSettled(app)
+            % タイマー：窓の大きさを変え終えた
+            if ~isvalid(app) || isempty(app.Figure) || ~isvalid(app.Figure)
+                return
+            end
+            try
+                refreshChartsAfterResize(app);
+            catch
+                % 描き直せなくても画面は使える（次に図を描くときに直る）
+            end
+        end
+
+        function redrawShownResizedCharts(app)
+            % 窓の大きさを変えたあと、まだ描き直していない図のうち、今見えている図を描き直す（タブを開いたときにも呼ぶ）
+            if isempty(app.ResizedCharts)
+                return
+            end
+            c = app.Controls;
+            shown = strings(1, 0);
+            switch app.TabGroup.SelectedTab
+                case app.Tabs.data
+                    subTabs = struct("preview", c.previewTab, "layout", c.layoutTab, "overlay", c.shotOverlayTab);
+                    for name = ["preview", "layout", "overlay"]
+                        if c.dataTabs.SelectedTab == subTabs.(name)
+                            shown = name;
+                        end
+                    end
+                case app.Tabs.map
+                    shown = "map";
+                case app.Tabs.target
+                    shown = "target";
+                case app.Tabs.highOrder
+                    shown = "highOrder";
+            end
+            shown = shown(ismember(shown, app.ResizedCharts));
+            app.ResizedCharts = setdiff(app.ResizedCharts, shown, 'stable');
+            for name = shown
+                try
+                    redrawChart(app, name);
+                catch
+                    % 描けない状態の図（データ・結果が無い）はそのまま
+                end
+            end
+        end
+
+        function redrawChart(app, name)
+            % 図を今の選択で描き直す（name は RESIZE_CHARTS の名前。描くものが無ければ何もしない）
+            switch name
+                case "preview"
+                    if ~isempty(app.Data)
+                        drawPreview(app);
+                    end
+                case "layout"
+                    if ~isempty(app.Data)
+                        drawLayout(app);
+                    end
+                case "overlay"
+                    if ~isempty(app.Data)
+                        drawShotOverlay(app);
+                    end
+                case "map"
+                    if ~isempty(app.Results)
+                        drawMap(app);
+                    end
+                case "target"
+                    if ~isempty(app.TargetRun)
+                        drawTargetMap(app);
+                    end
+                case "highOrder"
+                    if ~isempty(app.HighOrderRun)
+                        drawHighOrderMap(app);
+                    end
             end
         end
 

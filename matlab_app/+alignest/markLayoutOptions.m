@@ -18,8 +18,8 @@ function options = markLayoutOptions(settings)
 %   - requiredXmm・requiredYmm：必ず計測する Mark の Shot 内の座標 [mm]
 %   - excludedXmm・excludedYmm：計測しない Mark の Shot 内の座標 [mm]（残差の評価には使う）
 %   options.description：画面・Excel に出す説明。以前の設定（markLayout が無い・項目が足りない）は初期値を使う。
-MAKER_NAMES = ["asml", "canon", "nikon", "custom"];
-MAKER_LABELS = ["ASML", "Canon", "Nikon", "カスタム（k1〜k38）"];
+MAKER_NAMES = ["asml", "canon", "nikon", "custom", "linear", "quadratic"];   % 1次・2次は「7. Shot高次補正」で保存した組み合わせから
+MAKER_LABELS = ["ASML", "Canon", "Nikon", "カスタム（k1〜k38）", "1次（k1〜k6）", "2次（k1〜k12）"];
 LOSS_NAMES = ["ols", "huber", "lad"];
 LOSS_LABELS = ["最小二乗", "Huber（ロバスト回帰）", "LAD（ロバスト回帰）"];
 REGULARIZATION_NAMES = ["none", "l2", "l1"];

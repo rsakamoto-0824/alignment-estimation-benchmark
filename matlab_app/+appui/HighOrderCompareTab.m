@@ -23,12 +23,14 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
                 case "current"
                     added(1) = condition(conditionLabel(options), base);
                 case "units"
-                    names = ["common", "scan", "row", "shot"];
-                    labels = ["Wafer 内で共通", "Scan 方向ごと", "行の偶奇ごと", "Shot ごと"];
+                    names = ["common", "wafers", "scan", "row", "shot"];
+                    labels = ["Wafer 内で共通", "選択 Wafer で共通", "Scan 方向ごと", "行の偶奇ごと", "Shot ごと"];
                     for k = 1:numel(names)
                         variant = base;
                         variant.unit = names(k);
-                        added(end + 1) = condition("くくり：" + labels(k) + "｜" + makerLabel(options), variant); %#ok<AGROW>
+                        variantOptions = options;
+                        variantOptions.unit = names(k);   % Wafer 内・選択 Wafer で共通は Shot 共通補正の式（makerLabel）
+                        added(end + 1) = condition("くくり：" + labels(k) + "｜" + makerLabel(variantOptions), variant); %#ok<AGROW>
                     end
                 case "loss"
                     names = ["ols", "huber", "lad"];
@@ -140,16 +142,17 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             end
             readHighOrderControls(app);
             options = alignest.highOrderOptions(app.Settings);
-            terms = alignest.highOrderTerms(options.maker, options.excludedTerms);
-            line = name + "|" + options.maker + "|" + strjoin(string(terms.k(terms.used)).', " ");
+            formula = alignest.highOrderSharedFormula(options);   % Wafer 内・選択 Wafer で共通は Shot 共通補正の式・項
+            terms = alignest.highOrderTerms(formula.maker, formula.excludedTerms);
+            line = name + "|" + formula.maker + "|" + strjoin(string(terms.k(terms.used)).', " ");
             current = termSetTable(app.Settings.highOrder.termSets);
             lines = string(app.Settings.highOrder.termSets(:));
             lines = lines(current.name ~= name);
             app.Settings.highOrder.termSets = [lines; line];
             if options.outerMaker ~= "none" && options.outerName == name
                 % 外周の式にしている組み合わせを保存し直した：外周の式も新しい項にする
-                app.Settings.highOrder.outerMaker = options.maker;
-                app.Settings.highOrder.outerExcludedTerms = excludedFor(options.maker, terms.k(terms.used));
+                app.Settings.highOrder.outerMaker = formula.maker;
+                app.Settings.highOrder.outerExcludedTerms = excludedFor(formula.maker, terms.k(terms.used));
                 markHighOrderStale(app);
             end
             savePreference(app, 'highOrderTermSets', cellstr(app.Settings.highOrder.termSets));
@@ -158,14 +161,21 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
         end
 
         function applyHighOrderTermSet(app, name)
-            %APPLYHIGHORDERTERMSET 保存した項の組み合わせを呼び出す（補正の式と使う項を、その組み合わせにする）。
+            %APPLYHIGHORDERTERMSET 保存した項の組み合わせを呼び出す（補正の式と使う項を、その組み合わせにする。くくりが Wafer 内・
+            %   選択 Wafer で共通なら、Shot 共通補正の式・項にする）。
             sets = termSetTable(app.Settings.highOrder.termSets);
             row = find(sets.name == string(name), 1);
             if isempty(row)
                 error('alignest:highOrderTermSet', '保存した項の組み合わせ「%s」がありません。', string(name));
             end
-            app.Settings.highOrder.maker = sets.maker(row);
-            app.Settings.highOrder.excludedTerms = excludedFor(sets.maker(row), sets.terms{row});
+            if any(string(app.Settings.highOrder.unit) == ["common", "wafers"])
+                % くくりが Wafer 内・選択 Wafer で共通：k の組は Shot 共通補正なので、Shot 共通の式・項にする
+                app.Settings.highOrder.shotCommonMaker = sets.maker(row);
+                app.Settings.highOrder.shotCommonTerms = sets.terms{row};
+            else
+                app.Settings.highOrder.maker = sets.maker(row);
+                app.Settings.highOrder.excludedTerms = excludedFor(sets.maker(row), sets.terms{row});
+            end
             highOrderSettingsToControls(app);
             markHighOrderStale(app);
         end
@@ -262,7 +272,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
                     ylabel(ax, '係数（nm/mm^次数）');
                     info = '係数は mm の座標での値（定数 nm、1次 nm/mm、n 次 nm/mm^n）。';
                 end
-                if run.result.options.unit ~= "common" || run.result.options.outerMaker ~= "none"
+                if ~any(run.result.options.unit == ["common", "wafers"]) || run.result.options.outerMaker ~= "none"
                     info = [info, ' 1つの Wafer に k の組が複数あるとき（Shot ごと・Scan 方向ごと・行の偶奇ごと・内周と' ...
                         '外周）は、組の平均と標準偏差（ひげ）です。'];
                 end
@@ -1018,6 +1028,7 @@ end
 
 function values = conditionValues(options)
 % 1つの条件の内容（conditionDetails の項目の順）
+options = alignest.highOrderSharedFormula(options);   % Wafer 内・選択 Wafer で共通は Shot 共通補正の式・項
 perShot = options.unit == "shot";
 wafer = "なし";
 if options.waferOrder > 0
@@ -1067,9 +1078,11 @@ text = names.(kind);
 end
 
 function text = makerLabel(options)
-% 補正の式の名前（外周の式を分けるときは「Nikon＋外周 ASML」など）
-names = ["asml", "canon", "nikon", "custom"];
-labels = ["ASML", "Canon", "Nikon", "カスタム"];
+% 補正の式の名前（外周の式を分けるときは「Nikon＋外周 ASML」など）。くくりが Wafer 内・選択 Wafer で共通なら、k の組に
+% 使う Shot 共通補正の式（alignest.highOrderSharedFormula）
+options = alignest.highOrderSharedFormula(options);
+names = ["asml", "canon", "nikon", "custom", "linear", "quadratic"];
+labels = ["ASML", "Canon", "Nikon", "カスタム", "1次", "2次"];
 text = labels(names == options.maker);
 if options.outerMaker ~= "none"
     outer = labels(names == options.outerMaker);
@@ -1082,8 +1095,8 @@ end
 
 function text = unitLabel(options)
 % くくりの短い説明（Shot 共通を先に引く Shot ごとは「共通（計算）→ Shot ごと 1次まで」など）
-names = ["common", "scan", "row", "shot"];
-labels = ["Wafer 内で共通", "Scan 方向ごと", "行の偶奇ごと", "Shot ごと"];
+names = ["common", "wafers", "scan", "row", "shot"];
+labels = ["Wafer 内で共通", "選択 Wafer で共通", "Scan 方向ごと", "行の偶奇ごと", "Shot ごと"];
 text = labels(names == options.unit);
 if alignest.highOrderSequential(options)
     text = ternary(options.shotCommon == "fit", "共通（計算）→ ", "共通（入力）→ ") + text;

@@ -40,16 +40,24 @@ classdef (Abstract) HighOrderHistoryTab < appui.Core
         end
 
         function applyHighOrderTermSelection(app)
-            %APPLYHIGHORDERTERMSELECTION 「k の選定」の結果を、「使う項と VIF」の表の「使う」に写す（使わない項 = 選ばなかった項）
+            %APPLYHIGHORDERTERMSELECTION 「k の選定」の結果を、「使う項と VIF」の表の「使う」に写す（使わない項 = 選ばなかった項。
+            %   くくりが Wafer 内・選択 Wafer で共通なら、Shot 共通補正の項 shotCommonTerms）
             selection = app.HighOrderTermSelection;
             if isempty(selection)
                 error('alignest:highOrderSelection', '先に「計算する」で k パラメータを選んでください。');
             end
             options = alignest.highOrderOptions(app.Settings);
-            if options.maker ~= selection.maker
+            shared = alignest.highOrderSharedFormula(options);   % Wafer 内・選択 Wafer で共通は Shot 共通補正の式
+            if shared.maker ~= selection.maker
                 error('alignest:highOrderSelection', '選んだ後に補正の式を変えました。「計算する」で選び直してください。');
             end
-            app.Settings.highOrder.excludedTerms = selection.excludedTerms;
+            if any(options.unit == ["common", "wafers"])
+                % k の組は Shot 共通補正：選んだ項を Shot 共通の項にする（表の「使う」に出る）
+                terms = alignest.highOrderTerms(selection.maker, selection.excludedTerms);
+                app.Settings.highOrder.shotCommonTerms = unique(reshape(terms.k(terms.used), 1, []));
+            else
+                app.Settings.highOrder.excludedTerms = selection.excludedTerms;
+            end
             refreshHighOrderTerms(app);
             app.Controls.highOrderSelectInfo.Text = sprintf(['使う項を dx %d 項・dy %d 項にしました（「使う項と VIF」の表）。' ...
                 '「補正を計算する」で補正を求め直してください。'], numel(selection.used{1}), numel(selection.used{2}));

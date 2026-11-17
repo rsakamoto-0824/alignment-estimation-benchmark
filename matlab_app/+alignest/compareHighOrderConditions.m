@@ -27,7 +27,8 @@ for c = 1:numel(conditions)
     for name = string(fieldnames(conditions(c).highOrder)).'
         conditionSettings.highOrder.(name) = conditions(c).highOrder.(name);
     end
-    options = alignest.highOrderOptions(conditionSettings);
+    % くくりが Wafer 内・選択 Wafer で共通なら、式は Shot 共通補正の式（alignest.shotHighOrder と同じ）
+    options = alignest.highOrderSharedFormula(alignest.highOrderOptions(conditionSettings));
     lambda = (options.lambda .* (options.regularization ~= "none")).';
     rows = table(repmat(string(conditions(c).label), 2, 1), AXES.', repmat(options.description, 2, 1), ...
         repmat(options.maker, 2, 1), repmat(options.unit, 2, 1), options.loss.', ...

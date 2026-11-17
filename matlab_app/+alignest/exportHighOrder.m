@@ -33,6 +33,10 @@ end
 options = result.options;
 if options.maker == "custom"
     formulaText = "カスタムの式（k1〜k38。Nikon・Canon と同じ番号の付け方で、4次までのすべての項と5次の項の一部）。";
+elseif options.maker == "linear"
+    formulaText = "1次の式（k1〜k6。並進・倍率・回転。Nikon・Canon と同じ番号の付け方）。";
+elseif options.maker == "quadratic"
+    formulaText = "2次の式（k1〜k12。1次と2次のすべての項。Nikon・Canon と同じ番号の付け方）。";
 else
     formulaText = "Overlay 計測ルールの Shot 高次補正の式（" + upper(options.maker) + "）。";
 end
