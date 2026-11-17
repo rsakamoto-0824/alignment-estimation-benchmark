@@ -8,7 +8,8 @@ function result = shotHighOrder(wafers, settings, flags)
 %   x・y（Wafer 上の座標 [mm]）・valueX・valueY（dx・dy の値 [nm]。値の無い点は NaN）・direction（Scan 方向 1・2。分からない
 %   点は NaN）・rowParity（Shot 行の奇偶。1 = 奇数行・2 = 偶数行。上の行から数える））。direction・rowParity の列が無ければ、
 %   direction は分からない、rowParity は Shot 中心の Y 座標（Yc）の行を上から数えて付ける。
-%   settings：設定（settings.highOrder を alignest.highOrderOptions で確かめて使う）。
+%   settings：設定（settings.highOrder を alignest.highOrderOptions で確かめて使う）。くくりが Wafer 内で共通・選んだ Wafer で
+%   共通のときは、補正の式・使う項に Shot 共通補正の式・項を使う（alignest.highOrderSharedFormula。result.options はその式・項）。
 %   補正の式：補正の式（ASML・Canon・Nikon・カスタム）のうち使う項（k パラメータ。terms.used）。dx の式は X の値、dy の式は Y の値に
 %   当てはめる。x・y は Shot 内の座標 [mm]。k の組のくくり（options.unit）：
 %   - Wafer 内の Shot で共通（"common"）：Wafer ごとに1組の k を、その Wafer のすべての点で求める
@@ -16,6 +17,9 @@ function result = shotHighOrder(wafers, settings, flags)
 %     ごとに1組ずつの k を、その Wafer のすべての点で一緒に求める（組の点だけで決まる。L2 の強さは組ごとに別に求めたときと
 %     同じ）
 %   - Shot ごと（"shot"）：Shot ごとに1組の k を、その Shot の点だけで求める
+%   - 選択 Wafer で共通（"wafers"）：選んだすべての Wafer の点で1組の k を一緒に求める（Wafer 成分は Wafer ごとに別の
+%     係数で一緒に求め、Wafer RT は Wafer ごとに先に引く。1 Wafer なら「Wafer 内の Shot で共通」と同じ。係数の表には、
+%     同じ k を Wafer ごとの行に出す）
 %   内周・外周：Shot 中心の半径が options.outerRadiusMm 以上の Shot を外周とする（点の zone）。外周の式（options.outerMaker）を
 %   分けるときは、k の組を内周・外周で別にし（くくりの組ごとに、内周は options.maker、外周は outerMaker の式）、Wafer 成分は
 %   両方で共通にする。補正の評価は、分けなくても内周・外周ごとにも出す（result.regionSummary）。
@@ -48,7 +52,7 @@ function result = shotHighOrder(wafers, settings, flags)
 %   Wafer 成分（多項式）は RT で補正しない Shot だけに使う（"all" なら使わない）。RT の決まらない項は 0 にする。
 %   補正の段階を比べるために、同じ点・同じ損失関数で、Wafer 高次補正だけ（Shot 中心の座標 Xc・Yc の 0〜waferOrder 次の多項式。
 %   定数を含む）と、Wafer 高次補正＋Shot 共通補正（Wafer 成分と、Wafer 内の Shot で共通の1組の k（外周の式を分けるときは
-%   内周・外周の2組）を一緒に。くくりが Wafer 内で共通なら高次補正そのもの）の残差も求める。
+%   内周・外周の2組）を一緒に。くくりが Wafer 内で共通・選択 Wafer で共通なら高次補正そのもの）の残差も求める。
 %   result.terms：項の表（alignest.highOrderVif。点の Shot 内の座標で求めた VIF を含む）。zone：式の範囲（外周の式を分けない
 %   ときは ""、分けるときは "内周"・"外周"。VIF はその範囲の点で求める）
 %   result.coefficients：補正値（係数）の表（wafer・shotNo（Shot ごとのとき）・group（k の組の名前。Wafer 成分は
@@ -97,11 +101,14 @@ arguments
 end
 checkOnly = flags.checkOnly;
 ALL_LABEL = "すべての Wafer";
+POOLED_LABEL = "選択 Wafer";   % 選択 Wafer で共通のとき、点が足りない k の組の名前
 ALL_REGION = "すべて";
 ZONE_NAMES = ["内周", "外周"];
 AXIS_NAMES = ["X", "Y"];
 FORMULA_AXES = ["dx", "dy"];
 options = alignest.highOrderOptions(settings);
+% くくりが Wafer 内・選択 Wafer で共通なら、k の組は Shot 共通補正そのもの：式と項は「Shot 共通補正」の欄の設定
+options = alignest.highOrderSharedFormula(options);
 if isempty(wafers)
     error('alignest:highOrderInput', 'Shot 高次補正を求める点がありません。入力のデータと Wafer を選んでください。');
 end
@@ -138,7 +145,14 @@ eachTerms = zoneTerms;   % k の組（Shot ごとなら Shot）ごとに求め�
 if sequential
     eachTerms = eachShotTerms(zoneTerms, options.shotEachOrder);   % Shot 共通は使う項すべて、Shot ごとは次数の上限まで
 end
-shortage = checkShortage(eachTerms, wafers, options.unit, FORMULA_AXES, zoneSplit);
+shortageWafers = wafers;
+shortageUnit = options.unit;
+if options.unit == "wafers"
+    % 選択 Wafer で共通：k の組は、選んだすべての Wafer の点（内周・外周に分けるときはその範囲）
+    shortageWafers = struct("label", POOLED_LABEL, "points", everything);
+    shortageUnit = "common";
+end
+shortage = checkShortage(eachTerms, shortageWafers, shortageUnit, FORMULA_AXES, zoneSplit);
 if checkOnly
     result = struct("options", options, "shortage", shortage, "messages", ...
         shortageMessages(shortage, options, zoneSplit));
@@ -180,6 +194,7 @@ for z = 1:numel(zoneTerms)
     zoneTerms{z}.zone = repmat(ternaryText(zoneSplit, ZONE_NAMES(z), ""), height(zoneTerms{z}), 1);
 end
 polynomialOrder = options.waferOrder * (options.waferRtRange ~= "all");   % すべての Shot が RT なら Wafer 成分は使わない
+sharedUnit = any(options.unit == ["common", "wafers"]);   % k の組が Shot 共通そのもの（Wafer 内・選択 Wafer で共通）
 waferPowers = polynomialPowers(polynomialOrder);
 % Shot ごと（と Shot 共通を先に引くとき）：Wafer 成分を先に求めて引く（Shot 共通を先に引くときは Shot 共通の k と一緒に求める）
 waferFirst = (options.unit == "shot" || sequential) && polynomialOrder > 0;
@@ -205,13 +220,24 @@ counts = struct("skipped", [0, 0], "groups", [0, 0], "notConverged", 0, "noRobus
     "rtDropped", 0, "rtNotConverged", 0, "commonMissing", 0, "commonDropped", strings(1, 0));
 % 求めた・補正しなかった k の組の数（軸 × 範囲。1列目は内周と外周にまたがる組、2・3列目は内周・外周の組）
 [totalFitted, totalSkipped] = deal(zeros(2, 3));
+% Wafer RT は Wafer ごとに先に求める（選択 Wafer で共通のときは、引いた残りを全 Wafer で一緒に当てはめるため）
+rts = cell(numel(wafers), 1);
+for w = 1:numel(wafers)
+    points = wafers(w).points;
+    groupKey = groupOfPoints(points, options.unit, zoneSplit);
+    rts{w} = fitWaferRt(points, [points.valueX, points.valueY], isfinite(groupKey), options, waferRadiusMm);
+end
+pooled = {};
+if options.unit == "wafers"
+    pooled = fitAcrossWafers(wafers, rts, zoneTerms, waferPowers, axisFits, zoneSplit, reduceGroups, FORMULA_AXES);
+end
 for w = 1:numel(wafers)
     points = wafers(w).points;
     label = string(wafers(w).label);
     nPoints = height(points);
     values = [points.valueX, points.valueY];
     [groupKey, groupName] = groupOfPoints(points, options.unit, zoneSplit);
-    rt = fitWaferRt(points, values, isfinite(groupKey), options, waferRadiusMm);
+    rt = rts{w};
     rtParts{w} = waferRtRows(label, rt, options);
     counts.rtDropped = counts.rtDropped + (rt.nDropped > 0);
     counts.rtNotConverged = counts.rtNotConverged + ~rt.converged;
@@ -245,8 +271,8 @@ for w = 1:numel(wafers)
         end
         commonPart = zeros(nPoints, 1);   % 先に引く Shot 共通の k の分（Shot 共通を先に引くときだけ）
         nCommonTerms = 0;   % 求めて先に引いた Shot 共通の k の数（回帰の自由度に入れる）
-        if options.unit ~= "common" && (flags.stages || waferFirst || sequential)
-            % Wafer 高次補正＋Shot 共通補正（くくりが Wafer 内で共通なら、高次補正そのものなので下で写す）
+        if ~sharedUnit && (flags.stages || waferFirst || sequential)
+            % Wafer 高次補正＋Shot 共通補正（くくりが Wafer 内で共通・選択 Wafer で共通なら、高次補正そのものなので下で写す）
             if inputCommon
                 [commonFitted, commonWaferPart, commonPart, common] = applyInputCommon(points, coordinates, ...
                     fitValues(:, a), isfinite(groupKey), axisTerms, inputValues, waferPowers, zoneSplit, fitOptions);
@@ -293,15 +319,27 @@ for w = 1:numel(wafers)
             groupIndex = fitUnits(u).groupIndex;
             groupTerms = eachAxisTerms(fitUnits(u).zones);
             counts.groups(a) = counts.groups(a) + numel(fitUnits(u).labels);
-            if reduceGroups
-                [groupTerms, groupDropped] = reduceGroupTerms(coordinates(members, 1:2), groupIndex, groupTerms);
-                reductionParts{u} = groupReductionRows(label, FORMULA_AXES(a), fitUnits(u), groupDropped, zoneSplit);
-                counts.reducedGroups(a) = counts.reducedGroups(a) + height(reductionParts{u});
-                counts.reducedTerms = unique([counts.reducedTerms, "k" + string([groupDropped{:}])], 'stable');
+            if options.unit == "wafers"
+                % 選択 Wafer で共通：全 Wafer で一緒に求めた結果の、この Wafer の点の分（members の並びは同じ）
+                shared = pooled{a}(w);
+                groupTerms = shared.terms;
+                if reduceGroups
+                    reductionParts{u} = groupReductionRows(label, FORMULA_AXES(a), fitUnits(u), shared.dropped, zoneSplit);
+                    counts.reducedTerms = unique([counts.reducedTerms, "k" + string([shared.dropped{:}])], 'stable');
+                end
+                removed = zeros(numel(members), 1);
+                fit = shared.fit;
+            else
+                if reduceGroups
+                    [groupTerms, groupDropped] = reduceGroupTerms(coordinates(members, 1:2), groupIndex, groupTerms);
+                    reductionParts{u} = groupReductionRows(label, FORMULA_AXES(a), fitUnits(u), groupDropped, zoneSplit);
+                    counts.reducedGroups(a) = counts.reducedGroups(a) + height(reductionParts{u});
+                    counts.reducedTerms = unique([counts.reducedTerms, "k" + string([groupDropped{:}])], 'stable');
+                end
+                removed = waferPart(members) + commonPart(members);   % 先に引いた Wafer 成分・Shot 共通の k の分
+                fit = fitGroups(coordinates(members, :), fitValues(members, a) - removed, groupIndex, groupTerms, ...
+                    fitWaferPowers, penalty, fitOptions);
             end
-            removed = waferPart(members) + commonPart(members);   % 先に引いた Wafer 成分・Shot 共通の k の分
-            fit = fitGroups(coordinates(members, :), fitValues(members, a) - removed, groupIndex, groupTerms, ...
-                fitWaferPowers, penalty, fitOptions);
             done = fit.ok(groupIndex);
             correction(members(done), a) = fit.fitted(done) + removed(done) + rt.part(members(done), a);
             weights(members(done), a) = fit.weights(done);
@@ -328,8 +366,9 @@ for w = 1:numel(wafers)
                     end
                 end
                 parts{end + 1} = unitRows; %#ok<AGROW>
-                counts.notConverged = counts.notConverged + ~fit.converged;
-                counts.noRobust = counts.noRobust + (options.loss(a) ~= "ols" && ~fit.robust);
+                countOnce = options.unit ~= "wafers" || w == pooled{a}(1).firstWafer;   % 全 Wafer で1回の当てはめは1回と数える
+                counts.notConverged = counts.notConverged + (countOnce && ~fit.converged);
+                counts.noRobust = counts.noRobust + (countOnce && options.loss(a) ~= "ols" && ~fit.robust);
                 counts.waferDropped = counts.waferDropped + any(~fit.waferDetermined);
                 for g = find(fit.ok)
                     names = termNames(groupTerms{g});
@@ -350,7 +389,7 @@ for w = 1:numel(wafers)
         leverage(:, a) = leverage(:, a) + rt.leverage(:, a);   % 先に引いた RT の項も回帰の自由度に入れる
         coefficientParts{w, a} = [parts{:}];
         groupReductionParts{w, a} = vertcat(reductionParts{:});
-        if options.unit == "common" && flags.stages
+        if sharedUnit && flags.stages
             commonCorrection(:, a) = correction(:, a);
         end
         % 比べる補正：Shot ごとに 1次（k1〜k6）だけ（くくりによらない。Wafer 成分は Shot ごとの k1・k2 に含まれる）
@@ -410,6 +449,16 @@ for w = 1:numel(wafers)
             regionParts{w, a, z} = summaryRow(label, AXIS_NAMES(a), ZONE_NAMES(z), points.shotNo(inZone), ...
                 pointParts{w}(inZone, :), kSets, notCorrected);
         end
+    end
+end
+if options.unit == "wafers"
+    % 選択 Wafer で共通：k の組は全 Wafer で1つ（内周・外周に分けるときは2つ）。Wafer ごとに数えた分を置き換える
+    for a = 1:2
+        counts.groups(a) = pooled{a}(1).nGroups;
+        counts.skipped(a) = pooled{a}(1).nSkipped;
+        counts.reducedGroups(a) = pooled{a}(1).nReduced;
+        totalFitted(a, :) = pooled{a}(1).fittedByZone;
+        totalSkipped(a, :) = pooled{a}(1).skippedByZone;
     end
 end
 result.options = options;
@@ -530,9 +579,10 @@ end
 function messages = shortageMessages(check, options, zoneSplit)
 % 計算の前の知らせ：点が足りない k の組があれば、範囲・軸ごとに、点の数が最も少ない組で決められない項と足りない組の数、
 % 「点が足りない Shot」の扱いで計算のときにどうなるかを書く（足りなければ空）
-GROUP_NAMES = struct("common", "Wafer", "scan", "k の組（Scan 方向）", "row", "k の組（行の偶奇）", "shot", "Shot");
+GROUP_NAMES = struct("common", "Wafer", "scan", "k の組（Scan 方向）", "row", "k の組（行の偶奇）", "shot", "Shot", ...
+    "wafers", "k の組（選択 Wafer で共通）");
 groupName = GROUP_NAMES.(options.unit);
-if zoneSplit && options.unit == "common"
+if zoneSplit && any(options.unit == ["common", "wafers"])
     groupName = "k の組（内周・外周）";
 end
 messages = strings(0, 1);
@@ -633,6 +683,9 @@ switch unit
     case "common"
         key = ones(n, 1);
         baseName = @(keys) repmat("共通", numel(keys), 1);
+    case "wafers"
+        key = ones(n, 1);
+        baseName = @(keys) repmat("選択 Wafer で共通", numel(keys), 1);
     case "scan"
         key = points.direction;
         key(~ismember(key, [1, 2])) = NaN;
@@ -655,7 +708,7 @@ if ~zoneSplit
 end
 key = key + (points.zone - 1) * ZONE_STRIDE;
 zoneName = @(keys) reshape(ZONE_NAMES(floor((keys(:) - 1) / ZONE_STRIDE) + 1), [], 1);
-if unit == "common"
+if any(unit == ["common", "wafers"])
     nameOf = @(keys, ~) zoneName(keys);
 else
     nameOf = @(keys, ~) zoneName(keys) + "・" + baseName(mod(keys(:) - 1, ZONE_STRIDE) + 1);
@@ -779,8 +832,21 @@ end
 end
 
 function block = waferBlock(coordinates, powers)
-% Wafer 成分の項の値（Shot 中心の座標 Xc・Yc の多項式。5列目が 0 の点（RT で補正する Shot）は 0）
+% Wafer 成分の項の値（Shot 中心の座標 Xc・Yc の多項式。5列目が 0 の点（RT で補正する Shot）は 0）。6列目（Wafer の番号）が
+% あれば、Wafer ごとに別の列にする（選択 Wafer で共通：[Wafer 1 の項, Wafer 2 の項, …]。ほかの Wafer の点は 0）
 block = coordinates(:, 3) .^ (powers(:, 1).') .* coordinates(:, 4) .^ (powers(:, 2).') .* coordinates(:, 5);
+if size(coordinates, 2) >= 6
+    nGroups = waferGroupCount(coordinates);
+    block = repmat(block, 1, nGroups) .* kron(coordinates(:, 6) == 1:nGroups, ones(1, size(powers, 1)));
+end
+end
+
+function n = waferGroupCount(coordinates)
+% Wafer 成分を別の列にする Wafer の数（6列目が無ければ 1）
+n = 1;
+if size(coordinates, 2) >= 6 && ~isempty(coordinates)
+    n = max(coordinates(:, 6));
+end
 end
 
 function rt = fitWaferRt(points, values, hasGroup, options, waferRadiusMm)
@@ -990,6 +1056,85 @@ waferPart = waferBlock(coordinates, waferPowers) * coefficients;
 waferPart(~isfinite(waferPart)) = 0;
 end
 
+function pooled = fitAcrossWafers(wafers, rts, zoneTerms, waferPowers, axisFits, zoneSplit, reduceGroups, formulaAxes)
+% 選択 Wafer で共通：選んだすべての Wafer の点（Wafer RT を Wafer ごとに先に引いた残り）で、1組の k（外周の式を分ける
+% ときは内周・外周の2組）と、Wafer ごとの Wafer 成分を一緒に求める（「Wafer 内で共通」の当てはめを Wafer をまたいで行う。
+% 損失関数・正則化も同じ）。pooled{a}(w)：軸 a・Wafer w の分。fit は fitGroups と同じ形で、その Wafer の点（partitionRows の
+% members の並び）の分（coefficients は共通の k、waferCoefficients はその Wafer の Wafer 成分）。terms・dropped はその Wafer に
+% ある k の組の項と、「その組だけ項を減らす」で外した項。1つ目の要素には、全体の k の組の数（nGroups）・補正しなかった組の数
+% （nSkipped）・項を減らした組の数（nReduced）・範囲ごとの数（fittedByZone・skippedByZone。1列目は内周と外周にまたがる組）と、
+% 点のある最初の Wafer の番号（firstWafer）も入れる
+VALUE_COLUMNS = ["valueX", "valueY"];
+nWafers = numel(wafers);
+nPowers = size(waferPowers, 1);
+pooled = cell(1, 2);
+for a = 1:2
+    penalty = struct("lambda", axisFits(a).lambda, "orders", axisFits(a).orders);
+    axisTerms = cellfun(@(terms) terms(terms.axis == formulaAxes(a) & terms.used, :), zoneTerms, 'UniformOutput', false);
+    [keyParts, coordinateParts, valueParts, zoneParts] = deal(cell(nWafers, 1));
+    hasRows = false(1, nWafers);
+    for w = 1:nWafers
+        points = wafers(w).points;
+        [groupKey, groupName] = groupOfPoints(points, "wafers", zoneSplit);
+        rows = find(isfinite(points.(VALUE_COLUMNS(a))) & isfinite(points.shotNo) & isfinite(groupKey));
+        fitUnit = partitionRows(rows, points, groupKey, groupName, "wafers", zoneSplit);
+        if isempty(fitUnit)
+            continue
+        end
+        members = fitUnit.members;   % 本体のループと同じ点・同じ並び
+        hasRows(w) = true;
+        keyParts{w} = groupKey(members);
+        coordinateParts{w} = [points.localX(members), points.localY(members), points.Xc(members), points.Yc(members), ...
+            double(~rts{w}.inScope(members)), repmat(w, numel(members), 1)];   % 6列目：Wafer 成分を分ける Wafer の番号
+        valueParts{w} = points.(VALUE_COLUMNS(a))(members) - rts{w}.part(members, a);
+        zoneParts{w} = points.zone(members);
+    end
+    entries = struct("fit", cell(1, nWafers), "terms", {{}}, "dropped", {{}}, "nGroups", 0, "nSkipped", 0, ...
+        "nReduced", 0, "fittedByZone", zeros(1, 3), "skippedByZone", zeros(1, 3), "firstWafer", 0);
+    [keys, firstOf, groupIndex] = unique(vertcat(keyParts{:}));
+    if isempty(keys)
+        pooled{a} = entries;
+        continue
+    end
+    allZones = vertcat(zoneParts{:});
+    zones = ones(1, numel(keys));
+    if zoneSplit
+        zones = reshape(allZones(firstOf), 1, []);
+    end
+    terms = axisTerms(zones);
+    coordinates = vertcat(coordinateParts{:});
+    dropped = cell(1, numel(keys));
+    if reduceGroups
+        [terms, dropped] = reduceGroupTerms(coordinates(:, 1:2), groupIndex, terms);
+    end
+    fit = fitGroups(coordinates, vertcat(valueParts{:}), groupIndex, terms, waferPowers, penalty, axisFits(a).options);
+    column = 1 + groupZones(allZones, groupIndex, numel(keys));
+    entries(1).nGroups = numel(keys);
+    entries(1).nSkipped = nnz(~fit.ok);
+    entries(1).nReduced = nnz(~cellfun(@isempty, dropped));
+    entries(1).fittedByZone = accumarray(column(:), double(fit.ok(:)), [3, 1]).';
+    entries(1).skippedByZone = accumarray(column(:), double(~fit.ok(:)), [3, 1]).';
+    entries(1).firstWafer = find(hasRows, 1);
+    offset = 0;
+    for w = find(hasRows)
+        n = numel(keyParts{w});
+        inPool = offset + (1:n);
+        offset = offset + n;
+        [~, map] = ismember(unique(keyParts{w}), keys);   % この Wafer の k の組（partitionRows の groupIndex の順）
+        map = reshape(map, 1, []);
+        waferColumns = (w - 1) * nPowers + (1:nPowers);
+        entries(w).fit = struct("ok", fit.ok(map), "fitted", fit.fitted(inPool), "weights", fit.weights(inPool), ...
+            "looResidual", fit.looResidual(inPool), "leverage", fit.leverage(inPool), ...
+            "coefficients", {fit.coefficients(map)}, "determined", {fit.determined(map)}, "constant", {fit.constant(map)}, ...
+            "waferCoefficients", fit.waferCoefficients(waferColumns), "waferDetermined", fit.waferDetermined(waferColumns), ...
+            "waferConstant", fit.waferConstant(waferColumns), "converged", fit.converged, "robust", fit.robust);
+        entries(w).terms = terms(map);
+        entries(w).dropped = dropped(map);
+    end
+    pooled{a} = entries;
+end
+end
+
 function out = fitGroups(coordinates, values, groupIndex, groupTerms, waferPowers, penalty, fitOptions)
 % 一緒に求める点の集まりに補正の式を当てはめる：k は組（groupIndex）ごと（組 g の項は groupTerms{g}。外周の式を分けると
 % 組ごとに項が違う）、Wafer 成分は共通。項がすべては決まらない組は補正しない（その組を除いて求め直す。組の項はその組の
@@ -999,7 +1144,7 @@ function out = fitGroups(coordinates, values, groupIndex, groupTerms, waferPower
 % out.coefficients・determined・constant：組ごとの cell（組の項の数 × 1）、out.waferCoefficients・waferDetermined・
 % waferConstant：Wafer 成分の項
 nGroups = max([groupIndex(:); 0]);
-nWafer = size(waferPowers, 1);
+nWafer = size(waferPowers, 1) * waferGroupCount(coordinates);   % 選択 Wafer で共通のときは Wafer ごとの列
 n = numel(values);
 emptyOf = @(fill) cellfun(@(terms) fill(height(terms), 1), groupTerms, 'UniformOutput', false);
 out = struct("ok", false(1, nGroups), "fitted", nan(n, 1), "weights", nan(n, 1), "looResidual", nan(n, 1), ...
@@ -1065,7 +1210,7 @@ for g = 1:nGroups
     offset = offset + height(terms);
 end
 wafer = waferBlock(coordinates, waferPowers);
-nWafer = size(waferPowers, 1);
+nWafer = size(wafer, 2);
 groupOptions = {};
 if nGroups > 1
     groupOptions = {'rowGroup', groupIndex, 'columnGroup', [columnGroup; zeros(nWafer, 1)]};
@@ -1309,15 +1454,24 @@ if alignest.highOrderSequential(options)
             'そこは Shot 共通を引かずに Shot ごとの k だけで補正しました。'], counts.commonMissing);
     end
 end
+if options.unit == "wafers"
+    waferText = "";
+    if options.waferOrder > 0 && options.waferRtRange ~= "all"
+        waferText = sprintf("Wafer 成分（%d 次）は Wafer ごとに別の係数で一緒に求め、", options.waferOrder);
+    end
+    messages(end + 1, 1) = sprintf("選択 Wafer で共通：%d Wafer のすべての点で1組の k を求めました（", numel(wafers)) + ...
+        waferText + "係数の表には同じ k を Wafer ごとの行に出します）。";
+end
 if options.unit == "scan"
     noDirection = nnz(~ismember(everything.direction, [1, 2]) & isfinite(everything.shotNo));
     if noDirection > 0
         messages(end + 1, 1) = sprintf('⚠ Scan 方向の分からない点 %d 点は使っていません（補正量・残差は空欄）。', noDirection);
     end
 end
-groupNames = struct("common", "Wafer", "scan", "k の組（Scan 方向）", "row", "k の組（行の偶奇）", "shot", "Shot");
+groupNames = struct("common", "Wafer", "scan", "k の組（Scan 方向）", "row", "k の組（行の偶奇）", "shot", "Shot", ...
+    "wafers", "k の組（選択 Wafer で共通）");
 groupName = groupNames.(options.unit);
-if zoneSplit && options.unit == "common"
+if zoneSplit && any(options.unit == ["common", "wafers"])
     groupName = "k の組（内周・外周）";
 end
 fitName = "Wafer";

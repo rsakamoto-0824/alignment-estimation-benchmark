@@ -187,6 +187,111 @@ classdef TestShotHighOrderShotCommon < matlab.unittest.TestCase
             testCase.verifyEqual([defaults.shotCommon, string(defaults.shotEachOrder)], ["none", "0"]);
         end
 
+        function sharedUnitsUseShotCommonSettings(testCase)
+            % くくりが Wafer 内・選択 Wafer で共通なら、k の組の式・項は「Shot 共通補正」の欄の設定（Shot 共通の補正の式・
+            % Shot 共通の項）。「Shot ごとと同じ」で項を選んでいなければ、以前と同じ（Shot ごとの補正の式・使う項）
+            points = sequentialWafer(testCase, [], Inf);
+            wafer = struct("label", "W1", "points", points);
+            settings = sequentialSettings("none", 0);
+            settings.highOrder.unit = "common";
+            base = alignest.shotHighOrder(wafer, settings);
+            testCase.verifyEqual(base.options.maker, "custom");
+            testCase.verifyEqual(base.options.excludedTerms, 21:38);
+            settings.highOrder.shotCommonMaker = "linear";
+            linear = alignest.shotHighOrder(wafer, settings);
+            testCase.verifyEqual(linear.options.maker, "linear");
+            testCase.verifyEqual(sort(linear.terms.k(linear.terms.used)).', 1:6);
+            testCase.verifyTrue(startsWith(linear.description, "1次（k1〜k6） の式"));
+            settings.highOrder.shotCommonMaker = "same";
+            settings.highOrder.shotCommonTerms = 1:12;
+            chosen = alignest.shotHighOrder(wafer, settings);
+            testCase.verifyEqual(sort(chosen.terms.k(chosen.terms.used)).', 1:12);
+            direct = settings;
+            direct.highOrder.maker = "quadratic";
+            direct.highOrder.excludedTerms = zeros(1, 0);
+            direct.highOrder.shotCommonTerms = zeros(1, 0);
+            expected = alignest.shotHighOrder(wafer, direct);
+            testCase.verifyEqual(chosen.points.correctionX, expected.points.correctionX, 'AbsTol', 1e-9, ...
+                "カスタムの k1〜k12 は 2次の式と同じ");
+            % 外周の式を分けるとき：Shot ごとと同じなら外周は外周の式（外周の Shot 共通の項）、別の式なら外周も同じ式
+            settings.highOrder.outerMaker = "asml";
+            settings.highOrder.shotCommonOuterTerms = 1:6;
+            options = alignest.highOrderSharedFormula(alignest.highOrderOptions(settings));
+            testCase.verifyEqual([options.maker, options.outerMaker], ["custom", "asml"]);
+            testCase.verifyEqual(options.outerExcludedTerms, 7:19);
+            testCase.verifyEmpty(options.shotCommonTerms);
+            settings.highOrder.shotCommonMaker = "canon";
+            settings.highOrder.shotCommonTerms = zeros(1, 0);
+            options = alignest.highOrderSharedFormula(alignest.highOrderOptions(settings));
+            canon = alignest.highOrderTerms("canon");
+            testCase.verifyEqual([options.maker, options.outerMaker, options.shotCommonMaker], ["canon", "canon", "same"]);
+            testCase.verifyEmpty(options.excludedTerms, "項を選んでいなければその式のすべての項");
+            testCase.verifyEqual(options.outerExcludedTerms, reshape(setdiff(canon.k, 1:6), 1, []));
+            settings.highOrder.unit = "shot";
+            testCase.verifyEqual(alignest.highOrderSharedFormula(alignest.highOrderOptions(settings)), ...
+                alignest.highOrderOptions(settings), "ほかのくくりではそのまま");
+            % 画面：Shot 共通補正の欄で式・項を選び、Shot ごとの補正の欄は使わない。Shot ごとに戻すと前の選択に戻る
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            c = app.Controls;
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
+            app.applyMapping();
+            app.setHighOrderSource("data");
+            app.setHighOrderSettings(unit="shot", shotCommon="none", maker="custom");
+            app.setHighOrderSettings(unit="common");
+            testCase.verifyEqual(string(c.highOrderShotCommon.Value), "fit", "k の組が Shot 共通補正そのもの");
+            testCase.verifyEqual(string({c.highOrderShotCommon.Enable, c.highOrderCommonMaker.Enable, ...
+                c.highOrderAllCommonTerms.Enable, c.highOrderVifSelectCommon.Enable}), ["off", "on", "on", "on"]);
+            testCase.verifyEqual(string({c.highOrderMaker.Enable, c.highOrderVifSelect.Enable, c.highOrderAllTerms.Enable, ...
+                c.highOrderShotEachOrder.Enable}), ["off", "off", "off", "off"], "Shot ごとの補正の欄は使わない");
+            testCase.verifyEqual(app.Settings.highOrder.shotCommon, "none", "設定の Shot 共通補正は変えない");
+            testCase.verifyEqual(string(c.highOrderCommonMaker.Items{1}), "Shot ごとと同じ（カスタム）");
+            excludedBefore = app.Settings.highOrder.excludedTerms;
+            row = find(string(c.highOrderTermTable.Data(:, 3)) == "k7", 1);
+            c.highOrderTermTable.CellEditCallback(c.highOrderTermTable, struct("Indices", [row, 1], "NewData", false));
+            testCase.verifyNotEmpty(app.Settings.highOrder.shotCommonTerms);
+            testCase.verifyFalse(ismember(7, app.Settings.highOrder.shotCommonTerms), "表の「使う」は Shot 共通の項");
+            testCase.verifyEqual(app.Settings.highOrder.excludedTerms, excludedBefore, "Shot ごとの使う項は変えない");
+            testCase.verifyFalse(c.highOrderTermTable.Data{row, 1});
+            app.setHighOrderSettings(shotCommonMaker="quadratic");
+            testCase.verifyEqual(size(c.highOrderTermTable.Data, 1), 12, "2次の式の項");
+            result = app.computeHighOrder(0);
+            testCase.verifyEqual(result.options.maker, "quadratic");
+            testCase.verifyFalse(any(result.terms.k(result.terms.used) == 7));
+            app.useAllHighOrderTerms("common");
+            testCase.verifyEqual(app.Settings.highOrder.shotCommonTerms, 1:12);
+            app.setHighOrderSettings(unit="shot");
+            testCase.verifyEqual(string({c.highOrderShotCommon.Value, c.highOrderShotCommon.Enable, c.highOrderMaker.Enable, ...
+                c.highOrderCommonMaker.Enable}), ["none", "on", "on", "off"]);
+            % 選択 Wafer で共通も同じ欄。補正値の表は Wafer ごとの行（同じ k）
+            app.setHighOrderSettings(unit="wafers");
+            testCase.verifyEqual(string({c.highOrderMaker.Enable, c.highOrderCommonMaker.Enable}), ["off", "on"]);
+            shared = app.computeHighOrder(0);
+            testCase.verifyEqual(shared.options.unit, "wafers");
+            testCase.verifyEqual(shared.summary.kSets(shared.summary.wafer == "すべての Wafer"), [1; 1]);
+            testCase.verifyEqual(height(c.highOrderCoefficientTable.Data), numel(app.Data.units));
+            k1 = shared.coefficients.value(shared.coefficients.k == 1 & shared.coefficients.component == "Shot 高次補正");
+            testCase.verifyEqual(numel(k1), numel(app.Data.units));
+            testCase.verifyLessThan(max(k1) - min(k1), 1e-12, "同じ k");
+            % 保存した組み合わせの呼び出し・保存も Shot 共通の式・項
+            app.setHighOrderSettings(unit="shot", maker="nikon");
+            app.useAllHighOrderTerms();
+            app.setHighOrderTermUsed(7, false);
+            app.saveHighOrderTermSet("k7 なし");
+            app.setHighOrderSettings(unit="common");
+            app.applyHighOrderTermSet("k7 なし");
+            testCase.verifyEqual(app.Settings.highOrder.shotCommonMaker, "nikon");
+            testCase.verifyFalse(ismember(7, app.Settings.highOrder.shotCommonTerms));
+            testCase.verifyEqual(string(c.highOrderCommonMaker.Value), "nikon");
+            testCase.verifyEqual(app.Settings.highOrder.maker, "nikon");
+            app.setHighOrderSettings(shotCommonMaker="linear");
+            app.saveHighOrderTermSet("1次");
+            sets = string(app.Settings.highOrder.termSets);
+            testCase.verifyTrue(any(sets == "1次|linear|1 3 5 2 4 6" | sets == "1次|linear|1 2 3 4 5 6"));
+            app.deleteHighOrderTermSet("k7 なし");
+            app.deleteHighOrderTermSet("1次");
+        end
+
         function excelExplainsTheCommonPart(testCase)
             % 書き出し：「説明」に先に引いた Shot 共通、「補正値」に入力した値の行
             [points, truth] = sequentialWafer(testCase, 6, Inf);

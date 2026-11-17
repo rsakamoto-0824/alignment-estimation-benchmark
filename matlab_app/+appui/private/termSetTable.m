@@ -8,7 +8,7 @@ makers = strings(0, 1);
 terms = cell(0, 1);
 for k = 1:numel(lines)
     parts = split(lines(k), "|");
-    if numel(parts) ~= 3 || ~any(parts(2) == ["asml", "canon", "nikon", "custom"])
+    if numel(parts) ~= 3 || ~any(parts(2) == ["asml", "canon", "nikon", "custom", "linear", "quadratic"])
         continue
     end
     numbers = str2double(split(strtrim(parts(3))));
@@ -19,8 +19,8 @@ for k = 1:numel(lines)
     makers(end + 1, 1) = parts(2); %#ok<AGROW>
     terms{end + 1, 1} = reshape(numbers, 1, []); %#ok<AGROW>
 end
-makerNames = ["asml", "canon", "nikon", "custom"];
-makerLabels = ["ASML", "Canon", "Nikon", "カスタム"];
+makerNames = ["asml", "canon", "nikon", "custom", "linear", "quadratic"];
+makerLabels = ["ASML", "Canon", "Nikon", "カスタム", "1次", "2次"];
 [~, position] = ismember(makers, makerNames);
 labels = strings(size(makers));
 labels(position > 0) = makerLabels(position(position > 0));

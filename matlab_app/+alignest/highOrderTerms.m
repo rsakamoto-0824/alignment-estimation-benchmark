@@ -5,7 +5,9 @@ function terms = highOrderTerms(maker, excludedTerms)
 %   maker："asml"・"canon"・"nikon"（Shot 高次補正の式。alignest.overlayTerms。Canon・Nikon は Overlay 計測ルールの式
 %   のまま、ASML は k1〜k19 のすべての項。式に無い項は足さない）、または "custom"（カスタム：k1〜k38 のすべての項から
 %   使う項を選ぶ。番号の付け方は Canon・Nikon の式と同じで、次数の低い順に、dx（奇数の k）は x^n, x^(n−1)·y, …, y^n、
-%   dy（偶数の k）は y^n, x·y^(n−1), …, x^n。例：k21 = x^4、k29 = y^4、k37 = x^2·y^3、k38 = x^3·y^2）。
+%   dy（偶数の k）は y^n, x·y^(n−1), …, x^n。例：k21 = x^4、k29 = y^4、k37 = x^2·y^3、k38 = x^3·y^2）、
+%   "linear"（1次：k1〜k6。並進・倍率・回転だけ）・"quadratic"（2次：k1〜k12。1次と2次のすべての項）。1次・2次の番号の
+%   付け方はカスタムと同じ（Canon・Nikon の式と同じ）。
 %   terms は項ごとの表：axis（"dx"・"dy"）・k（係数の番号）・xPower・yPower（Shot 内の座標 x・y のべき）・order（次数）・
 %   term（"1"・"x"・"x^2·y" など）・protected（k1〜k6 の並進・倍率・回転。外さない）・used（使う項）。
 %   k1〜k6 は excludedTerms にあっても使う（補正の土台なので外さない）。式に無い番号は無視する。
@@ -15,13 +17,20 @@ arguments
 end
 LINEAR_ORDER = 1;   % これ以下の次数の項（k1〜k6）は外さない
 CUSTOM_MAX_K = 38;  % カスタムの式で選べる k の番号の上限
-if ~any(maker == ["asml", "canon", "nikon", "custom"])
-    error('alignest:highOrderModel', 'Shot 高次補正の式は asml・canon・nikon・custom のいずれかです: %s', maker);
-end
-if maker == "custom"
-    formula = customFormula(CUSTOM_MAX_K);
-else
-    formula = alignest.overlayTerms(maker);
+LINEAR_MAX_K = 6;   % 1次の式の k の番号の上限（定数と1次の項）
+QUADRATIC_MAX_K = 12;   % 2次の式の k の番号の上限（定数・1次・2次の項）
+switch maker
+    case "custom"
+        formula = customFormula(CUSTOM_MAX_K);
+    case "linear"
+        formula = customFormula(LINEAR_MAX_K);
+    case "quadratic"
+        formula = customFormula(QUADRATIC_MAX_K);
+    case {"asml", "canon", "nikon"}
+        formula = alignest.overlayTerms(maker);
+    otherwise
+        error('alignest:highOrderModel', ['Shot 高次補正の式は asml・canon・nikon・custom・linear（1次）・' ...
+            'quadratic（2次）のいずれかです: %s'], maker);
 end
 parts = cell(2, 1);
 axisNames = ["dx", "dy"];

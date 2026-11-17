@@ -431,7 +431,7 @@ classdef (Abstract) DataTab < appui.Core
                 'ValueChangedFcn', @(~, ~) app.onValueUnitChanged(), 'Tooltip', '1変数の単位（画面と Excel の表示だけ。換算はしません）');
             place(c.valueUnit, 1, 4);
 
-            c.dataTabs = uitabgroup(grid);
+            c.dataTabs = uitabgroup(grid, 'SelectionChangedFcn', @(~, ~) app.redrawShownResizedCharts());
             c.mappingTab = uitab(c.dataTabs, 'Title', '列の対応・座標の単位');
             lower = uigridlayout(c.mappingTab, [1, 2], 'ColumnWidth', {'1x', '1.1x'}, 'Padding', 8, 'ColumnSpacing', 12);
             mappingPanel = uipanel(lower, 'Title', '列の対応');

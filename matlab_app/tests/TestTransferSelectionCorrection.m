@@ -217,7 +217,12 @@ classdef TestTransferSelectionCorrection < matlab.unittest.TestCase
             testCase.verifyEqual(c.highOrderSelectMethod.Items{1}, '変数重要度');
             testCase.verifyTrue(any(string(c.highOrderSelectTable.Data.Properties.VariableNames) == "変数重要度"));
             app.applyHighOrderTermSelection();
-            testCase.verifyEqual(app.Settings.highOrder.excludedTerms, selection.excludedTerms);
+            % くくりは Wafer 内で共通（履歴から戻した）：k の組は Shot 共通補正なので、選んだ項は Shot 共通の項になる
+            selected = alignest.highOrderTerms(selection.maker, selection.excludedTerms);
+            testCase.verifyEqual(app.Settings.highOrder.shotCommonTerms, unique(selected.k(selected.used).'));
+            app.setHighOrderSettings(unit="shot");
+            app.applyHighOrderTermSelection();
+            testCase.verifyEqual(app.Settings.highOrder.excludedTerms, selection.excludedTerms, "Shot ごとなら使う項");
             testCase.verifyTrue(startsWith(string(c.highOrderSelectInfo.Text), "使う項を"));
             app.selectHighOrderTerms("stepwise");
             testCase.verifyTrue(any(string(c.highOrderSelectTable.Data.Properties.VariableNames) == "BIC"));

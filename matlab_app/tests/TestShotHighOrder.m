@@ -43,6 +43,18 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             testCase.verifyEqual(asml.k(asml.axis == "dx").', [1, 3, 5, 7, 9, 11, 13, 15, 17, 19], "ASML は k1〜k19 の全項");
             testCase.verifyEqual(asml.k(asml.axis == "dy").', [2, 4, 6, 8, 10, 12, 14, 16, 18]);
             testCase.verifyError(@() alignest.highOrderTerms("other"), 'alignest:highOrderModel');
+            % 1次：k1〜k6（並進・倍率・回転）、2次：k1〜k12。番号の付け方はカスタム（Nikon・Canon）と同じ
+            linear = alignest.highOrderTerms("linear");
+            testCase.verifyEqual(sort(linear.k).', 1:6);
+            testCase.verifyTrue(all(linear.protected), "1次はすべて外せない項");
+            quadratic = alignest.highOrderTerms("quadratic", 9);
+            testCase.verifyEqual(sort(quadratic.k).', 1:12);
+            testCase.verifyEqual(quadratic.term(quadratic.k == 9), "x·y");
+            testCase.verifyEqual(quadratic.term(quadratic.k == 12), "x^2");
+            testCase.verifyFalse(quadratic.used(quadratic.k == 9), "2次の項は外せる");
+            settings = alignest.defaultSettings();
+            settings.highOrder.maker = "quadratic";
+            testCase.verifyTrue(startsWith(alignest.highOrderOptions(settings).description, "2次（k1〜k12） の式（dx 6 / 6 項"));
             % カスタム：Nikon・Canon と同じ番号の付け方の k1〜k38（dx は奇数の k、dy は偶数の k。各 19 項）
             custom = alignest.highOrderTerms("custom");
             testCase.verifyEqual(custom.k(custom.axis == "dx").', 1:2:37);
@@ -293,6 +305,61 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             testCase.verifyEqual(x.nTerms(x.unit == "common"), 12, "Nikon の dx 12 項");
             testCase.verifyEmpty(alignest.compareHighOrderConditions(struct("label", "W1", "points", points), settings, ...
                 struct("label", {}, "highOrder", {})));
+        end
+
+        function selectedWafersShareOneKSet(testCase)
+            % 選択 Wafer で共通：2枚の Wafer で同じ Shot の形・違う Wafer 成分なら、1組の k で真の値を取り戻し、Wafer 成分は
+            % Wafer ごとに取り戻す（雑音なし）。係数の表には同じ k を Wafer ごとの行に出す。1枚なら Wafer 内で共通と同じ
+            [first, truth] = syntheticWafer(testCase, true);   % dx に 0.01 × Xc
+            second = first;
+            second.valueX = second.valueX - 0.01 * second.Xc - 0.02 * second.Xc + 0.005 * second.Yc;
+            second.valueY = second.valueY + 0.003 * second.Xc;
+            wafers = struct("label", {"W1", "W2"}, "points", {first, second});
+            settings = alignest.defaultSettings();
+            settings.highOrder.maker = "nikon";
+            settings.highOrder.loss = "ols";
+            settings.highOrder.regularization = "none";
+            settings.highOrder.waferOrder = 1;
+            settings.highOrder.unit = "wafers";
+            result = alignest.shotHighOrder(wafers, settings);
+            shot = result.coefficients(result.coefficients.component == "Shot 高次補正", :);
+            testCase.verifyEqual(unique(shot.group), "選択 Wafer で共通");
+            for axisName = ["dx", "dy"]
+                for label = ["W1", "W2"]
+                    rows = shot.axis == axisName & shot.wafer == label;
+                    testCase.verifyEqual(shot.value(rows), truth.(axisName), 'AbsTol', 1e-9 * max(abs(truth.(axisName))), ...
+                        "同じ k を Wafer ごとの行に出す");
+                end
+            end
+            wafer = result.coefficients(result.coefficients.component == "Wafer 成分", :);
+            pick = @(label, axisName, term) wafer.value(wafer.wafer == label & wafer.axis == axisName & wafer.term == term);
+            testCase.verifyEqual([pick("W1", "dx", "Xc"), pick("W2", "dx", "Xc"), pick("W2", "dx", "Yc"), pick("W2", "dy", "Xc")], ...
+                [0.01, -0.02, 0.005, 0.003], 'AbsTol', 1e-9, "Wafer 成分は Wafer ごと");
+            totals = result.summary(result.summary.wafer == "すべての Wafer", :);
+            testCase.verifyEqual(totals.kSets, [1; 1], "k の組は全 Wafer で1つ");
+            testCase.verifyLessThan(max(result.summary.highOrder), 1e-6);
+            testCase.verifyEqual(result.summary.commonStage, result.summary.highOrder, "Shot 共通補正の段階は高次補正そのもの");
+            testCase.verifyTrue(any(contains(result.messages, "選択 Wafer で共通：2 Wafer")));
+            testCase.verifyTrue(contains(result.description, "選択 Wafer で共通（Wafer 成分 1 次は Wafer ごと"));
+            % Shot の形が Wafer で違うと、Wafer 内で共通（Wafer ごとの k）より残差が大きい
+            third = second;
+            third.valueX = third.valueX + 0.002 * third.localX .^ 2;
+            wafers(2).points = third;
+            sharedResult = alignest.shotHighOrder(wafers, settings);
+            settings.highOrder.unit = "common";
+            perWafer = alignest.shotHighOrder(wafers, settings);
+            pickX = @(r) r.summary.highOrder(r.summary.wafer == "W2" & r.summary.axis == "X");
+            testCase.verifyLessThan(pickX(perWafer), 1e-6);
+            testCase.verifyGreaterThan(pickX(sharedResult), 0.1);
+            % 1枚なら Wafer 内で共通と同じ（外周の式を分けても）
+            settings.highOrder.outerMaker = "asml";
+            common = alignest.shotHighOrder(wafers(1), settings);
+            settings.highOrder.unit = "wafers";
+            one = alignest.shotHighOrder(wafers(1), settings);
+            testCase.verifyEqual(one.points.correctionX, common.points.correctionX, 'AbsTol', 1e-9);
+            testCase.verifyEqual(one.points.correctionY, common.points.correctionY, 'AbsTol', 1e-9);
+            testCase.verifyEqual(one.summary.kSets, common.summary.kSets);
+            testCase.verifyEqual(sort(unique(one.points.group)), ["内周"; "外周"]);
         end
 
         function fewPointsAreReported(testCase)
@@ -634,16 +701,17 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             one = app.drawHighOrderMap(1, "stack", "residual", "vector", "Scan 方向 1");
             all_ = app.drawHighOrderMap(1, "wafer", "residual", "vector", "");
             testCase.verifyLessThan(one.n, all_.n);
-            % 補正の比較：4つのくくりと λ のスイープ × 2軸。条件・入力を変えると知らせ、書き出しには比べ直した結果だけを書く
+            % 補正の比較：5つのくくりと λ のスイープ × 2軸。条件・入力を変えると知らせ、書き出しには比べ直した結果だけを書く
             testCase.verifyError(@() app.compareHighOrderConditionsNow(), 'alignest:highOrderCondition');
             app.addHighOrderConditions("units");
             app.addHighOrderConditions("lambda", [0, 0.5]);
             testCase.verifyError(@() app.addHighOrderConditions("lambda", -1), 'alignest:highOrderLambda');
-            testCase.verifyEqual(size(c.highOrderConditionTable.Data, 1), 6);
+            testCase.verifyEqual(size(c.highOrderConditionTable.Data, 1), 7);
             comparison = app.compareHighOrderConditionsNow();
-            testCase.verifyEqual(height(comparison), 12);
+            testCase.verifyEqual(height(comparison), 14);
             testCase.verifyEqual(c.highOrderOutputs.SelectedTab, c.highOrderCompareTab);
-            testCase.verifyEqual(height(c.highOrderCompareTable.Data), 12);
+            testCase.verifyEqual(height(c.highOrderCompareTable.Data), 14);
+            testCase.verifyEqual(comparison.unit(1:5).', ["common", "wafers", "scan", "row", "shot"]);
             testCase.verifyTrue(all(isfinite(comparison.rSquared)), "補正の比較にも決定係数");
             testCase.verifyEqual(comparison.lambda(contains(comparison.label, "λ = 0（")), [0; 0]);
             testCase.verifyNotEmpty(c.highOrderCompareAxes.Children);

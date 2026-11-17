@@ -436,6 +436,7 @@ classdef (Abstract) TargetTab < appui.Core
                 refreshMarkLayoutChoices(app);   % データ・「7. Shot高次補正」の入力・保存した項の組み合わせが変わっていれば合わせる
                 refreshMarkLayoutInput(app);
             end
+            redrawShownResizedCharts(app);   % 窓の大きさを変えたあと、まだ描き直していない図
         end
 
         function refreshTargetChoices(app)

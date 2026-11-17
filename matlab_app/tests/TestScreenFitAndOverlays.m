@@ -63,6 +63,31 @@ classdef TestScreenFitAndOverlays < matlab.unittest.TestCase
             testCase.verifyEqual(c.distributionTab.Children(1).RowHeight{3}, '1x', "分布の比較の表は決まった高さにしない");
         end
 
+        function chartsRedrawAfterResize(testCase)
+            % 窓の大きさを変え終えたら、見えている図（Wafer マップ）をすぐに描き直し、見えていない図はタブを開いたときに描き直す
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
+            app.applyMapping();
+            c = app.Controls;
+            c.dataTabs.SelectedTab = c.previewTab;
+            app.TabGroup.SelectedTab = app.Tabs.data;
+            previewBefore = c.previewAxes(1).Children;
+            layoutBefore = c.layoutAxes(1).Children;
+            app.refreshChartsAfterResize();
+            testCase.verifyFalse(any(isvalid(previewBefore)), "見えている Wafer マップは描き直す");
+            testCase.verifyTrue(all(isvalid(layoutBefore)), "見えていない図はまだ描き直さない");
+            testCase.verifyEqual(app.ResizedCharts, ["layout", "overlay", "map", "target", "highOrder"]);
+            c.dataTabs.SelectedTab = c.layoutTab;
+            c.dataTabs.SelectionChangedFcn(c.dataTabs, struct("NewValue", c.layoutTab));
+            testCase.verifyFalse(any(isvalid(layoutBefore)), "Shot レイアウトはタブを開いたときに描き直す");
+            testCase.verifyEqual(app.ResizedCharts, ["overlay", "map", "target", "highOrder"]);
+            app.TabGroup.SelectedTab = app.Tabs.map;
+            app.TabGroup.SelectionChangedFcn(app.TabGroup, struct("NewValue", app.Tabs.map));
+            testCase.verifyEqual(app.ResizedCharts, ["overlay", "target", "highOrder"], "結果が無いマップは描かずに済ませる");
+            testCase.verifyNotEmpty(c.previewAxes(1).Children);
+        end
+
         function windowFitsTheScreen(testCase)
             % 画面に合わせる：窓は画面（モニター）の中に収まり、決まった幅の欄は中身の幅の比で狭める
             app = AlignmentEstimationApp(false);
