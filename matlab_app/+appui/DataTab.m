@@ -142,6 +142,7 @@ classdef (Abstract) DataTab < appui.Core
             catch err
                 app.Controls.varianceInfo.Text = ['⚠ ばらつきを分けられませんでした：' err.message];
             end
+            clearRotation(app);   % 「9. 計測マップのローテーション」の前のデータの結果を消す
             % 質的変数の交互作用：Wafer はすべて、その他の列は質的変数に選んである列。読み込んだら一度調べる
             app.Controls.interactionWafers.Items = cellstr(labels);
             app.Controls.interactionWafers.ItemsData = num2cell(1:numel(labels));

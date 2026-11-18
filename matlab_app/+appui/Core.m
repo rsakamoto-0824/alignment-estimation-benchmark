@@ -125,6 +125,12 @@ classdef (Abstract) Core < handle
         EstimatedCorrection = []     % 「4. 結果一覧」の「実測値と推定値の補正」の結果（alignest.estimatedCorrectionComparison）
         DataVariance = []            % 「1. データ読込」の「ばらつき分解」の結果（alignest.dataVarianceDecomposition）
         CorrectionVariance = []      % 「4. 結果一覧」の「補正残差のばらつき分解」の結果（alignest.correctionVarianceDecomposition）
+        RotationWafers = []          % 「9. 計測マップのローテーション」の入力の Wafer（label・points・lot・dateTime・operation・eqpId）
+        RotationVariability = []     % 「9.」の Shot・Mark ごとのばらつき（alignest.markVariability）
+        RotationMaps = []            % 「9.」の計測マップ（alignest.rotationMaps）
+        RotationRun = []             % 「9.」の直近の FB の検証（alignest.feedbackSimulation）
+        RotationHistory = []         % 「9.」の検証の結果の履歴（条件の比較）
+        RotationHistorySelection = zeros(1, 0)   % 「9.」の条件の比較で選んでいる履歴の番号
         WaferRanking = []       % 「4. 結果一覧」の「Wafer のベスト・ワースト」の結果（alignest.waferRanking。結果が変わると求め直す）
         MeasureRangeStart = []  % 「3. 実行」の計測マップで「範囲で選ぶ」の1点目（Wafer・図の種類・角の座標・図・印。無ければ []）
         MeasurementCandidates = []  % 「4. 結果一覧」の「計測を足す場所」で最後に出した候補（alignest.measurementCandidates の表と条件）
@@ -208,6 +214,7 @@ classdef (Abstract) Core < handle
             app.Tabs.target = uitab(app.TabGroup, 'Title', '6. 未知の座標の推定');
             app.Tabs.highOrder = uitab(app.TabGroup, 'Title', '7. Shot高次補正');
             app.Tabs.markLayout = uitab(app.TabGroup, 'Title', '8. Mark配置の最適化');
+            app.Tabs.rotation = uitab(app.TabGroup, 'Title', '9. 計測マップのローテーション');
             app.TabGroup.SelectionChangedFcn = @(~, event) app.onTabChanged(event);
             buildDataTab(app);
             buildSettingsTab(app);
@@ -217,6 +224,7 @@ classdef (Abstract) Core < handle
             buildTargetTab(app);
             buildHighOrderTab(app);
             buildMarkLayoutTab(app);
+            buildRotationTab(app);
             % 設定のメニュー：ライトモード・ダークモードの切り替え、文字の大きさ、凡例の位置、Scan 方向の向きと色、乱数の種
             viewMenu = uimenu(app.Figure, 'Text', '設定');
             app.Controls.settingsMenu = viewMenu;
