@@ -17,6 +17,10 @@ function comparison = estimatedCorrectionComparison(data, results, selection, se
 %   （補正前の |平均|+3σ）・measuredWaferStage・measuredCommonStage・measured（実測値で補正した残差。Wafer 成分だけ・＋Shot 共通
 %   成分・全成分）・estimatedWaferStage・estimatedCommonStage・estimated（推定値で補正した残差。同じ段階）・difference
 %   （estimated − measured）・correctionDifference（推定値で求めた補正量 − 実測値で求めた補正量 の |平均|+3σ）[nm]
+%   comparison.points：点ごとの値（ばらつき分解に使う。alignest.correctionVarianceDecomposition）。method・plan・lot（LotID）・
+%   wafer（Wafer の名前）・scan（Scan 方向）・shot（Shot の番号）・target（推定対象の点）・actual（計測値。X・Y の2列）・
+%   measuredX・measuredY・estimatedX・estimatedY（実測値・推定値で補正した残差。段階ごとの3列）
+%   comparison.stageNames（段階の名前）・stageUsed（その段階で足す成分があるか。無い段階は前の段階と同じ値）
 %   comparison.description：補正のモデル、comparison.messages：知らせ、comparison.cancelled：途中で止めたか
 arguments
     data struct
@@ -29,6 +33,7 @@ end
 ALL_LABEL = "すべての Wafer";
 SCOPES = ["すべての点", "推定対象の点"];
 AXIS_NAMES = ["X", "Y"];
+STAGE_NAMES = ["Wafer 成分", "＋Shot 共通", "全成分"];   % 補正の段階（stageChoices の順）
 choice = alignest.overlayChoice(settings);
 if ~choice.enabled
     error('alignest:estimatedCorrection', ['「2. 評価の設定」の Overlay 補正の評価がすべて「なし」です。Wafer 成分・' ...
@@ -48,6 +53,7 @@ waferRadiusMm = settings.data.waferRadiusMm;
 projectors = containers.Map('KeyType', 'double', 'ValueType', 'any');   % Wafer の番号 → 段階ごとの補正モデル
 planLabels = unique(string({plans(planIndex).label}), 'stable');
 parts = cell(numel(planLabels) * numel(methodIndex), 1);
+pointParts = cell(numel(parts), 1);
 nTotal = numel(parts);
 done = 0;
 for L = 1:numel(planLabels)
@@ -79,6 +85,7 @@ for L = 1:numel(planLabels)
         end
         rowParts{end} = waferRows(method.label, planLabels(L), ALL_LABEL, joinValues(pooled), SCOPES, AXIS_NAMES);
         parts{done} = vertcat(rowParts{:});
+        pointParts{done} = pointTable(method.label, planLabels(L), pooled);
         if ~isempty(options.progressFcn) && ~options.progressFcn(done, nTotal)
             cancelled = true;
             break
@@ -93,7 +100,8 @@ if isempty(parts)
     error('alignest:estimatedCorrection', '比べられる組み合わせがありませんでした。%s', strjoin(messages, " "));
 end
 comparison = struct("table", vertcat(parts{:}), "description", string(choice.description), ...
-    "messages", messages, "cancelled", cancelled);
+    "messages", messages, "cancelled", cancelled, "points", vertcat(pointParts{:}), ...
+    "stageNames", STAGE_NAMES, "stageUsed", [stages(1).enabled, choice.shotCommon ~= "none", choice.perShot ~= "none"]);
 end
 
 function stages = stageChoices(choice)
@@ -138,7 +146,26 @@ for s = 1:numel(projectors)
     estimated(:, :, s) = correction.fields.residualEstimated;
 end
 values = struct("actual", actual, "measured", measured, "estimated", estimated, ...
-    "target", ~alignest.trainingMarks(unit, plan));
+    "target", ~alignest.trainingMarks(unit, plan), "lot", repmat(string(unit.lotId), n, 1), ...
+    "wafer", repmat(string(unit.label), n, 1), "scan", double(marks.direction(:)), "shot", double(marks.shotIndex(:)));
+end
+
+function points = pointTable(methodLabel, planLabel, pooled)
+% 1つの手法・学習パターンの点ごとの値の表（Wafer を縦につなぐ。ばらつき分解に使う）
+items = [pooled{:}];
+n = numel(vertcat(items.target));
+measured = vertcat(items.measured);
+estimated = vertcat(items.estimated);
+points = table(repmat(string(methodLabel), n, 1), repmat(string(planLabel), n, 1), vertcat(items.lot), ...
+    vertcat(items.wafer), vertcat(items.scan), vertcat(items.shot), vertcat(items.target), vertcat(items.actual), ...
+    squeeze3(measured(:, 1, :)), squeeze3(measured(:, 2, :)), squeeze3(estimated(:, 1, :)), squeeze3(estimated(:, 2, :)), ...
+    'VariableNames', ["method", "plan", "lot", "wafer", "scan", "shot", "target", "actual", "measuredX", "measuredY", ...
+    "estimatedX", "estimatedY"]);
+end
+
+function values = squeeze3(values)
+% 点の数 × 1 × 段階 を 点の数 × 段階 にする（点が1つでも行の向きを保つ）
+values = reshape(values, size(values, 1), []);
 end
 
 function joined = joinValues(parts)

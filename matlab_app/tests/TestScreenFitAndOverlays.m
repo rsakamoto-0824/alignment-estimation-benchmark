@@ -77,14 +77,21 @@ classdef TestScreenFitAndOverlays < matlab.unittest.TestCase
             app.refreshChartsAfterResize();
             testCase.verifyFalse(any(isvalid(previewBefore)), "見えている Wafer マップは描き直す");
             testCase.verifyTrue(all(isvalid(layoutBefore)), "見えていない図はまだ描き直さない");
-            testCase.verifyEqual(app.ResizedCharts, ["layout", "overlay", "map", "target", "highOrder"]);
+            testCase.verifyEqual(app.ResizedCharts, ["layout", "overlay", "variance", "map", "target", "highOrder"]);
             c.dataTabs.SelectedTab = c.layoutTab;
             c.dataTabs.SelectionChangedFcn(c.dataTabs, struct("NewValue", c.layoutTab));
             testCase.verifyFalse(any(isvalid(layoutBefore)), "Shot レイアウトはタブを開いたときに描き直す");
-            testCase.verifyEqual(app.ResizedCharts, ["overlay", "map", "target", "highOrder"]);
+            testCase.verifyEqual(app.ResizedCharts, ["overlay", "variance", "map", "target", "highOrder"]);
             app.TabGroup.SelectedTab = app.Tabs.map;
             app.TabGroup.SelectionChangedFcn(app.TabGroup, struct("NewValue", app.Tabs.map));
-            testCase.verifyEqual(app.ResizedCharts, ["overlay", "target", "highOrder"], "結果が無いマップは描かずに済ませる");
+            testCase.verifyEqual(app.ResizedCharts, ["overlay", "variance", "target", "highOrder"], "結果が無いマップは描かずに済ませる");
+            % ばらつき分解のタブを開くと、そのタブの図を描き直す
+            app.TabGroup.SelectedTab = app.Tabs.data;
+            c.dataTabs.SelectedTab = c.varianceTab;
+            varianceBefore = c.varianceAxes(1).Children;
+            c.dataTabs.SelectionChangedFcn(c.dataTabs, struct("NewValue", c.varianceTab));
+            testCase.verifyFalse(any(isvalid(varianceBefore)));
+            testCase.verifyEqual(app.ResizedCharts, ["overlay", "target", "highOrder"]);
             testCase.verifyNotEmpty(c.previewAxes(1).Children);
         end
 
