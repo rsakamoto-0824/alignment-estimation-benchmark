@@ -45,6 +45,41 @@ classdef (Abstract) ResultsTab < appui.Core
             showEstimatedCorrection(app);
         end
 
+        function result = decomposeCorrectionVariance(app, methodPlan, scope)
+            %DECOMPOSECORRECTIONVARIANCE 「補正残差のばらつき分解」：補正前の値と、実測値・推定値で補正した残差（補正の段階ごと）の
+            %   ばらつき（分散）を、Lot 間・Wafer 間・Scan 方向間・Shot 間・その他に分けて並べる（Wafer が複数のとき、補正で
+            %   Wafer 間のばらつきがどう変わるかが分かる。alignest.correctionVarianceDecomposition）。「実測値と推定値の補正」で
+            %   比べた結果（手法・学習パターン・Wafer）を使う。methodPlan："手法｜学習パターン"、scope："すべての点"・
+            %   "推定対象の点"。省略すると画面の選択。result は分けた結果。
+            c = app.Controls;
+            if isempty(app.EstimatedCorrection)
+                error('alignest:varianceDecomposition', ['先に「計算する」（または「実測値と推定値の補正」の「比べる」）で、' ...
+                    '補正前の値と補正した残差を求めてください。']);
+            end
+            if nargin >= 2
+                if ~any(strcmp(c.correctionVarianceMethodPlan.ItemsData, char(methodPlan)))
+                    error('alignest:varianceDecomposition', '手法・学習パターン「%s」の結果がありません。', methodPlan);
+                end
+                c.correctionVarianceMethodPlan.Value = char(methodPlan);
+            end
+            if nargin >= 3
+                c.correctionVarianceScope.Value = char(scope);
+            end
+            result = alignest.correctionVarianceDecomposition(app.EstimatedCorrection, ...
+                string(c.correctionVarianceMethodPlan.Value), string(c.correctionVarianceScope.Value));
+            app.CorrectionVariance = result;
+            showVarianceDecomposition(app, result, "correction");
+            text = sprintf("%s・%s・%d Wafer。棒：", result.methodPlan, result.scope, result.nWafers) + ...
+                strjoin(result.categories + " = " + result.categoryNames, "、") + "。";
+            if result.nWafers < 2
+                text = text + "Wafer が1枚なので Wafer 間のばらつきは 0 です（「実測値と推定値の補正」の Wafer で「すべて」を選ぶと" + ...
+                    "比べられます）。";
+            else
+                text = text + "補正前と比べて、補正した残差の Wafer 間の分がどれだけ減ったか（推定値で補正したときに残る分）を見ます。";
+            end
+            c.correctionVarianceInfo.Text = char(text);
+        end
+
         function results = applyResultFilter(app, filter)
             %APPLYRESULTFILTER 評価点を半径・Shot の条件で絞り込み、結果一覧の表・グラフ・基準の手法との比較と、
             %   Wafer ごとのマップを描き直す（指標は alignest.filterResults で計算し直す。推定はやり直さない）。
@@ -1229,6 +1264,38 @@ classdef (Abstract) ResultsTab < appui.Core
             c.estimatedCorrectionAxes = [uiaxes(correctionAxesGrid), uiaxes(correctionAxesGrid), ...
                 uiaxes(correctionAxesGrid), uiaxes(correctionAxesGrid)];
             c.estimatedCorrectionInfo = uilabel(correctionGrid, 'WordWrap', 'on', 'Text', '');
+            % 補正残差のばらつき分解：補正前の値と、実測値・推定値で補正した残差のばらつきを Lot 間・Wafer 間などに分けて比べる
+            c.correctionVarianceTab = uitab(c.resultTabs, 'Title', '補正残差のばらつき分解');
+            varianceGrid = uigridlayout(c.correctionVarianceTab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 8, ...
+                'RowSpacing', 6);
+            varianceControls = uigridlayout(varianceGrid, [1, 5], 'ColumnWidth', {'fit', 320, 'fit', 150, 'fit'}, ...
+                'Padding', 0);
+            label(varianceControls, '手法｜学習パターン', 1, 1);
+            c.correctionVarianceMethodPlan = uidropdown(varianceControls, 'Items', {'—'}, 'ItemsData', {''}, ...
+                'Enable', 'off', 'ValueChangedFcn', @(~, ~) app.onCorrectionVarianceChanged());
+            place(c.correctionVarianceMethodPlan, 1, 2);
+            label(varianceControls, '範囲', 1, 3);
+            c.correctionVarianceScope = uidropdown(varianceControls, 'Items', {'すべての点', '推定対象の点'}, ...
+                'ItemsData', {'すべての点', '推定対象の点'}, 'Enable', 'off', 'ValueChangedFcn', ...
+                @(~, ~) app.onCorrectionVarianceChanged(), 'Tooltip', ['すべての点：残差のある全 Mark。推定対象の点：' ...
+                '学習に使わなかった Mark（推定値が補正に入る点）。']);
+            place(c.correctionVarianceScope, 1, 4);
+            c.correctionVarianceButton = uibutton(varianceControls, 'Text', '計算する', 'Enable', 'off', ...
+                'ButtonPushedFcn', @(~, ~) app.onComputeCorrectionVariance(), 'Tooltip', ['「実測値と推定値の補正」の' ...
+                '手法・学習パターン・Wafer で、補正前の値と補正した残差を求めて分けます（Wafer が複数のときに Wafer 間の' ...
+                'ばらつきの変化が分かります）。']);
+            place(c.correctionVarianceButton, 1, 5);
+            varianceViews = uitabgroup(varianceGrid);
+            varianceChartTab = uitab(varianceViews, 'Title', '図');
+            varianceTableTab = uitab(varianceViews, 'Title', '表');
+            c.correctionVarianceAxesGrid = uigridlayout(varianceChartTab, [2, 2], 'Padding', 4, 'RowSpacing', 6, ...
+                'ColumnSpacing', 8);
+            c.correctionVarianceAxes = [uiaxes(c.correctionVarianceAxesGrid), uiaxes(c.correctionVarianceAxesGrid), ...
+                uiaxes(c.correctionVarianceAxesGrid), uiaxes(c.correctionVarianceAxesGrid)];
+            set(c.correctionVarianceAxes, 'Visible', 'off');
+            c.correctionVarianceTable = uitable(uigridlayout(varianceTableTab, [1, 1], 'Padding', 4), 'RowName', {}, ...
+                'Data', table());
+            c.correctionVarianceInfo = uilabel(varianceGrid, 'WordWrap', 'on', 'Text', app.CORRECTION_VARIANCE_NOTE);
             app.Controls = mergeStruct(app.Controls, c);
         end
 
@@ -1244,6 +1311,7 @@ classdef (Abstract) ResultsTab < appui.Core
                 legend(ax, 'off');
             end
             removeStyle(c.estimatedCorrectionTable);
+            refreshCorrectionVariance(app);   % 補正残差のばらつき分解も同じ結果で描き直す
             if isempty(comparison)
                 c.estimatedCorrectionTable.Data = table();
                 c.estimatedCorrectionInfo.Text = '';
@@ -1306,6 +1374,43 @@ classdef (Abstract) ResultsTab < appui.Core
         function onCompareEstimatedCorrection(app)
             runWithAlert(app, @() app.compareEstimatedCorrection(), "実測値と推定値の補正を比べられませんでした", ...
                 "手法・学習パターン・Wafer と、「2. 評価の設定」の Overlay 補正の評価を確かめてから、もう一度試してください。");
+        end
+
+        function refreshCorrectionVariance(app)
+            % 「補正残差のばらつき分解」：「実測値と推定値の補正」の結果が変わったら、手法｜学習パターンの選択肢を作り直して
+            % 描き直す（結果が無ければ消す）
+            c = app.Controls;
+            comparison = app.EstimatedCorrection;
+            app.CorrectionVariance = [];
+            if isempty(comparison) || ~isfield(comparison, "points") || isempty(comparison.points)
+                showVarianceDecomposition(app, [], "correction");
+                setChoices(c.correctionVarianceMethodPlan, "—", {''});
+                set([c.correctionVarianceMethodPlan, c.correctionVarianceScope], 'Enable', 'off');
+                c.correctionVarianceInfo.Text = app.CORRECTION_VARIANCE_NOTE;
+                return
+            end
+            methodPlans = unique(comparison.points.method + "｜" + comparison.points.plan, 'stable');
+            setChoices(c.correctionVarianceMethodPlan, methodPlans, reshape(cellstr(methodPlans), 1, []));
+            set([c.correctionVarianceMethodPlan, c.correctionVarianceScope], 'Enable', 'on');
+            try
+                decomposeCorrectionVariance(app);
+            catch err
+                c.correctionVarianceInfo.Text = ['⚠ ばらつきを分けられませんでした：' err.message];
+            end
+        end
+
+        function onCorrectionVarianceChanged(app)
+            runWithAlert(app, @() app.decomposeCorrectionVariance(), "ばらつきを分けられませんでした", ...
+                "「計算する」で補正前の値と補正した残差を求めてから、もう一度試してください。");
+        end
+
+        function onComputeCorrectionVariance(app)
+            % 「計算する」：「実測値と推定値の補正」の手法・学習パターン・Wafer で比べ（ばらつき分解も描き直す）、このタブを見せる
+            c = app.Controls;
+            runWithAlert(app, @() app.compareEstimatedCorrection(), "補正前の値と補正した残差を求められませんでした", ...
+                "「実測値と推定値の補正」の手法・学習パターン・Wafer と、「2. 評価の設定」の Overlay 補正の評価を確かめてから、" + ...
+                "もう一度試してください。");
+            c.resultTabs.SelectedTab = c.correctionVarianceTab;
         end
 
         function onFindMeasurementCandidates(app)
@@ -1799,7 +1904,7 @@ classdef (Abstract) ResultsTab < appui.Core
             c.estimatedCorrectionWafer.ItemsData = c.analysisWafer.ItemsData;
             c.estimatedCorrectionWafer.Value = 0;
             set([c.estimatedCorrectionMethods, c.estimatedCorrectionGroup, c.estimatedCorrectionWafer, ...
-                c.compareEstimatedCorrectionButton], 'Enable', onOff(~imported && ~isempty(app.Data)));
+                c.compareEstimatedCorrectionButton, c.correctionVarianceButton], 'Enable', onOff(~imported && ~isempty(app.Data)));
             app.EstimatedCorrection = [];
             showEstimatedCorrection(app);
             % Wafer のベスト・ワースト（初めは推定値と誤差の分布と同じ手法・最も多い学習 Shot 数、総合の指標は既定）
