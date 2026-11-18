@@ -435,6 +435,9 @@ classdef (Abstract) TargetTab < appui.Core
             elseif event.NewValue == app.Tabs.markLayout
                 refreshMarkLayoutChoices(app);   % データ・「7. Shot高次補正」の入力・保存した項の組み合わせが変わっていれば合わせる
                 refreshMarkLayoutInput(app);
+            elseif event.NewValue == app.Tabs.rotation
+                refreshRotationChoices(app);   % データ・評価の結果・未知の座標の推定が変わっていれば合わせる
+                updateRotationEnabled(app);
             end
             redrawShownResizedCharts(app);   % 窓の大きさを変えたあと、まだ描き直していない図
         end

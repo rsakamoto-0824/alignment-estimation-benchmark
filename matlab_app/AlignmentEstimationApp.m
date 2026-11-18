@@ -1,6 +1,6 @@
 classdef AlignmentEstimationApp < appui.DataTab & appui.SettingsTab & appui.RunTab & appui.ResultsTab & ...
         appui.MapTab & appui.TargetTab & appui.HighOrderTab & appui.HighOrderCompareTab & appui.HighOrderAnalysisTab & ...
-        appui.HighOrderSweepTab & appui.HighOrderHistoryTab & appui.MarkLayoutTab & appui.Display
+        appui.HighOrderSweepTab & appui.HighOrderHistoryTab & appui.MarkLayoutTab & appui.RotationTab & appui.Display
     %ALIGNMENTESTIMATIONAPP アライメント計測値の面内推定を、実データ（Excel）で比べる画面。
     %   app = AlignmentEstimationApp();       画面を開く
     %   app = AlignmentEstimationApp(false);  画面を出さずに作る（自動テスト用）
@@ -15,7 +15,10 @@ classdef AlignmentEstimationApp < appui.DataTab & appui.SettingsTab & appui.RunT
     %         まとめて比べ、2つの条件の Wafer を並べて改善・悪化した Shot を見る。Wafer ごとの k パラメータ・残差、
     %         残差のヒストグラムも見る。λ・c をスイープして補正残差の推移から選ぶ）
     %         → 8. Mark配置の最適化（Shot 高次補正の計測 Mark の配置を、Mark の数ごとに I 最適計画で選び、補正した制御残差を
-    %         I 効率と比べる。実測値の無い座標は乱数 Shot で評価する）。ヘルプはメニューから別の窓で開く
+    %         I 効率と比べる。実測値の無い座標は乱数 Shot で評価する）
+    %         → 9. 計測マップのローテーション（Shot・Mark ごとのばらつき（3σ）で計測の優先度を分け、ローテーションする計測
+    %         マップを作り、FB 側の Wafer で求めた補正値を検証側の Wafer に当てた補正残差で条件を比べる）。ヘルプはメニューから
+    %         別の窓で開く
     %   計算は +alignest パッケージ（MATLAB 本体だけで動く）。画面はその呼び出しと表示だけを受け持つ。
     %
     %   ファイルの分け方（タブごとのファイル。どれも +appui フォルダ）：
@@ -31,6 +34,7 @@ classdef AlignmentEstimationApp < appui.DataTab & appui.SettingsTab & appui.RunT
     %     HighOrderAnalysisTab.m 7. Shot高次補正のヒストグラム
     %     HighOrderSweepTab.m 7. Shot高次補正の λ・c のスイープ（補正残差の推移と、最もよい値）
     %     MarkLayoutTab.m 8. Mark配置の最適化（入力・候補の Mark・補正の式・回帰・乱数 Shot 生成・制御残差と I 効率・配置）
+    %     RotationTab.m  9. 計測マップのローテーション（ばらつき・優先度と計測マップ・FB の検証・条件の比較・書き出し）
     %     ProgressWindow.m 計算中の進み具合の窓（文の行数に合わせて高さを変える）
     %     Display.m      メニュー「ヘルプ」と表示の設定（画面の色・文字の大きさ・凡例の位置・画面の大きさに合わせる）
     %     private/       いくつかのタブで使う小さな関数（画面の部品を作る・値を文字にするなど）
