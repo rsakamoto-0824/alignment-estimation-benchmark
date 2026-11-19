@@ -1,7 +1,8 @@
-function [raw, info] = readHighOrderFile(filePath, sheetName)
+function [raw, info] = readHighOrderFile(filePath, sheetName, options)
 %READHIGHORDERFILE Shot 高次補正の入力にする Excel・CSV を読み、項目（alignest.highOrderColumns）に合う列を見出しから推定する。
 %   [raw, info] = alignest.readHighOrderFile(filePath)
 %   [raw, info] = alignest.readHighOrderFile(filePath, sheetName)
+%   [raw, info] = alignest.readHighOrderFile(filePath, sheetName, columns=alignest.rotationColumns())   % ほかの項目の一覧
 %   列の名前は自由（読んだ後で、項目ごとにファイルの列を選ぶ。alignest.prepareHighOrderData で Wafer ごとのデータにする）。
 %   推定：見出しが項目名と同じ列、大文字・小文字だけ違う列、別名（highOrderColumns の aliases）の列の順に探す。任意の項目で、
 %   値がすべて空の列（書き出した推定値の markNo など）は推定しない。
@@ -12,6 +13,7 @@ function [raw, info] = readHighOrderFile(filePath, sheetName)
 arguments
     filePath (1, 1) string
     sheetName (1, 1) string = ""
+    options.columns struct = alignest.highOrderColumns()   % 推定する項目（name・required・aliases）
 end
 PREFERRED_SHEET = "推定値";   % このアプリが書き出した推定値の Excel のシート
 [~, ~, extension] = fileparts(filePath);
@@ -26,7 +28,7 @@ if height(raw) == 0
 end
 columnNames = string(raw.Properties.VariableNames);
 mapping = struct();
-for column = alignest.highOrderColumns()
+for column = reshape(options.columns, 1, [])
     name = string(column.name);
     mapping.(name) = "";
     for candidate = [name, column.aliases]

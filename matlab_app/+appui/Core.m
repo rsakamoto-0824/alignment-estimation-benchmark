@@ -23,7 +23,7 @@ classdef (Abstract) Core < handle
         SCREEN_CHECK_SECONDS = 1           % 窓が別の画面（モニター）に移ったかを調べる間隔 [秒]
         RESIZE_SETTLE_SECONDS = 0.5        % 窓の大きさがこの間変わらなければ、変え終えたとみなして図を描き直す [秒]
         CORRECTION_VARIANCE_NOTE = ['「計算する」で、「実測値と推定値の補正」の手法・学習パターン・Wafer の補正前の値と補正した残差を' ...
-            '求め、ばらつきを Lot 間・Wafer 間・Scan 方向間・Shot 間・その他に分けて並べます（Wafer が複数のとき、補正で Wafer 間の' ...
+            '求め、ばらつきを Lot 間・Wafer 間・Shot 間・その他に分けて並べます（Wafer が複数のとき、補正で Wafer 間の' ...
             'ばらつきがどう変わるかが分かります）。']
         RESIZE_CHARTS = ["preview", "layout", "overlay", "variance", "map", "target", "highOrder"]   % 窓の大きさを変えたあと描き直す図
         MIN_CONTENT_SIZE = [1200, 700]     % 窓がこれより小さいときは、中身をこの大きさに保ってスクロールで見る（欄が詰まって崩れないように）
@@ -131,6 +131,8 @@ classdef (Abstract) Core < handle
         RotationRun = []             % 「9.」の直近の FB の検証（alignest.feedbackSimulation）
         RotationHistory = []         % 「9.」の検証の結果の履歴（条件の比較）
         RotationHistorySelection = zeros(1, 0)   % 「9.」の条件の比較で選んでいる履歴の番号
+        RotationFile = []            % 「9.」で読み込んだ Excel・CSV（raw・info：alignest.readHighOrderFile、data：選んだ列で整理した
+                                     %  Wafer ごとのデータ（alignest.prepareHighOrderData。まだなら []）、mapping・directionRule）
         WaferRanking = []       % 「4. 結果一覧」の「Wafer のベスト・ワースト」の結果（alignest.waferRanking。結果が変わると求め直す）
         MeasureRangeStart = []  % 「3. 実行」の計測マップで「範囲で選ぶ」の1点目（Wafer・図の種類・角の座標・図・印。無ければ []）
         MeasurementCandidates = []  % 「4. 結果一覧」の「計測を足す場所」で最後に出した候補（alignest.measurementCandidates の表と条件）
@@ -632,15 +634,18 @@ classdef (Abstract) Core < handle
 
 
         function showVarianceDecomposition(app, result, target)
-            % ばらつき分解の図（積み上げ棒：分散と割合。左が X、右が Y）と表を出す。target："data"（「1. データ読込」の
-            % 「ばらつき分解」）・"correction"（「4. 結果一覧」の「補正残差のばらつき分解」）。result が空なら消す
+            % ばらつき分解の図（上：段ごとの 3σ か分散の積み上げ（「縦軸」の選択）、下：分散の割合。左が X、右が Y）と表を出す。
+            % target："data"（「1. データ読込」の「ばらつき分解」）・"correction"（「4. 結果一覧」の「補正残差のばらつき分解」）。
+            % result が空なら消す
             c = app.Controls;
             if target == "data"
-                [axesList, axesGrid, table_] = deal(c.varianceAxes, c.varianceAxesGrid, c.varianceTable);
+                [axesList, axesGrid, table_, quantityControl] = deal(c.varianceAxes, c.varianceAxesGrid, c.varianceTable, ...
+                    c.varianceQuantity);
             else
-                [axesList, axesGrid, table_] = deal(c.correctionVarianceAxes, c.correctionVarianceAxesGrid, ...
-                    c.correctionVarianceTable);
+                [axesList, axesGrid, table_, quantityControl] = deal(c.correctionVarianceAxes, ...
+                    c.correctionVarianceAxesGrid, c.correctionVarianceTable, c.correctionVarianceQuantity);
             end
+            quantity = string(quantityControl.Value);
             for ax = axesList
                 cla(ax, 'reset');
                 legend(ax, 'off');
@@ -659,17 +664,17 @@ classdef (Abstract) Core < handle
                 names = result.categoryNames;   % 表には長い名前
             end
             for a = 1:nAxes
-                alignest.plot.varianceBars(axesList(a), axesList(a + 2), result, result.axes(a), ...
+                alignest.plot.varianceBars(axesList(a), axesList(a + 2), result, result.axes(a), quantity=quantity, ...
                     unitLabel=result.unitLabel, showLegend=a == nAxes, categoryLabels=labels);
             end
             styleAxes(app, axesList(ismember(1:4, [1:nAxes, 3:2 + nAxes])), app.AXES_FONT_SIZE);
-            % 表：棒・軸ごとに、段の分散・σ・割合と全体
+            % 表：棒・軸ごとに、段の 3σ（縦軸が分散なら分散）・割合と全体
             t = result.table;
             totals = result.totals;
             totalPercent = repmat(100, height(totals), 1);
             totalPercent(~(totals.variance > 0)) = NaN;   % ばらつきが無い（点が無い）ときは割合を出さない
             totalRows = table(totals.category, totals.axis, repmat("全体", height(totals), 1), totals.variance, ...
-                totals.sigma, totalPercent, totals.n, 'VariableNames', t.Properties.VariableNames);
+                totals.sigma3, totalPercent, totals.n, 'VariableNames', t.Properties.VariableNames);
             rows = [t; totalRows];
             [~, categoryOrder] = ismember(rows.category, result.categories);
             [~, axisOrder] = ismember(rows.axis, result.axes);
@@ -678,9 +683,13 @@ classdef (Abstract) Core < handle
             rows = rows(order, :);
             [~, nameIndex] = ismember(rows.category, result.categories);
             unitText = result.unitLabel;
-            table_.Data = table(reshape(names(nameIndex), [], 1), rows.axis, rows.component, round(rows.variance, 4), ...
-                round(rows.sigma, 4), round(rows.percent, 1), rows.n, 'VariableNames', ["棒", "軸", "ばらつき", ...
-                "分散 [" + unitText + "²]", "σ [" + unitText + "]", "割合 [%]", "点の数"]);
+            if quantity == "sigma3"
+                [shown, shownName] = deal(round(rows.sigma3, 4), "3σ [" + unitText + "]");
+            else
+                [shown, shownName] = deal(round(rows.variance, 4), "分散 [" + unitText + "²]");
+            end
+            table_.Data = table(reshape(names(nameIndex), [], 1), rows.axis, rows.component, shown, ...
+                round(rows.percent, 1), rows.n, 'VariableNames', ["棒", "軸", "ばらつき", shownName, "分散の割合 [%]", "点の数"]);
             removeStyle(table_);
             totalIndex = find(rows.component == "全体");
             if ~isempty(totalIndex)

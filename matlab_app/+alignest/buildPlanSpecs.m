@@ -4,6 +4,7 @@ function specs = buildPlanSpecs(sampling)
 %     "ioptimal"（制約付き I 最適）："I最適 20 Shot" のように Shot 数ごとに1つ
 %     "doptimal"（制約付き D 最適）："D最適 20 Shot" のように Shot 数ごとに1つ（det(M) を大きくする）
 %     "random"（制約つきランダム）：Shot 数ごとに randomRepeats 回
+%     "sobol"（Sobol 列）："Sobol 20 Shot" のように Shot 数ごとに1つ（Sobol 列の点に近い Shot。乱数は使わない）
 %     "excel"（Excel ファイルで指定）：sampling.layoutPlans の1行（alignest.readLayoutPlans・parseLayoutPlans）ごとに、
 %                パターン（pattern）は "名前（12 Shot）"・"名前（30 Mark）" の1つ（type "manual"）、優先順（priority）は
 %                "名前 20 Shot" のように Shot 数（計測率）ごと（type "file"）。Mark 単位の優先順は、Mark 単位の計画と同じく
@@ -24,9 +25,9 @@ function specs = buildPlanSpecs(sampling)
 %   group は結果を集計するときの列（ランダムの繰り返しは同じ group にまとめる）。選び方が1つなら "20 Shot"、
 %   2つ以上なら選び方の名前を付けて "I最適 20 Shot"・"D最適 20 Shot" のようにする（Excel のパターンは名前、優先順は
 %   名前と Shot 数。Excel の列が2つ以上の優先順・パターンと優先順が混ざるときも名前を付ける）。
-%   選び方は、選んだ順によらず I 最適 → D 最適 → ランダム → Excel → Mark 単位（I・D・ランダム）の順に並べる。
-ORDER = ["ioptimal", "doptimal", "random", "excel", alignest.markPlanTypes()];
-PREFIX = struct("ioptimal", "I最適", "doptimal", "D最適", "random", "ランダム", "excel", "", ...
+%   選び方は、選んだ順によらず I 最適 → D 最適 → ランダム → Sobol 列 → Excel → Mark 単位（I・D・ランダム）の順に並べる。
+ORDER = ["ioptimal", "doptimal", "random", "sobol", "excel", alignest.markPlanTypes()];
+PREFIX = struct("ioptimal", "I最適", "doptimal", "D最適", "random", "ランダム", "sobol", "Sobol", "excel", "", ...
     "mark", "Mark最適", "markd", "MarkD最適", "markrandom", "Markランダム");
 sampling = alignest.upgradeLayoutSettings(sampling);
 methods = unique(reshape(string(sampling.method), 1, []), 'stable');
@@ -44,7 +45,7 @@ specs = struct("type", {}, "nShots", {}, "rate", {}, "repeat", {}, "label", {}, 
 for method = methods
     prefix = PREFIX.(method);
     switch method
-        case {"ioptimal", "doptimal"}
+        case {"ioptimal", "doptimal", "sobol"}
             [sizes, sizeTexts, rates] = trainingSizes(sampling);
             for k = 1:numel(sizes)
                 specs(end + 1) = spec(method, sizes(k), rates(k), 1, prefix + " " + sizeTexts(k), ...

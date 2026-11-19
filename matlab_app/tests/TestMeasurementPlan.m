@@ -1,5 +1,5 @@
 classdef TestMeasurementPlan < matlab.unittest.TestCase
-    %TESTMEASUREMENTPLAN 計測率による学習 Shot 数、必ず計測する Shot（指定・最外周）と拡張 I 最適計画を確かめる。
+    %TESTMEASUREMENTPLAN 計測率による学習 Shot 数、必ず計測する Shot（指定・最外周）と拡張 I 最適計画、Sobol 列の計画を確かめる。
 
     properties
         Data
@@ -124,6 +124,48 @@ classdef TestMeasurementPlan < matlab.unittest.TestCase
             plan = alignest.planTrainingShots(unit, spec, sampling, 150);
             testCase.verifyEqual(plan.nShots, 15);
             testCase.verifyTrue(all(ismember([1, 50, 99], plan.shotNos)));
+        end
+
+        function sobolPlanSpreadsShotsEvenly(testCase)
+            % Sobol 列：前から 2^k 点（先頭の (0, 0) を含む）で各軸の 2^k 等分の区間に1点ずつ。学習 Shot は Sobol 列の点に
+            % 近い Shot（乱数を使わない）で、必ず計測する Shot を入れ、計測しない Shot は選ばない
+            points = alignest.sobolSequence(7);
+            testCase.verifyEqual(points, [0.5, 0.5; 0.75, 0.25; 0.25, 0.75; 0.375, 0.375; 0.875, 0.875; 0.625, 0.125; ...
+                0.125, 0.625]);
+            sixteen = [0, 0; alignest.sobolSequence(15)];
+            testCase.verifyEqual(sort(floor(16 * sixteen(:, 1))).', 0:15, "1次元目：16 等分に1点ずつ");
+            testCase.verifyEqual(sort(floor(16 * sixteen(:, 2))).', 0:15, "2次元目：16 等分に1点ずつ");
+            cells = floor(4 * sixteen(:, 1)) * 4 + floor(4 * sixteen(:, 2));
+            testCase.verifyEqual(sort(cells).', 0:15, "4 × 4 のマスに1点ずつ");
+            sampling = alignest.defaultSettings().sampling;
+            sampling.requiredShots = [1, 50];
+            unit = testCase.Data.units(1);
+            spec = struct("type", "sobol", "nShots", 20, "repeat", 1, "label", "Sobol 20 Shot", "group", "20 Shot", ...
+                "shotNos", []);
+            plan = alignest.planTrainingShots(unit, spec, sampling, 150);
+            testCase.verifyTrue(plan.ok);
+            testCase.verifyEqual(plan.nShots, 20);
+            testCase.verifyEqual(numel(unique(plan.shotNos)), 20);
+            testCase.verifyTrue(all(ismember([1, 50], plan.shotNos)), "必ず計測する Shot");
+            sampling.seed = 99;
+            testCase.verifyEqual(alignest.planTrainingShots(unit, spec, sampling, 150).shotNos, plan.shotNos, ...
+                "乱数の種によらず同じ Shot");
+            x = unit.shots.Xmm(plan.shotIndex);
+            y = unit.shots.Ymm(plan.shotIndex);
+            quadrants = [nnz(x > 0 & y >= 0), nnz(x <= 0 & y > 0), nnz(x < 0 & y <= 0), nnz(x >= 0 & y < 0)];
+            testCase.verifyGreaterThanOrEqual(min(quadrants), 3, "4つの象限に散らばる");
+            others = setdiff(plan.shotNos, [1, 50]);
+            sampling.excludedShots = others(1:3).';
+            excluded = alignest.planTrainingShots(unit, spec, sampling, 150);
+            testCase.verifyEqual(excluded.nShots, 20);
+            testCase.verifyFalse(any(ismember(others(1:3), excluded.shotNos)), "計測しない Shot は選ばない");
+            % 選び方の一覧：Shot 数ごとに1つ（選び方を比べると名前に「Sobol」）
+            sampling.method = ["ioptimal", "sobol"];
+            sampling.nShots = [10, 20];
+            specs = alignest.buildPlanSpecs(sampling);
+            testCase.verifyEqual([specs([specs.type] == "sobol").label], ["Sobol 10 Shot", "Sobol 20 Shot"]);
+            testCase.verifyEqual([specs([specs.type] == "sobol").group], ["Sobol 10 Shot", "Sobol 20 Shot"]);
+            testCase.verifyError(@() alignest.sobolShots([0, 0; 1, 1], 3), 'alignest:sobolShots');
         end
 
         function efficiencyIsRelativeToMeasuringEveryShot(testCase)

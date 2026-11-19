@@ -143,13 +143,22 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             readHighOrderControls(app);
             options = alignest.highOrderOptions(app.Settings);
             formula = alignest.highOrderSharedFormula(options);   % Wafer 内・選択 Wafer で共通は Shot 共通補正の式・項
+            commonView = highOrderCommonView(app);
+            if commonView
+                % 「表の式」が Shot 共通補正：Shot 共通の式と、Shot 共通の k に使う項を保存する
+                formula.maker = options.shotCommonMaker;
+                formula.excludedTerms = zeros(1, 0);
+                if ~isempty(options.shotCommonTerms)
+                    formula.excludedTerms = excludedFor(options.shotCommonMaker, options.shotCommonTerms);
+                end
+            end
             terms = alignest.highOrderTerms(formula.maker, formula.excludedTerms);
             line = name + "|" + formula.maker + "|" + strjoin(string(terms.k(terms.used)).', " ");
             current = termSetTable(app.Settings.highOrder.termSets);
             lines = string(app.Settings.highOrder.termSets(:));
             lines = lines(current.name ~= name);
             app.Settings.highOrder.termSets = [lines; line];
-            if options.outerMaker ~= "none" && options.outerName == name
+            if options.outerMaker ~= "none" && options.outerName == name && ~commonView
                 % 外周の式にしている組み合わせを保存し直した：外周の式も新しい項にする
                 app.Settings.highOrder.outerMaker = formula.maker;
                 app.Settings.highOrder.outerExcludedTerms = excludedFor(formula.maker, terms.k(terms.used));
@@ -162,14 +171,14 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
 
         function applyHighOrderTermSet(app, name)
             %APPLYHIGHORDERTERMSET 保存した項の組み合わせを呼び出す（補正の式と使う項を、その組み合わせにする。くくりが Wafer 内・
-            %   選択 Wafer で共通なら、Shot 共通補正の式・項にする）。
+            %   選択 Wafer で共通のとき、「使う項と VIF」の「表の式」が Shot 共通補正のときは、Shot 共通補正の式・項にする）。
             sets = termSetTable(app.Settings.highOrder.termSets);
             row = find(sets.name == string(name), 1);
             if isempty(row)
                 error('alignest:highOrderTermSet', '保存した項の組み合わせ「%s」がありません。', string(name));
             end
-            if any(string(app.Settings.highOrder.unit) == ["common", "wafers"])
-                % くくりが Wafer 内・選択 Wafer で共通：k の組は Shot 共通補正なので、Shot 共通の式・項にする
+            if any(string(app.Settings.highOrder.unit) == ["common", "wafers"]) || highOrderCommonView(app)
+                % くくりが Wafer 内・選択 Wafer で共通（k の組は Shot 共通補正）・表の式が Shot 共通補正：Shot 共通の式・項にする
                 app.Settings.highOrder.shotCommonMaker = sets.maker(row);
                 app.Settings.highOrder.shotCommonTerms = sets.terms{row};
             else

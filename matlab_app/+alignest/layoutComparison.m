@@ -15,10 +15,10 @@ function comparison = layoutComparison(results, methodIndex, metric, statistic, 
 %   エラーバーは sd・se・minValue・maxValue から描く（alignest.layoutErrorBars）。
 %   comparison.Properties.UserData に指標の名前・小さいほど良いか・選び方の数。
 %   選び方は行の planType（評価した結果）から、無ければ列の名前の先頭（"I最適 20 Shot" など）から決める。
-TYPES = ["ioptimal", "doptimal", "random", "file", "manual", "mark", "markd", "markrandom"];
-LABELS = ["I 最適", "D 最適", "ランダム", "Excel の優先順", "Excel のパターン", "Mark 単位の I 最適", "Mark 単位の D 最適", ...
-    "Mark 単位のランダム"];
-PREFIXES = ["I最適", "D最適", "ランダム", "優先順", "", "Mark最適", "MarkD最適", "Markランダム"];
+TYPES = ["ioptimal", "doptimal", "random", "sobol", "file", "manual", "mark", "markd", "markrandom"];
+LABELS = ["I 最適", "D 最適", "ランダム", "Sobol 列", "Excel の優先順", "Excel のパターン", "Mark 単位の I 最適", ...
+    "Mark 単位の D 最適", "Mark 単位のランダム"];
+PREFIXES = ["I最適", "D最適", "ランダム", "Sobol", "優先順", "", "Mark最適", "MarkD最適", "Markランダム"];
 summary = alignest.summarizeResults(results, metric, statistic);
 table_ = results.table(results.table.methodIndex == methodIndex, :);
 groups = reshape(string(summary.groups), [], 1);

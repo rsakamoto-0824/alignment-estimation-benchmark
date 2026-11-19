@@ -6,8 +6,7 @@ function result = dataVarianceDecomposition(units, eqpId, spec)
 %   spec：値の種類（alignest.valueSpec。1変数なら X の列だけを、値の名前で分ける）。
 %   棒は Operation ごと（Operation の列に値が無ければ「すべて」の1本）。値は有効な計測値（measX・measY。除いた点・Sts が
 %   無効な点は使わない）。Lot は LotID、Wafer は計測（Operation × EqpId × LotID × Wafer × DateTime。同じ Wafer の別の計測は
-%   別の Wafer として数える）、Scan 方向は Direction（「Scan 方向の付与」の規則も含む）、Shot は Shot（alignest.varianceDecomposition）。
-%   Lot 間は選んだ計測に Lot が2つ以上あるとき、Scan 方向間は Scan 方向の分かる点があるときだけ分ける。
+%   別の Wafer として数える）、Shot は Shot（alignest.varianceDecomposition）。Lot 間は選んだ計測に Lot が2つ以上あるときだけ分ける。
 %   result：alignest.varianceDecomposition の結果に、eqpIds（データの装置の一覧）・eqpId（使った装置）・nUnits（使った計測の数）・
 %   hasOperation（Operation ごとに分けたか）・unitLabel（値の単位）を足したもの
 arguments
@@ -40,8 +39,8 @@ for u = 1:numel(chosen)
         categoryName = string(chosen(u).operation);
     end
     parts{u} = table(repmat(categoryName, n, 1), repmat(string(chosen(u).lotId), n, 1), ...
-        repmat(string(u), n, 1), double(marks.direction(:)), double(marks.shotIndex(:)), valueX(:), valueY(:), ...
-        'VariableNames', ["category", "lot", "wafer", "scan", "shot", "valueX", "valueY"]);
+        repmat(string(u), n, 1), double(marks.shotIndex(:)), valueX(:), valueY(:), ...
+        'VariableNames', ["category", "lot", "wafer", "shot", "valueX", "valueY"]);
 end
 points = vertcat(parts{:});
 categories = unique(points.category, 'stable');
