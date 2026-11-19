@@ -2,6 +2,8 @@ function [data, mapping] = prepareHighOrderData(raw, mapping, options)
 %PREPAREHIGHORDERDATA Excel・CSV の表（alignest.readHighOrderFile）を、選んだ列で Wafer ごとのデータにする（Shot 高次補正の入力）。
 %   [data, mapping] = alignest.prepareHighOrderData(raw, mapping)
 %   [data, mapping] = alignest.prepareHighOrderData(raw, mapping, directionRule="serpentine")
+%   [data, mapping] = alignest.prepareHighOrderData(raw, mapping, columns=alignest.rotationColumns(), purpose="計測マップの" + ...
+%       "ローテーション")   % ほかの項目の一覧（必須の項目が無いときの知らせに purpose を出す）
 %   mapping：項目名（alignest.highOrderColumns の name）→ ファイルの列の名前（"" は列なし）。必須の項目（Shot 中心・Shot 内の
 %   座標・X・Y の値）は必ず選ぶ。同じ列を2つの項目に選ばない。任意の項目で、値がすべて空の列は使わない（返す mapping では ""）。
 %   directionRule：Direction（Scan 方向）が無い行に付ける規則（alignest.directionRules。既定は "none" = 付けない）。
@@ -11,9 +13,11 @@ arguments
     raw table
     mapping struct
     options.directionRule (1, 1) string = "none"
+    options.columns struct = alignest.highOrderColumns()   % 項目（name・meaning・required）
+    options.purpose (1, 1) string = "Shot 高次補正"
 end
 VALID_RADIUS_MM = 150;        % Overlay 計測ルール：有効な点は半径 150 mm 未満
-columns = alignest.highOrderColumns();
+columns = reshape(options.columns, 1, []);
 names = string({columns.name});
 columnNames = string(raw.Properties.VariableNames);
 chosen = strings(size(names));
@@ -30,7 +34,7 @@ if any(unknown)
 end
 missing = [columns.required] & chosen == "";
 if any(missing)
-    error('alignest:highOrderFile', 'Shot 高次補正に要る項目の列を選んでください：%s（ファイルの列：%s）。', ...
+    error('alignest:highOrderFile', '%sに要る項目の列を選んでください：%s（ファイルの列：%s）。', options.purpose, ...
         strjoin(string({columns(missing).meaning}), "・"), strjoin(columnNames, "・"));
 end
 used = chosen(chosen ~= "");

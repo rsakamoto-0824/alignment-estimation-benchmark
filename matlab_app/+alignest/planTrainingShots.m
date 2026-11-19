@@ -11,8 +11,10 @@ function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm)
 %   足して学習 Shot 数にする（Mark 単位は、Mark の数 = round(spec.markPerShot × 候補 Shot 数)、計測率で決めるときは
 %   round(spec.rate / 100 × 候補の全 Mark の数)）。Wafer に無い Shot・Mark、計測できない Shot・Mark は飛ばす。
 %   計測率（spec.rate [%]）で決めるときは、学習 Shot 数 = round(計測率 / 100 × 候補 Shot 数)（1 以上）。
-%   I 最適・ランダムでは、必ず計測する Shot（alignest.requiredShotIndex：指定した shotNo と最外周）を先に入れ、
+%   I 最適・ランダム・Sobol 列では、必ず計測する Shot（alignest.requiredShotIndex：指定した shotNo と最外周）を先に入れ、
 %   残りを選ぶ（拡張 I 最適計画）。必ず計測する Shot が学習 Shot 数以上なら、それだけを使う。
+%   Sobol 列（sobol）：Wafer 上に偏りなく散らばる Sobol 列の点に近い Shot を、点の順に選ぶ（alignest.sobolShots。最適化・
+%   乱数は使わない。同心円・4象限・Scan 方向の制約は使わない。計測しない Shot は選ばない）。
 %   plan.requiredShotIndex は必ず計測した Shot（ファイルの優先順では優先度 1）。
 %   制約付き D 最適（doptimal）は、I 最適と同じ制約・必ず計測する Shot で、det(M) を大きくする組を選ぶ
 %   （alignest.exchangeDesign）。
@@ -76,7 +78,7 @@ switch spec.type
     case {"mark", "markd", "markrandom"}
         plan = markPlan(unit, spec, sampling, waferRadiusMm, candidates, plan);
         return
-    case {"ioptimal", "doptimal", "random"}
+    case {"ioptimal", "doptimal", "random", "sobol"}
         if nShots >= numel(candidates)
             plan.message = sprintf("学習 Shot 数 %d が候補の Shot 数 %d 以上なので、評価する Shot が残りません。", ...
                 nShots, numel(candidates));
@@ -117,6 +119,9 @@ switch spec.type
                 [selected, plan.criterion, plan.violation] = alignest.exchangeDesign(blocks(pool), nShots, ...
                     labels(pool, :), sampling.constraints.slack, stream, sampling.exchangeStarts, ...
                     sampling.exchangeMaxIterations, criterion="D", fixed=fixed(pool));
+            elseif spec.type == "sobol"
+                selected = alignest.sobolShots([shots.Xmm(candidates(pool)), shots.Ymm(candidates(pool))], nShots, ...
+                    fixed(pool), waferRadiusMm);
             else
                 [chosen, plan.violation] = alignest.randomFeasibleShots(numel(pool), nShots, labels(pool, :), ...
                     sampling.constraints.slack, stream, fixed(pool));

@@ -1,7 +1,8 @@
 classdef TestRotationMaps < matlab.unittest.TestCase
     %TESTROTATIONMAPS 計測マップのローテーション（「9. 計測マップのローテーション」）：Shot・Mark ごとのばらつき（3σ）、しきい値で
     %   分けた優先度とローテーションする計測マップ、FB 側・検証側に分けた補正残差（2. の Overlay 補正・7. の Shot 高次補正）、
-    %   画面の流れ（入力・対象・目的変数・条件の比較・書き出しと読み直し）を確かめる。
+    %   画面の流れ（入力・対象・目的変数・条件の比較・書き出しと読み直し）、しきい値の累積 %・外周を優先度 1・ランダムな
+    %   振り分け・円の重ね描き、このタブで読み込む Excel・CSV（列を選ぶ）を確かめる。
 
     properties
         Root
@@ -65,6 +66,103 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             testCase.verifyError(@() alignest.rotationMaps(v, "sigma3X", [4, 3], [1, 5, 7]), 'alignest:rotationMaps', ...
                 "35 枚は多すぎる");
             testCase.verifyError(@() alignest.rotationMaps(v, "other", 4, [1, 2]), 'alignest:rotationMaps');
+        end
+
+        function mapOptionsChangePrioritiesAndAssignment(testCase)
+            % しきい値の累積 %（PERCENTILE.INC と同じ値）・外周の半径以上を優先度 1・ランダムな振り分け（種で決まり、各マップの
+            % 数はそろう）
+            values = {[1, 0; 2, 1; 0, 0; 5, 5], [3, 0; 2, 3; 0, 1; 5, 5], [5, 0; 2, 5; 0, 2; 5, 5]};   % 4 点 × 3 Wafer
+            wafers = struct("label", {}, "points", {});
+            for w = 1:3
+                wafers(w) = struct("label", "W" + w, "points", handPoints(values{w}, nan(4, 1)));
+            end
+            v = alignest.markVariability(wafers);   % X の 3σ：6・0・0・0、点の x：−30・−10・10・30 mm
+            percent = alignest.rotationMaps(v, "sigma3X", 75, [1, 2], thresholdKind="percent");
+            testCase.verifyEqual(percent.thresholds, alignest.stats.percentile(v.table.sigma3X, 75), 'AbsTol', 1e-12);
+            testCase.verifyEqual(percent.thresholds, 1.5, 'AbsTol', 1e-12, "0・0・0・6 の累積 75% は 1.5");
+            testCase.verifyEqual(percent.thresholdPercents, 75);
+            testCase.verifyEqual(percent.table.rank.', [1, 2, 2, 2]);
+            testCase.verifyTrue(contains(percent.rankNames(1), "累積 75%"));
+            testCase.verifyError(@() alignest.rotationMaps(v, "sigma3X", 100, [1, 2], thresholdKind="percent"), ...
+                'alignest:rotationMaps', "累積 % は 0〜100 の間");
+            outer = alignest.rotationMaps(v, "sigma3X", 10, [1, 2], outerRadiusMm=25);
+            testCase.verifyEqual(outer.table.rank.', [1, 2, 2, 1], "半径 30 mm の点は 3σ によらず優先度 1");
+            testCase.verifyEqual(outer.table.outer.', [true, false, false, true]);
+            testCase.verifyTrue(contains(outer.rankNames(1), "半径 25 mm 以上"));
+            testCase.verifyError(@() alignest.rotationMaps(v, "sigma3X", 10, [1, 2], outerRadiusMm=-1), 'alignest:rotationMaps');
+            % ランダムな振り分け：40 点を 4 枚に。同じ種なら同じ、各マップ 10 点、どの点も1回
+            big = v;
+            big.table = table((1:40).', zeros(40, 1), (1:40).' / 10, 'VariableNames', ["x", "y", "sigma3X"]);
+            ordered = alignest.rotationMaps(big, "sigma3X", 100, [1, 4]);
+            testCase.verifyEqual(find(ordered.membership(:, 1)).', 1:4:40, "表の順：1・5・9…点目が 1 枚目");
+            random1 = alignest.rotationMaps(big, "sigma3X", 100, [1, 4], assignment="random", seed=1);
+            random2 = alignest.rotationMaps(big, "sigma3X", 100, [1, 4], assignment="random", seed=1);
+            random3 = alignest.rotationMaps(big, "sigma3X", 100, [1, 4], assignment="random", seed=2);
+            testCase.verifyEqual(random1.membership, random2.membership, "同じ種なら同じ振り分け");
+            testCase.verifyNotEqual(random1.membership, random3.membership);
+            testCase.verifyNotEqual(random1.membership, ordered.membership);
+            testCase.verifyEqual(random1.counts, [10, 10, 10, 10]);
+            testCase.verifyEqual(sum(random1.membership, 2), ones(40, 1));
+            testCase.verifyEqual(random1.assignment, "random");
+        end
+
+        function excelInputInThisTab(testCase)
+            % このタブで Excel・CSV を読み込み（見出しが違う列は表で選ぶ）、「1. データ読込」を使わずにばらつき・計測マップ・
+            % 検証ができる。しきい値の累積 %・外周・ランダム・重ねる円を画面から使える
+            raw = readtable(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'), 'TextType', 'string');
+            raw = renamevars(raw, ["measX", "measY"], ["OVL_X", "OVL_Y"]);   % 見出しから推定できない列
+            raw.Thickness = 100 + 0.01 * raw.OVL_X;
+            file = [tempname, '.csv'];
+            writetable(raw, file);
+            cleanupFile = onCleanup(@() delete(file));
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            c = app.Controls;
+            data = app.loadRotationFile(file);
+            testCase.verifyEmpty(data, "必須の列が足りなければ、表で選ぶまで読み込まない");
+            testCase.verifyEqual(string(c.rotationOutputs.SelectedTab.Title), "Excel・CSV の列");
+            testCase.verifyEqual(string(c.rotationSource.Value), "file");
+            testCase.verifyEqual(string(c.rotationComputeVariability.Enable), "off");
+            mappingTable = c.rotationMappingTable.Data;
+            testCase.verifyEqual(string(mappingTable{string(mappingTable(:, 1)) == "LotID", 4}), "LotID", "見出しから推定");
+            data = app.applyRotationMapping(struct("measX", "OVL_X", "measY", "OVL_Y"));
+            nUnits = numel(unique(raw.Operation + "|" + raw.EqpId + "|" + raw.LotID + "|" + raw.Wafer + "|" + string(raw.DateTime)));
+            testCase.verifyEqual(numel(data.units), nUnits, "計測（Operation × EqpId × LotID × Wafer × DateTime）ごと");
+            testCase.verifyEmpty(app.Data, "「1. データ読込」のデータは変えない");
+            testCase.verifyEqual(string(c.rotationComputeVariability.Enable), "on");
+            testCase.verifyTrue(any(string(c.rotationTarget.Items) == "Thickness"), "選ばなかった数値の列は目的変数");
+            testCase.verifyTrue(any(string(c.rotationGroup.Items) == "装置：EXP02"));
+            testCase.verifyTrue(contains(string(c.rotationInputInfo.Text), nUnits + " Wafer"));
+            variability = app.computeRotationVariability("mark", "max", "Thickness");
+            testCase.verifyEqual(variability.nWafers, nUnits);
+            testCase.verifyTrue(contains(variability.description, "Excel・CSV"));
+            % しきい値の決め方を変えると初期値も変わる（累積 % は 75、3σ の値は累積 75% の値）
+            c.rotationThresholdKind.Value = 'percent';
+            c.rotationThresholdKind.ValueChangedFcn(c.rotationThresholdKind, []);
+            testCase.verifyEqual(string(c.rotationThresholds.Value), "75");
+            c.rotationThresholdKind.Value = 'value';
+            c.rotationThresholdKind.ValueChangedFcn(c.rotationThresholdKind, []);
+            expected = alignest.stats.percentile(variability.table.sigma3Vector, 75);
+            testCase.verifyEqual(str2double(c.rotationThresholds.Value), round(expected, 2, 'significant'));
+            c.rotationCircles.Value = '120 140';
+            maps = app.makeRotationMaps("sigma3Vector", 80, [1, 2], thresholdKind="percent", outerRadiusMm=135, ...
+                assignment="random");
+            testCase.verifyEqual(maps.thresholdKind, "percent");
+            testCase.verifyEqual(maps.outerRadiusMm, 135);
+            testCase.verifyEqual(maps.seed, app.Settings.sampling.seed, "メニューの乱数の種");
+            testCase.verifyTrue(all(maps.table.rank(hypot(maps.table.x, maps.table.y) >= 135) == 1));
+            testCase.verifyNotEmpty(findobj(c.rotationMapAxes(1), 'Type', 'line', 'DisplayName', '半径 120 mm'));
+            testCase.verifyNotEmpty(findobj(c.rotationSpreadAxes(1), 'Type', 'line', 'DisplayName', '半径 140 mm'));
+            testCase.verifyTrue(contains(string(c.rotationMapInfo.Text), "乱数"));
+            result = app.runRotationFeedback(splitKind="count", splitValue=3, compareFull=false);
+            testCase.verifyEqual(nnz(result.assignment.role == "検証"), nUnits - 3);
+            testCase.verifyTrue(contains(app.RotationHistory(end).description, "累積 80%"));
+            testCase.verifyTrue(contains(app.RotationHistory(end).description, "半径 135 mm"));
+            % 「1. データ読込」で読み込んでも、Excel・CSV の入力の結果は消さない
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
+            app.applyMapping();
+            testCase.verifyNotEmpty(app.RotationMaps);
+            testCase.verifyEqual(string(c.rotationSource.Value), "file");
         end
 
         function feedbackUsesOlderWafersAndRotatesMaps(testCase)

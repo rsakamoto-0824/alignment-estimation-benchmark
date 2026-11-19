@@ -68,11 +68,12 @@ classdef (Abstract) SettingsTab < appui.Core
                 'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
             label(s, '選び方', 1, [1, 2]);
             c.samplingMethod = uilistbox(s, 'Items', {'制約付き I 最適', '制約付き D 最適', ...
-                '制約つきランダム', 'Excel ファイルで指定', ...
+                '制約つきランダム', 'Sobol 列', 'Excel ファイルで指定', ...
                 'Mark 単位の I 最適', 'Mark 単位の D 最適', 'Mark 単位の制約つきランダム'}, ...
-                'ItemsData', {'ioptimal', 'doptimal', 'random', 'excel', 'mark', 'markd', 'markrandom'}, ...
+                'ItemsData', {'ioptimal', 'doptimal', 'random', 'sobol', 'excel', 'mark', 'markd', 'markrandom'}, ...
                 'Multiselect', 'on', 'Value', {'ioptimal'}, 'ValueChangedFcn', onChange, ...
-                'Tooltip', ['D 最適：I 最適と同じ制約で det(M) を大きくする組。Mark 単位：計測する Shot ではなく Mark を選ぶ' ...
+                'Tooltip', ['D 最適：I 最適と同じ制約で det(M) を大きくする組。Sobol 列：Wafer 上に偏りなく散らばる点の並び' ...
+                '（Sobol 列）に近い Shot を選ぶ（最適化・乱数・同心円などの制約は使わない）。Mark 単位：計測する Shot ではなく Mark を選ぶ' ...
                 '（既定では全 Shot を1点以上計測し、Mark 番号の割合を全計測とそろえる）。複数選ぶと、結果一覧の' ...
                 '「計測配置の比較」で選び方どうしを比べられます。']);
             place(c.samplingMethod, 2, [1, 2]);
@@ -876,7 +877,7 @@ classdef (Abstract) SettingsTab < appui.Core
                         sprintf("（%d 通り）", numel(counts));
                 end
             catch err
-                usesCounts = any(ismember(method, ["ioptimal", "doptimal", "random"])) || ...
+                usesCounts = any(ismember(method, ["ioptimal", "doptimal", "random", "sobol"])) || ...
                     (any(method == "excel") && hasPriorityPlans(app.Settings.sampling)) || ...
                     (any(ismember(method, alignest.markPlanTypes())) && string(c.countBy.Value) == "rate");
                 if usesCounts
@@ -903,7 +904,7 @@ classdef (Abstract) SettingsTab < appui.Core
             messages = [messages; text(text ~= "")];
             [values, ok] = parseNumbers(c.requiredShots.Value);
             text = "";
-            if any(ismember(method, ["ioptimal", "doptimal", "random", alignest.markPlanTypes()])) && (~ok || any(values ~= round(values)))
+            if any(ismember(method, ["ioptimal", "doptimal", "random", "sobol", alignest.markPlanTypes()])) && (~ok || any(values ~= round(values)))
                 text = "⚠ 必ず計測する shotNo は整数を空白またはカンマで区切って入れてください（使わないなら空欄）。";
             end
             [values, ok] = parseNumbers(c.excludedShots.Value);
@@ -1030,19 +1031,20 @@ classdef (Abstract) SettingsTab < appui.Core
             c = app.Controls;
             set([c.factorScanY, c.factorMarkY, c.shotRowParityY, c.factorColumnsY], 'Enable', onOff(c.factorSeparate.Value));
             method = string(c.samplingMethod.Value);
-            constrained = any(ismember(method, ["ioptimal", "doptimal", "random"])) || ...
-                (any(method == "excel") && hasPriorityPlans(app.Settings.sampling));   % Excel の優先順も Shot 数ごと
+            constrained = any(ismember(method, ["ioptimal", "doptimal", "random", "sobol"])) || ...
+                (any(method == "excel") && hasPriorityPlans(app.Settings.sampling));   % Excel の優先順・Sobol 列も Shot 数ごと
             markPlans = any(ismember(method, alignest.markPlanTypes()));   % Mark 単位の計画も計測率でスイープできる
             optimal = any(ismember(method, ["ioptimal", "doptimal", "mark", "markd"]));
             shotConstraints = any(ismember(method, ["ioptimal", "doptimal", "random"]));
+            shotPlans = shotConstraints || any(method == "sobol");   % 必ず計測する・計測しない Shot は Sobol 列にも効く
             byRate = string(c.countBy.Value) == "rate";
             c.countBy.Enable = onOff(constrained || markPlans);
             c.nShotsList.Enable = onOff(constrained || markPlans);
             set([c.nShotsStart, c.nShotsEnd, c.nShotsStep], 'Enable', onOff(constrained && ~byRate));
             set([c.rateStart, c.rateEnd, c.rateStep], 'Enable', onOff((constrained || markPlans) && byRate));
             % 必ず計測する Shot・同心円の区切りは、Mark 単位の計画にも効く（Shot の Mark すべて・Mark の半径）
-            set([c.requiredShots, c.requireOuter, c.requiredInfo, c.excludedShots, c.zoneEdges], 'Enable', ...
-                onOff(shotConstraints || markPlans));
+            set([c.requiredShots, c.requireOuter, c.requiredInfo, c.excludedShots], 'Enable', onOff(shotPlans || markPlans));
+            c.zoneEdges.Enable = onOff(shotConstraints || markPlans);
             set([c.requiredMarks, c.excludedMarks], 'Enable', onOff(markPlans));
             set([c.quadrants, c.scanConstraint], 'Enable', onOff(shotConstraints));
             c.slack.Enable = onOff(shotConstraints || markPlans);

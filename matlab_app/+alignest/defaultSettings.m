@@ -35,7 +35,8 @@ settings.factors.y.columns = strings(1, 0);
 
 % 学習に使う Shot の選び方
 % 選び方（複数選ぶと、同じ評価の中で選び方どうしを比べる。alignest.buildPlanSpecs）：ioptimal（制約付き I 最適）／
-% doptimal（制約付き D 最適）／random（制約つきランダム）／excel（Excel ファイルで指定：パターン・優先順。Mark 単位も）／
+% doptimal（制約付き D 最適）／random（制約つきランダム）／sobol（Sobol 列：Wafer 上に偏りなく散らばる点に近い Shot）／
+% excel（Excel ファイルで指定：パターン・優先順。Mark 単位も）／
 % mark（Mark 単位の I 最適）／markd（Mark 単位の D 最適）／markrandom（Mark 単位の制約つきランダム。randomRepeats 回）
 settings.sampling.method = "ioptimal";
 settings.sampling.nShotsStart = 10;     % 学習 Shot 数は 開始・終了・刻み で決める（I 最適・ランダム）

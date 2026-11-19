@@ -292,6 +292,66 @@ classdef TestShotHighOrderShotCommon < matlab.unittest.TestCase
             app.deleteHighOrderTermSet("1次");
         end
 
+        function commonFormulaTermsAreChosenInTheTable(testCase)
+            % Shot 共通補正の式を Shot ごとと別（カスタム）にしたとき、「使う項と VIF」の「表の式」で Shot 共通補正を選ぶと、
+            % その式の項と VIF を表に出し、「使う」で Shot 共通の k に使う項を選べる（Shot ごとの使う項は変えない）。
+            % 組み合わせの保存・呼び出しも Shot 共通の式・項
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
+            app.applyMapping();
+            app.setHighOrderSource("data");
+            c = app.Controls;
+            app.setHighOrderSettings(unit="shot", shotCommon="fit", maker="asml", shotCommonMaker="custom");
+            testCase.verifyEqual(string(c.highOrderTermView.Enable), "on");
+            testCase.verifyEqual(string(c.highOrderTermView.Items), ["Shot ごとの補正（ASML）", "Shot 共通補正（カスタム）"]);
+            asml = alignest.highOrderTerms("asml");
+            testCase.verifyEqual(size(c.highOrderTermTable.Data, 1), height(asml), "はじめは Shot ごとの補正の式");
+            testCase.verifyTrue(contains(string(c.highOrderVifInfo.Text), "表の式"));
+            app.setHighOrderTermView("common");
+            custom = alignest.highOrderTerms("custom");
+            testCase.verifyEqual(size(c.highOrderTermTable.Data, 1), height(custom), "カスタムの式の項");
+            testCase.verifyTrue(contains(string(c.highOrderVifInfo.Text), "Shot 共通補正（カスタム）"));
+            vifTexts = string(c.highOrderTermTable.Data(:, 6));
+            testCase.verifyTrue(all(strlength(vifTexts) > 0), "VIF も出す（点の配置で決まらない項は ∞）");
+            excludedBefore = app.Settings.highOrder.excludedTerms;
+            row = find(string(c.highOrderTermTable.Data(:, 3)) == "k20", 1);
+            c.highOrderTermTable.CellEditCallback(c.highOrderTermTable, struct("Indices", [row, 1], "NewData", false));
+            common = app.Settings.highOrder.shotCommonTerms;
+            testCase.verifyNotEmpty(common);
+            testCase.verifyFalse(ismember(20, common), "「使う」は Shot 共通の項");
+            testCase.verifyEqual(numel(common), numel(unique(custom.k)) - 1);
+            testCase.verifyEqual(app.Settings.highOrder.excludedTerms, excludedBefore, "Shot ごとの使う項は変えない");
+            testCase.verifyFalse(c.highOrderTermTable.Data{row, 1});
+            testCase.verifyTrue(contains(string(c.highOrderTermInfo.Text), "Shot 共通の k に使う項"));
+            first = find(string(c.highOrderTermTable.Data(:, 3)) == "k1", 1);
+            c.highOrderTermTable.CellEditCallback(c.highOrderTermTable, struct("Indices", [first, 1], "NewData", false));
+            testCase.verifyTrue(ismember(1, app.Settings.highOrder.shotCommonTerms), "k1〜k6 は外せない");
+            app.selectHighOrderTermsByVif(5, "common");
+            used = logical(cell2mat(c.highOrderTermTable.Data(:, 1)));
+            kNumbers = str2double(erase(string(c.highOrderTermTable.Data(:, 3)), "k"));
+            testCase.verifyEqual(used, ismember(kNumbers, app.Settings.highOrder.shotCommonTerms), "VIF で選んだ項を表に出す");
+            result = app.computeHighOrder(0);
+            testCase.verifyEqual(result.options.shotCommonMaker, "custom");
+            testCase.verifyEqual(sort(result.options.shotCommonTerms), sort(app.Settings.highOrder.shotCommonTerms));
+            % 保存・呼び出しは Shot 共通の式・項（Shot ごとの補正の式は変えない）
+            app.saveHighOrderTermSet("共通カスタム");
+            testCase.verifyTrue(any(startsWith(string(app.Settings.highOrder.termSets), "共通カスタム|custom|")));
+            saved = app.Settings.highOrder.shotCommonTerms;
+            app.useAllHighOrderTerms("common");
+            app.applyHighOrderTermSet("共通カスタム");
+            testCase.verifyEqual(sort(app.Settings.highOrder.shotCommonTerms), sort(saved), "保存した Shot 共通の項に戻る");
+            testCase.verifyEqual(app.Settings.highOrder.maker, "asml");
+            app.deleteHighOrderTermSet("共通カスタム");
+            % Shot ごとの補正の式に戻す・Shot 共通の式が同じなら選べない
+            app.setHighOrderTermView("each");
+            testCase.verifyEqual(size(c.highOrderTermTable.Data, 1), height(asml));
+            app.setHighOrderTermView("common");
+            app.setHighOrderSettings(shotCommonMaker="same");
+            testCase.verifyEqual(string({c.highOrderTermView.Value, c.highOrderTermView.Enable}), ["each", "off"]);
+            testCase.verifyError(@() app.setHighOrderTermView("common"), 'alignest:highOrderTerms');
+        end
+
         function excelExplainsTheCommonPart(testCase)
             % 書き出し：「説明」に先に引いた Shot 共通、「補正値」に入力した値の行
             [points, truth] = sequentialWafer(testCase, 6, Inf);

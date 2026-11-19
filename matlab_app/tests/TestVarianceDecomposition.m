@@ -1,5 +1,5 @@
 classdef TestVarianceDecomposition < matlab.unittest.TestCase
-    %TESTVARIANCEDECOMPOSITION ばらつき分解（Lot 間・Wafer 間・Scan 方向間・Shot 間・その他）：手で決めた値での分け方と合計、
+    %TESTVARIANCEDECOMPOSITION ばらつき分解（Lot 間・Wafer 間・Shot 間・その他）：手で決めた値での分け方と合計・3σ、
     %   「1. データ読込」の「ばらつき分解」（Operation ごとの棒・装置の切り替え）、「4. 結果一覧」の「補正残差のばらつき分解」
     %   （補正で Wafer 間のばらつきが変わること）を確かめる。
 
@@ -16,48 +16,47 @@ classdef TestVarianceDecomposition < matlab.unittest.TestCase
 
     methods (Test)
         function nestedPartsAddUpToTheVariance(testCase)
-            % 釣り合った入れ子（Lot 2 × Wafer 2 × Scan 方向 2 × Shot 2 × 点 2）で、段ごとに ± の差を足した値は、段の分散が
-            % 差の2乗になり、足すと値の分散（点の数で割る）になる
-            effects = [4, 3, 2, 1, 0.5];   % Lot・Wafer・Scan 方向・Shot・点の差（上の段の中で ±）
-            [lotIndex, waferIndex, scanIndex, shotIndex, pointIndex] = ndgrid(1:2, 1:2, 1:2, 1:2, 1:2);
+            % 釣り合った入れ子（Lot 2 × Wafer 2 × Shot 2 × 点 2）で、段ごとに ± の差を足した値は、段の分散が差の2乗になり、
+            % 足すと値の分散（点の数で割る）になる。3σ = 3√（分散）
+            effects = [4, 3, 1, 0.5];   % Lot・Wafer・Shot・点の差（上の段の中で ±）
+            [lotIndex, waferIndex, shotIndex, pointIndex] = ndgrid(1:2, 1:2, 1:2, 1:2);
             signOf = @(index) 2 * index(:) - 3;   % 1 → −1、2 → +1
-            values = 10 + effects(1) * signOf(lotIndex) + effects(2) * signOf(waferIndex) + effects(3) * signOf(scanIndex) + ...
-                effects(4) * signOf(shotIndex) + effects(5) * signOf(pointIndex);
-            shotNo = 2 * (scanIndex(:) - 1) + shotIndex(:);   % Wafer の中で Shot ごとに違う番号（実際の Shot と同じ）
+            values = 10 + effects(1) * signOf(lotIndex) + effects(2) * signOf(waferIndex) + effects(3) * signOf(shotIndex) + ...
+                effects(4) * signOf(pointIndex);
             points = table(repmat("A", numel(values), 1), "L" + lotIndex(:), "W" + lotIndex(:) + "-" + waferIndex(:), ...
-                scanIndex(:), shotNo, values, -2 * values, 'VariableNames', ["category", "lot", "wafer", "scan", ...
-                "shot", "valueX", "valueY"]);
+                shotIndex(:), values, -2 * values, 'VariableNames', ["category", "lot", "wafer", "shot", "valueX", "valueY"]);
             result = alignest.varianceDecomposition(points);
-            testCase.verifyEqual(result.components, ["Lot 間", "Wafer 間", "Scan 方向間", "Shot 間", "その他"]);
+            testCase.verifyEqual(result.components, ["Lot 間", "Wafer 間", "Shot 間", "その他"], "Scan 方向では分けない");
             x = result.table(result.table.axis == "X", :);
             testCase.verifyEqual(x.variance.', effects .^ 2, 'AbsTol', 1e-12);
+            testCase.verifyEqual(x.sigma3.', 3 * effects, 'AbsTol', 1e-12, "段の 3σ = 3√（段の分散）");
             testCase.verifyEqual(sum(x.percent), 100, 'AbsTol', 1e-9);
             testCase.verifyEqual(result.totals.variance, [var(values, 1); var(-2 * values, 1)], 'AbsTol', 1e-9);
+            testCase.verifyEqual(result.totals.sigma3, 3 * sqrt(result.totals.variance), 'AbsTol', 1e-12);
+            testCase.verifyGreaterThan(sum(x.sigma3), result.totals.sigma3(1), "3σ は足しても全体の 3σ にならない");
             y = result.table(result.table.axis == "Y", :);
             testCase.verifyEqual(y.variance.', 4 * effects .^ 2, 'AbsTol', 1e-9, "値を2倍すると分散は4倍");
-            % Lot が1つ・Scan 方向が分からないときは、その段を分けない（その分は下の段に入る）
+            % Lot が1つなら Lot 間は分けない（その分は Wafer 間に入る）
             points.lot(:) = "L1";
-            points.scan(:) = NaN;
             merged = alignest.varianceDecomposition(points);
             testCase.verifyEqual(merged.components, ["Wafer 間", "Shot 間", "その他"]);
             testCase.verifyFalse(merged.useLot);
-            testCase.verifyFalse(merged.useScan);
             xm = merged.table(merged.table.axis == "X", :);
-            testCase.verifyEqual(xm.variance.', [effects(1) ^ 2 + effects(2) ^ 2, effects(3) ^ 2 + effects(4) ^ 2, ...
-                effects(5) ^ 2], 'AbsTol', 1e-12, "Lot の分は Wafer 間、Scan 方向の分は Shot 間に入る");
+            testCase.verifyEqual(xm.variance.', [effects(1) ^ 2 + effects(2) ^ 2, effects(3) ^ 2, effects(4) ^ 2], ...
+                'AbsTol', 1e-12, "Lot の分は Wafer 間に入る");
             % 値の無い点は使わず、棒（category）ごとに分ける。点の無い棒は NaN
             points.valueX(1:4) = NaN;
-            points.category(17:end) = "B";
+            points.category(9:end) = "B";
             split = alignest.varianceDecomposition(points, categories=["A", "B", "C"]);
-            testCase.verifyEqual(split.totals.n(split.totals.axis == "X").', [12, 16, 0]);
+            testCase.verifyEqual(split.totals.n(split.totals.axis == "X").', [4, 8, 0]);
             testCase.verifyTrue(all(isnan(split.table.variance(split.table.category == "C"))));
             testCase.verifyError(@() alignest.varianceDecomposition(points, valueColumns="valueX", axisNames=["X", "Y"]), ...
                 'alignest:varianceDecomposition');
         end
 
         function importedDataIsSplitByOperationAndEqp(testCase)
-            % 「1. データ読込」の「ばらつき分解」：Operation ごとの棒、Lot が2つ以上なら Lot 間、Scan 方向があれば Scan 方向間。
-            % 装置を選ぶとその装置の計測だけ。段を足すと有効な計測値の分散になる
+            % 「1. データ読込」の「ばらつき分解」：Operation ごとの棒、Lot が2つ以上なら Lot 間。装置を選ぶとその装置の計測だけ。
+            % 段の分散を足すと有効な計測値の分散になる。縦軸（3σ・分散）で表の数値も変わる
             raw = readtable(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'), 'TextType', 'string');
             later = ismember(raw.Wafer, ["SIM04", "SIM05"]);
             raw.Operation(later) = "OP-M2-ALIGN";
@@ -73,7 +72,7 @@ classdef TestVarianceDecomposition < matlab.unittest.TestCase
             result = app.DataVariance;
             testCase.verifyNotEmpty(result, "読み込むと一度分ける");
             testCase.verifyEqual(result.categories, ["OP-M1-ALIGN", "OP-M2-ALIGN"], "Operation ごとの棒");
-            testCase.verifyEqual(result.components, ["Lot 間", "Wafer 間", "Scan 方向間", "Shot 間", "その他"]);
+            testCase.verifyEqual(result.components, ["Lot 間", "Wafer 間", "Shot 間", "その他"]);
             testCase.verifyEqual(string(c.varianceEqp.Items), ["すべての装置", "装置 EXP01", "装置 EXP02"]);
             testCase.verifyEqual(string(c.varianceEqp.Enable), "on");
             units = app.Data.units;
@@ -85,7 +84,21 @@ classdef TestVarianceDecomposition < matlab.unittest.TestCase
             testCase.verifyEqual(sum(parts.variance), var(values(valid), 1), 'RelTol', 1e-10, "足すと分散");
             testCase.verifyGreaterThan(parts.variance(parts.component == "Lot 間"), 0);
             testCase.verifyNotEmpty(c.varianceAxes(1).Children);
-            testCase.verifyEqual(height(c.varianceTable.Data), 2 * 2 * 6, "棒 × 軸 × （5つの段と全体）");
+            testCase.verifyEqual(height(c.varianceTable.Data), 2 * 2 * 5, "棒 × 軸 × （4つの段と全体）");
+            testCase.verifyEqual(string(c.varianceQuantity.Value), "sigma3", "はじめは 3σ");
+            names = string(c.varianceTable.Data.Properties.VariableNames);
+            testCase.verifyTrue(any(names == "3σ [nm]") && ~any(contains(names, "分散 [")));
+            first = c.varianceTable.Data(1, :);
+            expected = result.table.sigma3(result.table.category == "OP-M1-ALIGN" & result.table.axis == "X" & ...
+                result.table.component == string(first.("ばらつき")));
+            testCase.verifyEqual(first.("3σ [nm]"), round(expected, 4), 'AbsTol', 1e-9);
+            testCase.verifyEqual(numel(c.varianceAxes(1).Children(arrayfun(@(item) isa(item, 'matlab.graphics.chart.primitive.Bar'), ...
+                c.varianceAxes(1).Children))), 5, "3σ：4つの段と全体の棒を並べる");
+            app.setVarianceQuantity("data", "variance");
+            names = string(c.varianceTable.Data.Properties.VariableNames);
+            testCase.verifyTrue(any(names == "分散 [nm²]") && ~any(names == "3σ [nm]"));
+            testCase.verifyEqual(c.varianceAxes(1).Children(end).BarLayout, 'stacked', "分散は積み上げ");
+            app.setVarianceQuantity("data", "sigma3");
             one = app.decomposeDataVariance("EXP02");
             testCase.verifyEqual(one.nUnits, nnz(string({units.eqpId}) == "EXP02"));
             testCase.verifyEqual(one.categories, "OP-M2-ALIGN", "EXP02 の計測は2つ目の Operation だけ");

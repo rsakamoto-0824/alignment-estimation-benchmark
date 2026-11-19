@@ -288,6 +288,8 @@ for method = methods
             parts(end + 1) = "制約付き D 最適"; %#ok<AGROW>
         case "random"
             parts(end + 1) = sprintf("制約つきランダム（%d 回）", sampling.randomRepeats); %#ok<AGROW>
+        case "sobol"
+            parts(end + 1) = "Sobol 列"; %#ok<AGROW>
         case "excel"
             parts(end + 1) = excelText(sampling); %#ok<AGROW>
         case {"mark", "markd"}
@@ -304,14 +306,14 @@ label = strjoin(parts, "、");
 if numel(methods) > 1
     label = label + "（選び方を比べた）";
 end
-if any(ismember(methods, ["ioptimal", "doptimal", "random", "excel"])) && isfield(sampling, "countBy") && ...
+if any(ismember(methods, ["ioptimal", "doptimal", "random", "sobol", "excel"])) && isfield(sampling, "countBy") && ...
         sampling.countBy == "rate"
     label = label + "。学習 Shot 数は計測率（Wafer の候補 Shot 数に対する割合）で決めた";
 end
 if any(ismember(methods, alignest.markPlanTypes())) && isfield(sampling, "countBy") && sampling.countBy == "rate"
     label = label + "。Mark 単位の計画の Mark の数は計測率（候補の全 Mark の数に対する割合）で決めた";
 end
-if any(ismember(methods, ["ioptimal", "doptimal", "random"]))
+if any(ismember(methods, ["ioptimal", "doptimal", "random", "sobol"]))
     required = strings(0, 1);
     if isfield(sampling, "requiredShots") && ~isempty(sampling.requiredShots)
         required(end + 1) = "shotNo " + strjoin(string(sampling.requiredShots), " ");

@@ -229,6 +229,21 @@ classdef (Abstract) HighOrderTab < appui.Core
             c.highOrderMappingStatus.FontColor = app.Palette.text;
         end
 
+        function setHighOrderTermView(app, view)
+            %SETHIGHORDERTERMVIEW 「使う項と VIF」の「表の式」：view："each"（Shot ごとの補正の式と使う項。既定）・"common"
+            %   （Shot 共通補正の式と、Shot 共通の k に使う項。Shot 共通を「計算する」で、Shot 共通の補正の式を Shot ごとと
+            %   別の式にしたときだけ）。表の「使う」・「VIF で選ぶ」の結果も、その式の項になる。省略すると画面の選択で表を作り直す。
+            c = app.Controls;
+            if nargin >= 2
+                if string(view) == "common" && ~commonFormulaDiffers(alignest.highOrderOptions(app.Settings))
+                    error('alignest:highOrderTerms', ['Shot 共通補正の式を表に出すのは、Shot 共通補正を「計算する」にして、' ...
+                        'Shot 共通の補正の式を Shot ごとと別の式（カスタムなど）にしたときです。']);
+                end
+                c.highOrderTermView.Value = char(view);
+            end
+            refreshHighOrderTerms(app);
+        end
+
         function excluded = selectHighOrderTermsByVif(app, threshold, target)
             %SELECTHIGHORDERTERMSBYVIF 「VIF で選ぶ」：式のすべての項から始めて、VIF がしきい値以上の高次項を外す
             %   （alignest.highOrderVif）。threshold を省略するか [] なら画面のしきい値。外した k の番号を返す（内周の式）。
@@ -740,6 +755,20 @@ classdef (Abstract) HighOrderTab < appui.Core
     end
 
     methods (Access = {?appui.Core})
+        function yes = highOrderCommonView(app)
+            % 「使う項と VIF」の表が Shot 共通補正の式を出しているか（「表の式」が Shot 共通補正で、Shot 共通の式が別のとき）
+            c = app.Controls;
+            yes = false;
+            if ~isfield(c, 'highOrderTermView') || string(c.highOrderTermView.Value) ~= "common"
+                return
+            end
+            try
+                yes = commonFormulaDiffers(alignest.highOrderOptions(app.Settings));
+            catch
+                yes = false;
+            end
+        end
+
         % ================= 7. Shot高次補正 =================
         function buildHighOrderTab(app)
             % 左：入力のデータ・補正の式・回帰の設定。右：メッセージと、使う項と VIF（k パラメータを選ぶ表）・補正の評価・
@@ -957,7 +986,17 @@ classdef (Abstract) HighOrderTab < appui.Core
             place(c.highOrderMappingStatus, 3, 1);
             termTab = uitab(outputs, 'Title', '使う項と VIF');
             c.highOrderTermTab = termTab;
-            termGrid = uigridlayout(termTab, [3, 1], 'RowHeight', {'1x', 'fit', 'fit'}, 'Padding', 6, 'RowSpacing', 4);
+            termGrid = uigridlayout(termTab, [4, 1], 'RowHeight', {'fit', '1x', 'fit', 'fit'}, 'Padding', 6, 'RowSpacing', 4);
+            % 表に出す式：Shot ごとの補正（既定）か、Shot 共通補正（Shot 共通を計算し、Shot 共通の補正の式を別に選んだとき）
+            viewGrid = uigridlayout(termGrid, [1, 3], 'ColumnWidth', {'fit', 260, '1x'}, 'Padding', 0);
+            place(viewGrid, 1, 1);
+            label(viewGrid, '表の式', 1, 1);
+            c.highOrderTermView = uidropdown(viewGrid, 'Items', {'Shot ごとの補正', 'Shot 共通補正'}, ...
+                'ItemsData', {'each', 'common'}, 'Value', 'each', 'Enable', 'off', ...
+                'ValueChangedFcn', @(~, ~) app.setHighOrderTermView(), 'Tooltip', ['表で項を選ぶ補正の式。Shot 共通補正：' ...
+                'Shot 共通補正を「計算する」で、Shot 共通の補正の式を Shot ごとと別の式（カスタムなど）にしたとき、その式の' ...
+                '項（Shot 共通の k に使う項）と VIF を表に出し、「使う」で選べます。']);
+            place(c.highOrderTermView, 1, 2);
             c.highOrderTermTable = uitable(termGrid, 'ColumnName', {'使う', '式', 'k', '項', '次数', 'VIF（全項）', ...
                 'VIF（使う項）'}, 'ColumnFormat', {'logical', 'char', 'char', 'char', 'numeric', 'char', 'char'}, ...
                 'ColumnEditable', [true, false, false, false, false, false, false], 'RowName', {}, ...
@@ -965,10 +1004,11 @@ classdef (Abstract) HighOrderTab < appui.Core
                 'CellEditCallback', @(~, event) app.onHighOrderTermEdited(event), 'Tooltip', ['VIF（全項）：式のすべての項で' ...
                 '求めた VIF。VIF（使う項）：「使う」の項だけで求めた VIF（10 を超えると、ほかの項と似ていて係数が不安定）。' ...
                 '∞ は点の配置では決まらない項。']);
-            c.highOrderVifInfo = label(termGrid, '', 2, 1);
+            place(c.highOrderTermTable, 2, 1);
+            c.highOrderVifInfo = label(termGrid, '', 3, 1);
             c.highOrderVifInfo.FontColor = app.Palette.muted;
             c.highOrderVifInfo.UserData = "muted";
-            buildHighOrderTermSetControls(app, termGrid, 3);
+            buildHighOrderTermSetControls(app, termGrid, 4);
             buildHighOrderSelectionTab(app, outputs);   % 「k の選定」は「使う項と VIF」の右
             summaryTab = uitab(outputs, 'Title', '補正の評価');
             c.highOrderSummaryTab = summaryTab;
@@ -1271,6 +1311,22 @@ classdef (Abstract) HighOrderTab < appui.Core
                 items{1} = sprintf('Shot ごとと同じ（%s）', app.HIGH_ORDER_MAKER_LABELS{makerIndex});
                 c.highOrderCommonMaker.Items = items;
             end
+            % 「使う項と VIF」の「表の式」：Shot 共通の式が別のときだけ選べる（式の名前を添える）
+            if isfield(c, 'highOrderTermView')
+                commonIndex = find(strcmp(app.HIGH_ORDER_MAKER_NAMES, c.highOrderCommonMaker.Value), 1);
+                differs = grouped && commonFit && ~isempty(commonIndex);
+                viewItems = {'Shot ごとの補正', 'Shot 共通補正'};
+                if ~isempty(makerIndex)
+                    viewItems{1} = sprintf('Shot ごとの補正（%s）', app.HIGH_ORDER_MAKER_LABELS{makerIndex});
+                end
+                if differs
+                    viewItems{2} = sprintf('Shot 共通補正（%s）', app.HIGH_ORDER_MAKER_LABELS{commonIndex});
+                else
+                    c.highOrderTermView.Value = 'each';
+                end
+                c.highOrderTermView.Items = viewItems;
+                c.highOrderTermView.Enable = onOff(differs);
+            end
         end
 
         function onHighOrderSettingsChanged(app)
@@ -1378,6 +1434,20 @@ classdef (Abstract) HighOrderTab < appui.Core
             end
             makers = [options.maker, options.outerMaker];
             excludedSets = {options.excludedTerms, options.outerExcludedTerms};
+            % 「表の式」が Shot 共通補正：Shot 共通の補正の式（内周・外周とも同じ式）と、Shot 共通の k に使う項
+            % （選んでいなければその式のすべての項。「使う」のチェックは Shot 共通の項を変える）
+            commonView = highOrderCommonView(app);
+            if commonView
+                makers = commonMakers(options);
+                commonSets = {options.shotCommonTerms, options.shotCommonOuterTerms};
+                for z = 1:2
+                    excludedSets{z} = zeros(1, 0);
+                    if ~isempty(commonSets{z})
+                        all_ = alignest.highOrderTerms(makers(z));
+                        excludedSets{z} = reshape(setdiff(all_.k, commonSets{z}), 1, []);
+                    end
+                end
+            end
             zoneLabels = ["内周", "外周"];
             parts = cell(1, numel(zones));
             texts = strings(1, numel(zones));
@@ -1386,6 +1456,9 @@ classdef (Abstract) HighOrderTab < appui.Core
                 prefix = "";
                 if split
                     prefix = zoneLabels(z) + "の式：";
+                end
+                if commonView
+                    prefix = "Shot 共通補正（" + makerName(makers(z)) + "）の" + ternary(split, zoneLabels(z) + "の", "") + "式：";
                 end
                 try
                     [local, valid] = highOrderLocal(app, zones(z));
@@ -1414,7 +1487,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             inputValues = {options.shotCommonValues, options.shotCommonOuterValues};
             % Shot 共通を「計算する」ときは、Shot 共通の k に使う項を選ぶ列（「使う」は Shot ごとの項）を足す
             showCommonTerms = alignest.highOrderSequential(options) && options.shotCommon == "fit" && ...
-                options.shotCommonMaker == "same";   % Shot 共通の式を別にしたときは、その式の項を下の知らせに出す
+                options.shotCommonMaker == "same";   % Shot 共通の式を別にしたときは「表の式」で Shot 共通補正を選ぶ
             commonLists = {options.shotCommonTerms, options.shotCommonOuterTerms};
             if split
                 % 内周・外周を1つの項の行にまとめ、使うチェックを内周・外周の列に分ける
@@ -1501,10 +1574,11 @@ classdef (Abstract) HighOrderTab < appui.Core
                     addStyle(table_, uistyle('BackgroundColor', app.MARK_ABSENT_COLOR), 'cell', absent);
                 end
             end
-            % 計算の前の確かめ：点の数が最も少ない k の組で決まらない項を、赤い太字にする
+            % 計算の前の確かめ：点の数が最も少ない k の組で決まらない項を、赤い太字にする（Shot ごとの補正の式の項。
+            % 「表の式」が Shot 共通補正のときは比べない）
             check = refreshHighOrderCheck(app);
             short = false(height(terms), 1);
-            if ~isempty(check)
+            if ~isempty(check) && ~commonView
                 for entry = check.shortage
                     short = short | (terms.used & terms.zone == zones(min(entry.zoneIndex, numel(zones))) & ...
                         terms.axis == entry.axis & ismember(terms.k, entry.dropped));
@@ -1523,15 +1597,15 @@ classdef (Abstract) HighOrderTab < appui.Core
                     counts(z) = zoneLabels(z) + " " + counts(z);
                 end
             end
-            termText = "使う項：" + strjoin(counts, "、");
+            termText = ternary(commonView, "Shot 共通の k に使う項：", "使う項：") + strjoin(counts, "、");
             if any(short)
                 termText = "⚠ 点の数が最も少ない Shot では決まらない項があります（右の表の赤い太字。" + ...
                     sprintf("dx %d 項・dy %d 項）。", nnz(short & terms.axis == "dx"), nnz(short & terms.axis == "dy")) + termText;
             end
             c.highOrderTermInfo.Text = char(termText);
             c.highOrderTermInfo.FontColor = ternary(any(short), app.Palette.error, app.Palette.muted);
-            if alignest.highOrderSequential(options) && options.shotCommon == "fit" && options.shotCommonMaker ~= "same"
-                pointText = pointText + " " + commonFormulaText(options);
+            if commonFormulaDiffers(options) && ~commonView
+                pointText = pointText + " " + commonFormulaText(options) + "（「表の式」で Shot 共通補正を選ぶと、表で項を選べます）";
             end
             c.highOrderVifInfo.Text = char(pointText);
             showHighOrderCheck(app);
@@ -1604,8 +1678,9 @@ classdef (Abstract) HighOrderTab < appui.Core
             end
             split = any(strcmp(terms.Properties.VariableNames, 'kInner'));
             names = string(app.Controls.highOrderTermTable.ColumnName);
-            if isSharedUnit(fieldOr(app.Settings.highOrder, "unit", "common")) && column <= 1 + split
-                % くくりが Wafer 内・選択 Wafer で共通：「使う」は k の組（Shot 共通補正）の項
+            if (highOrderCommonView(app) || isSharedUnit(fieldOr(app.Settings.highOrder, "unit", "common"))) && ...
+                    column <= 1 + split
+                % 「表の式」が Shot 共通補正、またはくくりが Wafer 内・選択 Wafer で共通：「使う」は Shot 共通の項
                 zone = ternary(split && column == 2, "outer", "inner");
                 if split
                     k = ternary(zone == "inner", terms.kInner(row), terms.kOuter(row));
@@ -2533,6 +2608,17 @@ makers = [options.maker, options.outerMaker];
 if options.shotCommonMaker ~= "same"
     makers = [options.shotCommonMaker, options.shotCommonMaker];
 end
+end
+
+function differs = commonFormulaDiffers(options)
+% Shot 共通補正を先に計算し、その補正の式を Shot ごとと別に選んだか（「使う項と VIF」の「表の式」で Shot 共通補正を選べる）
+differs = alignest.highOrderSequential(options) && options.shotCommon == "fit" && options.shotCommonMaker ~= "same";
+end
+
+function name = makerName(maker)
+% 補正の式の画面の名前
+names = struct("asml", "ASML", "canon", "Canon", "nikon", "Nikon", "custom", "カスタム", "linear", "1次", "quadratic", "2次");
+name = string(names.(maker));
 end
 
 function text = commonFormulaText(options)

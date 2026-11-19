@@ -47,7 +47,7 @@ classdef (Abstract) ResultsTab < appui.Core
 
         function result = decomposeCorrectionVariance(app, methodPlan, scope)
             %DECOMPOSECORRECTIONVARIANCE 「補正残差のばらつき分解」：補正前の値と、実測値・推定値で補正した残差（補正の段階ごと）の
-            %   ばらつき（分散）を、Lot 間・Wafer 間・Scan 方向間・Shot 間・その他に分けて並べる（Wafer が複数のとき、補正で
+            %   ばらつきを、Lot 間・Wafer 間・Shot 間・その他に分けて並べる（段ごとの 3σ か分散。Wafer が複数のとき、補正で
             %   Wafer 間のばらつきがどう変わるかが分かる。alignest.correctionVarianceDecomposition）。「実測値と推定値の補正」で
             %   比べた結果（手法・学習パターン・Wafer）を使う。methodPlan："手法｜学習パターン"、scope："すべての点"・
             %   "推定対象の点"。省略すると画面の選択。result は分けた結果。
@@ -1268,7 +1268,7 @@ classdef (Abstract) ResultsTab < appui.Core
             c.correctionVarianceTab = uitab(c.resultTabs, 'Title', '補正残差のばらつき分解');
             varianceGrid = uigridlayout(c.correctionVarianceTab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 8, ...
                 'RowSpacing', 6);
-            varianceControls = uigridlayout(varianceGrid, [1, 5], 'ColumnWidth', {'fit', 320, 'fit', 150, 'fit'}, ...
+            varianceControls = uigridlayout(varianceGrid, [1, 7], 'ColumnWidth', {'fit', 320, 'fit', 150, 'fit', 'fit', 110}, ...
                 'Padding', 0);
             label(varianceControls, '手法｜学習パターン', 1, 1);
             c.correctionVarianceMethodPlan = uidropdown(varianceControls, 'Items', {'—'}, 'ItemsData', {''}, ...
@@ -1285,6 +1285,10 @@ classdef (Abstract) ResultsTab < appui.Core
                 '手法・学習パターン・Wafer で、補正前の値と補正した残差を求めて分けます（Wafer が複数のときに Wafer 間の' ...
                 'ばらつきの変化が分かります）。']);
             place(c.correctionVarianceButton, 1, 5);
+            label(varianceControls, '縦軸', 1, 6);
+            c.correctionVarianceQuantity = varianceQuantityDropdown(varianceControls, ...
+                @(~, ~) app.setVarianceQuantity("correction"));
+            place(c.correctionVarianceQuantity, 1, 7);
             varianceViews = uitabgroup(varianceGrid);
             varianceChartTab = uitab(varianceViews, 'Title', '図');
             varianceTableTab = uitab(varianceViews, 'Title', '表');
