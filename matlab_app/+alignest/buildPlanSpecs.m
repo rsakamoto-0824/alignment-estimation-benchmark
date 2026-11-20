@@ -1,10 +1,12 @@
 function specs = buildPlanSpecs(sampling)
-%BUILDPLANSPECS 学習に使う Shot（Mark）の選び方の一覧（学習パターン）を作る。
+%BUILDPLANSPECS 計測点（学習に使う Shot・Mark）の選び方の一覧（学習パターン）を作る。
 %   sampling.method は選び方（複数選ぶと、選び方どうしを同じ評価の中で比べる）：
 %     "ioptimal"（制約付き I 最適）："I最適 20 Shot" のように Shot 数ごとに1つ
 %     "doptimal"（制約付き D 最適）："D最適 20 Shot" のように Shot 数ごとに1つ（det(M) を大きくする）
 %     "random"（制約つきランダム）：Shot 数ごとに randomRepeats 回
 %     "sobol"（Sobol 列）："Sobol 20 Shot" のように Shot 数ごとに1つ（Sobol 列の点に近い Shot。乱数は使わない）
+%     "poisson"（ポアソンディスク）：Shot 数ごとに randomRepeats 回（"ポアソン 20 Shot #1"。Shot どうしの距離が d 以上に
+%                なるように乱数の順で選ぶ）
 %     "excel"（Excel ファイルで指定）：sampling.layoutPlans の1行（alignest.readLayoutPlans・parseLayoutPlans）ごとに、
 %                パターン（pattern）は "名前（12 Shot）"・"名前（30 Mark）" の1つ（type "manual"）、優先順（priority）は
 %                "名前 20 Shot" のように Shot 数（計測率）ごと（type "file"）。Mark 単位の優先順は、Mark 単位の計画と同じく
@@ -18,6 +20,8 @@ function specs = buildPlanSpecs(sampling)
 %                （markCountStart〜markCountEnd を markCountStep ごと）ごとに1つ（"Mark最適 120 点"。spec.markCount）
 %     "markrandom"（Mark 単位の制約つきランダム）：Mark 単位の I 最適と同じ制約・Mark の数で、randomRepeats 回
 %                （"Markランダム 1 点/Shot #1"）
+%     "markpoisson"（Mark 単位のポアソンディスク）：Mark 単位の I 最適と同じ Mark の数で、randomRepeats 回
+%                （"Markポアソン 1 点/Shot #1"。Mark どうしの距離が d 以上になるように乱数の順で選ぶ）
 %   sampling.countBy = "rate" なら、Shot 数の代わりに計測率 [%]（rateStart・rateEnd・rateStep）ごとに作る
 %   （"I最適 計測率 20%" のように。Shot 数は Wafer の候補 Shot 数から planTrainingShots で決める。nShots は NaN）。
 %   Mark 単位の計画も計測率ごとに作る（"Mark最適 計測率 20%"。計測する Mark の数 = 計測率 × 候補の全 Mark の数。
@@ -25,18 +29,19 @@ function specs = buildPlanSpecs(sampling)
 %   group は結果を集計するときの列（ランダムの繰り返しは同じ group にまとめる）。選び方が1つなら "20 Shot"、
 %   2つ以上なら選び方の名前を付けて "I最適 20 Shot"・"D最適 20 Shot" のようにする（Excel のパターンは名前、優先順は
 %   名前と Shot 数。Excel の列が2つ以上の優先順・パターンと優先順が混ざるときも名前を付ける）。
-%   選び方は、選んだ順によらず I 最適 → D 最適 → ランダム → Sobol 列 → Excel → Mark 単位（I・D・ランダム）の順に並べる。
-ORDER = ["ioptimal", "doptimal", "random", "sobol", "excel", alignest.markPlanTypes()];
-PREFIX = struct("ioptimal", "I最適", "doptimal", "D最適", "random", "ランダム", "sobol", "Sobol", "excel", "", ...
-    "mark", "Mark最適", "markd", "MarkD最適", "markrandom", "Markランダム");
+%   選び方は、選んだ順によらず I 最適 → D 最適 → ランダム → Sobol 列 → ポアソンディスク → Excel → Mark 単位（I・D・
+%   ランダム・ポアソンディスク）の順に並べる。
+ORDER = ["ioptimal", "doptimal", "random", "sobol", "poisson", "excel", alignest.markPlanTypes()];
+PREFIX = struct("ioptimal", "I最適", "doptimal", "D最適", "random", "ランダム", "sobol", "Sobol", "poisson", "ポアソン", ...
+    "excel", "", "mark", "Mark最適", "markd", "MarkD最適", "markrandom", "Markランダム", "markpoisson", "Markポアソン");
 sampling = alignest.upgradeLayoutSettings(sampling);
 methods = unique(reshape(string(sampling.method), 1, []), 'stable');
 unknown = methods(~ismember(methods, ORDER));
 if ~isempty(unknown)
-    error('alignest:samplingMethod', '学習 Shot の選び方が正しくありません: %s', strjoin(unknown, "・"));
+    error('alignest:samplingMethod', '計測点の選び方が正しくありません: %s', strjoin(unknown, "・"));
 end
 if isempty(methods)
-    error('alignest:samplingMethod', '学習 Shot の選び方を1つ以上選んでください。');
+    error('alignest:samplingMethod', '計測点の選び方を1つ以上選んでください。');
 end
 methods = ORDER(ismember(ORDER, methods));
 compare = numel(methods) > 1;
@@ -51,7 +56,7 @@ for method = methods
                 specs(end + 1) = spec(method, sizes(k), rates(k), 1, prefix + " " + sizeTexts(k), ...
                     groupName(compare, prefix, sizeTexts(k)), [], NaN); %#ok<AGROW>
             end
-        case "random"
+        case {"random", "poisson"}
             [sizes, sizeTexts, rates] = trainingSizes(sampling);
             for k = 1:numel(sizes)
                 for repeat = 1:sampling.randomRepeats
@@ -67,7 +72,7 @@ for method = methods
                 specs(end + 1) = spec(method, NaN, rates(k), 1, prefix + " " + sizeTexts(k), ...
                     groupName(compare, prefix, sizeTexts(k)), [], perShot(k), zeros(1, 0), false(1, 0), counts(k)); %#ok<AGROW>
             end
-        case "markrandom"
+        case {"markrandom", "markpoisson"}
             [perShot, rates, sizeTexts, counts] = markSizes(sampling);
             for k = 1:numel(sizeTexts)
                 for repeat = 1:sampling.randomRepeats

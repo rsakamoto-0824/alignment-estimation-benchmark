@@ -1104,12 +1104,14 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             settings.sampling.exchangeStarts = 2;
             app.setSettings(settings);
             c = app.Controls;
-            % 選び方を複数選ぶ（I 最適・D 最適・Mark 単位）と、人の選択を Excel から読み込む
-            c.samplingMethod.Value = {'ioptimal', 'doptimal', 'mark'};
+            % 計測点の選び方を Mark 単位にして複数選ぶ（I 最適・D 最適）と、人の選択を Excel から読み込む
+            c.samplingUnit.Value = 'mark';
+            c.samplingUnit.ValueChangedFcn([], []);
+            c.samplingMethod.Value = {'mark', 'markd'};
             c.samplingMethod.ValueChangedFcn([], []);
             c.markPerShot.Value = '１';
             c.markPerShot.ValueChangedFcn([], []);
-            testCase.verifyEqual(app.Settings.sampling.method, ["ioptimal", "doptimal", "mark"]);
+            testCase.verifyEqual(app.Settings.sampling.method, ["mark", "markd"]);
             testCase.verifyEqual(app.Settings.sampling.markPerShot, 1, "全角の数字も読む");
             testCase.verifyEqual(string(c.markBalance.Enable), "on");
             folder = tempname;
@@ -1119,7 +1121,7 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             writetable(table((1:99).', double(mod((1:99).', 5) == 0), 'VariableNames', ["shotNo", "担当者A"]), file);
             layouts = app.loadLayoutPlans(file);
             testCase.verifyEqual(string({layouts.plans.name}), "担当者A");
-            testCase.verifyEqual(app.Settings.sampling.method, ["ioptimal", "doptimal", "mark", "excel"]);
+            testCase.verifyEqual(app.Settings.sampling.method, ["mark", "markd", "excel"]);
             testCase.verifyEqual(app.Settings.sampling.layoutPlans, "pattern|担当者A|" + strjoin(string(5:5:95), " "));
             testCase.verifyTrue(startsWith(string(c.layoutPlanInfo.Value{2}), "・担当者A：パターン（19 Shot）　5 10 15"));
             % 異常値の MAD・Shot ごとの成分の式・Fringe Zernike
@@ -1150,12 +1152,11 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyTrue(any(contains(string(app.Controls.measureInfo.Value), "Mark 番号ごとの計測数")));
             % 評価して、計測配置の比較とマップのワースト値・95%値
             results = app.runEvaluationNow(false);
-            testCase.verifyEqual(results.groups, ["I最適 15 Shot", "I最適 25 Shot", "D最適 15 Shot", "D最適 25 Shot", ...
-                "担当者A", "Mark最適 1 点/Shot"]);
+            testCase.verifyEqual(results.groups, ["担当者A", "Mark最適 1 点/Shot", "MarkD最適 1 点/Shot"]);
             comparison = app.drawLayoutComparison(1, "marks");
-            testCase.verifyEqual(height(comparison), 6);
-            testCase.verifyEqual(size(app.Controls.compareLayoutTable.Data, 1), 6);
-            testCase.verifyGreaterThanOrEqual(numel(findobj(app.Controls.compareLayoutAxes, 'Type', 'line')), 4);
+            testCase.verifyEqual(height(comparison), 3);
+            testCase.verifyEqual(size(app.Controls.compareLayoutTable.Data, 1), 3);
+            testCase.verifyGreaterThanOrEqual(numel(findobj(app.Controls.compareLayoutAxes, 'Type', 'line')), 2);
             app.showMap(1, "Mark最適 1 点/Shot", 1, "vector", "estimate");
             testCase.verifyTrue(contains(app.Controls.mapInfo.Text, "学習 Mark 99（全 99 Shot で1点以上）"));
             testCase.verifyTrue(contains(app.Controls.mapInfo.Text, "残差：ワースト値 X"));
@@ -1166,7 +1167,7 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyEqual(string(app.Controls.themeDark.Checked), "on");
             app.openHelp();
             testCase.verifyEqual(app.Controls.helpView.Data.theme, "dark");
-            app.showMap(2, "D最適 15 Shot", 1, "X", "estimate");
+            app.showMap(2, "MarkD最適 1 点/Shot", 1, "X", "estimate");
             testCase.verifyEqual(app.Controls.mapAxes(2).Color, [0.10, 0.11, 0.13], "描き直してもダークモードの色");
             app.setTheme("light");
             testCase.verifyEqual(app.Controls.mapAxes(1).Color, [1, 1, 1]);

@@ -165,6 +165,46 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             testCase.verifyEqual(string(c.rotationSource.Value), "file");
         end
 
+        function radiusViewShowsCumulativeRadius(testCase)
+            % 半径と指標の図：横軸に半径、縦軸に指標の 3σ。累積は半径 0 を 0% として外へ指標を足し（全体 = 100%）、
+            % 累積率の半径は線の折れ点の間を直線でつないで求める
+            cumulative = alignest.radialCumulative([30; 10; 20; 40; NaN], [1; 1; 2; 0; 5], [0, 25, 50, 75, 100, 120]);
+            testCase.verifyEqual(cumulative.radiusMm.', [0, 10, 20, 30, 40]);
+            testCase.verifyEqual(cumulative.percent.', [0, 25, 75, 100, 100], 'AbsTol', 1e-12);
+            testCase.verifyEqual(cumulative.rateRadiiMm, [0, 10, 15, 20, 30, NaN], 'AbsTol', 1e-12);
+            testCase.verifyEqual(cumulative.nPoints, 4, "値の無い点は使わない");
+            testCase.verifyError(@() alignest.radialCumulative(1:2, 1), 'alignest:radialCumulative');
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
+            app.applyMapping();
+            c = app.Controls;
+            variability = app.computeRotationVariability("mark", "max", "");
+            testCase.verifyEqual(string(c.rotationCumulative.Enable), "off", "はじめは分布の図");
+            shown = app.setRotationSpreadView("radius", true, [50, 80]);
+            ax = c.rotationSpreadAxes(2);
+            testCase.verifyEqual(numel(ax.YAxis), 2, "左に 3σ、右に累積 [%]");
+            testCase.verifyEqual(string(ax.XLabel.String), "Wafer 中心からの半径 [mm]");
+            radius = hypot(variability.table.x, variability.table.y);
+            expected = alignest.radialCumulative(radius, variability.table.sigma3Vector, [50, 80]);
+            testCase.verifyEqual(shown.rateRadiiMm, expected.rateRadiiMm, 'AbsTol', 1e-9);
+            testCase.verifyTrue(all(shown.rateRadiiMm > 0 & shown.rateRadiiMm < 150));
+            testCase.verifyLessThan(shown.rateRadiiMm(1), shown.rateRadiiMm(2));
+            yyaxis(ax, 'right');   % 累積率の文字は右の目盛りの側に描いている
+            labels = string(get(findobj(ax, 'Type', 'text'), 'String'));
+            yyaxis(ax, 'left');
+            testCase.verifyTrue(any(startsWith(labels, "累積 50%：")) && any(startsWith(labels, "累積 80%：")));
+            testCase.verifyEqual(string(c.rotationCumulativeRates.Enable), "on");
+            c.rotationCumulativeRates.Value = 'abc';
+            c.rotationCumulativeRates.ValueChangedFcn([], []);
+            testCase.verifyTrue(contains(string(c.rotationError.Text), "累積率"), "数でなければ理由を出す");
+            testCase.verifyEmpty(app.setRotationSpreadView("radius", false), "累積を重ねない");
+            testCase.verifyEqual(string(c.rotationCumulativeRates.Enable), "off");
+            app.setRotationSpreadView("histogram");
+            testCase.verifyEqual(numel(ax.YAxis), 1, "分布の図に戻す");
+            testCase.verifyNotEmpty(findobj(ax, 'Type', 'histogram'));
+        end
+
         function feedbackUsesOlderWafersAndRotatesMaps(testCase)
             % どの Wafer も同じ値なら、計測マップで FB しても（どの点もどこかの Wafer で計測すれば）補正残差は全計測と同じ。
             % 日時の古い Wafer を FB 側にし、Lot ごとにローテーションする。FB 側で一度も計測しない点は補正しない

@@ -158,7 +158,7 @@ classdef (Abstract) Display < appui.Core
         end
 
         function setRandomSeed(app, seed)
-            %SETRANDOMSEED 「設定」→「乱数の種…」：乱数の種（0〜2^32−1 の整数）を変える。学習 Shot の選び方（ランダム・I 最適・
+            %SETRANDOMSEED 「設定」→「乱数の種…」：乱数の種（0〜2^32−1 の整数）を変える。計測点の選び方（ランダム・I 最適・
             %   D 最適・Mark 単位の交換法の始め方）と、「8. Mark配置の最適化」（乱数の Shot の形・配置を探す始め方）で共通に使う
             %   （設定 sampling.seed。同じ種なら同じ結果。評価の結果が変わるので、評価し直す）。
             alignest.checkRandomSeed(seed);
@@ -326,7 +326,7 @@ classdef (Abstract) Display < appui.Core
                 'Color', palette.background, 'Resize', 'off');
             grid = uigridlayout(dialog, [3, 3], 'RowHeight', {'fit', 'fit', 'fit'}, 'ColumnWidth', {'fit', '1x', 'fit'}, ...
                 'Padding', 14, 'RowSpacing', 10, 'BackgroundColor', palette.background);
-            note = label(grid, ['学習 Shot の選び方（ランダム・I 最適・D 最適・Mark 単位の交換法の始め方）と、' ...
+            note = label(grid, ['計測点の選び方（ランダム・I 最適・D 最適・Mark 単位の交換法の始め方）と、' ...
                 '「8. Mark配置の最適化」（乱数 Shot・配置を探す始め方）で使う乱数の種。同じ種なら同じ結果になります。'], ...
                 1, [1, 3]);
             note.FontColor = palette.text;

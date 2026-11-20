@@ -12,6 +12,10 @@ classdef (Abstract) RotationTab < appui.Core
         ROTATION_DEFAULT_PERCENT = 75   % しきい値が空のとき、3σ の累積 75% の値を初期値にする（上位 25% を毎回計測）
         ROTATION_METRICS = {'sigma3Vector', 'sigma3Length', 'sigma3X', 'sigma3Y', 'sigma3Target'}
         ROTATION_METRIC_LABELS = {'ベクトル 3√(σX²+σY²)', '長さ |v| の 3σ', 'X の 3σ', 'Y の 3σ', '目的変数の 3σ'}
+        ROTATION_DEFAULT_CUMULATIVE_RATES = "50"   % 「半径と指標」の図で半径を示す累積率 [%] の初期値
+        ROTATION_POINT_COLOR = [0.00, 0.45, 0.74]       % 分布・半径と指標の図の点・棒の色
+        ROTATION_THRESHOLD_COLOR = [0.85, 0.20, 0.15]   % しきい値の線の色
+        ROTATION_CUMULATIVE_COLOR = [0.93, 0.49, 0.13]  % 累積の線と累積率の半径の色
     end
 
     methods
@@ -221,6 +225,25 @@ classdef (Abstract) RotationTab < appui.Core
                 100 * maps.averageRate) + strjoin(maps.rankNames, "、") + "。" + ternary(maps.assignment == "random", ...
                 sprintf("振り分けは乱数（種 %d）。", maps.seed), ""));
             updateRotationEnabled(app);
+        end
+
+        function cumulative = setRotationSpreadView(app, view, showCumulative, ratesPercent)
+            %SETROTATIONSPREADVIEW 「ばらつき」の右の図を選んで描き直す。view："histogram"（3σ の分布）・"radius"（横軸に
+            %   Wafer 中心からの半径、縦軸に指標の 3σ）。showCumulative：半径と指標の図に、半径 0 を累積 0% として外へ指標を
+            %   足した累積 [%] の線を重ねるか、ratesPercent：半径を示す累積率 [%]（例：[50, 80]）。省略すると画面の選択。
+            %   cumulative：累積の線と累積率の半径（alignest.radialCumulative。累積を描かないときは []）。
+            c = app.Controls;
+            if nargin >= 2
+                c.rotationSpreadView.Value = char(view);
+            end
+            if nargin >= 3
+                c.rotationCumulative.Value = logical(showCumulative);
+            end
+            if nargin >= 4
+                c.rotationCumulativeRates.Value = char(strjoin(string(ratesPercent(:).'), " "));
+            end
+            updateRotationEnabled(app);
+            cumulative = drawRotationVariability(app);
         end
 
         function result = runRotationFeedback(app, options)
@@ -470,7 +493,24 @@ classdef (Abstract) RotationTab < appui.Core
             outputs = uitabgroup(body);
             c.rotationOutputs = outputs;
             c.rotationVariabilityTab = uitab(outputs, 'Title', 'ばらつき');
-            spread = uigridlayout(c.rotationVariabilityTab, [2, 1], 'RowHeight', {'1.4x', '1x'}, 'Padding', 6, 'RowSpacing', 6);
+            spread = uigridlayout(c.rotationVariabilityTab, [3, 1], 'RowHeight', {'fit', '1.4x', '1x'}, 'Padding', 6, ...
+                'RowSpacing', 6);
+            spreadControls = uigridlayout(spread, [1, 6], 'ColumnWidth', {'fit', 130, 'fit', 'fit', 110, '1x'}, 'Padding', 0);
+            label(spreadControls, '右の図', 1, 1);
+            redrawSpread = @(~, ~) app.setRotationSpreadView();
+            c.rotationSpreadView = uidropdown(spreadControls, 'Items', {'3σ の分布', '半径と指標'}, ...
+                'ItemsData', {'histogram', 'radius'}, 'ValueChangedFcn', redrawSpread, 'Tooltip', ['3σ の分布：指標の 3σ の' ...
+                'ヒストグラム。半径と指標：横軸に Wafer 中心からの半径（Shot ごとのときは Shot 中心）、縦軸に指標の 3σ。']);
+            place(c.rotationSpreadView, 1, 2);
+            c.rotationCumulative = uicheckbox(spreadControls, 'Text', '累積を重ねる', 'Value', true, ...
+                'ValueChangedFcn', redrawSpread, 'Tooltip', ['半径と指標の図に、半径 0 を累積 0% として、半径の小さい点から' ...
+                '指標の 3σ を足した累積 [%]（全点の 3σ の和 = 100%。右の目盛り）の線を重ねます。']);
+            place(c.rotationCumulative, 1, 3);
+            label(spreadControls, '累積率 [%]', 1, 4);
+            c.rotationCumulativeRates = uieditfield(spreadControls, 'text', ...
+                'Value', char(app.ROTATION_DEFAULT_CUMULATIVE_RATES), 'ValueChangedFcn', redrawSpread, ...
+                'Tooltip', '累積の線がこの累積率になる半径を、縦の線と数で示します（空白で区切っていくつでも。例：50 80）。');
+            place(c.rotationCumulativeRates, 1, 5);
             spreadAxes = uigridlayout(spread, [1, 2], 'ColumnWidth', {'1x', '1x'}, 'Padding', 0, 'ColumnSpacing', 8);
             c.rotationSpreadAxes = [uiaxes(spreadAxes), uiaxes(spreadAxes)];
             set(c.rotationSpreadAxes, 'Visible', 'off');
@@ -631,6 +671,9 @@ classdef (Abstract) RotationTab < appui.Core
             set([c.rotationMethod, c.rotationPlan], 'Enable', onOff(source == "estimate" && hasResults));
             c.rotationTarget.Enable = onOff(any(source == ["data", "file"]) && numel(c.rotationTarget.Items) > 1);
             c.rotationShotStatistic.Enable = onOff(string(c.rotationLevel.Value) == "shot");
+            radiusView = string(c.rotationSpreadView.Value) == "radius";
+            c.rotationCumulative.Enable = onOff(radiusView);
+            c.rotationCumulativeRates.Enable = onOff(radiusView && c.rotationCumulative.Value);
             ready = (hasData && (source == "data" || (source == "estimate" && hasResults) || ...
                 (source == "target" && ~isempty(app.TargetRun)))) || (source == "file" && hasRotationFileData(app));
             c.rotationComputeVariability.Enable = onOff(ready);
@@ -805,9 +848,11 @@ classdef (Abstract) RotationTab < appui.Core
             end
         end
 
-        function drawRotationVariability(app)
-            % 「ばらつき」：選んだ指標の 3σ を Wafer 上の色（左）と分布（右。しきい値の線）で描き、表に 3σ の大きい順に出す
+        function cumulative = drawRotationVariability(app)
+            % 「ばらつき」：選んだ指標の 3σ を Wafer 上の色（左）と、分布か半径と指標（右。しきい値の線）で描き、表に 3σ の
+            % 大きい順に出す。cumulative：半径と指標の図に重ねた累積（重ねないときは []）
             c = app.Controls;
+            cumulative = [];
             variability = app.RotationVariability;
             for ax = c.rotationSpreadAxes
                 cla(ax, 'reset');
@@ -836,14 +881,18 @@ classdef (Abstract) RotationTab < appui.Core
                     'NumColumns', min(numel(circles), 3));
             end
             ax = c.rotationSpreadAxes(2);
-            histogram(ax, values(isfinite(values)), 'FaceColor', [0.00, 0.45, 0.74], 'EdgeColor', 'none');
-            for t = thresholdLines(app, values)
-                xline(ax, t, '--', sprintf('%.4g', t), 'Color', [0.85, 0.20, 0.15], 'LineWidth', 1.5, ...
-                    'LabelVerticalAlignment', 'top');
+            if string(c.rotationSpreadView.Value) == "radius"
+                cumulative = drawRotationRadius(app, ax, variability, values, metricLabel);
+            else
+                histogram(ax, values(isfinite(values)), 'FaceColor', app.ROTATION_POINT_COLOR, 'EdgeColor', 'none');
+                for t = thresholdLines(app, values)
+                    xline(ax, t, '--', sprintf('%.4g', t), 'Color', app.ROTATION_THRESHOLD_COLOR, 'LineWidth', 1.5, ...
+                        'LabelVerticalAlignment', 'top');
+                end
+                xlabel(ax, metricLabel);
+                ylabel(ax, ternary(variability.level == "shot", 'Shot の数', 'Mark の数'));
+                title(ax, sprintf('3σ の分布（%d Wafer）', variability.nWafers), 'Interpreter', 'none');
             end
-            xlabel(ax, metricLabel);
-            ylabel(ax, ternary(variability.level == "shot", 'Shot の数', 'Mark の数'));
-            title(ax, sprintf('3σ の分布（%d Wafer）', variability.nWafers), 'Interpreter', 'none');
             grid(ax, 'on');
             box(ax, 'on');
             styleAxes(app, c.rotationSpreadAxes, app.AXES_FONT_SIZE);
@@ -864,6 +913,65 @@ classdef (Abstract) RotationTab < appui.Core
                 data = renamevars(data, "Wafer の数", "Wafer の数（最大）");
             end
             c.rotationSpreadTable.Data = data;
+        end
+
+        function cumulative = drawRotationRadius(app, ax, variability, values, metricLabel)
+            % 「半径と指標」：横軸に Wafer 中心からの半径（Shot ごとは Shot 中心）、縦軸に指標の 3σ（左の目盛り。しきい値の
+            % 横線）。「累積を重ねる」なら、半径 0 を累積 0% として外へ指標を足した累積 [%] の線（右の目盛り）と、累積率の
+            % 半径の縦線を重ねる。cumulative：累積（alignest.radialCumulative。重ねないときは []）
+            c = app.Controls;
+            cumulative = [];
+            rows = variability.table;
+            radius = hypot(rows.x, rows.y);
+            markerSize = ternary(variability.level == "shot", 36, 14);
+            yyaxis(ax, 'left');
+            scatter(ax, radius, values, markerSize, app.ROTATION_POINT_COLOR, 'filled', 'MarkerFaceAlpha', 0.6, ...
+                'DisplayName', ternary(variability.level == "shot", "Shot", "Mark"));
+            for t = thresholdLines(app, values)
+                yline(ax, t, '--', sprintf('しきい値 %.4g', t), 'Color', app.ROTATION_THRESHOLD_COLOR, 'LineWidth', 1.5, ...
+                    'LabelHorizontalAlignment', 'left', 'HandleVisibility', 'off');
+            end
+            ylabel(ax, metricLabel);
+            ax.YColor = app.ROTATION_POINT_COLOR;
+            ylim(ax, [0, max([values(isfinite(values)); eps]) * 1.05]);
+            if c.rotationCumulative.Value
+                [rates, ok] = parseNumbers(c.rotationCumulativeRates.Value);
+                rateError = '累積率は 0〜100 の数を空白で区切って入れてください（例：50 80）。';
+                if ~ok || any(rates < 0 | rates > 100)
+                    c.rotationError.Text = rateError;   % 数でない・範囲外の累積率は描かない
+                elseif strcmp(c.rotationError.Text, rateError)
+                    c.rotationError.Text = '';
+                end
+                rates = rates(ok & rates >= 0 & rates <= 100);
+                cumulative = alignest.radialCumulative(radius, values, rates);
+                yyaxis(ax, 'right');
+                hold(ax, 'on');   % 累積の線に、累積率の点を足す（左の目盛りの点は yyaxis で別に残る）
+                plot(ax, cumulative.radiusMm, cumulative.percent, '-', 'Color', app.ROTATION_CUMULATIVE_COLOR, ...
+                    'LineWidth', 1.8, 'DisplayName', '累積（半径 0 から外へ 3σ を足す）');
+                xUpper = max([app.Settings.data.waferRadiusMm; radius(isfinite(radius))]);
+                for k = find(isfinite(cumulative.rateRadiiMm))
+                    rate = cumulative.rates(k);
+                    radiusMm = cumulative.rateRadiiMm(k);
+                    xline(ax, radiusMm, ':', 'Color', app.ROTATION_CUMULATIVE_COLOR, 'LineWidth', 1.5, ...
+                        'HandleVisibility', 'off');
+                    plot(ax, radiusMm, rate, 'o', 'MarkerSize', 7, 'MarkerFaceColor', app.ROTATION_CUMULATIVE_COLOR, ...
+                        'MarkerEdgeColor', [1, 1, 1], 'HandleVisibility', 'off');
+                    nearRight = radiusMm > 0.7 * xUpper;   % 右端の近くは、文字を点の左に書く（枠からはみ出さないように）
+                    text(ax, radiusMm + ternary(nearRight, -0.02, 0.02) * xUpper, rate, ...
+                        sprintf('累積 %g%%：%.1f mm', rate, radiusMm), 'HorizontalAlignment', ternary(nearRight, 'right', 'left'), ...
+                        'VerticalAlignment', 'middle', 'Color', app.ROTATION_CUMULATIVE_COLOR, 'FontWeight', 'bold', ...
+                        'BackgroundColor', [1, 1, 1], 'Margin', 1, 'HitTest', 'off');
+                end
+                hold(ax, 'off');
+                ylim(ax, [0, 100]);
+                ylabel(ax, '累積 [%]');
+                ax.YColor = app.ROTATION_CUMULATIVE_COLOR;
+                yyaxis(ax, 'left');
+                legend(ax, 'Location', 'northwest', 'Interpreter', 'none', 'Box', 'off');
+            end
+            xlim(ax, [0, max([app.Settings.data.waferRadiusMm; radius(isfinite(radius))])]);
+            xlabel(ax, ternary(variability.level == "shot", 'Shot 中心の半径 [mm]', 'Wafer 中心からの半径 [mm]'));
+            title(ax, sprintf('半径と 3σ（%d Wafer）', variability.nWafers), 'Interpreter', 'none');
         end
 
         function drawRotationMaps(app)

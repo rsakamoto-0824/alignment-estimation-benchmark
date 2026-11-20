@@ -92,8 +92,15 @@ classdef TestVarianceDecomposition < matlab.unittest.TestCase
             expected = result.table.sigma3(result.table.category == "OP-M1-ALIGN" & result.table.axis == "X" & ...
                 result.table.component == string(first.("ばらつき")));
             testCase.verifyEqual(first.("3σ [nm]"), round(expected, 4), 'AbsTol', 1e-9);
-            testCase.verifyEqual(numel(c.varianceAxes(1).Children(arrayfun(@(item) isa(item, 'matlab.graphics.chart.primitive.Bar'), ...
-                c.varianceAxes(1).Children))), 5, "3σ：4つの段と全体の棒を並べる");
+            bars = c.varianceAxes(1).Children(arrayfun(@(item) isa(item, 'matlab.graphics.chart.primitive.Bar'), ...
+                c.varianceAxes(1).Children));
+            testCase.verifyEqual(numel(bars), 4, "3σ：4つの段の棒");
+            testCase.verifyEqual(string(bars(1).BarLayout), "stacked", "3σ も段をそのまま積み上げる");
+            total = findobj(c.varianceAxes(1), 'Type', 'line', 'DisplayName', '全体の 3σ');
+            testCase.verifyNotEmpty(total, "全体の 3σ を ◆ で重ねる");
+            testCase.verifyEqual(string(total(1).Marker), "diamond");
+            totals = result.totals(result.totals.axis == "X", :);
+            testCase.verifyEqual(total(1).YData(:), totals.sigma3, 'AbsTol', 1e-9);
             app.setVarianceQuantity("data", "variance");
             names = string(c.varianceTable.Data.Properties.VariableNames);
             testCase.verifyTrue(any(names == "分散 [nm²]") && ~any(names == "3σ [nm]"));

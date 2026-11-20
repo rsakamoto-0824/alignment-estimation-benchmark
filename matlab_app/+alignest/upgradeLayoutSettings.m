@@ -1,5 +1,5 @@
 function sampling = upgradeLayoutSettings(sampling)
-%UPGRADELAYOUTSETTINGS 以前の学習 Shot の選び方「手動・人の選択」（manual）と「ファイルの優先順」（file）を、
+%UPGRADELAYOUTSETTINGS 以前の計測点の選び方「手動・人の選択」（manual）と「ファイルの優先順」（file）を、
 %   「Excel ファイルで指定」（excel。sampling.layoutPlans の行。alignest.parseLayoutPlans）に直す。
 %   sampling = alignest.upgradeLayoutSettings(sampling)
 %   - manual：manualPlans の1行が1パターン（「名前: shotNo…」。名前が無ければ「手動1」…）。shotNo は空白・カンマ区切り

@@ -1,5 +1,6 @@
 classdef TestMeasurementPlan < matlab.unittest.TestCase
-    %TESTMEASUREMENTPLAN 計測率による学習 Shot 数、必ず計測する Shot（指定・最外周）と拡張 I 最適計画、Sobol 列の計画を確かめる。
+    %TESTMEASUREMENTPLAN 計測率による学習 Shot 数、必ず計測する Shot（指定・最外周）と拡張 I 最適計画、Sobol 列・
+    %   ポアソンディスクの計画、計測点の選び方の単位（Shot 単位・Mark 単位）を確かめる。
 
     properties
         Data
@@ -168,6 +169,102 @@ classdef TestMeasurementPlan < matlab.unittest.TestCase
             testCase.verifyError(@() alignest.sobolShots([0, 0; 1, 1], 3), 'alignest:sobolShots');
         end
 
+        function poissonDiskPlanKeepsPointsApart(testCase)
+            % ポアソンディスク：選んだ点どうしの距離が d 以上（乱数より近づきすぎない）。同じ乱数なら同じ点、必ず選ぶ点は先に。
+            % Shot 単位（poisson）と Mark 単位（markpoisson）の学習パターン。どちらもランダムと同じく繰り返し回数だけ作る
+            [gx, gy] = meshgrid(-140:10:140);
+            points = [gx(:), gy(:)];
+            points = points(hypot(points(:, 1), points(:, 2)) < 145, :);
+            stream = @() RandStream('mt19937ar', 'Seed', 1);
+            chosen = alignest.poissonDiskSelect(points, 30, false(size(points, 1), 1), stream());
+            testCase.verifyEqual(numel(unique(chosen)), 30);
+            testCase.verifyEqual(alignest.poissonDiskSelect(points, 30, [], stream()), chosen, "同じ乱数なら同じ点");
+            random = randperm(stream(), size(points, 1), 30);
+            testCase.verifyGreaterThan(minimumGap(points(chosen, :)), 2 * minimumGap(points(random, :)), ...
+                "乱数で選ぶより点どうしが離れる");
+            fixed = false(size(points, 1), 1);
+            fixed([5, 9]) = true;
+            withFixed = alignest.poissonDiskSelect(points, 10, fixed, stream());
+            testCase.verifyEqual(withFixed(1:2), [5; 9], "必ず選ぶ点を先に入れる");
+            testCase.verifyEqual(alignest.poissonDiskSelect(points, 2, fixed, stream()), [5; 9]);
+            testCase.verifyError(@() alignest.poissonDiskSelect(points(1:3, :), 4), 'alignest:poissonDisk');
+            % Shot 単位：必ず計測する Shot を入れ、計測しない Shot は選ばない
+            unit = testCase.Data.units(1);
+            sampling = alignest.defaultSettings().sampling;
+            sampling.method = ["random", "poisson", "markpoisson"];
+            sampling.nShots = 20;
+            sampling.randomRepeats = 2;
+            specs = alignest.buildPlanSpecs(sampling);
+            testCase.verifyEqual(string({specs.label}), ["ランダム 20 Shot #1", "ランダム 20 Shot #2", ...
+                "ポアソン 20 Shot #1", "ポアソン 20 Shot #2", "Markポアソン 1 点/Shot #1", "Markポアソン 1 点/Shot #2"]);
+            sampling.requiredShots = 50;
+            sampling.excludedShots = 1;
+            plans = arrayfun(@(spec) alignest.planTrainingShots(unit, spec, sampling, 150), specs);
+            testCase.verifyTrue(all([plans.ok]));
+            poisson = plans(3);
+            testCase.verifyEqual(poisson.nShots, 20);
+            testCase.verifyTrue(ismember(50, poisson.shotNos) && ~ismember(1, poisson.shotNos));
+            testCase.verifyNotEqual(plans(4).shotNos, poisson.shotNos, "繰り返しごとに別の配置");
+            gap = @(plan) minimumGap([unit.shots.Xmm(plan.shotIndex), unit.shots.Ymm(plan.shotIndex)]);
+            testCase.verifyGreaterThan(gap(poisson), gap(plans(1)), "ランダムより Shot どうしが離れる");
+            % Mark 単位：Mark の数は 1 Shot あたりの数 × 選べる Mark のある Shot の数（計測しない Shot 1 を除く）、
+            % Wafer 中心に最も近い Mark を必ず計測する
+            markPlan = plans(5);
+            candidates = nnz(unit.shots.nValidX + unit.shots.nValidY > 0);
+            testCase.verifyEqual(markPlan.nMarks, candidates - 1);
+            testCase.verifyEqual(markPlan.type, "markpoisson");
+            fixedMarks = alignest.markPlanFixedMarks(unit, sampling);
+            testCase.verifyTrue(all(ismember(fixedMarks, markPlan.markIndex)), "必ず計測する Mark");
+            testCase.verifyFalse(any(unit.marks.shotNo(markPlan.markIndex) == 1), "計測しない Shot の Mark は選ばない");
+            testCase.verifyTrue(ismember("markpoisson", alignest.markPlanTypes()));
+        end
+
+        function samplingUnitSelectsShotOrMarkMethods(testCase)
+            % 計測点の選び方の単位：Shot 単位・Mark 単位で選べる選び方。設定の単位は選び方から決め、両方が混ざった以前の
+            % 設定は単位（無ければ Shot 単位）の選び方だけを残す
+            [shotMethods, shotNames] = alignest.samplingUnitMethods("shot");
+            testCase.verifyEqual(shotMethods, ["ioptimal", "doptimal", "random", "sobol", "poisson", "excel"]);
+            testCase.verifyEqual(shotNames(5), "ポアソンディスク");
+            testCase.verifyEqual(alignest.samplingUnitMethods("mark"), ["mark", "markd", "markrandom", "markpoisson", "excel"]);
+            normalized = alignest.normalizeSamplingUnit(struct("method", ["mark", "excel"]));
+            testCase.verifyEqual([normalized.unit, normalized.method], ["mark", "mark", "excel"]);
+            normalized = alignest.normalizeSamplingUnit(struct("unit", "mark", "method", ["ioptimal", "mark"]));
+            testCase.verifyEqual([normalized.unit, normalized.method], ["mark", "mark"], "混ざっていたら単位の選び方だけ");
+            normalized = alignest.normalizeSamplingUnit(struct("method", ["ioptimal", "mark"]));
+            testCase.verifyEqual([normalized.unit, normalized.method], ["shot", "ioptimal"]);
+            normalized = alignest.normalizeSamplingUnit(struct("unit", "mark", "method", "excel"));
+            testCase.verifyEqual([normalized.unit, normalized.method], ["mark", "excel"], "Excel だけなら単位はそのまま");
+            normalized = alignest.normalizeSamplingUnit(struct("unit", "mark", "method", strings(1, 0)));
+            testCase.verifyEqual([normalized.unit, normalized.method], ["mark", "mark"], "空ならその単位の I 最適");
+            % 画面：単位を変えると一覧が変わり、Excel で指定は選んだまま、別の単位の選び方しか無ければ I 最適
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            c = app.Controls;
+            testCase.verifyEqual(string(c.samplingUnit.Value), "shot");
+            testCase.verifyEqual(string(c.samplingMethod.ItemsData), shotMethods);
+            c.samplingMethod.Value = {'poisson', 'excel'};
+            c.samplingMethod.ValueChangedFcn([], []);
+            testCase.verifyEqual(string(c.randomRepeats.Enable), "on", "ポアソンディスクは繰り返す");
+            testCase.verifyEqual(string(c.zoneEdges.Enable), "off", "ポアソンディスクは同心円の制約を使わない");
+            testCase.verifyEqual(string(c.requiredShots.Enable), "on");
+            c.samplingUnit.Value = 'mark';
+            c.samplingUnit.ValueChangedFcn([], []);
+            testCase.verifyEqual(string(c.samplingMethod.Items), ["I 最適", "D 最適", "制約つきランダム", "ポアソンディスク", ...
+                "Excel ファイルで指定"]);
+            testCase.verifyEqual(app.Settings.sampling.unit, "mark");
+            testCase.verifyEqual(app.Settings.sampling.method, ["mark", "excel"]);
+            c.samplingMethod.Value = {'markpoisson'};
+            c.samplingMethod.ValueChangedFcn([], []);
+            testCase.verifyEqual(string({c.markBalance.Enable, c.markRequirePerShot.Enable, c.markPerShot.Enable, ...
+                c.requiredMarks.Enable}), ["off", "off", "on", "on"], "Mark 単位のポアソンディスクは Mark 番号などの制約を使わない");
+            settings = app.Settings;
+            settings.sampling.method = ["ioptimal", "markrandom"];
+            settings.sampling.unit = "mark";
+            app.setSettings(settings);
+            testCase.verifyEqual(string(c.samplingUnit.Value), "mark");
+            testCase.verifyEqual(app.Settings.sampling.method, "markrandom", "画面に出せない選び方は設定からも外す");
+        end
+
         function efficiencyIsRelativeToMeasuringEveryShot(testCase)
             % 全計測（候補の全 Mark）では情報行列が単位行列なので I 効率・D 効率は 1
             unit = testCase.Data.units(1);
@@ -213,4 +310,11 @@ sampling.method = "manual";
 spec = struct("type", "manual", "nShots", numel(plan.shotIndex), "repeat", 1, "label", "", "group", "", ...
     "shotNos", unit.shots.shotNo(plan.shotIndex).');
 value = alignest.planTrainingShots(unit, spec, sampling, 150).criterionI;
+end
+
+function gap = minimumGap(points)
+% 点どうしの最も近い距離
+distances = hypot(points(:, 1) - points(:, 1).', points(:, 2) - points(:, 2).');
+distances(1:size(points, 1) + 1:end) = Inf;
+gap = min(distances(:));
 end

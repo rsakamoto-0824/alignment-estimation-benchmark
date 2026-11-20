@@ -83,7 +83,7 @@ classdef TestFilterExtendTiming < matlab.unittest.TestCase
                 testCase.verifyFail("設定を変えたのに追加できてしまった");
             catch err
                 testCase.verifyEqual(err.identifier, 'alignest:extend');
-                testCase.verifyTrue(contains(err.message, "学習 Shot の選び方・制約") && contains(err.message, "評価の条件"));
+                testCase.verifyTrue(contains(err.message, "計測点の選び方・制約") && contains(err.message, "評価の条件"));
             end
             testCase.verifyEmpty(alignest.extensionConflicts(settings, more), "手法と学習 Shot 数は足してよい");
         end
