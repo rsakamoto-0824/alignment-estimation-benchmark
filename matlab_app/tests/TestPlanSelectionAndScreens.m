@@ -173,12 +173,17 @@ classdef TestPlanSelectionAndScreens < matlab.unittest.TestCase
             app.setSettings(settings);
             testCase.verifyEqual(string(c.samplingUnit.Value), "mark");
             testCase.verifyEqual(string(c.markCountNote.Text), "Wafer 中心に最も近い Mark は必ず計測します。");
-            c.markCountBy.Value = 'total';
-            c.markCountBy.ValueChangedFcn([], []);
-            testCase.verifyEqual(string({c.markPerShot.Enable, c.markCountStart.Enable}), ["off", "on"]);
+            % 学習 Shot/Mark 数：Mark 単位では Mark 数・計測率・1 Shot あたりの Mark 数から選ぶ
+            testCase.verifyEqual(string(c.countBy.ItemsData), ["count", "rate", "perShot"]);
+            testCase.verifyEqual(string(c.countUnitLabel.Text), "Mark 数");
+            c.countBy.Value = 'count';
+            c.countBy.ValueChangedFcn([], []);
+            testCase.verifyEqual(string({c.markPerShot.Enable, c.nShotsStart.Enable}), ["off", "on"]);
             testCase.verifyEqual(app.Settings.sampling.markCountBy, "total");
-            c.markCountBy.Value = 'perShot';
-            c.markCountBy.ValueChangedFcn([], []);
+            testCase.verifyEqual(c.nShotsStart.Value, app.Settings.sampling.markCountStart, "開始・終了・刻みは Mark 数");
+            c.countBy.Value = 'perShot';
+            c.countBy.ValueChangedFcn([], []);
+            testCase.verifyEqual(app.Settings.sampling.markCountBy, "perShot");
             c.measurePlan.Value = c.measurePlan.Items(1);
             app.drawMeasurementMap(1);
             testCase.verifyEqual(size(c.measureStatistics.Data, 2), 8);

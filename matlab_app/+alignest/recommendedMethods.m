@@ -9,6 +9,7 @@ if nargin < 1
     selection = "recommended";
 end
 methods.featureSets = "XYR";
+methods.continuousColumns = strings(1, 0);   % 説明変数に足す連続値の列（GPR・TPS・RBF・Kriging・GAM。alignest.continuousFeatures）
 methods.gpr.enabled = true;
 methods.gpr.kernels = "matern52";
 methods.gpr.factorModes = ["none", "basis", "additive"];

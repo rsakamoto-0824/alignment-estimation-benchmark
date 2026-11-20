@@ -320,7 +320,7 @@ classdef (Abstract) RotationTab < appui.Core
 
         function exportRotationMapsTo(app, filePath, selection)
             %EXPORTROTATIONMAPSTO 選んだ計測マップ（selection：マップの番号。省略すると「計測マップ」のタブで選んでいる
-            %   マップ）を Excel（.xlsx）に書き出す（alignest.exportRotationMaps。「2. 評価の設定」の「Excel ファイルで指定」で
+            %   マップ）を Excel（.xlsx）に書き出す（alignest.exportRotationMaps。「2. 評価の設定」の「Excel 取込」で
             %   そのまま読める形）。
             maps = app.RotationMaps;
             if isempty(maps)
@@ -484,7 +484,7 @@ classdef (Abstract) RotationTab < appui.Core
             c.rotationRunButton.Enable = 'off';
             c.rotationExport = uibutton(actions, 'Text', '計測マップを書き出す…', 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~, ~) app.onExportRotationMaps(), 'Tooltip', ['「計測マップ」のタブで選んだマップを' ...
-                ' Excel に書き出します（「2. 評価の設定」の「Excel ファイルで指定」で読める形）。']);
+                ' Excel に書き出します（「2. 評価の設定」の「Excel 取込」で読める形）。']);
             c.rotationInfo = uilabel(left, 'WordWrap', 'on', 'Text', '');
             place(c.rotationInfo, 13, 1);
             c.rotationError = errorLabel(app, left, 14, 1);
@@ -616,7 +616,7 @@ classdef (Abstract) RotationTab < appui.Core
             % 目的変数：ファイルの数値の列（1. データ読込の計測データ・このタブの Excel・CSV のとき）
             names = strings(1, 0);
             if any(string(c.rotationSource.Value) == ["data", "file"])
-                names = numericAttributes(rotationUnits(app));
+                names = alignest.numericColumns(rotationUnits(app));
             end
             setChoices(c.rotationTarget, ["（なし）", names], [{''}, reshape(cellstr(names), 1, [])]);
             refreshRotationGroups(app);
@@ -1400,26 +1400,6 @@ switch kind
         yes = wafer.operation + "|" + wafer.eqpId == value;
     otherwise
         yes = true;
-end
-end
-
-function names = numericAttributes(units)
-% 数値の「その他の列」（空でない値の 90% 以上が数として読める列）
-MIN_NUMERIC_RATIO = 0.9;
-names = strings(1, 0);
-if isempty(units)
-    return
-end
-allNames = string(units(1).attributeNames);
-for j = 1:numel(allNames)
-    values = strings(0, 1);
-    for u = 1:numel(units)
-        values = [values; units(u).marks.attributes(:, j)]; %#ok<AGROW>
-    end
-    values = values(strlength(strtrim(values)) > 0);
-    if ~isempty(values) && mean(isfinite(str2double(values))) >= MIN_NUMERIC_RATIO
-        names(end + 1) = allNames(j); %#ok<AGROW>
-    end
 end
 end
 

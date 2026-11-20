@@ -166,7 +166,7 @@ classdef TestMeasurementPlan < matlab.unittest.TestCase
             specs = alignest.buildPlanSpecs(sampling);
             testCase.verifyEqual([specs([specs.type] == "sobol").label], ["Sobol 10 Shot", "Sobol 20 Shot"]);
             testCase.verifyEqual([specs([specs.type] == "sobol").group], ["Sobol 10 Shot", "Sobol 20 Shot"]);
-            testCase.verifyError(@() alignest.sobolShots([0, 0; 1, 1], 3), 'alignest:sobolShots');
+            testCase.verifyError(@() alignest.sobolSelect([0, 0; 1, 1], 3), 'alignest:sobolSelect');
         end
 
         function poissonDiskPlanKeepsPointsApart(testCase)
@@ -195,18 +195,19 @@ classdef TestMeasurementPlan < matlab.unittest.TestCase
             sampling.nShots = 20;
             sampling.randomRepeats = 2;
             specs = alignest.buildPlanSpecs(sampling);
-            testCase.verifyEqual(string({specs.label}), ["ランダム 20 Shot #1", "ランダム 20 Shot #2", ...
-                "ポアソン 20 Shot #1", "ポアソン 20 Shot #2", "Markポアソン 1 点/Shot #1", "Markポアソン 1 点/Shot #2"]);
+            testCase.verifyEqual(string({specs.label}), ["ポアソン 20 Shot #1", "ポアソン 20 Shot #2", ...
+                "ランダム 20 Shot #1", "ランダム 20 Shot #2", "Markポアソン 1 点/Shot #1", "Markポアソン 1 点/Shot #2"], ...
+                "画面の表示順（ポアソンディスクがランダムの前）");
             sampling.requiredShots = 50;
             sampling.excludedShots = 1;
             plans = arrayfun(@(spec) alignest.planTrainingShots(unit, spec, sampling, 150), specs);
             testCase.verifyTrue(all([plans.ok]));
-            poisson = plans(3);
+            poisson = plans(1);
             testCase.verifyEqual(poisson.nShots, 20);
             testCase.verifyTrue(ismember(50, poisson.shotNos) && ~ismember(1, poisson.shotNos));
-            testCase.verifyNotEqual(plans(4).shotNos, poisson.shotNos, "繰り返しごとに別の配置");
+            testCase.verifyNotEqual(plans(2).shotNos, poisson.shotNos, "繰り返しごとに別の配置");
             gap = @(plan) minimumGap([unit.shots.Xmm(plan.shotIndex), unit.shots.Ymm(plan.shotIndex)]);
-            testCase.verifyGreaterThan(gap(poisson), gap(plans(1)), "ランダムより Shot どうしが離れる");
+            testCase.verifyGreaterThan(gap(poisson), gap(plans(3)), "ランダムより Shot どうしが離れる");
             % Mark 単位：Mark の数は 1 Shot あたりの数 × 選べる Mark のある Shot の数（計測しない Shot 1 を除く）、
             % Wafer 中心に最も近い Mark を必ず計測する
             markPlan = plans(5);
@@ -223,9 +224,14 @@ classdef TestMeasurementPlan < matlab.unittest.TestCase
             % 計測点の選び方の単位：Shot 単位・Mark 単位で選べる選び方。設定の単位は選び方から決め、両方が混ざった以前の
             % 設定は単位（無ければ Shot 単位）の選び方だけを残す
             [shotMethods, shotNames] = alignest.samplingUnitMethods("shot");
-            testCase.verifyEqual(shotMethods, ["ioptimal", "doptimal", "random", "sobol", "poisson", "excel"]);
-            testCase.verifyEqual(shotNames(5), "ポアソンディスク");
-            testCase.verifyEqual(alignest.samplingUnitMethods("mark"), ["mark", "markd", "markrandom", "markpoisson", "excel"]);
+            testCase.verifyEqual(shotMethods, ["ioptimal", "doptimal", "sobol", "poisson", "random", "excel"]);
+            testCase.verifyEqual(shotNames, ["I 最適", "D 最適", "Sobol 列", "ポアソンディスク", "ランダム", "Excel 取込"], ...
+                "表示順：I・D 最適、Sobol 列、ポアソンディスク、ランダム、Excel 取込");
+            [markMethods, markNames] = alignest.samplingUnitMethods("mark");
+            testCase.verifyEqual(markMethods, ["mark", "markd", "marksobol", "markpoisson", "markrandom", "excel"]);
+            testCase.verifyEqual(markNames, shotNames, "アルゴリズムは粒度によらず共通");
+            testCase.verifyEqual(alignest.convertSamplingMethods(["ioptimal", "poisson", "mark"], "mark"), ["mark", "markpoisson"]);
+            testCase.verifyEqual(alignest.convertSamplingMethods(["marksobol", "excel"], "shot"), ["sobol", "excel"]);
             normalized = alignest.normalizeSamplingUnit(struct("method", ["mark", "excel"]));
             testCase.verifyEqual([normalized.unit, normalized.method], ["mark", "mark", "excel"]);
             normalized = alignest.normalizeSamplingUnit(struct("unit", "mark", "method", ["ioptimal", "mark"]));
@@ -245,14 +251,14 @@ classdef TestMeasurementPlan < matlab.unittest.TestCase
             c.samplingMethod.Value = {'poisson', 'excel'};
             c.samplingMethod.ValueChangedFcn([], []);
             testCase.verifyEqual(string(c.randomRepeats.Enable), "on", "ポアソンディスクは繰り返す");
-            testCase.verifyEqual(string(c.zoneEdges.Enable), "off", "ポアソンディスクは同心円の制約を使わない");
+            testCase.verifyEqual(string({c.zoneConstraint.Enable, c.zoneEdges.Enable, c.quadrants.Enable}), ["on", "on", "on"], ...
+                "③ 制約はポアソンディスクにも効く");
             testCase.verifyEqual(string(c.requiredShots.Enable), "on");
             c.samplingUnit.Value = 'mark';
             c.samplingUnit.ValueChangedFcn([], []);
-            testCase.verifyEqual(string(c.samplingMethod.Items), ["I 最適", "D 最適", "制約つきランダム", "ポアソンディスク", ...
-                "Excel ファイルで指定"]);
+            testCase.verifyEqual(string(c.samplingMethod.Items), shotNames, "粒度を変えても同じアルゴリズムの一覧");
             testCase.verifyEqual(app.Settings.sampling.unit, "mark");
-            testCase.verifyEqual(app.Settings.sampling.method, ["mark", "excel"]);
+            testCase.verifyEqual(app.Settings.sampling.method, ["markpoisson", "excel"], "選んだアルゴリズムはそのまま");
             c.samplingMethod.Value = {'markpoisson'};
             c.samplingMethod.ValueChangedFcn([], []);
             testCase.verifyEqual(string({c.markBalance.Enable, c.markRequirePerShot.Enable, c.markPerShot.Enable, ...
@@ -262,7 +268,64 @@ classdef TestMeasurementPlan < matlab.unittest.TestCase
             settings.sampling.unit = "mark";
             app.setSettings(settings);
             testCase.verifyEqual(string(c.samplingUnit.Value), "mark");
-            testCase.verifyEqual(app.Settings.sampling.method, "markrandom", "画面に出せない選び方は設定からも外す");
+            testCase.verifyEqual(app.Settings.sampling.method, ["mark", "markrandom"], "別の粒度の選び方は同じアルゴリズムに直す");
+            c.zoneConstraint.Value = false;
+            c.zoneConstraint.ValueChangedFcn([], []);
+            testCase.verifyFalse(app.Settings.sampling.constraints.radialZones);
+            testCase.verifyEqual(string(c.zoneEdges.Enable), "off");
+            testCase.verifyEmpty(alignest.zoneEdgesMm(app.Settings.sampling, 150), "半径の制約を外すと区切りを使わない");
+        end
+
+        function constraintsApplyToEveryAlgorithm(testCase)
+            % ③ 制約（半径・象限・Scan 方向）は、Shot 単位・Mark 単位のすべてのアルゴリズム（Excel で指定のほか）で使う。
+            % Sobol 列・ポアソンディスクは区分ごとの数の上限を超える点と、選ぶと下限に届かなくなる点を選ばない
+            labels = [ones(6, 1); 2 * ones(6, 1)];
+            quota = alignest.GroupQuota(labels, 4, 0, false(12, 1));
+            testCase.verifyTrue(quota.fits(1, 3));
+            quota = quota.add(1);
+            quota = quota.add(2);
+            testCase.verifyFalse(quota.fits(3, 1), "上限 2 の区分は満杯");
+            testCase.verifyTrue(quota.fits(7, 1));
+            testCase.verifyEqual(quota.fitsAll(1).', [false(1, 6), true(1, 6)]);
+            testCase.verifyEqual(quota.violation(), 2, "区分 2 が下限 2 に 2 足りない");
+            % 片側に固まった並び：制約なしなら左の点、制約ありなら左右に半分ずつ
+            points = [(1:10).', zeros(10, 1); (101:110).', zeros(10, 1)];
+            sides = [ones(10, 1); 2 * ones(10, 1)];
+            [chosen, violation] = alignest.poissonDiskSelect(points, 6, [], RandStream('mt19937ar', 'Seed', 4), ...
+                labels=sides, slack=0);
+            testCase.verifyEqual(accumarray(sides(chosen), 1).', [3, 3]);
+            testCase.verifyEqual(violation, 0);
+            [chosen, violation] = alignest.sobolSelect(points - [55, 0], 6, [], 150, labels=sides, slack=0);
+            testCase.verifyEqual(accumarray(sides(chosen), 1).', [3, 3]);
+            testCase.verifyEqual(violation, 0);
+            % サンプルデータ：どの計画も違反なく、Mark 単位でも 4象限・Scan 方向の区分ごとの数がそろう
+            unit = testCase.Data.units(1);
+            sampling = alignest.defaultSettings().sampling;
+            sampling.nShots = 20;
+            sampling.randomRepeats = 1;
+            sampling.exchangeStarts = 2;
+            sampling.method = ["sobol", "poisson", "mark", "marksobol", "markpoisson"];
+            specs = alignest.buildPlanSpecs(sampling);
+            testCase.verifyEqual(string({specs.label}), ["Sobol 20 Shot", "ポアソン 20 Shot #1", "Mark最適 1 点/Shot", ...
+                "MarkSobol 1 点/Shot", "Markポアソン 1 点/Shot #1"]);
+            plans = arrayfun(@(spec) alignest.planTrainingShots(unit, spec, sampling, 150), specs);
+            testCase.verifyTrue(all([plans.ok]));
+            testCase.verifyEqual([plans.violation], zeros(1, 5));
+            candidates = find(unit.shots.nValidX + unit.shots.nValidY > 0);
+            marks = find(ismember(unit.marks.shotIndex, candidates) & (unit.marks.validX | unit.marks.validY));
+            quadrantOf = @(x, y) mod(floor(mod(atan2(y, x), 2 * pi) / (pi / 2)), 4) + 1;
+            for k = 4:5
+                chosenMarks = plans(k).markIndex;
+                counts = accumarray(quadrantOf(unit.marks.x(chosenMarks), unit.marks.y(chosenMarks)), 1, [4, 1]);
+                sizes = accumarray(quadrantOf(unit.marks.x(marks), unit.marks.y(marks)), 1, [4, 1]);
+                target = numel(chosenMarks) * sizes / numel(marks);
+                testCase.verifyTrue(all(counts >= floor(target) - 1 & counts <= ceil(target) + 1), plans(k).label);
+            end
+            sampling.constraints.quadrants = false;
+            sampling.constraints.scanDirection = false;
+            sampling.constraints.radialZones = false;
+            free = alignest.planTrainingShots(unit, specs(1), sampling, 150);
+            testCase.verifyNotEqual(free.shotNos, plans(1).shotNos, "制約を外すと Sobol 列の配置が変わる");
         end
 
         function efficiencyIsRelativeToMeasuringEveryShot(testCase)

@@ -289,7 +289,7 @@ classdef TestEvaluation < matlab.unittest.TestCase
             testCase.verifyError(@() alignest.shotCountList(10.5, 20, 1), 'alignest:nShots');
             testCase.verifyError(@() alignest.shotCountList(1, 1000, 1), 'alignest:nShots');
             settings = alignest.defaultSettings();
-            testCase.verifyEqual(settings.sampling.nShots, [10, 15, 20, 25, 30, 35, 40]);
+            testCase.verifyEqual(settings.sampling.nShots, 20:5:80, "初期値は 20〜80（刻み 5）");
             sampling = settings.sampling;
             sampling.nShots = 30;
             sampling = alignest.syncShotCounts(sampling);

@@ -274,7 +274,7 @@ end
 function label = samplingLabel(sampling)
 % 計測点の選び方の説明（複数選んだときは「、」でつなぐ）
 try
-    sampling = alignest.upgradeLayoutSettings(sampling);   % 以前の手動・ファイルの優先順は「Excel ファイルで指定」に
+    sampling = alignest.upgradeLayoutSettings(sampling);   % 以前の手動・ファイルの優先順は「Excel 取込」に
 catch
     % 直せない以前の設定は、選び方の名前のまま書く
 end
@@ -300,6 +300,8 @@ for method = methods
         case "markrandom"
             parts(end + 1) = sprintf("Mark 単位の制約つきランダム（%d 回。", sampling.randomRepeats) + markText(sampling) + ...
                 "）"; %#ok<AGROW>
+        case "marksobol"
+            parts(end + 1) = "Mark 単位の Sobol 列（" + markText(sampling) + "）"; %#ok<AGROW>
         case "markpoisson"
             parts(end + 1) = sprintf("Mark 単位のポアソンディスク（%d 回。", sampling.randomRepeats) + markText(sampling) + ...
                 "）"; %#ok<AGROW>
@@ -349,7 +351,7 @@ end
 end
 
 function text = excelText(sampling)
-% 「Excel ファイルで指定」の説明（ファイル名と、パターン・優先順の数。Mark 単位か）
+% 「Excel 取込」の説明（ファイル名と、パターン・優先順の数。Mark 単位か）
 plans = alignest.parseLayoutPlans(string(sampling.layoutPlans));
 kinds = string({plans.kind});
 markLevel = ~isempty(plans) && ~isempty(plans(1).markNos);
@@ -357,6 +359,6 @@ fileName = "";
 if isfield(sampling, "layoutFile") && string(sampling.layoutFile) ~= ""
     fileName = string(sampling.layoutFile) + "、";
 end
-text = sprintf("Excel ファイルで指定（%sパターン %d・優先順 %d%s）", fileName, nnz(kinds == "pattern"), ...
+text = sprintf("Excel 取込（%sパターン %d・優先順 %d%s）", fileName, nnz(kinds == "pattern"), ...
     nnz(kinds == "priority"), ternary(markLevel, "。Mark 単位", ""));
 end

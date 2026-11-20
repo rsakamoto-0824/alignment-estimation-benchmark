@@ -33,27 +33,25 @@ settings.factors.y.mark = true;
 settings.factors.y.shotRowParity = false;
 settings.factors.y.columns = strings(1, 0);
 
-% 計測点（学習に使う Shot・Mark）の選び方
-% 選び方（複数選ぶと、同じ評価の中で選び方どうしを比べる。alignest.buildPlanSpecs）：
-% Shot 単位：ioptimal（制約付き I 最適）／doptimal（制約付き D 最適）／random（制約つきランダム）／sobol（Sobol 列：Wafer
-% 上に偏りなく散らばる点に近い Shot）／poisson（ポアソンディスク：Shot どうしの距離が d 以上になるように乱数の順で選ぶ。
-% randomRepeats 回）
-% Mark 単位：mark（I 最適）／markd（D 最適）／markrandom（制約つきランダム。randomRepeats 回）／markpoisson（ポアソン
-% ディスク。randomRepeats 回）
-% どちらの単位にも：excel（Excel ファイルで指定：パターン・優先順。markNo の列があれば Mark 単位）
-settings.sampling.unit = "shot";        % 計測点の単位：shot（Shot 単位）／mark（Mark 単位）。画面ではこの単位の選び方だけを選べる
+% 計測点（学習に使う Shot・Mark）の選び方：① データの粒度（unit）・② アルゴリズム（method。複数選ぶと、同じ評価の中で
+% 選び方どうしを比べる。alignest.buildPlanSpecs）・③ 制約（constraints の radialZones・quadrants・scanDirection）
+% アルゴリズム（Shot 単位の値／Mark 単位の値。alignest.samplingUnitMethods）：I 最適（ioptimal／mark）・D 最適
+% （doptimal／markd）・ランダム（random／markrandom。randomRepeats 回）・Sobol 列（sobol／marksobol：Wafer 上に偏り
+% なく散らばる点に近い点）・ポアソンディスク（poisson／markpoisson：点どうしの距離が d 以上になるように乱数の順で選ぶ。
+% randomRepeats 回）・Excel 取込（excel：パターン・優先順。markNo の列があれば Mark 単位）
+settings.sampling.unit = "shot";        % データの粒度：shot（Shot 単位）／mark（Mark 単位）。画面ではこの粒度の選び方を選ぶ
 settings.sampling.method = "ioptimal";
-settings.sampling.nShotsStart = 10;     % 学習 Shot 数は 開始・終了・刻み で決める（I 最適・ランダム）
-settings.sampling.nShotsEnd = 40;
+settings.sampling.nShotsStart = 20;     % 学習 Shot 数（Shot 単位）は 開始・終了・刻み で決める
+settings.sampling.nShotsEnd = 80;
 settings.sampling.nShotsStep = 5;
-settings.sampling.nShots = alignest.shotCountList(10, 40, 5);  % 開始・終了・刻みから作った並び（計算はこれを使う）
+settings.sampling.nShots = alignest.shotCountList(20, 80, 5);  % 開始・終了・刻みから作った並び（計算はこれを使う）
 settings.sampling.countBy = "shots";    % 学習 Shot 数の決め方：shots（Shot 数）／rate（計測率 [%]。Wafer の候補 Shot 数に対する割合）
 settings.sampling.rateStart = 10;       % 計測率 [%] の開始・終了・刻み（countBy = "rate" のとき。alignest.measurementRateList）
 settings.sampling.rateEnd = 40;
 settings.sampling.rateStep = 10;
 settings.sampling.randomRepeats = 10;
 settings.sampling.seed = 20261017;   % 乱数の種（メニュー「設定」→「乱数の種…」。計測点の選び方と Mark 配置の最適化で共通）
-settings.sampling.layoutPlans = strings(0, 1);   % Excel ファイルで指定した学習パターン（1行1パターン。alignest.readLayoutPlans・
+settings.sampling.layoutPlans = strings(0, 1);   % Excel 取込した学習パターン（1行1パターン。alignest.readLayoutPlans・
                                                 % parseLayoutPlans の "種類|名前|shotNo（shotNo-markNo）…"）
 settings.sampling.layoutFile = "";               % 読み込んだ Excel ファイルの名前（表示・記録用）
 settings.sampling.requiredShots = zeros(1, 0);   % 必ず計測する shotNo（I 最適・ランダム。拡張 I 最適計画）
@@ -63,9 +61,10 @@ settings.sampling.designFeatures = "XYR"; % I 最適の基準モデルの説明�
                                         % （alignest.basis.designPolynomial。I 基準・D 基準もこのモデルで求める）
 settings.sampling.exchangeStarts = 10;  % 交換法の初期配置の数（Python 版は30）
 settings.sampling.exchangeMaxIterations = 300;
+settings.sampling.constraints.radialZones = true;   % 制約：半径（同心円の区画ごとの数をそろえる）を使う
 settings.sampling.constraints.radialZoneEdgesMm = [67.5, 105];  % 同心円の区切り：Shot 中心の半径 [mm]（半径 150 mm の Wafer が前提）
-settings.sampling.constraints.quadrants = true;
-settings.sampling.constraints.scanDirection = true;
+settings.sampling.constraints.quadrants = true;      % 制約：4象限ごとの数をそろえる（Shot 単位は Shot 中心、Mark 単位は Mark）
+settings.sampling.constraints.scanDirection = true;  % 制約：Scan 方向ごとの数をそろえる（Excel 取込のほかで使う）
 settings.sampling.constraints.slack = 1;
 settings.sampling.constraints.markRatio = true;   % Mark 単位：Mark 番号ごとの計測する数を全計測の割合にそろえる
 settings.sampling.constraints.markEqual = false;  % Mark 単位：Mark 番号ごとの計測する数を均等にする（markRatio より優先。

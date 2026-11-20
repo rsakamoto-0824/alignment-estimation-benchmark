@@ -1,5 +1,5 @@
 function plans = parseLayoutPlans(lines)
-%PARSELAYOUTPLANS 「Excel ファイルで指定」の学習パターン（設定 sampling.layoutPlans の行）を読む。
+%PARSELAYOUTPLANS 「Excel 取込」の学習パターン（設定 sampling.layoutPlans の行）を読む。
 %   plans = alignest.parseLayoutPlans(lines)
 %   1行が1パターン："種類|名前|項目 項目 …"（alignest.readLayoutPlans が作る）。
 %   種類：pattern（計測する Shot・Mark の組）・priority（計測する順。学習 Shot 数・計測率ごとに先頭から使う）。

@@ -3,8 +3,10 @@ function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm)
 %   候補は、X か Y の有効な計測値を1点以上持つ Shot。選ばなかった候補 Shot の Mark を評価に使う。
 %   I 最適の基準モデルは、説明変数 X・Y・半径（sampling.designFeatures = "XYR"、既定）か X・Y（"XY"）の多項式
 %   （sampling.designOrder 次。alignest.basis.designPolynomial）。候補の全 Mark で正規直交化して使う。
-%   制約（sampling.constraints）：同心円の区画（Shot 中心の半径 [mm] を radialZoneEdgesMm で区切る）、
-%   4象限（Shot 中心の偏角、軸上は反時計回りに次の象限）、Scan方向。各区画の Shot 数を割合 × 選ぶ数 ± slack に収める。
+%   制約（sampling.constraints。Excel で指定のほかのすべての選び方で使う）：同心円の区画（radialZones が true のとき、
+%   Shot 中心の半径 [mm] を radialZoneEdgesMm で区切る）、4象限（quadrants。Shot 中心の偏角、軸上は反時計回りに次の
+%   象限）、Scan方向（scanDirection）。各区画の Shot 数を割合 × 選ぶ数 ± slack に収める。Mark 単位は Mark の半径・偏角と、
+%   その Mark の Shot の Scan 方向で区画に分け、区画ごとの Mark の数をそろえる。
 %   乱数は sampling.seed・Shot 数・繰り返し番号から決めるので、候補が同じ Wafer では同じ Shot が選ばれる。
 %   Excel で指定したパターン（type "manual"）：spec.shotNos の Shot（spec.markNos があれば、その Shot・Mark の組の Mark）を
 %   学習に使う。Excel で指定した優先順（type "file"）：spec.required の項目は必ず学習に使い、残りを spec.shotNos の順に
@@ -13,10 +15,10 @@ function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm)
 %   計測率（spec.rate [%]）で決めるときは、学習 Shot 数 = round(計測率 / 100 × 候補 Shot 数)（1 以上）。
 %   I 最適・ランダム・Sobol 列・ポアソンディスクでは、必ず計測する Shot（alignest.requiredShotIndex：指定した shotNo と最外周）を先に入れ、
 %   残りを選ぶ（拡張 I 最適計画）。必ず計測する Shot が学習 Shot 数以上なら、それだけを使う。
-%   Sobol 列（sobol）：Wafer 上に偏りなく散らばる Sobol 列の点に近い Shot を、点の順に選ぶ（alignest.sobolShots。最適化・
-%   乱数は使わない。同心円・4象限・Scan 方向の制約は使わない。計測しない Shot は選ばない）。
+%   Sobol 列（sobol）：Wafer 上に偏りなく散らばる Sobol 列の点に近い Shot を、点の順に選ぶ（alignest.sobolSelect。最適化・
+%   乱数は使わない。区画の数の上限を超える Shot は選ばない。計測しない Shot は選ばない）。
 %   ポアソンディスク（poisson）：Shot 中心どうしの距離が d 以上になるように、乱数の順で Shot を選ぶ（d は学習 Shot 数を
-%   選べる最も大きい値。alignest.poissonDiskSelect。同心円・4象限・Scan 方向の制約は使わない。乱数は制約つきランダムと
+%   選べる最も大きい値。alignest.poissonDiskSelect。区画の数の上限を超える Shot は選ばない。乱数は制約つきランダムと
 %   同じく sampling.seed・Shot 数・繰り返し番号から決める）。
 %   plan.requiredShotIndex は必ず計測した Shot（ファイルの優先順では優先度 1）。
 %   制約付き D 最適（doptimal）は、I 最適と同じ制約・必ず計測する Shot で、det(M) を大きくする組を選ぶ
@@ -24,8 +26,8 @@ function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm)
 %   Mark 単位の I 最適（mark）・D 最適（markd）：計測する Mark を I 最適（D 最適）で選ぶ。Mark 単位の制約つきランダム
 %   （markrandom）：同じ制約（各 Shot の点数・Mark 番号・同心円の区画・必ず計測する Mark）を満たす組を乱数で選ぶ
 %   （交換法の初期配置と同じ作り方で、交換はしない。乱数は sampling.seed・Mark の数・繰り返し番号から決める）。
-%   Mark 単位のポアソンディスク（markpoisson）：Mark どうしの距離が d 以上になるように、乱数の順で Mark を選ぶ
-%   （必ず計測する Mark は先に入れる。各 Shot の点数・Mark 番号・同心円の制約は使わない）。
+%   Mark 単位の Sobol 列（marksobol）・ポアソンディスク（markpoisson）：Shot 単位と同じ選び方で Mark を選ぶ（必ず計測する
+%   Mark は先に入れる。同心円・4象限・Scan 方向の制約は使い、各 Shot の点数・Mark 番号の制約は使わない）。
 %   Mark の数 = round(spec.markPerShot × 候補 Shot 数)、計測率で決めるときは round(spec.rate / 100 × 候補の全 Mark の数)。
 %   sampling.markRequirePerShot が true（既定）なら、各 Shot で markMinPerShot 点（既定 1。Mark の少ない Shot は
 %   その Shot の全 Mark）以上を必ず計測する（足りないときは Mark の数を増やし、plan.message に書く）。false なら
@@ -83,8 +85,8 @@ switch spec.type
     case {"mark", "markd", "markrandom"}
         plan = markPlan(unit, spec, sampling, waferRadiusMm, candidates, plan);
         return
-    case "markpoisson"
-        plan = markPoissonPlan(unit, spec, sampling, waferRadiusMm, candidates, plan);
+    case {"marksobol", "markpoisson"}
+        plan = markSpreadPlan(unit, spec, sampling, waferRadiusMm, candidates, plan);
         return
     case {"ioptimal", "doptimal", "random", "sobol", "poisson"}
         if nShots >= numel(candidates)
@@ -128,11 +130,13 @@ switch spec.type
                     labels(pool, :), sampling.constraints.slack, stream, sampling.exchangeStarts, ...
                     sampling.exchangeMaxIterations, criterion="D", fixed=fixed(pool));
             elseif spec.type == "sobol"
-                selected = alignest.sobolShots([shots.Xmm(candidates(pool)), shots.Ymm(candidates(pool))], nShots, ...
-                    fixed(pool), waferRadiusMm);
+                [selected, plan.violation] = alignest.sobolSelect([shots.Xmm(candidates(pool)), ...
+                    shots.Ymm(candidates(pool))], nShots, fixed(pool), waferRadiusMm, labels=labels(pool, :), ...
+                    slack=sampling.constraints.slack);
             elseif spec.type == "poisson"
-                selected = alignest.poissonDiskSelect([shots.Xmm(candidates(pool)), shots.Ymm(candidates(pool))], nShots, ...
-                    fixed(pool), stream);
+                [selected, plan.violation] = alignest.poissonDiskSelect([shots.Xmm(candidates(pool)), ...
+                    shots.Ymm(candidates(pool))], nShots, fixed(pool), stream, labels=labels(pool, :), ...
+                    slack=sampling.constraints.slack);
             else
                 [chosen, plan.violation] = alignest.randomFeasibleShots(numel(pool), nShots, labels(pool, :), ...
                     sampling.constraints.slack, stream, fixed(pool));
@@ -223,14 +227,10 @@ if equal
             strjoin("M" + string(levels.') + " " + string(round(target.', 1)), "・")));
     end
 end
-% 同心円の区切り：Wafer 中心からの Mark の半径で区画に分け、区画ごとの数を割合 × Mark の数 ± 許容幅にそろえる
-% （半径の方向にもバランスよく配置する。Shot 単位の計画の Shot 中心の半径と同じ区切り）
-edges = alignest.zoneEdgesMm(sampling, waferRadiusMm);
-if ~isempty(edges)
-    [~, ~, zone] = unique(1 + sum(hypot(marks.x(markCandidates), marks.y(markCandidates)) >= edges, 2));
-    labels = [labels, zone];
-    equalColumns = [equalColumns, false];
-end
+% 同心円・4象限・Scan 方向：区画ごとの数を割合 × Mark の数 ± 許容幅にそろえる
+zoneLabels = markZoneLabels(unit, markCandidates, sampling, waferRadiusMm);
+labels = [labels, zoneLabels];
+equalColumns = [equalColumns, false(1, size(zoneLabels, 2))];
 blocks = markBlocks(unit, setup.allCandidates, sampling, waferRadiusMm);
 blocks = blocks(setup.pool);
 stream = RandStream('mt19937ar', 'Seed', seedFor(sampling.seed, nMarks, spec.repeat));
@@ -245,16 +245,17 @@ end
     sampling.constraints.slack, stream, nStarts, maxIterations, criterion=criterion, ...
     group=group, minPerGroup=minPerShot, equal=equalColumns, fixed=fixed);
 if plan.violation > 0
-    plan.message = strtrim(plan.message + sprintf(" Mark 番号ごと・同心円の区画ごとの数をそろえる制約を満たす組が" + ...
-        "見つからず、違反量 %d の組を使いました。", plan.violation));
+    plan.message = strtrim(plan.message + sprintf(" Mark 番号ごと・同心円・4象限・Scan 方向の区画ごとの数をそろえる" + ...
+        "制約を満たす組が見つからず、違反量 %d の組を使いました。", plan.violation));
 end
 plan = finishMarkPlan(plan, unit, markCandidates, selected, blocks);
 end
 
-function plan = markPoissonPlan(unit, spec, sampling, waferRadiusMm, candidates, plan)
-% Mark 単位のポアソンディスク：Mark どうしの距離が d 以上になるように、乱数の順で計測する Mark を選ぶ
-% （alignest.poissonDiskSelect）。必ず計測する Mark（Wafer 中心に最も近い Mark・指定した Mark・必ず計測する Shot の Mark）を
-% 先に入れ、計測しない Shot・Mark は選ばない。各 Shot の点数・Mark 番号・同心円の制約は使わない
+function plan = markSpreadPlan(unit, spec, sampling, waferRadiusMm, candidates, plan)
+% Mark 単位の Sobol 列（marksobol）・ポアソンディスク（markpoisson）：Shot 単位と同じ選び方で、計測する Mark を選ぶ
+% （alignest.sobolSelect・poissonDiskSelect）。必ず計測する Mark（Wafer 中心に最も近い Mark・指定した Mark・必ず計測する
+% Shot の Mark）を先に入れ、計測しない Shot・Mark は選ばない。同心円・4象限・Scan 方向の区画の数の上限を超える Mark は
+% 選ばない。各 Shot の点数・Mark 番号の制約は使わない
 marks = unit.marks;
 [setup, plan] = markPlanSetup(unit, spec, sampling, candidates, plan);
 if isempty(setup.markCandidates)
@@ -264,11 +265,46 @@ end
 if ~ok
     return
 end
-stream = RandStream('mt19937ar', 'Seed', seedFor(sampling.seed, setup.nMarks, spec.repeat));
-selected = alignest.poissonDiskSelect([marks.x(setup.markCandidates), marks.y(setup.markCandidates)], setup.nMarks, ...
-    setup.fixed, stream);
+positions = [marks.x(setup.markCandidates), marks.y(setup.markCandidates)];
+labels = markZoneLabels(unit, setup.markCandidates, sampling, waferRadiusMm);
+if spec.type == "marksobol"
+    [selected, plan.violation] = alignest.sobolSelect(positions, setup.nMarks, setup.fixed, waferRadiusMm, ...
+        labels=labels, slack=sampling.constraints.slack);
+else
+    stream = RandStream('mt19937ar', 'Seed', seedFor(sampling.seed, setup.nMarks, spec.repeat));
+    [selected, plan.violation] = alignest.poissonDiskSelect(positions, setup.nMarks, setup.fixed, stream, ...
+        labels=labels, slack=sampling.constraints.slack);
+end
+if plan.violation > 0
+    plan.message = strtrim(plan.message + sprintf(" 同心円・4象限・Scan 方向の区画ごとの数をそろえる制約を満たせず、" + ...
+        "違反量 %d の組を使いました。", plan.violation));
+end
 blocks = markBlocks(unit, setup.allCandidates, sampling, waferRadiusMm);
 plan = finishMarkPlan(plan, unit, setup.markCandidates, selected, blocks(setup.pool));
+end
+
+function labels = markZoneLabels(unit, markCandidates, sampling, waferRadiusMm)
+% Mark 単位の制約の区分番号（候補 Mark × 制約の種類。1始まり）：同心円（Mark の半径）・4象限（Mark の偏角。軸上は
+% 反時計回りに次の象限。Shot 単位と同じ）・Scan 方向（その Mark の Shot の Scan 方向）
+marks = unit.marks;
+constraints = sampling.constraints;
+x = marks.x(markCandidates);
+y = marks.y(markCandidates);
+labels = zeros(numel(markCandidates), 0);
+edges = alignest.zoneEdgesMm(sampling, waferRadiusMm);
+if ~isempty(edges)
+    labels(:, end + 1) = 1 + sum(hypot(x, y) >= edges, 2);
+end
+if isfield(constraints, "quadrants") && constraints.quadrants
+    angle = mod(atan2(y, x), 2 * pi);
+    labels(:, end + 1) = mod(floor(angle / (pi / 2)), 4) + 1;
+end
+if isfield(constraints, "scanDirection") && constraints.scanDirection && unit.hasDirection
+    labels(:, end + 1) = unit.shots.direction(marks.shotIndex(markCandidates));
+end
+for p = 1:size(labels, 2)
+    [~, ~, labels(:, p)] = unique(labels(:, p));
+end
 end
 
 function [setup, plan] = markPlanSetup(unit, spec, sampling, candidates, plan)

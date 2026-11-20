@@ -39,9 +39,9 @@ classdef (Abstract) SettingsTab < appui.Core
         end
 
         function layouts = loadLayoutPlans(app, filePath, sheetName)
-            %LOADLAYOUTPLANS 「Excel ファイルで指定」：学習に使う Shot・Mark を指定した Excel・CSV（shotNo（Mark 単位なら
+            %LOADLAYOUTPLANS 「Excel 取込」：学習に使う Shot・Mark を指定した Excel・CSV（shotNo（Mark 単位なら
             %   markNo も）と、パターン（1・0）・優先順（1・2・3…）の列。alignest.readLayoutPlans）を読み、設定
-            %   sampling.layoutPlans に入れる。選び方に「Excel ファイルで指定」を足す（ほかに選んでいた選び方はそのまま。
+            %   sampling.layoutPlans に入れる。選び方に「Excel 取込」を足す（ほかに選んでいた選び方はそのまま。
             %   I 最適・D 最適などと比べられる）。前に読んだ指定は置き換える。
             if nargin < 3
                 sheetName = "";
@@ -64,35 +64,65 @@ classdef (Abstract) SettingsTab < appui.Core
             onChange = @(~, ~) app.onSettingsChanged();
 
             samplingPanel = uipanel(grid, 'Title', '学習に使う計測点');
-            s = uigridlayout(samplingPanel, [43, 2], 'RowHeight', repmat({'fit'}, 1, 43), 'ColumnWidth', {'1x', '1x'}, ...
+            s = uigridlayout(samplingPanel, [38, 2], 'RowHeight', repmat({'fit'}, 1, 38), 'ColumnWidth', {'1x', '1x'}, ...
                 'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
-            label(s, '計測点の選び方', 1, 1);
+            label(s, '① データの粒度', 1, 1);
             c.samplingUnit = uidropdown(s, 'Items', {'Shot 単位', 'Mark 単位'}, 'ItemsData', {'shot', 'mark'}, ...
                 'ValueChangedFcn', @(~, ~) app.onSamplingUnitChanged(), 'Tooltip', ['Shot 単位：計測する Shot を選び、' ...
-                'その Shot の Mark をすべて学習に使う。Mark 単位：計測する Mark を選ぶ。下の一覧に、その単位の選び方が出ます。']);
+                'その Shot の Mark をすべて学習に使う。Mark 単位：計測する Mark を選ぶ。']);
             place(c.samplingUnit, 1, 2);
+            label(s, '② アルゴリズム（複数選べる）', 2, 1);
+            label(s, '③ 制約（区画ごとの数をそろえる）', 2, 2);
             [methods, names] = alignest.samplingUnitMethods("shot");
             c.samplingMethod = uilistbox(s, 'Items', cellstr(names), 'ItemsData', cellstr(methods), ...
                 'Multiselect', 'on', 'Value', {'ioptimal'}, 'ValueChangedFcn', onChange, ...
-                'Tooltip', ['D 最適：I 最適と同じ制約で det(M) を大きくする組。Sobol 列：Wafer 上に偏りなく散らばる点の並び' ...
-                '（Sobol 列）に近い Shot を選ぶ。ポアソンディスク：選んだ点どうしが近づきすぎないように、乱数の順で選ぶ' ...
-                '（繰り返し回数はランダムと同じ）。Sobol 列・ポアソンディスクは同心円などの制約を使わない。Mark 単位の I 最適・' ...
-                'D 最適・ランダムは、既定では全 Shot を1点以上計測し、Mark 番号の割合を全計測とそろえる。複数選ぶと、' ...
-                '結果一覧の「計測配置の比較」で選び方どうしを比べられます。']);
-            place(c.samplingMethod, 2, [1, 2]);
-            s.RowHeight{2} = 160;
-            label(s, '学習 Shot 数', 3, 1);
-            c.countBy = uidropdown(s, 'Items', {'Shot 数で決める', '計測率 [%] で決める'}, 'ItemsData', {'shots', 'rate'}, ...
-                'ValueChangedFcn', onChange, 'Tooltip', ['計測率は、Wafer の計測値のある Shot（候補）に対する学習 Shot の' ...
-                '割合です。Wafer ごとに 候補 Shot 数 × 計測率 を四捨五入した数の Shot を学習に使います。']);
-            place(c.countBy, 3, 2);
-            sweep = uigridlayout(s, [3, 4], 'RowHeight', {'fit', 'fit', 'fit'}, 'ColumnWidth', {'fit', '1x', '1x', '1x'}, ...
+                'Tooltip', ['Shot 単位・Mark 単位で同じアルゴリズムを選べます。I 最適：推定する面全体の予測のばらつきを小さく' ...
+                'する組。D 最適：det(M) を大きくする組。Sobol 列：Wafer 上に偏りなく散らばる点の並びに近い点。ポアソン' ...
+                'ディスク：選んだ点どうしが近づきすぎないように、乱数の順で選ぶ。複数選ぶと、結果一覧の「計測配置の比較」で' ...
+                '比べられます。']);
+            place(c.samplingMethod, 3, 1);
+            s.RowHeight{3} = 172;   % 6 つのアルゴリズムがスクロールせずに見える高さ
+            radiusMm = app.Settings.data.waferRadiusMm;
+            constraintGrid = uigridlayout(s, [6, 1], 'RowHeight', repmat({'fit'}, 1, 6), 'ColumnWidth', {'1x'}, ...
                 'Padding', 0, 'RowSpacing', 2);
-            place(sweep, 4, [1, 2]);
+            place(constraintGrid, 3, 2);
+            c.zoneConstraint = uicheckbox(constraintGrid, 'Text', '半径（同心円の区切り [mm]）', 'ValueChangedFcn', onChange, ...
+                'Tooltip', ['Wafer 中心からの半径で区画を分け、区画ごとの数をそろえます。Shot 単位は Shot 中心、Mark 単位は' ...
+                ' Mark の半径。']);
+            place(c.zoneConstraint, 1, 1);
+            c.zoneEdges = uieditfield(constraintGrid, 'text', 'ValueChangedFcn', onChange, 'Placeholder', '例：67.5 105', ...
+                'Tooltip', sprintf(['区切りの半径 [mm]（空白で区切る。例：67.5 105 → 0〜67.5・67.5〜105・105 mm 以上の' ...
+                '3区画）。0 より大きく %g mm より小さい値。'], radiusMm));
+            place(c.zoneEdges, 2, 1);
+            c.quadrants = uicheckbox(constraintGrid, 'Text', '象限（4象限）', 'ValueChangedFcn', onChange, ...
+                'Tooltip', '中心の偏角で4つの象限に分け、象限ごとの数をそろえます（Shot 単位は Shot 中心、Mark 単位は Mark）。');
+            place(c.quadrants, 3, 1);
+            c.scanConstraint = uicheckbox(constraintGrid, 'Text', 'Scan 方向', 'ValueChangedFcn', onChange, ...
+                'Tooltip', 'Scan 方向（1・2）ごとの数をそろえます（Mark 単位は、その Mark の Shot の Scan 方向）。');
+            place(c.scanConstraint, 4, 1);
+            slackGrid = uigridlayout(constraintGrid, [1, 2], 'ColumnWidth', {'fit', 70}, 'Padding', 0);
+            place(slackGrid, 5, 1);
+            label(slackGrid, '許容幅（± 個）', 1, 1);
+            c.slack = uispinner(slackGrid, 'Limits', [0, 10], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange, ...
+                'Tooltip', '区画ごとの数を、全候補に占める割合 × 選ぶ数 ± 許容幅に収めます。');
+            place(c.slack, 1, 2);
+            c.constraintNote = uilabel(constraintGrid, 'WordWrap', 'on', 'FontColor', app.Palette.muted, ...
+                'UserData', "muted", 'Text', 'Excel 取込のほかのアルゴリズムで使います。');
+            place(c.constraintNote, 6, 1);
+            c.zoneError = errorLabel(app, s, 4, [1, 2]);
+            label(s, '学習 Shot/Mark 数', 5, 1);
+            c.countBy = uidropdown(s, 'Items', {'Shot 数で決める', '計測率 [%] で決める'}, 'ItemsData', {'count', 'rate'}, ...
+                'ValueChangedFcn', onChange, 'Tooltip', ['① データの粒度に合わせて、Shot 単位は計測する Shot の数、Mark 単位は' ...
+                '計測する Mark の数を決めます。計測率は、Wafer の計測値のある Shot（Mark 単位は Mark）に対する割合です。' ...
+                '1 Shot あたりの Mark 数（Mark 単位）：計測する Mark の数 = この値 × 候補 Shot 数。']);
+            place(c.countBy, 5, 2);
+            sweep = uigridlayout(s, [4, 4], 'RowHeight', {'fit', 'fit', 'fit', 'fit'}, 'ColumnWidth', {'fit', '1x', '1x', '1x'}, ...
+                'Padding', 0, 'RowSpacing', 2);
+            place(sweep, 6, [1, 2]);
             label(sweep, '開始', 1, 2);
             label(sweep, '終了', 1, 3);
             label(sweep, '刻み', 1, 4);
-            label(sweep, 'Shot 数', 2, 1);
+            c.countUnitLabel = label(sweep, 'Shot 数', 2, 1);
             c.nShotsStart = shotCountSpinner(sweep, onChange);
             place(c.nShotsStart, 2, 2);
             c.nShotsEnd = shotCountSpinner(sweep, onChange);
@@ -106,23 +136,28 @@ classdef (Abstract) SettingsTab < appui.Core
             place(c.rateEnd, 3, 3);
             c.rateStep = rateField(sweep, onChange);
             place(c.rateStep, 3, 4);
+            label(sweep, '1 Shot あたり', 4, 1);
+            c.markPerShot = uieditfield(sweep, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['Mark 単位で「1 Shot あたりの' ...
+                ' Mark 数で決める」とき：1 Shot あたりの計測 Mark 数（空白区切りで複数入れると比べます）。計測する Mark の数 =' ...
+                ' この値 × 候補 Shot 数（四捨五入）。']);
+            place(c.markPerShot, 4, [2, 4]);
             c.nShotsList = uilabel(s, 'WordWrap', 'on', 'Text', '');
-            place(c.nShotsList, 5, [1, 2]);
-            c.nShotsError = errorLabel(app, s, 6, [1, 2]);
-            label(s, 'ランダムの繰り返し回数', 7, 1);
+            place(c.nShotsList, 7, [1, 2]);
+            c.nShotsError = errorLabel(app, s, 8, [1, 2]);
+            label(s, 'ランダム・ポアソンディスクの繰り返し回数', 9, [1, 2]);
             c.randomRepeats = uispinner(s, 'Limits', [1, 1000], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
-            place(c.randomRepeats, 8, 1);
-            label(s, 'Excel ファイルで指定', 9, 1);
+            place(c.randomRepeats, 10, 1);
+            label(s, 'Excel 取込', 11, 1);
             c.loadLayouts = uibutton(s, 'Text', 'Excel ファイルを読み込む…', 'ButtonPushedFcn', @(~, ~) app.onLoadLayouts(), ...
                 'Tooltip', ['1行目が見出しの表。shotNo の列（Mark 単位なら markNo の列も）と、名前を見出しにした列を並べます。' ...
                 '1・0 だけの列はパターン（1 を計測する）、1・2・3… の列は優先順（1 = 必ず計測、その次から順に。0 = 計測' ...
                 'しない）で、学習 Shot 数ごとに先頭から使います。「計測マップを Excel に書き出す…」のファイルもそのまま読めます。' ...
-                '選び方の「Excel ファイルで指定」も選びます。']);
-            place(c.loadLayouts, 9, 2);
+                '選び方の「Excel 取込」も選びます。']);
+            place(c.loadLayouts, 11, 2);
             c.layoutPlanInfo = uitextarea(s, 'Editable', 'off', 'Value', {'まだ読み込んでいません'});
-            place(c.layoutPlanInfo, 10, [1, 2]);
-            s.RowHeight{10} = 90;
-            c.layoutPlanError = errorLabel(app, s, 11, [1, 2]);
+            place(c.layoutPlanInfo, 12, [1, 2]);
+            s.RowHeight{12} = 90;
+            c.layoutPlanError = errorLabel(app, s, 13, [1, 2]);
             heading(s, '必ず計測する・計測しない Shot と Mark', 14);
             selectGrid = uigridlayout(s, [4, 2], 'RowHeight', {'fit', 'fit', 'fit', 'fit'}, 'ColumnWidth', {'1x', '1x'}, ...
                 'Padding', 0, 'RowSpacing', 2);
@@ -152,37 +187,22 @@ classdef (Abstract) SettingsTab < appui.Core
             c.requiredInfo = uilabel(s, 'WordWrap', 'on', 'Text', '');
             place(c.requiredInfo, 18, [1, 2]);
             c.requiredError = errorLabel(app, s, 19, [1, 2]);
-            heading(s, '制約', 20);
-            radiusMm = app.Settings.data.waferRadiusMm;
-            label(s, '同心円の区切り [mm]', 21, [1, 2]);
-            c.zoneEdges = uieditfield(s, 'text', 'ValueChangedFcn', onChange, 'Tooltip', sprintf(['Shot 中心の Wafer 中心からの' ...
-                '距離 [mm] で区画を分け、区画ごとの Shot 数をそろえます（例：67.5 105 → 0〜67.5・67.5〜105・105 mm 以上の' ...
-                '3区画）。Mark 単位の計画では Mark の距離で分け、区画ごとの Mark の数をそろえます（半径の方向のバランス）。' ...
-                '0 より大きく %g mm より小さい値。使わないなら空欄。'], radiusMm));
-            place(c.zoneEdges, 22, [1, 2]);
-            c.zoneError = errorLabel(app, s, 23, [1, 2]);
-            c.quadrants = uicheckbox(s, 'Text', '4象限の Shot 数をそろえる', 'ValueChangedFcn', onChange);
-            place(c.quadrants, 24, [1, 2]);
-            c.scanConstraint = uicheckbox(s, 'Text', 'Scan 方向ごとの Shot 数をそろえる', 'ValueChangedFcn', onChange);
-            place(c.scanConstraint, 25, [1, 2]);
-            label(s, '許容幅', 26, 1);
-            label(s, 'I 最適の基準モデル', 26, 2);
-            c.slack = uispinner(s, 'Limits', [0, 10], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
-            place(c.slack, 27, 1);
+            heading(s, 'I 最適・D 最適（交換法）', 20);
+            label(s, 'I 最適の基準モデル', 21, [1, 2]);
             % I 最適の基準モデル：次数と説明変数（X・Y・半径、または X・Y の多項式。alignest.basis.designPolynomial）
             designGrid = uigridlayout(s, [1, 2], 'ColumnWidth', {70, '1x'}, 'Padding', 0);
-            place(designGrid, 27, 2);
+            place(designGrid, 22, 1);
             c.designOrder = uispinner(designGrid, 'Limits', [1, 8], 'RoundFractionalValues', 'on', 'ValueChangedFcn', ...
                 onChange, 'Tooltip', '基準モデルの多項式の次数。');
             c.designFeatures = uidropdown(designGrid, 'Items', {'X, Y, 半径', 'X, Y'}, 'ItemsData', {'XYR', 'XY'}, ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['基準モデルの説明変数。X, Y, 半径：X・Y・半径 r の多項式' ...
                 '（r の偶数乗は X・Y の多項式と同じなので、X・Y の多項式と r × X・Y の多項式。5次で 36 項）。X, Y：X・Y の' ...
                 '多項式（5次で 21 項）。']);
-            label(s, '交換法の初期配置の数', 28, [1, 2]);
+            label(s, '交換法の初期配置の数', 23, [1, 2]);
             % 入力欄と時間の目安（目安の文が長くても入力欄が縦に伸びないように、小さな格子に入れる）と、Mark 単位の計画
-            exchangeGrid = uigridlayout(s, [10, 2], 'ColumnWidth', {'1x', '1x'}, 'RowHeight', repmat({'fit'}, 1, 10), ...
+            exchangeGrid = uigridlayout(s, [6, 2], 'ColumnWidth', {'1x', '1x'}, 'RowHeight', repmat({'fit'}, 1, 6), ...
                 'Padding', 0, 'RowSpacing', 2);
-            place(exchangeGrid, 29, [1, 2]);
+            place(exchangeGrid, 24, [1, 2]);
             c.exchangeStarts = uispinner(exchangeGrid, 'Limits', [1, 100], 'RoundFractionalValues', 'on', ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['初期配置 1 つあたりの時間の目安は 約 0.01 秒 × 学習 Shot 数' ...
                 '（候補 99 Shot の模擬データで測った値）。10 → 20 にすると学習パターンを作る時間は約 2 倍。模擬データでは' ...
@@ -192,37 +212,11 @@ classdef (Abstract) SettingsTab < appui.Core
             place(c.exchangeInfo, 2, [1, 2]);
             markLabel = label(exchangeGrid, 'Mark 単位の計画', 3, [1, 2]);
             markLabel.FontWeight = 'bold';
-            countByGrid = uigridlayout(exchangeGrid, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
-            place(countByGrid, 4, [1, 2]);
-            label(countByGrid, 'Mark の数の決め方', 1, 1);
-            c.markCountBy = uidropdown(countByGrid, 'Items', {'1 Shot あたりの数', '計測する Mark の数（開始・終了・刻み）'}, ...
-                'ItemsData', {'perShot', 'total'}, 'ValueChangedFcn', onChange, 'Tooltip', ['1 Shot あたりの数：計測する' ...
-                ' Mark の数 = この値 × 候補 Shot 数。計測する Mark の数：Wafer 全体で計測する Mark の数を開始から終了まで刻みごとに' ...
-                '比べます。上の「学習 Shot 数」を計測率にしたときは、計測率で決めます。']);
-            place(c.markCountBy, 1, 2);
-            c.markPerShot = uieditfield(exchangeGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['1 Shot あたりの' ...
-                '計測 Mark 数（空白区切りで複数入れると比べます）。計測する Mark の数 = この値 × 候補 Shot 数（四捨五入）。']);
-            place(c.markPerShot, 5, 1);
-            markCountGrid = uigridlayout(exchangeGrid, [1, 6], 'ColumnWidth', {'fit', '1x', 'fit', '1x', 'fit', '1x'}, ...
-                'Padding', 0);
-            place(markCountGrid, 6, [1, 2]);
-            c.markCountStart = uispinner(markCountGrid, 'Limits', [1, 100000], 'RoundFractionalValues', 'on', ...
-                'ValueChangedFcn', onChange);
-            c.markCountEnd = uispinner(markCountGrid, 'Limits', [1, 100000], 'RoundFractionalValues', 'on', ...
-                'ValueChangedFcn', onChange);
-            c.markCountStep = uispinner(markCountGrid, 'Limits', [1, 100000], 'RoundFractionalValues', 'on', ...
-                'ValueChangedFcn', onChange);
-            countLabels = ["開始", "終了", "刻み"];
-            countControls = [c.markCountStart, c.markCountEnd, c.markCountStep];
-            for k = 1:3
-                label(markCountGrid, countLabels(k), 1, 2 * k - 1);
-                place(countControls(k), 1, 2 * k);
-            end
             c.markCountNote = uilabel(exchangeGrid, 'WordWrap', 'on', 'Text', '', 'FontColor', app.Palette.muted, ...
                 'UserData', "muted");
-            place(c.markCountNote, 7, [1, 2]);
+            place(c.markCountNote, 4, [1, 2]);
             balanceGrid = uigridlayout(exchangeGrid, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
-            place(balanceGrid, 8, [1, 2]);
+            place(balanceGrid, 5, [1, 2]);
             label(balanceGrid, 'Mark 番号ごとの計測数', 1, 1);
             c.markBalance = uidropdown(balanceGrid, 'Items', {'そろえない', '全計測の割合にそろえる', '均等にする'}, ...
                 'ItemsData', {'none', 'ratio', 'equal'}, 'ValueChangedFcn', onChange, 'Tooltip', ['最適計画で選ぶ Mark の数を、' ...
@@ -230,7 +224,7 @@ classdef (Abstract) SettingsTab < appui.Core
                 'Mark 番号の数（割り切れないときの1つの差だけ。候補の少ない Mark 番号はその数まで）。']);
             place(c.markBalance, 1, 2);
             perShotGrid = uigridlayout(exchangeGrid, [1, 3], 'ColumnWidth', {'fit', 'fit', 70}, 'Padding', 0);
-            place(perShotGrid, 9, [1, 2]);
+            place(perShotGrid, 6, [1, 2]);
             c.markRequirePerShot = uicheckbox(perShotGrid, 'Text', 'Shot ごとに n 点の Mark 計測を必須にする', ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['オン：各 Shot で n 点以上の Mark を必ず計測します（Mark が n 点より' ...
                 '少ない Shot はその Shot の全 Mark）。計測する数が足りないときは増やします。オフ：Shot を問わず、' ...
@@ -239,19 +233,18 @@ classdef (Abstract) SettingsTab < appui.Core
             c.markMinPerShot = uispinner(perShotGrid, 'Limits', [1, 99], 'RoundFractionalValues', 'on', 'Value', 1, ...
                 'ValueChangedFcn', onChange, 'Tooltip', '各 Shot で必ず計測する Mark の数');
             place(c.markMinPerShot, 1, 3);
-            c.markError = errorLabel(app, exchangeGrid, 10, [1, 2]);
-            heading(s, '評価', 30);
-            label(s, '外周とみなす Mark の半径 [mm]', 31, [1, 2]);
+            heading(s, '評価', 25);
+            label(s, '外周とみなす Mark の半径 [mm]', 26, [1, 2]);
             c.outerRadius = uieditfield(s, 'numeric', 'Limits', [0, radiusMm], 'ValueDisplayFormat', '%.1f', ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['Mark の Wafer 中心からの距離 [mm]。結果一覧の「外周の RMSE」' ...
                 '「内側の RMSE」と、散布図の色分け「外周・内側」の境目です。']);
-            place(c.outerRadius, 32, 1);
+            place(c.outerRadius, 27, 1);
             c.removeLinear = uicheckbox(s, 'ValueChangedFcn', onChange, ...
                 'Text', 'XY 1次を除いてから推定する');
-            place(c.removeLinear, 33, [1, 2]);
+            place(c.removeLinear, 28, [1, 2]);
             outlierGrid = uigridlayout(s, [2, 3], 'ColumnWidth', {'1x', 'fit', 70}, 'RowHeight', {'fit', 'fit'}, 'Padding', 0, ...
                 'RowSpacing', 2);
-            place(outlierGrid, 34, [1, 2]);
+            place(outlierGrid, 29, [1, 2]);
             c.excludeOutliers = uicheckbox(outlierGrid, 'ValueChangedFcn', onChange, ...
                 'Text', '学習データの異常値を除いて推定する', ...
                 'Tooltip', ['Wafer・学習パターンごとに、学習点の中心とばらつきを X・Y 別に求め、|値 − 中心| が n × ばらつき' ...
@@ -268,7 +261,7 @@ classdef (Abstract) SettingsTab < appui.Core
             % 処理時間の記録と、評価に使う Wafer（すべて・枚数・割合、先頭から・ランダム）
             evaluationGrid = uigridlayout(s, [4, 4], 'ColumnWidth', {'fit', '1x', 70, '1x'}, ...
                 'RowHeight', {'fit', 'fit', 'fit', 'fit'}, 'Padding', 0, 'RowSpacing', 3);
-            place(evaluationGrid, 35, [1, 2]);
+            place(evaluationGrid, 30, [1, 2]);
             c.recordTiming = uicheckbox(evaluationGrid, 'ValueChangedFcn', onChange, ...
                 'Text', '処理時間を記録する', ...
                 'Tooltip', ['手法 × 学習パターンごとに、1 枚（X・Y）の推定にかかった秒数を集計し、「4. 結果一覧」の指標と' ...
@@ -295,34 +288,34 @@ classdef (Abstract) SettingsTab < appui.Core
             c.waferSelectionInfo = uilabel(evaluationGrid, 'WordWrap', 'on', 'Text', '', 'FontColor', app.Palette.muted, ...
                 'UserData', "muted");
             place(c.waferSelectionInfo, 4, [1, 4]);
-            heading(s, 'Overlay 補正の評価', 36);
-            label(s, 'Wafer 成分', 37, 1);
-            label(s, 'Shot 共通成分', 37, 2);
+            heading(s, 'Overlay 補正の評価', 31);
+            label(s, 'Wafer 成分', 32, 1);
+            label(s, 'Shot 共通成分', 32, 2);
             c.overlayWafer = uidropdown(s, 'Items', {'なし', '1次', '2次', '3次', '4次', '5次', ...
                 '式を入力'}, 'ItemsData', {0, 1, 2, 3, 4, 5, app.FORMULA_CHOICE}, 'ValueChangedFcn', onChange);
-            place(c.overlayWafer, 38, 1);
+            place(c.overlayWafer, 33, 1);
             c.overlayShotCommon = uidropdown(s, 'Items', {'なし', '1次', '式を入力'}, ...
                 'ItemsData', {'none', 'linear', 'formula'}, 'ValueChangedFcn', onChange, ...
                 'Tooltip', ['1次：Shot 内の座標（markXmm・markYmm）の1次の補正（k1〜k6：並進・倍率・回転・直交度）。' ...
                 '式を入力：下の dx・dy の式。どちらも全 Shot で同じ補正量にします。']);
-            place(c.overlayShotCommon, 38, 2);
+            place(c.overlayShotCommon, 33, 2);
             formulaHelp = ['項を + でつなぎ、各項は係数と x・y のべきの積（例：k1 + k3*x + k5*y + k7*x^2 + k9*x*y）。' ...
                 '係数の値は最小二乗で求めるので、係数の名前・符号は補正量に影響しません。'];
-            [c.overlayWaferDx, c.overlayWaferDy] = formulaFields(s, 39, 1, onChange, ['x・y は Shot 中心の座標' ...
+            [c.overlayWaferDx, c.overlayWaferDy] = formulaFields(s, 34, 1, onChange, ['x・y は Shot 中心の座標' ...
                 '（Wafer 中心から）。' formulaHelp]);
-            [c.overlayShotDx, c.overlayShotDy] = formulaFields(s, 39, 2, onChange, ['x・y は Shot 内の座標' ...
+            [c.overlayShotDx, c.overlayShotDy] = formulaFields(s, 34, 2, onChange, ['x・y は Shot 内の座標' ...
                 '（markXmm・markYmm、Shot 中心から）。' formulaHelp]);
-            label(s, 'Shot ごとの成分', 40, 1);
+            label(s, 'Shot ごとの成分', 35, 1);
             c.overlayPerShot = uidropdown(s, 'Items', {'なし', '1次', '式を入力'}, ...
                 'ItemsData', {'none', 'linear', 'formula'}, 'ValueChangedFcn', onChange, ...
                 'Tooltip', '式を入力：下の dx・dy の式の係数を、Shot ごとに別々に求めます（x・y は Shot 内の座標）。');
-            place(c.overlayPerShot, 41, 1);
-            [c.overlayPerShotDx, c.overlayPerShotDy] = formulaFields(s, 42, 1, onChange, ['x・y は Shot 内の座標' ...
+            place(c.overlayPerShot, 36, 1);
+            [c.overlayPerShotDx, c.overlayPerShotDy] = formulaFields(s, 37, 1, onChange, ['x・y は Shot 内の座標' ...
                 '（markXmm・markYmm、Shot 中心から）。係数は Shot ごとに求めます。' formulaHelp]);
-            c.overlayHelp = label(s, '', [40, 42], 2);
+            c.overlayHelp = label(s, '', [35, 37], 2);
             c.overlayHelp.FontColor = app.Palette.muted;
             c.overlayHelp.UserData = "muted";
-            c.overlayFormulaError = errorLabel(app, s, 43, [1, 2]);
+            c.overlayFormulaError = errorLabel(app, s, 38, [1, 2]);
 
             methodPanel = uipanel(grid, 'Title', '比べる手法');
             m = uigridlayout(methodPanel, [29, 4], 'RowHeight', repmat({'fit'}, 1, 29), 'ColumnWidth', {'1x', '1x', '1x', '1x'}, ...
@@ -341,6 +334,17 @@ classdef (Abstract) SettingsTab < appui.Core
             place(c.featureXY, 3, 1);
             c.featureXYR = uicheckbox(m, 'Text', 'X, Y, 半径', 'ValueChangedFcn', onChange);
             place(c.featureXYR, 3, 2);
+            % 説明変数に足す連続値の列（読み込んだデータの数値の「その他の列」。alignest.numericColumns）
+            continuousGrid = uigridlayout(m, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
+            place(continuousGrid, 3, [3, 4]);
+            label(continuousGrid, '連続値の列', 1, 1);
+            c.continuousColumns = uilistbox(continuousGrid, 'Items', {}, 'Multiselect', 'on', 'Value', {}, ...
+                'ValueChangedFcn', onChange, 'Tooltip', ['読み込んだデータの数値の列（列の対応で標準の項目にしなかった列）を、' ...
+                '説明変数（X, Y・X, Y, 半径）に足します（Ctrl・Shift で複数選べる。選ばなければ使わない）。GPR・TPS・RBF・' ...
+                'Kriging では説明変数の列に、GAM では線形の項に足します。多項式・Fringe Zernike・RT は座標だけの式なので' ...
+                '使いません。値はその Wafer の点で平均 0・座標と同じ大きさのばらつきにそろえ、値の無い点は平均にします。']);
+            place(c.continuousColumns, 1, 2);
+            m.RowHeight{3} = 60;
             factorGrid = uigridlayout(m, [6, 5], 'Padding', 0, 'RowSpacing', 4, ...
                 'RowHeight', {'fit', 'fit', 'fit', 'fit', 72, 'fit'}, 'ColumnWidth', {'fit', 'fit', 'fit', 'fit', '1x'});
             place(factorGrid, 4, [1, 4]);
@@ -582,10 +586,7 @@ classdef (Abstract) SettingsTab < appui.Core
             c.markBalance.Value = char(balance);
             c.markRequirePerShot.Value = logical(fieldOr(s.sampling, "markRequirePerShot", true));
             c.markMinPerShot.Value = double(fieldOr(s.sampling, "markMinPerShot", 1));
-            c.nShotsStart.Value = s.sampling.nShotsStart;
-            c.nShotsEnd.Value = s.sampling.nShotsEnd;
-            c.nShotsStep.Value = s.sampling.nShotsStep;
-            c.countBy.Value = char(s.sampling.countBy);
+            showCountControls(app, s.sampling);
             c.rateStart.Value = s.sampling.rateStart;
             c.rateEnd.Value = s.sampling.rateEnd;
             c.rateStep.Value = s.sampling.rateStep;
@@ -593,14 +594,11 @@ classdef (Abstract) SettingsTab < appui.Core
             c.excludedShots.Value = char(strjoin(string(fieldOr(s.sampling, "excludedShots", zeros(1, 0))), " "));
             c.requiredMarks.Value = char(strjoin(string(fieldOr(s.sampling, "requiredMarks", strings(1, 0))), " "));
             c.excludedMarks.Value = char(strjoin(string(fieldOr(s.sampling, "excludedMarks", strings(1, 0))), " "));
-            c.markCountBy.Value = char(fieldOr(s.sampling, "markCountBy", "perShot"));
-            c.markCountStart.Value = double(fieldOr(s.sampling, "markCountStart", 100));
-            c.markCountEnd.Value = double(fieldOr(s.sampling, "markCountEnd", 300));
-            c.markCountStep.Value = double(fieldOr(s.sampling, "markCountStep", 50));
             c.requireOuter.Value = s.sampling.requireOuterShots;
             c.randomRepeats.Value = s.sampling.randomRepeats;
             refreshSeedMenu(app);   % 「設定」→「乱数の種…」（設定 sampling.seed）
             c.layoutPlanInfo.Value = cellstr(layoutText(s.sampling));
+            c.zoneConstraint.Value = logical(fieldOr(s.sampling.constraints, "radialZones", true));
             c.zoneEdges.Value = char(strjoin(string(s.sampling.constraints.radialZoneEdgesMm), " "));
             c.quadrants.Value = s.sampling.constraints.quadrants;
             c.scanConstraint.Value = s.sampling.constraints.scanDirection;
@@ -657,6 +655,7 @@ classdef (Abstract) SettingsTab < appui.Core
             methods = s.methods;
             c.featureXY.Value = any(methods.featureSets == "XY");
             c.featureXYR.Value = any(methods.featureSets == "XYR");
+            refreshContinuousColumns(app, methods.continuousColumns);
             c.gpr.Value = methods.gpr.enabled;
             c.kernels.Value = cellstr(methods.gpr.kernels);
             c.maternNu.Value = char(strjoin(string(methods.gpr.maternNu), " "));
@@ -746,15 +745,26 @@ classdef (Abstract) SettingsTab < appui.Core
             s.sampling.constraints.markEqual = string(c.markBalance.Value) == "equal";
             s.sampling.markRequirePerShot = c.markRequirePerShot.Value;
             s.sampling.markMinPerShot = c.markMinPerShot.Value;
+            % 学習 Shot/Mark 数：開始・終了・刻みは、Shot 単位なら Shot 数（nShots…）、Mark 単位なら Mark 数（markCount…）
+            countMode = string(c.countBy.Value);
+            s.sampling.countBy = ternary(countMode == "rate", "rate", "shots");
+            sweepValues = [c.nShotsStart.Value, c.nShotsEnd.Value, c.nShotsStep.Value];
             try
-                s.sampling.nShots = alignest.shotCountList(c.nShotsStart.Value, c.nShotsEnd.Value, c.nShotsStep.Value);
-                s.sampling.nShotsStart = c.nShotsStart.Value;
-                s.sampling.nShotsEnd = c.nShotsEnd.Value;
-                s.sampling.nShotsStep = c.nShotsStep.Value;
+                counts = alignest.shotCountList(sweepValues(1), sweepValues(2), sweepValues(3));
+                if string(c.samplingUnit.Value) == "mark"
+                    [s.sampling.markCountStart, s.sampling.markCountEnd, s.sampling.markCountStep] = ...
+                        deal(sweepValues(1), sweepValues(2), sweepValues(3));
+                else
+                    s.sampling.nShots = counts;
+                    [s.sampling.nShotsStart, s.sampling.nShotsEnd, s.sampling.nShotsStep] = ...
+                        deal(sweepValues(1), sweepValues(2), sweepValues(3));
+                end
             catch
                 % 正しくない組み合わせのときは前の値のまま（欄の下に理由を出す）
             end
-            s.sampling.countBy = string(c.countBy.Value);
+            if string(c.samplingUnit.Value) == "mark" && countMode ~= "rate"
+                s.sampling.markCountBy = ternary(countMode == "perShot", "perShot", "total");
+            end
             try
                 alignest.measurementRateList(c.rateStart.Value, c.rateEnd.Value, c.rateStep.Value);
                 s.sampling.rateStart = c.rateStart.Value;
@@ -780,15 +790,12 @@ classdef (Abstract) SettingsTab < appui.Core
             if ok
                 s.sampling.excludedMarks = keys;
             end
-            s.sampling.markCountBy = string(c.markCountBy.Value);
-            s.sampling.markCountStart = c.markCountStart.Value;
-            s.sampling.markCountEnd = c.markCountEnd.Value;
-            s.sampling.markCountStep = c.markCountStep.Value;
             s.sampling.randomRepeats = c.randomRepeats.Value;
             [values, ok] = parseNumbers(c.zoneEdges.Value);
             if ok && all(values > 0 & values < s.data.waferRadiusMm)
                 s.sampling.constraints.radialZoneEdgesMm = unique(values);
             end
+            s.sampling.constraints.radialZones = c.zoneConstraint.Value;
             s.sampling.constraints.quadrants = c.quadrants.Value;
             s.sampling.constraints.scanDirection = c.scanConstraint.Value;
             s.sampling.constraints.slack = c.slack.Value;
@@ -816,6 +823,7 @@ classdef (Abstract) SettingsTab < appui.Core
             s.overlay.perShotFormula = struct("dx", string(c.overlayPerShotDx.Value), "dy", string(c.overlayPerShotDy.Value));
             featureNames = ["XY", "XYR"];
             s.methods.featureSets = featureNames([c.featureXY.Value, c.featureXYR.Value]);
+            s.methods.continuousColumns = reshape(string(c.continuousColumns.Value), 1, []);
             s.methods.gpr.enabled = c.gpr.Value;
             s.methods.gpr.kernels = string(c.kernels.Value);
             [values, ok] = parseNumbers(c.maternNu.Value);
@@ -878,15 +886,17 @@ classdef (Abstract) SettingsTab < appui.Core
                     rates = alignest.measurementRateList(c.rateStart.Value, c.rateEnd.Value, c.rateStep.Value);
                     listText = "→ 計測率：" + previewList(rates, app.LIST_PREVIEW_COUNT) + sprintf(" %%（%d 通り）", ...
                         numel(rates)) + rateExample(app, rates);
+                elseif string(c.countBy.Value) == "perShot"
+                    listText = "→ 計測する Mark の数 = 1 Shot あたりの数 × 候補 Shot 数";
                 else
                     counts = alignest.shotCountList(c.nShotsStart.Value, c.nShotsEnd.Value, c.nShotsStep.Value);
-                    listText = "→ 学習 Shot 数：" + previewList(counts, app.LIST_PREVIEW_COUNT) + ...
-                        sprintf("（%d 通り）", numel(counts));
+                    listText = "→ 学習 " + ternary(string(c.samplingUnit.Value) == "mark", "Mark", "Shot") + " 数：" + ...
+                        previewList(counts, app.LIST_PREVIEW_COUNT) + sprintf("（%d 通り）", numel(counts));
                 end
             catch err
                 usesCounts = any(ismember(method, ["ioptimal", "doptimal", "random", "sobol", "poisson"])) || ...
                     (any(method == "excel") && hasPriorityPlans(app.Settings.sampling)) || ...
-                    (any(ismember(method, alignest.markPlanTypes())) && string(c.countBy.Value) == "rate");
+                    (any(ismember(method, alignest.markPlanTypes())) && string(c.countBy.Value) ~= "perShot");
                 if usesCounts
                     text = "⚠ " + string(err.message);
                 end
@@ -930,9 +940,9 @@ classdef (Abstract) SettingsTab < appui.Core
             [values, ok] = parseNumbers(c.zoneEdges.Value);
             text = "";
             radiusMm = app.Settings.data.waferRadiusMm;
-            if ~ok || any(values <= 0 | values >= radiusMm)
-                text = sprintf("⚠ 同心円の区切りは 0 より大きく %g mm より小さい半径 [mm] を空白で区切って入れてください" + ...
-                    "（使わないなら空欄）。", radiusMm);
+            if c.zoneConstraint.Value && (~ok || isempty(values) || any(values <= 0 | values >= radiusMm))
+                text = sprintf("⚠ 半径の制約の区切りは 0 より大きく %g mm より小さい半径 [mm] を空白で区切って入れて" + ...
+                    "ください（使わないなら「半径」のチェックを外す）。", radiusMm);
             end
             c.zoneError.Text = text;
             messages = [messages; text(text ~= "")];
@@ -945,6 +955,15 @@ classdef (Abstract) SettingsTab < appui.Core
             if ~isempty(missing)
                 text = "⚠ 質的変数に選んだ列が、読み込んだデータにありません：" + strjoin(missing, "、") + ...
                     "。選び直すか、その列を含むファイルを読み込んでください。";
+            end
+            continuousMissing = strings(1, 0);
+            if ~isempty(app.Data) && isfield(app.Data, "units")
+                selectedContinuous = reshape(string(c.continuousColumns.Value), 1, []);
+                continuousMissing = selectedContinuous(~ismember(selectedContinuous, alignest.numericColumns(app.Data.units)));
+            end
+            if ~isempty(continuousMissing)
+                text = strtrim(text + " ⚠ 説明変数に選んだ連続値の列が、読み込んだデータに無いか数値ではありません：" + ...
+                    strjoin(continuousMissing, "、") + "。");
             end
             c.factorColumnsError.Text = text;
             messages = [messages; text(text ~= "")];
@@ -974,20 +993,13 @@ classdef (Abstract) SettingsTab < appui.Core
             messages = [messages; text(text ~= "")];
             [values, ok] = parseNumbers(c.markPerShot.Value);
             text = "";
-            byRate = string(c.countBy.Value) == "rate";
-            byTotal = string(c.markCountBy.Value) == "total";
-            if any(ismember(method, alignest.markPlanTypes())) && ~byRate && ~byTotal && (~ok || isempty(values) || any(values <= 0))
+            if any(ismember(method, alignest.markPlanTypes())) && string(c.countBy.Value) == "perShot" && ...
+                    (~ok || isempty(values) || any(values <= 0))
                 text = "⚠ 1 Shot あたりの計測 Mark 数は 0 より大きい数を空白で区切って入れてください（例：1 1.5 2）。";
-            elseif any(ismember(method, alignest.markPlanTypes())) && ~byRate && byTotal
-                counts = c.markCountStart.Value:c.markCountStep.Value:c.markCountEnd.Value;
-                if isempty(counts)
-                    text = "⚠ 計測する Mark の数の終了は、開始以上にしてください。";
-                elseif numel(counts) > app.MAX_COUNT_LIST
-                    text = sprintf("⚠ 計測する Mark の数が %d 通りになります（上限 %d 通り）。刻みを大きくしてください。", ...
-                        numel(counts), app.MAX_COUNT_LIST);
-                end
             end
-            c.markError.Text = text;
+            if text ~= ""   % 1 Shot あたりの Mark 数の理由は、学習 Shot/Mark 数の欄の下に足す
+                c.nShotsError.Text = char(strtrim(string(c.nShotsError.Text) + " " + text));
+            end
             messages = [messages; text(text ~= "")];
             text = "";
             if c.gam.Value
@@ -1042,33 +1054,31 @@ classdef (Abstract) SettingsTab < appui.Core
             constrained = any(ismember(method, ["ioptimal", "doptimal", "random", "sobol", "poisson"])) || ...
                 (any(method == "excel") && hasPriorityPlans(app.Settings.sampling));   % Excel の優先順・Sobol 列なども Shot 数ごと
             markPlans = any(ismember(method, alignest.markPlanTypes()));   % Mark 単位の計画も計測率でスイープできる
-            markConstraints = any(ismember(method, ["mark", "markd", "markrandom"]));   % Mark 単位のポアソンディスクは制約を使わない
+            markConstraints = any(ismember(method, ["mark", "markd", "markrandom"]));   % Mark 番号・各 Shot の点数の制約を使う選び方
             optimal = any(ismember(method, ["ioptimal", "doptimal", "mark", "markd"]));
-            shotConstraints = any(ismember(method, ["ioptimal", "doptimal", "random"]));
-            shotPlans = shotConstraints || any(ismember(method, ["sobol", "poisson"]));   % 必ず計測する・計測しない Shot は Sobol 列などにも効く
-            byRate = string(c.countBy.Value) == "rate";
-            c.countBy.Enable = onOff(constrained || markPlans);
-            c.nShotsList.Enable = onOff(constrained || markPlans);
-            set([c.nShotsStart, c.nShotsEnd, c.nShotsStep], 'Enable', onOff(constrained && ~byRate));
-            set([c.rateStart, c.rateEnd, c.rateStep], 'Enable', onOff((constrained || markPlans) && byRate));
+            constraintsUsed = any(method ~= "excel");   % ③ 制約は Excel で指定のほかのすべての選び方で使う
+            shotPlans = any(ismember(method, ["ioptimal", "doptimal", "random", "sobol", "poisson"]));
+            countMode = string(c.countBy.Value);
+            usesCounts = constrained || markPlans;
+            c.countBy.Enable = onOff(usesCounts);
+            c.nShotsList.Enable = onOff(usesCounts);
+            set([c.nShotsStart, c.nShotsEnd, c.nShotsStep], 'Enable', onOff(usesCounts && countMode == "count"));
+            set([c.rateStart, c.rateEnd, c.rateStep], 'Enable', onOff(usesCounts && countMode == "rate"));
+            c.markPerShot.Enable = onOff(markPlans && countMode == "perShot");
             % 必ず計測する Shot・同心円の区切りは、Mark 単位の計画にも効く（Shot の Mark すべて・Mark の半径）
             set([c.requiredShots, c.requireOuter, c.requiredInfo, c.excludedShots], 'Enable', onOff(shotPlans || markPlans));
-            c.zoneEdges.Enable = onOff(shotConstraints || markConstraints);
+            set([c.zoneConstraint, c.quadrants, c.scanConstraint, c.slack], 'Enable', onOff(constraintsUsed));
+            c.zoneEdges.Enable = onOff(constraintsUsed && c.zoneConstraint.Value);
             set([c.requiredMarks, c.excludedMarks], 'Enable', onOff(markPlans));
-            set([c.quadrants, c.scanConstraint], 'Enable', onOff(shotConstraints));
-            c.slack.Enable = onOff(shotConstraints || markConstraints);
             set([c.randomRepeats], 'Enable', onOff(any(ismember(method, ["random", "markrandom", "poisson", "markpoisson"]))));
             set([c.designOrder, c.designFeatures, c.exchangeStarts], 'Enable', onOff(optimal));
             set([c.markBalance, c.markRequirePerShot], 'Enable', onOff(markConstraints));
-            byTotal = string(c.markCountBy.Value) == "total";
-            c.markCountBy.Enable = onOff(markPlans && ~byRate);
-            c.markPerShot.Enable = onOff(markPlans && ~byRate && ~byTotal);
-            set([c.markCountStart, c.markCountEnd, c.markCountStep], 'Enable', onOff(markPlans && ~byRate && byTotal));
             % 使えない理由を書く（Mark 単位を選んでも欄が使えないと思われないように）
-            if markPlans && byRate
-                c.markCountNote.Text = '「学習 Shot 数」を計測率にしているので、Mark の数は上の計測率（開始・終了・刻み）で決めます。';
-            elseif ~markPlans
-                c.markCountNote.Text = '計測点の選び方を「Mark 単位」にすると使えます。';
+            if ~markPlans
+                c.markCountNote.Text = '① データの粒度を「Mark 単位」にすると使えます。';
+            elseif ~markConstraints
+                c.markCountNote.Text = ['Wafer 中心に最も近い Mark は必ず計測します。Mark 番号ごとの計測数と各 Shot の点数は、' ...
+                    'I 最適・D 最適・ランダムで使います。'];
             else
                 c.markCountNote.Text = 'Wafer 中心に最も近い Mark は必ず計測します。';
             end
@@ -1134,6 +1144,23 @@ classdef (Abstract) SettingsTab < appui.Core
             end
         end
 
+        function refreshContinuousColumns(app, selected)
+            % 説明変数に足せる連続値の列の一覧：読み込んだデータの数値の列と、設定で選んであるがデータに無い列
+            c = app.Controls;
+            if nargin < 2
+                selected = string(c.continuousColumns.Value);
+            end
+            selected = reshape(string(selected), 1, []);
+            available = strings(1, 0);
+            if ~isempty(app.Data) && isfield(app.Data, "units")
+                available = alignest.numericColumns(app.Data.units);
+            end
+            absent = selected(~ismember(selected, available));
+            c.continuousColumns.Items = cellstr([available, absent + "（データに無い）"]);
+            c.continuousColumns.ItemsData = cellstr([available, absent]);
+            c.continuousColumns.Value = cellstr(selected);
+        end
+
         function missing = missingFactorColumns(app, selected)
             % データを読み込んでいるときだけ、データに無い列を返す
             missing = strings(1, 0);
@@ -1143,23 +1170,46 @@ classdef (Abstract) SettingsTab < appui.Core
         end
 
         function onSamplingUnitChanged(app)
-            % 計測点の単位を変えたとき：一覧をその単位の選び方にする（「Excel ファイルで指定」は選んだまま。ほかに
-            % 残らなければ、その単位の I 最適）
+            % データの粒度を変えたとき：一覧をその粒度の選び方にし（選んだアルゴリズムはそのまま）、学習 Shot/Mark 数の欄を
+            % その粒度の数にする（Shot 数と Mark 数は別に覚えておく）
             c = app.Controls;
-            showSamplingMethods(app, string(c.samplingUnit.Value), string(c.samplingMethod.Value));
+            sampling = app.Settings.sampling;
+            sampling.unit = string(c.samplingUnit.Value);
+            showCountControls(app, sampling);
+            showSamplingMethods(app, sampling.unit, string(c.samplingMethod.Value));
             onSettingsChanged(app);
         end
 
-        function showSamplingMethods(app, unit, selected)
-            % 計測点の選び方の一覧を単位 unit の選び方にし、selected のうちその単位にあるものを選ぶ（別の単位の選び方しか
-            % 残らないときは、その単位の I 最適も選ぶ）
-            [methods, names] = alignest.samplingUnitMethods(unit);
-            selected = reshape(string(selected), 1, []);
-            chosen = selected(ismember(selected, methods));
-            if ~any(chosen ~= "excel") && any(selected ~= "excel")
-                defaults = alignest.normalizeSamplingUnit(struct("unit", unit, "method", strings(1, 0)));
-                chosen = [defaults.method, chosen];
+        function showCountControls(app, sampling)
+            % 学習 Shot/Mark 数の欄を、データの粒度に合わせる。Shot 単位：Shot 数（nShotsStart・End・Step）か計測率。
+            % Mark 単位：Mark 数（markCountStart・End・Step。markCountBy = "total"）・計測率・1 Shot あたりの Mark 数
+            % （markPerShot。markCountBy = "perShot"）
+            c = app.Controls;
+            byRate = string(fieldOr(sampling, "countBy", "shots")) == "rate";
+            if string(sampling.unit) == "mark"
+                c.countBy.Items = {'Mark 数で決める', '計測率 [%] で決める', '1 Shot あたりの Mark 数で決める'};
+                c.countBy.ItemsData = {'count', 'rate', 'perShot'};
+                values = [double(fieldOr(sampling, "markCountStart", 100)), double(fieldOr(sampling, "markCountEnd", 300)), ...
+                    double(fieldOr(sampling, "markCountStep", 50))];
+                mode = ternary(byRate, "rate", ternary(string(fieldOr(sampling, "markCountBy", "perShot")) == "perShot", ...
+                    "perShot", "count"));
+                c.countUnitLabel.Text = 'Mark 数';
+            else
+                c.countBy.Items = {'Shot 数で決める', '計測率 [%] で決める'};
+                c.countBy.ItemsData = {'count', 'rate'};
+                values = [sampling.nShotsStart, sampling.nShotsEnd, sampling.nShotsStep];
+                mode = ternary(byRate, "rate", "count");
+                c.countUnitLabel.Text = 'Shot 数';
             end
+            c.countBy.Value = char(mode);
+            [c.nShotsStart.Value, c.nShotsEnd.Value, c.nShotsStep.Value] = deal(values(1), values(2), values(3));
+        end
+
+        function showSamplingMethods(app, unit, selected)
+            % アルゴリズムの一覧をデータの粒度 unit の選び方にし、selected と同じアルゴリズムを選ぶ（アルゴリズムは粒度に
+            % よらず共通なので、粒度を変えても選んだアルゴリズムはそのまま。alignest.convertSamplingMethods）
+            [methods, names] = alignest.samplingUnitMethods(unit);
+            chosen = alignest.convertSamplingMethods(string(selected), unit);
             c = app.Controls;
             c.samplingMethod.Items = cellstr(names);
             c.samplingMethod.ItemsData = cellstr(methods);
@@ -1293,7 +1343,7 @@ control = uieditfield(parent, 'numeric', 'Limits', [0, 100], 'ValueDisplayFormat
 end
 
 function lines = layoutText(sampling)
-% 「Excel ファイルで指定」で読み込んだ学習パターンの要約（1パターン1行）
+% 「Excel 取込」で読み込んだ学習パターンの要約（1パターン1行）
 lines = "まだ読み込んでいません";
 try
     plans = alignest.parseLayoutPlans(string(fieldOr(sampling, "layoutPlans", strings(0, 1))));
@@ -1326,7 +1376,7 @@ end
 end
 
 function value = hasPriorityPlans(sampling)
-% Excel ファイルで指定した学習パターンに優先順があるか（学習 Shot 数・計測率を使う）
+% Excel 取込した学習パターンに優先順があるか（学習 Shot 数・計測率を使う）
 value = false;
 try
     plans = alignest.parseLayoutPlans(string(fieldOr(sampling, "layoutPlans", strings(0, 1))));

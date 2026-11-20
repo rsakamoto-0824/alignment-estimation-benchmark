@@ -108,9 +108,14 @@ switch method.family
         estimate.Y = result.predictionV;
         out.edf = [result.edfU, result.edfV];
     otherwise
+        % 説明変数に足す連続値の列（settings.methods.continuousColumns）：距離の手法は説明変数の列に、GAM は線形の項に足す
+        extra = alignest.continuousFeatures(unit, marks, continuousColumnsOf(settings), radius);
         features = [];
+        groups = [];
         if any(method.family == ["GPR", "TPS", "RBF", "OK", "UK"])
-            features = alignest.basis.distanceFeatures(marks.x, marks.y, method.featureSet, radius);
+            features = [alignest.basis.distanceFeatures(marks.x, marks.y, method.featureSet, radius), extra];
+            groups = alignest.basis.featureGroups(method.featureSet);
+            groups = [groups, max(groups) + (1:size(extra, 2))];   % ARD カーネルは足した列ごとに長さスケールを持つ
         end
         for k = find(active)
             train = trainIndex.(axisNames(k));
@@ -120,7 +125,7 @@ switch method.family
                 case "GPR"
                     factors = factorLevels(unit, marks, train, test, settings, axisNames(k));
                     result = alignest.models.gprFitPredict(features(train, :), features(test, :), ...
-                        alignest.basis.featureGroups(method.featureSet), y, method.variant, method.factorMode, factors, ...
+                        groups, y, method.variant, method.factorMode, factors, ...
                         maxIterations=options.gprMaxIterations, backfitMaxIterations=options.backfitMaxIterations, ...
                         backfitTolerance=options.backfitToleranceNm);
                     out.aux(k) = result.noiseStd;
@@ -155,6 +160,8 @@ switch method.family
                         factors = factorLevels(unit, marks, train, test, settings, axisNames(k));
                         [factorTrain, factorTest] = factorCodes(factors, numel(train), numel(test));
                     end
+                    parametricTrain = [factorTrain, extra(train, :)];   % 連続値の列は罰則なしの線形の項
+                    parametricTest = [factorTest, extra(test, :)];
                     nBasis = struct("axis", options.gamBasisAxis, "radius", options.gamBasisRadius);
                     [gpTerms, gpKernel] = gamGpTerms(method.variant);
                     shapes = struct();
@@ -162,7 +169,7 @@ switch method.family
                         shapes.(term) = "gp";
                     end
                     setup = @(scales) alignest.models.gamSetup(subsetPoints(points, train), subsetPoints(points, test), ...
-                        method.featureSet, factorTrain, factorTest, nBasis, shapes=shapes, lengthScales=scales, ...
+                        method.featureSet, parametricTrain, parametricTest, nBasis, shapes=shapes, lengthScales=scales, ...
                         gpKnots=options.gamGpKnots, gpGridKnots=options.gamGpGridKnots, gpKernel=gpKernel);
                     result = alignest.models.gamShapeFit(setup, gpTerms, options.gamGpLengthScales, y);
                     out.aux(k) = mean(result.log10Lambda);
@@ -200,6 +207,14 @@ out.outlierIndex = find(outlier);
 out.seconds = toc(timer);
 out.timing = struct("outliers", outlierSeconds, "model", modelSeconds, ...
     "prepare", max(out.seconds - outlierSeconds - modelSeconds, 0));
+end
+
+function columns = continuousColumnsOf(settings)
+% 説明変数に足す連続値の列（以前の設定に無ければ空）
+columns = strings(1, 0);
+if isfield(settings, "methods") && isfield(settings.methods, "continuousColumns")
+    columns = reshape(string(settings.methods.continuousColumns), 1, []);
+end
 end
 
 function grid = tpsLambdaGrid(variant, options)

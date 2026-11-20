@@ -199,7 +199,7 @@ classdef TestGroupsScatterPriority < matlab.unittest.TestCase
 
         function priorityFileIsReadByColumnNames(testCase)
             % 以前の「ファイルの優先順」の形（Shot 番号と優先度。1 = 必ず計測、0 = 計測しない、空欄 = 行の順）も、
-            % 「Excel ファイルで指定」の優先順として読める（alignest.readLayoutPlans）
+            % 「Excel 取込」の優先順として読める（alignest.readLayoutPlans）
             folder = tempname;
             mkdir(folder);
             cleanup = onCleanup(@() rmdir(folder, 's'));

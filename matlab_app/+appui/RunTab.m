@@ -847,7 +847,7 @@ classdef (Abstract) RunTab < appui.Core
                 '｜全計測に対する I 効率 %.1f%%・D 効率 %.1f%%'], unit.label, plan.label, plan.nShots, nCandidates, ...
                 100 * plan.nShots / max(nCandidates, 1), numel(plan.requiredShotIndex), plan.criterionI, plan.criterionD, ...
                 100 * plan.efficiencyI, 100 * plan.efficiencyD);
-            if any(plan.type == ["ioptimal", "doptimal", "random"])
+            if any(plan.type == ["ioptimal", "doptimal", "random", "sobol", "poisson"])
                 lines = lines + sprintf("｜制約の違反量 %d", plan.violation);
             end
             lines = [lines; "計測する shotNo：" + strjoin(string(plan.shotNos(:).'), " ")];

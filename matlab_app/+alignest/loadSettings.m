@@ -42,7 +42,7 @@ settings = alignest.loadSettings(string(text), "text");
 end
 
 function decoded = upgradeLayout(decoded)
-% 以前の「手動・人の選択」「ファイルの優先順」を「Excel ファイルで指定」に直す（alignest.upgradeLayoutSettings）。
+% 以前の「手動・人の選択」「ファイルの優先順」を「Excel 取込」に直す（alignest.upgradeLayoutSettings）。
 % 直せない（優先順の Shot が無いなど）ときは、その選び方を除いて読む（何も残らなければ I 最適）
 if ~isstruct(decoded) || ~isfield(decoded, "sampling") || ~isstruct(decoded.sampling)
     return
