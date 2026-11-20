@@ -10,6 +10,10 @@ if isempty(featureSets)
     featureSets = "XYR";
 end
 config.featureSets = reshape(featureSets, 1, []);
+if ~isfield(config, "continuousColumns")
+    config.continuousColumns = strings(1, 0);   % 説明変数に足す連続値の列（以前の設定には無い）
+end
+config.continuousColumns = reshape(string(config.continuousColumns), 1, []);
 if isfield(config, "rbfe")
     config = rmfield(config, "rbfe");
 end

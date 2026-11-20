@@ -260,7 +260,7 @@ classdef TestRotationMaps < matlab.unittest.TestCase
 
         function screenFlowFromInputToExport(testCase)
             % 画面：計測データ（目的変数・対象の装置）→ ばらつき → 計測マップ → 検証（全計測とも）→ 条件の比較 → 書き出し
-            % （Excel ファイルで指定として読み直せる）。評価の推定値・未知の座標の推定値も入力にできる
+            % （Excel 取込として読み直せる）。評価の推定値・未知の座標の推定値も入力にできる
             raw = readtable(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'), 'TextType', 'string');
             raw.Thickness = 100 + 0.01 * raw.measX;   % 目的変数にする数値の列
             file = [tempname, '.csv'];

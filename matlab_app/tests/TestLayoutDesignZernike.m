@@ -1,5 +1,5 @@
 classdef TestLayoutDesignZernike < matlab.unittest.TestCase
-    %TESTLAYOUTDESIGNZERNIKE 計測配置の選び方の比較（D 最適・Excel ファイルで指定（パターン・優先順・Mark 単位）・
+    %TESTLAYOUTDESIGNZERNIKE 計測配置の選び方の比較（D 最適・Excel 取込（パターン・優先順・Mark 単位）・
     %   Mark 単位の I 最適）、Fringe Zernike（7次まで）、
     %   異常値の MAD、Slot の偶奇、Shot ごとの成分の式、Matérn の ν の時間の目安、全角の数字を確かめる。
 
@@ -130,7 +130,7 @@ classdef TestLayoutDesignZernike < matlab.unittest.TestCase
         end
 
         function excelPlansSupportPriorityAndMarks(testCase)
-            % 「Excel ファイルで指定」：Mark 単位のパターン（markNo の列）と優先順（1・2・3…）。計測マップの Excel
+            % 「Excel 取込」：Mark 単位のパターン（markNo の列）と優先順（1・2・3…）。計測マップの Excel
             % （計測マップ_Mark シート）もそのまま読める。パターンと優先順が混ざると、列に名前を付ける
             unit = testCase.Data.units(1);
             marks = unit.marks;
@@ -372,7 +372,7 @@ classdef TestLayoutDesignZernike < matlab.unittest.TestCase
             testCase.verifyEqual(settings.evaluation.outlierMethod, "mad");
             testCase.verifyEqual(settings.sampling.method, ["ioptimal", "doptimal"]);
             testCase.verifyEqual(settings.sampling.exchangeStarts, 20);
-            testCase.verifyEqual(settings.sampling.nShots, [10, 20, 30, 40, 50], "開始・終了・刻みだけ書けば並びもそれに合わせる");
+            testCase.verifyEqual(settings.sampling.nShots, [20, 30, 40, 50], "開始（初期値 20）・終了・刻みに並びも合わせる");
             defaults = alignest.defaultSettings();
             testCase.verifyEqual(settings.methods, defaults.methods, "書いていない項目は初期設定");
             testCase.verifyEqual(settings.data, defaults.data);

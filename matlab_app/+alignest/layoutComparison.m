@@ -7,7 +7,8 @@ function comparison = layoutComparison(results, methodIndex, metric, statistic, 
 %   Wafer の集計 statistic（alignest.summarizeResults と同じ。ランダムのくり返しは Wafer ごとに平均）と、
 %   学習 Shot 数・計測する Mark 数・I 基準・D 基準（Wafer の平均）を並べる。
 %   comparison は表：group（列）・type（選び方：ioptimal・doptimal・random・sobol・poisson・file（Excel の優先順。以前の
-%   ファイルの優先順）・manual（Excel のパターン。以前の手動・人の選択）・mark・markd・markrandom・markpoisson）・typeLabel・
+%   ファイルの優先順）・manual（Excel のパターン。以前の手動・人の選択）・mark・markd・markrandom・marksobol・
+%   markpoisson）・typeLabel・
 %   nShots（学習 Shot 数の平均）・nMarks（計測する Mark 数の平均。以前の結果・読み込んだ結果では NaN）・value・
 %   criterionI・criterionD・efficiencyI・efficiencyD（全計測に対する効率 0〜1 の Wafer の平均）・rate（計測率 [%]：計測率で
 %   決めた学習パターンはその値、ほかは 計測する Mark の数 / 候補の全 Mark の数 × 100 の Wafer の平均。data が無い・Wafer が
@@ -17,11 +18,11 @@ function comparison = layoutComparison(results, methodIndex, metric, statistic, 
 %   comparison.Properties.UserData に指標の名前・小さいほど良いか・選び方の数。
 %   選び方は行の planType（評価した結果）から、無ければ列の名前の先頭（"I最適 20 Shot" など）から決める。
 TYPES = ["ioptimal", "doptimal", "random", "sobol", "poisson", "file", "manual", "mark", "markd", "markrandom", ...
-    "markpoisson"];
+    "marksobol", "markpoisson"];
 LABELS = ["I 最適", "D 最適", "ランダム", "Sobol 列", "ポアソンディスク", "Excel の優先順", "Excel のパターン", ...
-    "Mark 単位の I 最適", "Mark 単位の D 最適", "Mark 単位のランダム", "Mark 単位のポアソンディスク"];
+    "Mark 単位の I 最適", "Mark 単位の D 最適", "Mark 単位のランダム", "Mark 単位の Sobol 列", "Mark 単位のポアソンディスク"];
 PREFIXES = ["I最適", "D最適", "ランダム", "Sobol", "ポアソン", "優先順", "", "Mark最適", "MarkD最適", "Markランダム", ...
-    "Markポアソン"];
+    "MarkSobol", "Markポアソン"];
 summary = alignest.summarizeResults(results, metric, statistic);
 table_ = results.table(results.table.methodIndex == methodIndex, :);
 groups = reshape(string(summary.groups), [], 1);

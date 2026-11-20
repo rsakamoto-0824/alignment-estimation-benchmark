@@ -835,7 +835,7 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             app.Controls.shotOverlayByScan.ValueChangedFcn([], []);
             testCase.verifyEqual(app.Controls.shotOverlayAxesGrid.ColumnWidth, {'1x', 0, 0});
             testCase.verifyEqual(string(overlayAxes(2).Visible), "off");
-            % 計測する Shot の優先順（Excel ファイルで指定。以前の優先順のファイルと同じ形も読める）
+            % 計測する Shot の優先順（Excel 取込。以前の優先順のファイルと同じ形も読める）
             folder = tempname;
             mkdir(folder);
             cleanup = onCleanup(@() rmdir(folder, 's'));

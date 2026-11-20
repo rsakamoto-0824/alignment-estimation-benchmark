@@ -181,6 +181,47 @@ classdef TestSpatialModels < matlab.unittest.TestCase
             end
         end
 
+        function continuousColumnsAreAddedToFeatures(testCase)
+            % 説明変数に足す連続値の列：数値の「その他の列」だけを候補にし、点の値を平均 0・座標と同じばらつきにそろえて
+            % GPR・TPS・RBF・Kriging の説明変数の列（GAM は線形の項）に足す。多項式は使わない
+            root = fileparts(fileparts(mfilename('fullpath')));
+            raw = alignest.readMeasurementFile(fullfile(root, 'sample_data', 'sample_alignment.csv'));
+            raw.Signal = string(raw.measX + 0.01 * mod(raw.shotNo, 7));   % 計測値とほぼ同じ値の数値の列（効き目を確かめる）
+            raw.Label = "L" + string(mod(raw.shotNo, 3));                   % 数でない列は候補にしない
+            raw.Signal(1) = "";                                             % 値の無い点は平均（0）にする
+            data = alignest.prepareData(raw, alignest.guessColumnMapping(raw.Properties.VariableNames));
+            testCase.verifyEqual(alignest.numericColumns(data.units), "Signal");
+            unit = data.units(1);
+            values = alignest.continuousFeatures(unit, unit.marks, "Signal", 150);
+            known = strlength(unit.marks.attributes(:, unit.attributeNames == "Signal")) > 0;
+            testCase.verifyEqual(mean(values(known)), 0, 'AbsTol', 1e-12);
+            testCase.verifyEqual(std(values(known)), std([unit.marks.x; unit.marks.y] / 150), 'RelTol', 1e-12);
+            testCase.verifyEqual(values(~known), zeros(nnz(~known), 1));
+            testCase.verifyError(@() alignest.continuousFeatures(unit, unit.marks, "None", 150), 'alignest:continuousColumn');
+            settings = alignest.defaultSettings();
+            settings.methods = alignest.recommendedMethods('none');
+            settings.methods.gpr.enabled = true;
+            settings.methods.gam.enabled = true;
+            settings.methods.polynomial.enabled = true;
+            settings.methods.continuousColumns = "Signal";
+            methods = alignest.buildMethodList(settings.methods);
+            testCase.verifyTrue(contains(methods(1).label, "X,Y,半径,Signal"), "手法の名前に足した列");
+            plan = alignest.planTrainingShots(unit, struct("type", "ioptimal", "nShots", 30, "rate", NaN, "repeat", 1, ...
+                "label", "I最適 30 Shot", "group", "30 Shot", "shotNos", []), settings.sampling, 150);
+            without = settings;
+            without.methods.continuousColumns = strings(1, 0);
+            rmse = @(out) sqrt(mean((out.estimate.X - unit.marks.measX(out.testIndex.X)) .^ 2));
+            for m = 1:numel(methods)
+                withColumn = alignest.estimateWafer(unit, plan, methods(m), settings);
+                plain = alignest.estimateWafer(unit, plan, methods(m), without);
+                if methods(m).family == "XY"
+                    testCase.verifyEqual(withColumn.estimate.X, plain.estimate.X, 'AbsTol', 1e-12, "多項式は使わない");
+                else
+                    testCase.verifyLessThan(rmse(withColumn), 0.5 * rmse(plain), methods(m).label + "：計測値に近い列で誤差が減る");
+                end
+            end
+        end
+
         function selectedFactorsIncludingFileColumnsAreUsed(testCase)
             root = fileparts(fileparts(mfilename('fullpath')));
             raw = alignest.readMeasurementFile(fullfile(root, 'sample_data', 'sample_alignment.csv'));

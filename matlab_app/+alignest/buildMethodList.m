@@ -16,8 +16,9 @@ function methods = buildMethodList(config)
 [modeNames, modeLabels] = alignest.models.gprFactorModes();
 config = alignest.completeMethodSettings(config);
 methods = struct("id", {}, "family", {}, "featureSet", {}, "variant", {}, "factorMode", {}, "label", {});
+continuousLabel = strjoin("," + reshape(string(config.continuousColumns), 1, []), "");   % 説明変数に足した連続値の列
 for featureSet = string(config.featureSets(:)).'
-    featureLabel = featureSetLabel(featureSet);
+    featureLabel = featureSetLabel(featureSet) + continuousLabel;
     if config.gpr.enabled
         for kernel = expandKernels(config.gpr.kernels, config.gpr.maternNu)
             for mode = string(config.gpr.factorModes(:)).'

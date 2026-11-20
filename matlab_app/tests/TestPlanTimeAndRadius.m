@@ -127,7 +127,7 @@ classdef TestPlanTimeAndRadius < matlab.unittest.TestCase
         end
 
         function settingsTabMarkSelections(testCase)
-            % 設定タブ：Mark 単位の計画を選ぶと、必ず計測する Shot・Mark、計測しない Mark、同心円の区切りの欄が使える
+            % 設定タブ：Mark 単位の計画を選ぶと、必ず計測する Shot・Mark、計測しない Mark、制約（半径・象限・Scan 方向）の欄が使える
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
@@ -138,7 +138,7 @@ classdef TestPlanTimeAndRadius < matlab.unittest.TestCase
             app.setSettings(settings);
             c = app.Controls;
             testCase.verifyEqual(string({c.requiredShots.Enable, c.requireOuter.Enable, c.requiredMarks.Enable, ...
-                c.excludedMarks.Enable, c.zoneEdges.Enable, c.quadrants.Enable}), ["on", "on", "on", "on", "on", "off"]);
+                c.excludedMarks.Enable, c.zoneEdges.Enable, c.quadrants.Enable}), ["on", "on", "on", "on", "on", "on"]);
             c.requiredMarks.Value = '12-3 ４０－１, 12-3';
             c.requiredMarks.ValueChangedFcn([], []);
             testCase.verifyEqual(app.Settings.sampling.requiredMarks, ["12-3", "40-1"], "全角・重なりも読む");

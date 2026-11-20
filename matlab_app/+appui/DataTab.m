@@ -171,6 +171,7 @@ classdef (Abstract) DataTab < appui.Core
                 app.Controls.interactionAdvice.Value = {['⚠ 調べられませんでした：' err.message]};
             end
             refreshFactorColumns(app);
+            refreshContinuousColumns(app);
             validateSettings(app);
             refreshRunSummary(app);
             refreshTargetChoices(app);
@@ -873,6 +874,7 @@ classdef (Abstract) DataTab < appui.Core
             app.Controls.summary.Value = {''};
             clearDataMaps(app);
             refreshFactorColumns(app);
+            refreshContinuousColumns(app);
             validateSettings(app);
             if ~isempty(app.RawTable)
                 app.Controls.mappingStatus.Text = '「この対応で読み込む」を押してください。';

@@ -7,7 +7,7 @@ function specs = buildPlanSpecs(sampling)
 %     "sobol"（Sobol 列）："Sobol 20 Shot" のように Shot 数ごとに1つ（Sobol 列の点に近い Shot。乱数は使わない）
 %     "poisson"（ポアソンディスク）：Shot 数ごとに randomRepeats 回（"ポアソン 20 Shot #1"。Shot どうしの距離が d 以上に
 %                なるように乱数の順で選ぶ）
-%     "excel"（Excel ファイルで指定）：sampling.layoutPlans の1行（alignest.readLayoutPlans・parseLayoutPlans）ごとに、
+%     "excel"（Excel 取込）：sampling.layoutPlans の1行（alignest.readLayoutPlans・parseLayoutPlans）ごとに、
 %                パターン（pattern）は "名前（12 Shot）"・"名前（30 Mark）" の1つ（type "manual"）、優先順（priority）は
 %                "名前 20 Shot" のように Shot 数（計測率）ごと（type "file"）。Mark 単位の優先順は、Mark 単位の計画と同じく
 %                1 Shot あたりの Mark 数（markPerShot）・計測率ごと（"名前 1 点/Shot"）。spec.shotNos・markNos が
@@ -20,6 +20,7 @@ function specs = buildPlanSpecs(sampling)
 %                （markCountStart〜markCountEnd を markCountStep ごと）ごとに1つ（"Mark最適 120 点"。spec.markCount）
 %     "markrandom"（Mark 単位の制約つきランダム）：Mark 単位の I 最適と同じ制約・Mark の数で、randomRepeats 回
 %                （"Markランダム 1 点/Shot #1"）
+%     "marksobol"（Mark 単位の Sobol 列）：Mark 単位の I 最適と同じ Mark の数ごとに1つ（"MarkSobol 1 点/Shot"）
 %     "markpoisson"（Mark 単位のポアソンディスク）：Mark 単位の I 最適と同じ Mark の数で、randomRepeats 回
 %                （"Markポアソン 1 点/Shot #1"。Mark どうしの距離が d 以上になるように乱数の順で選ぶ）
 %   sampling.countBy = "rate" なら、Shot 数の代わりに計測率 [%]（rateStart・rateEnd・rateStep）ごとに作る
@@ -29,11 +30,12 @@ function specs = buildPlanSpecs(sampling)
 %   group は結果を集計するときの列（ランダムの繰り返しは同じ group にまとめる）。選び方が1つなら "20 Shot"、
 %   2つ以上なら選び方の名前を付けて "I最適 20 Shot"・"D最適 20 Shot" のようにする（Excel のパターンは名前、優先順は
 %   名前と Shot 数。Excel の列が2つ以上の優先順・パターンと優先順が混ざるときも名前を付ける）。
-%   選び方は、選んだ順によらず I 最適 → D 最適 → ランダム → Sobol 列 → ポアソンディスク → Excel → Mark 単位（I・D・
-%   ランダム・ポアソンディスク）の順に並べる。
-ORDER = ["ioptimal", "doptimal", "random", "sobol", "poisson", "excel", alignest.markPlanTypes()];
+%   選び方は、選んだ順によらず画面の表示順（I 最適 → D 最適 → Sobol 列 → ポアソンディスク → ランダム → Excel → Mark 単位
+%   （I・D・Sobol 列・ポアソンディスク・ランダム））に並べる。
+ORDER = ["ioptimal", "doptimal", "sobol", "poisson", "random", "excel", alignest.markPlanTypes()];
 PREFIX = struct("ioptimal", "I最適", "doptimal", "D最適", "random", "ランダム", "sobol", "Sobol", "poisson", "ポアソン", ...
-    "excel", "", "mark", "Mark最適", "markd", "MarkD最適", "markrandom", "Markランダム", "markpoisson", "Markポアソン");
+    "excel", "", "mark", "Mark最適", "markd", "MarkD最適", "markrandom", "Markランダム", "marksobol", "MarkSobol", ...
+    "markpoisson", "Markポアソン");
 sampling = alignest.upgradeLayoutSettings(sampling);
 methods = unique(reshape(string(sampling.method), 1, []), 'stable');
 unknown = methods(~ismember(methods, ORDER));
@@ -66,7 +68,7 @@ for method = methods
             end
         case "excel"
             specs = [specs, excelSpecs(sampling, compare)]; %#ok<AGROW>
-        case {"mark", "markd"}
+        case {"mark", "markd", "marksobol"}
             [perShot, rates, sizeTexts, counts] = markSizes(sampling);
             for k = 1:numel(sizeTexts)
                 specs(end + 1) = spec(method, NaN, rates(k), 1, prefix + " " + sizeTexts(k), ...
@@ -111,13 +113,13 @@ end
 end
 
 function specs = excelSpecs(sampling, compare)
-% Excel ファイルで指定：パターン（type "manual"）は1つずつ、優先順（type "file"）は Shot 数・計測率（Mark 単位は
+% Excel 取込：パターン（type "manual"）は1つずつ、優先順（type "file"）は Shot 数・計測率（Mark 単位は
 % 1 Shot あたりの Mark 数・計測率）ごと
 specs = struct("type", {}, "nShots", {}, "rate", {}, "repeat", {}, "label", {}, "group", {}, "shotNos", {}, ...
     "markPerShot", {}, "markNos", {}, "required", {}, "markCount", {});
 plans = alignest.parseLayoutPlans(string(fieldOr(sampling, "layoutPlans", strings(0, 1))));
 if isempty(plans)
-    error('alignest:layoutPlans', ['Excel ファイルで指定する学習パターンがありません。「Excel ファイルを読み込む…」で' ...
+    error('alignest:layoutPlans', ['Excel 取込する学習パターンがありません。「Excel ファイルを読み込む…」で' ...
         '読み込んでください。']);
 end
 kinds = string({plans.kind});
