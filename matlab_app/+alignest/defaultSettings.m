@@ -33,11 +33,15 @@ settings.factors.y.mark = true;
 settings.factors.y.shotRowParity = false;
 settings.factors.y.columns = strings(1, 0);
 
-% 学習に使う Shot の選び方
-% 選び方（複数選ぶと、同じ評価の中で選び方どうしを比べる。alignest.buildPlanSpecs）：ioptimal（制約付き I 最適）／
-% doptimal（制約付き D 最適）／random（制約つきランダム）／sobol（Sobol 列：Wafer 上に偏りなく散らばる点に近い Shot）／
-% excel（Excel ファイルで指定：パターン・優先順。Mark 単位も）／
-% mark（Mark 単位の I 最適）／markd（Mark 単位の D 最適）／markrandom（Mark 単位の制約つきランダム。randomRepeats 回）
+% 計測点（学習に使う Shot・Mark）の選び方
+% 選び方（複数選ぶと、同じ評価の中で選び方どうしを比べる。alignest.buildPlanSpecs）：
+% Shot 単位：ioptimal（制約付き I 最適）／doptimal（制約付き D 最適）／random（制約つきランダム）／sobol（Sobol 列：Wafer
+% 上に偏りなく散らばる点に近い Shot）／poisson（ポアソンディスク：Shot どうしの距離が d 以上になるように乱数の順で選ぶ。
+% randomRepeats 回）
+% Mark 単位：mark（I 最適）／markd（D 最適）／markrandom（制約つきランダム。randomRepeats 回）／markpoisson（ポアソン
+% ディスク。randomRepeats 回）
+% どちらの単位にも：excel（Excel ファイルで指定：パターン・優先順。markNo の列があれば Mark 単位）
+settings.sampling.unit = "shot";        % 計測点の単位：shot（Shot 単位）／mark（Mark 単位）。画面ではこの単位の選び方だけを選べる
 settings.sampling.method = "ioptimal";
 settings.sampling.nShotsStart = 10;     % 学習 Shot 数は 開始・終了・刻み で決める（I 最適・ランダム）
 settings.sampling.nShotsEnd = 40;
@@ -48,7 +52,7 @@ settings.sampling.rateStart = 10;       % 計測率 [%] の開始・終了・刻
 settings.sampling.rateEnd = 40;
 settings.sampling.rateStep = 10;
 settings.sampling.randomRepeats = 10;
-settings.sampling.seed = 20261017;   % 乱数の種（メニュー「設定」→「乱数の種…」。学習 Shot の選び方と Mark 配置の最適化で共通）
+settings.sampling.seed = 20261017;   % 乱数の種（メニュー「設定」→「乱数の種…」。計測点の選び方と Mark 配置の最適化で共通）
 settings.sampling.layoutPlans = strings(0, 1);   % Excel ファイルで指定した学習パターン（1行1パターン。alignest.readLayoutPlans・
                                                 % parseLayoutPlans の "種類|名前|shotNo（shotNo-markNo）…"）
 settings.sampling.layoutFile = "";               % 読み込んだ Excel ファイルの名前（表示・記録用）

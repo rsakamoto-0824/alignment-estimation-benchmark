@@ -7,14 +7,14 @@ function conflicts = extensionConflicts(evaluated, requested)
 %   評価に使う Wafer（枚数・割合・選び方。評価済みの Wafer を含むこと。alignest.runEvaluation で確かめる）。
 %   推定の結果を変える次の設定は
 %   同じでなければならない（違うと、評価済みの行と新しい行を同じ条件で比べられないため）。
-%   データの読み込み・学習 Shot の選び方と制約（同心円・4象限・Scan 方向・許容幅・基準モデル・交換法・
+%   データの読み込み・計測点の選び方と制約（同心円・4象限・Scan 方向・許容幅・基準モデル・交換法・
 %   乱数の種・必ず計測する Shot）・評価（外周の半径・1次を除く・異常値の除外・処理時間の記録）・
 %   Overlay 補正の評価・手法の細かい設定（options）。表示の設定（display：Scan 方向の色・向き）は比べない。
 COUNT_FIELDS = ["nShots", "nShotsStart", "nShotsEnd", "nShotsStep", "countBy", "rateStart", "rateEnd", "rateStep", ...
     "layoutPlans", "layoutFile", "randomRepeats", "markPerShot", "markCountBy", "markCountStart", "markCountEnd", ...
     "markCountStep"];
 GROUPS = ["data", "sampling", "options", "evaluation", "overlay"];
-NAMES = ["データの読み込みの条件", "学習 Shot の選び方・制約", "手法の細かい設定", ...
+NAMES = ["データの読み込みの条件", "計測点の選び方・制約", "手法の細かい設定", ...
     "評価の条件（外周の半径・1次を除く・異常値の除外・処理時間の記録）", "Overlay 補正の評価"];
 evaluated = comparable(evaluated, COUNT_FIELDS);
 requested = comparable(requested, COUNT_FIELDS);

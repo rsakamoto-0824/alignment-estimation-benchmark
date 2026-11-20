@@ -9,7 +9,7 @@ function options = markLayoutOptions(settings)
 %   - starts：Mark の数ごとに I 最適な配置を探す始め方の数（1〜50）
 %   - values：制御残差を求める値。"measured"（実測値）・"random"（乱数の Shot の形）
 %   - shapes：乱数の Shot の形の数（1〜1000）
-%   - seed：乱数の種。markLayout には持たず、学習 Shot の選び方と同じ settings.sampling.seed を使う（メニュー「設定」→
+%   - seed：乱数の種。markLayout には持たず、計測点の選び方と同じ settings.sampling.seed を使う（メニュー「設定」→
 %     「乱数の種…」。無ければ初期値）
 %   - orderSigmaNm：乱数の形の 0〜7次の項の大きさ（Shot の端での標準偏差 [nm]。8つ。以前の6つの設定は 6・7次を 0 にする）、
 %     noiseNm：計測のばらつき [nm]、
@@ -41,7 +41,7 @@ for name = string(fieldnames(defaults)).'
         options.(name) = source.(name);
     end
 end
-options.seed = alignest.defaultSettings().sampling.seed;   % 乱数の種は学習 Shot の選び方と共通
+options.seed = alignest.defaultSettings().sampling.seed;   % 乱数の種は計測点の選び方と共通
 if isfield(settings, "sampling") && isstruct(settings.sampling) && isfield(settings.sampling, "seed")
     options.seed = settings.sampling.seed;
 end

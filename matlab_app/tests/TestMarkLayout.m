@@ -309,7 +309,7 @@ classdef TestMarkLayout < matlab.unittest.TestCase
         end
 
         function randomSeedIsInSettingsMenu(testCase)
-            % 乱数の種はメニュー「設定」→「乱数の種…」の1つ（学習 Shot の選び方と Mark 配置の最適化で共通。タブの欄は無い）
+            % 乱数の種はメニュー「設定」→「乱数の種…」の1つ（計測点の選び方と Mark 配置の最適化で共通。タブの欄は無い）
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
             c = app.Controls;

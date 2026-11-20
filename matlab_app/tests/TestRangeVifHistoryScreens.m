@@ -28,7 +28,8 @@ classdef TestRangeVifHistoryScreens < matlab.unittest.TestCase
             app.setSettings(old);
             testCase.verifyEqual(c.overlayPerShot.Value, 'linear');
             testCase.verifyEqual(c.designFeatures.Value, 'XYR');
-            testCase.verifyTrue(any(string(c.samplingMethod.ItemsData) == "markrandom"));
+            testCase.verifyEqual(string(c.samplingUnit.ItemsData), ["shot", "mark"]);
+            testCase.verifyTrue(any(alignest.samplingUnitMethods("mark") == "markrandom"));
             % 計測マップのボタンは決まった幅（文字が切れないように）
             testCase.verifyTrue(all(cellfun(@isnumeric, c.drawMeasure.Parent.ColumnWidth)));
             % データ読込の異常値の除外：MAD

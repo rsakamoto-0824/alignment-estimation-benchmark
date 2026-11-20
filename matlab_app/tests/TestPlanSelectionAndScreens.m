@@ -167,10 +167,11 @@ classdef TestPlanSelectionAndScreens < matlab.unittest.TestCase
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
             app.applyMapping();
             settings = app.Settings;
-            settings.sampling.method = ["ioptimal", "mark"];
+            settings.sampling.method = "mark";   % 計測点の選び方：Mark 単位
             settings.sampling.nShots = 20;
             settings.sampling.exchangeStarts = 2;
             app.setSettings(settings);
+            testCase.verifyEqual(string(c.samplingUnit.Value), "mark");
             testCase.verifyEqual(string(c.markCountNote.Text), "Wafer 中心に最も近い Mark は必ず計測します。");
             c.markCountBy.Value = 'total';
             c.markCountBy.ValueChangedFcn([], []);
@@ -218,7 +219,7 @@ classdef TestPlanSelectionAndScreens < matlab.unittest.TestCase
             settings = app.Settings;
             settings.methods = alignest.recommendedMethods("none");
             settings.methods.polynomial.enabled = true;
-            settings.sampling.method = ["ioptimal", "mark"];
+            settings.sampling.method = ["ioptimal", "doptimal"];
             settings.sampling.nShots = [15, 25];
             settings.sampling.exchangeStarts = 2;
             app.setSettings(settings);

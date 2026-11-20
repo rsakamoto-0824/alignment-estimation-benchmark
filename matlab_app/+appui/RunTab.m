@@ -263,9 +263,11 @@ classdef (Abstract) RunTab < appui.Core
             writetable(vertcat(componentParts{:}), filePath, 'Sheet', '成分の差');
             writetable(vertcat(coefficientParts{:}), filePath, 'Sheet', '成分の係数');
             writetable(vertcat(statisticParts{:}), filePath, 'Sheet', '統計量の差');
-            notes = table(["Wafer"; "学習 Shot の選び方"; "見方"; "成分の差"], [unit.label; ...
-                strjoin(string(app.Controls.samplingMethod.Items(ismember(app.Controls.samplingMethod.ItemsData, ...
-                app.Controls.samplingMethod.Value))), "、"); "学習パターンの列は 1 = 計測する（学習に使う）、0 = 計測しない（評価に使う）。" + ...
+            samplingControls = [app.Controls.samplingUnit, app.Controls.samplingMethod];
+            notes = table(["Wafer"; "計測点の選び方"; "見方"; "成分の差"], [unit.label; ...
+                string(samplingControls(1).Items{strcmp(samplingControls(1).ItemsData, samplingControls(1).Value)}) + "：" + ...
+                strjoin(string(samplingControls(2).Items(ismember(samplingControls(2).ItemsData, ...
+                samplingControls(2).Value))), "、"); "学習パターンの列は 1 = 計測する（学習に使う）、0 = 計測しない（評価に使う）。" + ...
                 "最外周・指定で必ず計測は 1 = そうである。"; "「2. 評価の設定」の Overlay 補正（" + componentText + "）を、" + ...
                 "全計測と計測配置の点（計測する Mark）だけで X・Y 別に最小二乗で当てはめ、成分（Wafer 線形・Wafer 高次・" + ...
                 "Shot 共通 低次・Shot 共通 高次・合計）の補正量を全計測の Mark の位置で比べた。全計測の成分は全計測で求めた" + ...
@@ -391,7 +393,7 @@ classdef (Abstract) RunTab < appui.Core
             c.measureAxes = gobjects(1, 0);
             infoGrid = uigridlayout(mapGrid, [1, 2], 'ColumnWidth', {'0.75x', '1.6x'}, 'Padding', 0, 'ColumnSpacing', 6);
             c.measureInfo = uitextarea(infoGrid, 'Editable', 'off', 'Value', ...
-                {'「2. 評価の設定」で学習 Shot の選び方を決め、Wafer と学習パターンを選んで「計測マップを作る」を押してください。'});
+                {'「2. 評価の設定」で計測点の選び方を決め、Wafer と学習パターンを選んで「計測マップを作る」を押してください。'});
             % 全計測との差：成分（Overlay 補正）と統計量をタブで切り替える
             infoTabs = uitabgroup(infoGrid);
             componentTab = uitab(infoTabs, 'Title', '成分の差');
@@ -911,7 +913,7 @@ classdef (Abstract) RunTab < appui.Core
                 end
                 key = sprintf("%d-%d", marks.shotNo(nearest), marks.markNo(nearest));
                 runWithAlert(app, @() app.setMeasurementSelection("mark", key, mode), "指定できませんでした", ...
-                    "「2. 評価の設定」の学習 Shot の選び方を確かめてください。");
+                    "「2. 評価の設定」の計測点の選び方を確かめてください。");
             else
                 shots = unit.shots;
                 inside = abs(shots.Xmm - point(1)) <= unit.shotSizeMm(1) / 2 & abs(shots.Ymm - point(2)) <= unit.shotSizeMm(2) / 2;
@@ -919,7 +921,7 @@ classdef (Abstract) RunTab < appui.Core
                     return
                 end
                 runWithAlert(app, @() app.setMeasurementSelection("shot", shots.shotNo(find(inside, 1)), mode), ...
-                    "指定できませんでした", "「2. 評価の設定」の学習 Shot の選び方を確かめてください。");
+                    "指定できませんでした", "「2. 評価の設定」の計測点の選び方を確かめてください。");
             end
         end
 
@@ -958,7 +960,7 @@ classdef (Abstract) RunTab < appui.Core
                 return
             end
             runWithAlert(app, @() app.setMeasurementSelection(kind, targets, mode), "指定できませんでした", ...
-                "「2. 評価の設定」の学習 Shot の選び方を確かめてください。");
+                "「2. 評価の設定」の計測点の選び方を確かめてください。");
             app.Controls.measureSelectNote.Text = char(sprintf("%d 個の %s を指定しました。", numel(targets), ...
                 ternary(markLevel, "Mark", "Shot")));
         end

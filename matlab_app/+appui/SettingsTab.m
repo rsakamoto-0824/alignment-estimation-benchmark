@@ -1,5 +1,5 @@
 classdef (Abstract) SettingsTab < appui.Core
-    %SETTINGSTAB 「2. 評価の設定」タブ：学習 Shot の選び方・学習 Shot 数・比べる手法・質的変数・Overlay 補正・表示（Scan 方向の色）の設定と、設定ファイルの保存・読み込み。
+    %SETTINGSTAB 「2. 評価の設定」タブ：計測点の選び方・学習 Shot 数・比べる手法・質的変数・Overlay 補正・表示（Scan 方向の色）の設定と、設定ファイルの保存・読み込み。
     %   AlignmentEstimationApp（画面の本体）の一部。画面の部品は Controls、データ・結果は Core のプロパティに持つ。
     %   ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
 
@@ -63,19 +63,22 @@ classdef (Abstract) SettingsTab < appui.Core
                 'ColumnWidth', {'1x', '1.45x'}, 'Padding', 12, 'ColumnSpacing', 12);
             onChange = @(~, ~) app.onSettingsChanged();
 
-            samplingPanel = uipanel(grid, 'Title', '学習に使う Shot');
+            samplingPanel = uipanel(grid, 'Title', '学習に使う計測点');
             s = uigridlayout(samplingPanel, [43, 2], 'RowHeight', repmat({'fit'}, 1, 43), 'ColumnWidth', {'1x', '1x'}, ...
                 'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
-            label(s, '選び方', 1, [1, 2]);
-            c.samplingMethod = uilistbox(s, 'Items', {'制約付き I 最適', '制約付き D 最適', ...
-                '制約つきランダム', 'Sobol 列', 'Excel ファイルで指定', ...
-                'Mark 単位の I 最適', 'Mark 単位の D 最適', 'Mark 単位の制約つきランダム'}, ...
-                'ItemsData', {'ioptimal', 'doptimal', 'random', 'sobol', 'excel', 'mark', 'markd', 'markrandom'}, ...
+            label(s, '計測点の選び方', 1, 1);
+            c.samplingUnit = uidropdown(s, 'Items', {'Shot 単位', 'Mark 単位'}, 'ItemsData', {'shot', 'mark'}, ...
+                'ValueChangedFcn', @(~, ~) app.onSamplingUnitChanged(), 'Tooltip', ['Shot 単位：計測する Shot を選び、' ...
+                'その Shot の Mark をすべて学習に使う。Mark 単位：計測する Mark を選ぶ。下の一覧に、その単位の選び方が出ます。']);
+            place(c.samplingUnit, 1, 2);
+            [methods, names] = alignest.samplingUnitMethods("shot");
+            c.samplingMethod = uilistbox(s, 'Items', cellstr(names), 'ItemsData', cellstr(methods), ...
                 'Multiselect', 'on', 'Value', {'ioptimal'}, 'ValueChangedFcn', onChange, ...
                 'Tooltip', ['D 最適：I 最適と同じ制約で det(M) を大きくする組。Sobol 列：Wafer 上に偏りなく散らばる点の並び' ...
-                '（Sobol 列）に近い Shot を選ぶ（最適化・乱数・同心円などの制約は使わない）。Mark 単位：計測する Shot ではなく Mark を選ぶ' ...
-                '（既定では全 Shot を1点以上計測し、Mark 番号の割合を全計測とそろえる）。複数選ぶと、結果一覧の' ...
-                '「計測配置の比較」で選び方どうしを比べられます。']);
+                '（Sobol 列）に近い Shot を選ぶ。ポアソンディスク：選んだ点どうしが近づきすぎないように、乱数の順で選ぶ' ...
+                '（繰り返し回数はランダムと同じ）。Sobol 列・ポアソンディスクは同心円などの制約を使わない。Mark 単位の I 最適・' ...
+                'D 最適・ランダムは、既定では全 Shot を1点以上計測し、Mark 番号の割合を全計測とそろえる。複数選ぶと、' ...
+                '結果一覧の「計測配置の比較」で選び方どうしを比べられます。']);
             place(c.samplingMethod, 2, [1, 2]);
             s.RowHeight{2} = 160;
             label(s, '学習 Shot 数', 3, 1);
@@ -538,6 +541,8 @@ classdef (Abstract) SettingsTab < appui.Core
 
         function settingsToControls(app)
             c = app.Controls;
+            % 画面では Shot 単位と Mark 単位の選び方を一緒に選べないので、画面に出す前に設定もそろえる
+            app.Settings.sampling = alignest.normalizeSamplingUnit(app.Settings.sampling);
             s = app.Settings;
             c.validRadius.Value = s.data.validRadiusMm;
             c.excludeZeroMeasurements.Value = s.data.excludeZeroMeasurements;
@@ -565,7 +570,8 @@ classdef (Abstract) SettingsTab < appui.Core
             c.factorMarkY.Value = choiceY.mark;
             c.shotRowParityY.Value = choiceY.row;
             refreshFactorColumns(app, choice.columns, choiceY.columns);
-            c.samplingMethod.Value = cellstr(s.sampling.method(:).');
+            c.samplingUnit.Value = char(s.sampling.unit);
+            showSamplingMethods(app, s.sampling.unit, s.sampling.method);
             c.markPerShot.Value = char(strjoin(string(fieldOr(s.sampling, "markPerShot", 1)), " "));
             balance = "none";
             if logical(fieldOr(s.sampling.constraints, "markEqual", false))
@@ -729,6 +735,7 @@ classdef (Abstract) SettingsTab < appui.Core
             s.factors.y.shotRowParity = c.shotRowParityY.Value;
             s.factors.y.columns = reshape(string(c.factorColumnsY.Value), 1, []);
             if ~isempty(c.samplingMethod.Value)
+                s.sampling.unit = string(c.samplingUnit.Value);
                 s.sampling.method = reshape(string(c.samplingMethod.Value), 1, []);   % 空のときは前の値のまま（欄の下に理由）
             end
             [values, ok] = parseNumbers(c.markPerShot.Value);
@@ -877,7 +884,7 @@ classdef (Abstract) SettingsTab < appui.Core
                         sprintf("（%d 通り）", numel(counts));
                 end
             catch err
-                usesCounts = any(ismember(method, ["ioptimal", "doptimal", "random", "sobol"])) || ...
+                usesCounts = any(ismember(method, ["ioptimal", "doptimal", "random", "sobol", "poisson"])) || ...
                     (any(method == "excel") && hasPriorityPlans(app.Settings.sampling)) || ...
                     (any(ismember(method, alignest.markPlanTypes())) && string(c.countBy.Value) == "rate");
                 if usesCounts
@@ -885,7 +892,7 @@ classdef (Abstract) SettingsTab < appui.Core
                 end
             end
             if isempty(method)
-                text = "⚠ 学習 Shot の選び方を1つ以上選んでください。";
+                text = "⚠ 計測点の選び方を1つ以上選んでください。";
             end
             c.nShotsList.Text = listText;
             c.nShotsError.Text = text;
@@ -904,7 +911,8 @@ classdef (Abstract) SettingsTab < appui.Core
             messages = [messages; text(text ~= "")];
             [values, ok] = parseNumbers(c.requiredShots.Value);
             text = "";
-            if any(ismember(method, ["ioptimal", "doptimal", "random", "sobol", alignest.markPlanTypes()])) && (~ok || any(values ~= round(values)))
+            if any(ismember(method, ["ioptimal", "doptimal", "random", "sobol", "poisson", alignest.markPlanTypes()])) && ...
+                    (~ok || any(values ~= round(values)))
                 text = "⚠ 必ず計測する shotNo は整数を空白またはカンマで区切って入れてください（使わないなら空欄）。";
             end
             [values, ok] = parseNumbers(c.excludedShots.Value);
@@ -1031,12 +1039,13 @@ classdef (Abstract) SettingsTab < appui.Core
             c = app.Controls;
             set([c.factorScanY, c.factorMarkY, c.shotRowParityY, c.factorColumnsY], 'Enable', onOff(c.factorSeparate.Value));
             method = string(c.samplingMethod.Value);
-            constrained = any(ismember(method, ["ioptimal", "doptimal", "random", "sobol"])) || ...
-                (any(method == "excel") && hasPriorityPlans(app.Settings.sampling));   % Excel の優先順・Sobol 列も Shot 数ごと
+            constrained = any(ismember(method, ["ioptimal", "doptimal", "random", "sobol", "poisson"])) || ...
+                (any(method == "excel") && hasPriorityPlans(app.Settings.sampling));   % Excel の優先順・Sobol 列なども Shot 数ごと
             markPlans = any(ismember(method, alignest.markPlanTypes()));   % Mark 単位の計画も計測率でスイープできる
+            markConstraints = any(ismember(method, ["mark", "markd", "markrandom"]));   % Mark 単位のポアソンディスクは制約を使わない
             optimal = any(ismember(method, ["ioptimal", "doptimal", "mark", "markd"]));
             shotConstraints = any(ismember(method, ["ioptimal", "doptimal", "random"]));
-            shotPlans = shotConstraints || any(method == "sobol");   % 必ず計測する・計測しない Shot は Sobol 列にも効く
+            shotPlans = shotConstraints || any(ismember(method, ["sobol", "poisson"]));   % 必ず計測する・計測しない Shot は Sobol 列などにも効く
             byRate = string(c.countBy.Value) == "rate";
             c.countBy.Enable = onOff(constrained || markPlans);
             c.nShotsList.Enable = onOff(constrained || markPlans);
@@ -1044,13 +1053,13 @@ classdef (Abstract) SettingsTab < appui.Core
             set([c.rateStart, c.rateEnd, c.rateStep], 'Enable', onOff((constrained || markPlans) && byRate));
             % 必ず計測する Shot・同心円の区切りは、Mark 単位の計画にも効く（Shot の Mark すべて・Mark の半径）
             set([c.requiredShots, c.requireOuter, c.requiredInfo, c.excludedShots], 'Enable', onOff(shotPlans || markPlans));
-            c.zoneEdges.Enable = onOff(shotConstraints || markPlans);
+            c.zoneEdges.Enable = onOff(shotConstraints || markConstraints);
             set([c.requiredMarks, c.excludedMarks], 'Enable', onOff(markPlans));
             set([c.quadrants, c.scanConstraint], 'Enable', onOff(shotConstraints));
-            c.slack.Enable = onOff(shotConstraints || markPlans);
-            set([c.randomRepeats], 'Enable', onOff(any(ismember(method, ["random", "markrandom"]))));
+            c.slack.Enable = onOff(shotConstraints || markConstraints);
+            set([c.randomRepeats], 'Enable', onOff(any(ismember(method, ["random", "markrandom", "poisson", "markpoisson"]))));
             set([c.designOrder, c.designFeatures, c.exchangeStarts], 'Enable', onOff(optimal));
-            set([c.markBalance, c.markRequirePerShot], 'Enable', onOff(markPlans));
+            set([c.markBalance, c.markRequirePerShot], 'Enable', onOff(markConstraints));
             byTotal = string(c.markCountBy.Value) == "total";
             c.markCountBy.Enable = onOff(markPlans && ~byRate);
             c.markPerShot.Enable = onOff(markPlans && ~byRate && ~byTotal);
@@ -1059,11 +1068,11 @@ classdef (Abstract) SettingsTab < appui.Core
             if markPlans && byRate
                 c.markCountNote.Text = '「学習 Shot 数」を計測率にしているので、Mark の数は上の計測率（開始・終了・刻み）で決めます。';
             elseif ~markPlans
-                c.markCountNote.Text = '選び方で「Mark 単位の I 最適」「Mark 単位の D 最適」を選ぶと使えます。';
+                c.markCountNote.Text = '計測点の選び方を「Mark 単位」にすると使えます。';
             else
                 c.markCountNote.Text = 'Wafer 中心に最も近い Mark は必ず計測します。';
             end
-            c.markMinPerShot.Enable = onOff(markPlans && c.markRequirePerShot.Value);
+            c.markMinPerShot.Enable = onOff(markConstraints && c.markRequirePerShot.Value);
             c.layoutPlanInfo.Enable = onOff(any(method == "excel"));
             c.outlierMethod.Enable = onOff(c.excludeOutliers.Value);
             set([c.overlayPerShotDx, c.overlayPerShotDy], 'Enable', onOff(string(c.overlayPerShot.Value) == "formula"));
@@ -1131,6 +1140,30 @@ classdef (Abstract) SettingsTab < appui.Core
             if ~isempty(app.Data) && isfield(app.Data, "attributeNames")
                 missing = selected(~ismember(selected, app.Data.attributeNames));
             end
+        end
+
+        function onSamplingUnitChanged(app)
+            % 計測点の単位を変えたとき：一覧をその単位の選び方にする（「Excel ファイルで指定」は選んだまま。ほかに
+            % 残らなければ、その単位の I 最適）
+            c = app.Controls;
+            showSamplingMethods(app, string(c.samplingUnit.Value), string(c.samplingMethod.Value));
+            onSettingsChanged(app);
+        end
+
+        function showSamplingMethods(app, unit, selected)
+            % 計測点の選び方の一覧を単位 unit の選び方にし、selected のうちその単位にあるものを選ぶ（別の単位の選び方しか
+            % 残らないときは、その単位の I 最適も選ぶ）
+            [methods, names] = alignest.samplingUnitMethods(unit);
+            selected = reshape(string(selected), 1, []);
+            chosen = selected(ismember(selected, methods));
+            if ~any(chosen ~= "excel") && any(selected ~= "excel")
+                defaults = alignest.normalizeSamplingUnit(struct("unit", unit, "method", strings(1, 0)));
+                chosen = [defaults.method, chosen];
+            end
+            c = app.Controls;
+            c.samplingMethod.Items = cellstr(names);
+            c.samplingMethod.ItemsData = cellstr(methods);
+            c.samplingMethod.Value = cellstr(chosen);
         end
 
         function onSettingsChanged(app)

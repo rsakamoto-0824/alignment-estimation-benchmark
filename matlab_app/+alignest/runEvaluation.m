@@ -284,7 +284,8 @@ switch mode
         end
         previousGroups = string({previousSpecs.group});
         added = specs(~ismember(string({specs.label}), string({previousSpecs.label})));
-        clash = added(ismember(string({added.group}), previousGroups) & string({added.type}) ~= "random");
+        repeated = ismember(string({added.type}), ["random", "markrandom", "poisson", "markpoisson"]);   % 繰り返しは同じ列に足す
+        clash = added(ismember(string({added.group}), previousGroups) & ~repeated);
         if ~isempty(clash)
             error('alignest:extend', ['学習パターン「%s」は評価済みの結果と同じ列（%s）で中身が違います。' ...
                 '手動の指定を変えたときは、行を足して指定してください。'], clash(1).label, clash(1).group);

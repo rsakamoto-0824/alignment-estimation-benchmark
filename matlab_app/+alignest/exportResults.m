@@ -42,7 +42,7 @@ choice = alignest.factorChoice(results.settings, "X");
 choiceY = alignest.factorChoice(results.settings, "Y");
 items = ["作成日時"; "読み込んだファイル"; "工程（Operation）"; "装置（EqpId）"; "ロット（LotID）"; ...
     "Scan 方向（Direction）"; "質的変数"; ...
-    "Wafer（評価の単位）の数"; "学習 Shot の選び方"; "学習パターン"; ...
+    "Wafer（評価の単位）の数"; "計測点の選び方"; "学習パターン"; ...
     "比べた手法の数"; "計算時間 [秒]"; "途中で止めたか"; "処理時間の記録"; "評価の考え方"; "差の割合"; ...
     "ワースト値・95%値"; "Wafer のベスト・ワースト"; "I 基準・D 基準"; "Overlay 補正の評価"; "学習データの異常値"];
 values = [results.createdAt; sourceFile; listText(summaryField(summary, "operations")); ...
@@ -272,7 +272,7 @@ end
 end
 
 function label = samplingLabel(sampling)
-% 学習 Shot の選び方の説明（複数選んだときは「、」でつなぐ）
+% 計測点の選び方の説明（複数選んだときは「、」でつなぐ）
 try
     sampling = alignest.upgradeLayoutSettings(sampling);   % 以前の手動・ファイルの優先順は「Excel ファイルで指定」に
 catch
@@ -290,6 +290,8 @@ for method = methods
             parts(end + 1) = sprintf("制約つきランダム（%d 回）", sampling.randomRepeats); %#ok<AGROW>
         case "sobol"
             parts(end + 1) = "Sobol 列"; %#ok<AGROW>
+        case "poisson"
+            parts(end + 1) = sprintf("ポアソンディスク（%d 回）", sampling.randomRepeats); %#ok<AGROW>
         case "excel"
             parts(end + 1) = excelText(sampling); %#ok<AGROW>
         case {"mark", "markd"}
@@ -297,6 +299,9 @@ for method = methods
                 "）"; %#ok<AGROW>
         case "markrandom"
             parts(end + 1) = sprintf("Mark 単位の制約つきランダム（%d 回。", sampling.randomRepeats) + markText(sampling) + ...
+                "）"; %#ok<AGROW>
+        case "markpoisson"
+            parts(end + 1) = sprintf("Mark 単位のポアソンディスク（%d 回。", sampling.randomRepeats) + markText(sampling) + ...
                 "）"; %#ok<AGROW>
         otherwise
             parts(end + 1) = method; %#ok<AGROW>
@@ -306,14 +311,14 @@ label = strjoin(parts, "、");
 if numel(methods) > 1
     label = label + "（選び方を比べた）";
 end
-if any(ismember(methods, ["ioptimal", "doptimal", "random", "sobol", "excel"])) && isfield(sampling, "countBy") && ...
+if any(ismember(methods, ["ioptimal", "doptimal", "random", "sobol", "poisson", "excel"])) && isfield(sampling, "countBy") && ...
         sampling.countBy == "rate"
     label = label + "。学習 Shot 数は計測率（Wafer の候補 Shot 数に対する割合）で決めた";
 end
 if any(ismember(methods, alignest.markPlanTypes())) && isfield(sampling, "countBy") && sampling.countBy == "rate"
     label = label + "。Mark 単位の計画の Mark の数は計測率（候補の全 Mark の数に対する割合）で決めた";
 end
-if any(ismember(methods, ["ioptimal", "doptimal", "random", "sobol"]))
+if any(ismember(methods, ["ioptimal", "doptimal", "random", "sobol", "poisson"]))
     required = strings(0, 1);
     if isfield(sampling, "requiredShots") && ~isempty(sampling.requiredShots)
         required(end + 1) = "shotNo " + strjoin(string(sampling.requiredShots), " ");

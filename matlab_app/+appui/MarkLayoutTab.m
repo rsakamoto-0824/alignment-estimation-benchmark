@@ -33,7 +33,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             %   軸ごと）・penaltyOrders（1〜6 の並び。X・Y 両方）・penaltyOrdersY（Y だけ）・minMarks・maxMarks（0 = 使う項の数・
             %   すべての候補）・starts・values（"measured"・"random"）・shapes・
             %   orderSigmaNm（0〜7次の8つ）・noiseNm・outlierPercent・outlierNm。乱数の種は setRandomSeed（メニュー「設定」→
-            %   「乱数の種…」。学習 Shot の選び方と共通）。
+            %   「乱数の種…」。計測点の選び方と共通）。
             %   例：app.setMarkLayoutSettings(maker="canon", values="random", shapes=500, outlierPercent=5)
             arguments
                 app

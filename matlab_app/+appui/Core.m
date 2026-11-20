@@ -270,7 +270,7 @@ classdef (Abstract) Core < handle
             uimenu(scanMenu, 'Text', '（図の印と色だけ。推定の結果は変わりません）', 'Enable', 'off');
             uimenu(viewMenu, 'Text', '画面の大きさに合わせる', 'Separator', 'on', ...
                 'MenuSelectedFcn', @(~, ~) app.fitToScreen(true));
-            % 乱数の種（学習 Shot の選び方と Mark 配置の最適化で共通。設定 sampling.seed。結果が変わる設定）
+            % 乱数の種（計測点の選び方と Mark 配置の最適化で共通。設定 sampling.seed。結果が変わる設定）
             app.Controls.randomSeedItem = uimenu(viewMenu, 'Text', '乱数の種…', 'Separator', 'on', ...
                 'MenuSelectedFcn', @(~, ~) app.onPickRandomSeed());
             % ヘルプは「設定」の右隣のメニューから別の窓で開く（機能編・技術編）
@@ -634,7 +634,7 @@ classdef (Abstract) Core < handle
 
 
         function showVarianceDecomposition(app, result, target)
-            % ばらつき分解の図（上：段ごとの 3σ か分散の積み上げ（「縦軸」の選択）、下：分散の割合。左が X、右が Y）と表を出す。
+            % ばらつき分解の図（上：段ごとの 3σ（全体の 3σ を ◆）か分散の積み上げ（「縦軸」の選択）、下：分散の割合。左が X、右が Y）と表を出す。
             % target："data"（「1. データ読込」の「ばらつき分解」）・"correction"（「4. 結果一覧」の「補正残差のばらつき分解」）。
             % result が空なら消す
             c = app.Controls;

@@ -1,5 +1,5 @@
 classdef TestEvaluation < matlab.unittest.TestCase
-    %TESTEVALUATION 学習 Shot の選び方、評価の実行、集計・書き出し・設定ファイルを確かめる（サンプルデータを使う）。
+    %TESTEVALUATION 計測点の選び方、評価の実行、集計・書き出し・設定ファイルを確かめる（サンプルデータを使う）。
 
     properties
         Data

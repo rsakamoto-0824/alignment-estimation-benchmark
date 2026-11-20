@@ -8,7 +8,7 @@ classdef (Abstract) DataTab < appui.Core
         % ---- 画面の操作と同じことをするメソッド（ボタンからも自動テストからも呼ぶ）
         function result = decomposeDataVariance(app, eqpId)
             %DECOMPOSEDATAVARIANCE 「ばらつき分解」：読み込んだ計測値のばらつきを Lot 間・Wafer 間・Shot 間・その他に分け、
-            %   段ごとの 3σ（「縦軸」で分散の積み上げにも切り替える）と分散の割合の棒、表に出す
+            %   段ごとの 3σ の積み上げ（「縦軸」で分散の積み上げにも切り替える）と分散の割合の棒、表に出す
             %   （alignest.dataVarianceDecomposition）。Operation の列があれば Operation ごとに棒を並べる。eqpId：使う装置
             %   （EqpId の値。"" = すべての装置）。省略すると画面の選択。result は分けた結果。
             c = app.Controls;
@@ -46,7 +46,7 @@ classdef (Abstract) DataTab < appui.Core
 
         function setVarianceQuantity(app, target, quantity)
             %SETVARIANCEQUANTITY ばらつき分解の「縦軸」：target："data"（「1. データ読込」の「ばらつき分解」）・"correction"
-            %   （「4. 結果一覧」の「補正残差のばらつき分解」）。quantity："sigma3"（段ごとの 3σ。表も 3σ）・"variance"
+            %   （「4. 結果一覧」の「補正残差のばらつき分解」）。quantity："sigma3"（段ごとの 3σ の積み上げ。表も 3σ）・"variance"
             %   （分散の積み上げ。表も分散）。省略すると画面の選択のまま描き直す。
             c = app.Controls;
             control = ternary(string(target) == "data", c.varianceQuantity, c.correctionVarianceQuantity);
