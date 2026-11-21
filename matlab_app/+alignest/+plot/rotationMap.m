@@ -1,6 +1,7 @@
 function rotationMap(ax, maps, mapIndex, options)
 %ROTATIONMAP 1つの計測マップ（alignest.rotationMaps）を Wafer 上に描く：計測する Shot・Mark を優先度の色の点、計測しない
-%   Shot・Mark を灰色の白抜きの点で描く（Shot ごとのマップは Shot 中心）。
+%   Shot・Mark を灰色の白抜きの点で描く（Shot ごとのマップは Shot 中心）。shotNo の指定で優先度 1 にした Shot
+%   （maps.table.specified）は太い赤紫の枠で囲む（alignest.plot.priorityShotFrames）。
 %   alignest.plot.rotationMap(ax, maps, mapIndex)
 %   alignest.plot.rotationMap(..., waferRadiusMm=150, shotCenters=[x, y], shotSizeMm=[幅, 高さ], showLegend=true, ...
 %       circleRadiiMm=[120, 140])   % 半径 [mm] の円を重ねる（alignest.plot.radiusCircles。空なら描かない）
@@ -42,6 +43,9 @@ for r = 1:numel(maps.rankNames)
     color = RANK_COLORS(min(r, size(RANK_COLORS, 1)), :);
     items(end + 1) = scatter(ax, rows.x(mine), rows.y(mine), options.markerSize, color, 'filled', ...
         'DisplayName', "優先度 " + r + "（" + nnz(mine) + "）"); %#ok<AGROW>
+end
+if any(string(rows.Properties.VariableNames) == "specified") && any(rows.specified)
+    items = [items, alignest.plot.priorityShotFrames(ax, rows, rows.shotNo(rows.specified), options.shotSizeMm)];
 end
 items = [items, alignest.plot.radiusCircles(ax, options.circleRadiiMm)];
 hold(ax, 'off');

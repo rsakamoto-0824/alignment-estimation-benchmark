@@ -8,7 +8,12 @@ classdef (Abstract) RotationTab < appui.Core
 
     properties (Constant, Access = {?appui.Core})
         ROTATION_MAX_MAP_AXES = 6     % 計測マップを並べて描く数の上限
-        ROTATION_DEFAULT_INTERVALS = "1 3"   % 計測の間隔の初期値（2段：優先度 1 は毎回、2 は 3 Lot に1回）
+        ROTATION_DEFAULT_MAP_COUNT = 2   % 計測マップの数の初期値（2段なら、優先度 1 は毎回、2 は 2 枚に1回）
+        ROTATION_MAX_MAP_COUNT = 24      % 計測マップの数の上限（alignest.rotationMaps の上限と同じ）
+        ROTATION_LEGEND_WIDTH = 170      % 並べた計測マップの右に1つだけ出す凡例の欄の幅 [px]（どのマップも同じ大きさにする）
+        ROTATION_ASSIGN_METRICS = {'マップ間の KL', '全体との KL', '最大の空白 [mm]', 'I 基準（平均）', 'I 基準（最大）', ...
+            'D 基準（平均）', 'D 基準（最大）'}   % 振り分けの比較の指標（alignest.compareRotationAssignments の表の列）
+        ROTATION_ASSIGN_HEADROOM = 1.15   % 振り分けの比較の棒の図の縦の範囲（最大の棒 × この倍。棒の上に数を書く余白）
         ROTATION_DEFAULT_PERCENT = 75   % しきい値が空のとき、3σ の累積 75% の値を初期値にする（上位 25% を毎回計測）
         ROTATION_METRICS = {'sigma3Vector', 'sigma3Length', 'sigma3X', 'sigma3Y', 'sigma3Target'}
         ROTATION_METRIC_LABELS = {'ベクトル 3√(σX²+σY²)', '長さ |v| の 3σ', 'X の 3σ', 'Y の 3σ', '目的変数の 3σ'}
@@ -16,6 +21,7 @@ classdef (Abstract) RotationTab < appui.Core
         ROTATION_POINT_COLOR = [0.00, 0.45, 0.74]       % 分布・半径と指標の図の点・棒の色
         ROTATION_THRESHOLD_COLOR = [0.85, 0.20, 0.15]   % しきい値の線の色
         ROTATION_CUMULATIVE_COLOR = [0.93, 0.49, 0.13]  % 累積の線と累積率の半径の色
+        ROTATION_PRIORITY_SHOTS_ERROR = '優先度 1 の Shot は shotNo（整数）を空白で区切って入れてください（例：12 40）。'
     end
 
     methods
@@ -142,6 +148,8 @@ classdef (Abstract) RotationTab < appui.Core
             app.RotationVariability = variability;
             app.RotationMaps = [];
             app.RotationRun = [];
+            app.RotationAssignmentComparison = [];
+            drawRotationAssignmentComparison(app);
             if strlength(strtrim(string(c.rotationThresholds.Value))) == 0
                 c.rotationThresholds.Value = char(defaultThreshold(app, variability));   % 上位の点を毎回計測する初期値
             end
@@ -154,21 +162,24 @@ classdef (Abstract) RotationTab < appui.Core
             updateRotationEnabled(app);
         end
 
-        function maps = makeRotationMaps(app, metric, thresholds, intervals, options)
-            %MAKEROTATIONMAPS 「計測マップを作る」：指標の 3σ をしきい値（いくつでも）で優先度に分け、優先度ごとの計測の
-            %   間隔（n Lot に1回）でローテーションする計測マップを作る（alignest.rotationMaps）。metric：指標の列の名前
-            %   （"sigma3Vector" など）、thresholds：しきい値（数の並び）、intervals：優先度ごとの間隔。名前と値の組：
+        function maps = makeRotationMaps(app, metric, thresholds, mapCount, options)
+            %MAKEROTATIONMAPS 「計測マップを作る」：指標の 3σ をしきい値（いくつでも）で優先度に分け、mapCount 枚の
+            %   ローテーションする計測マップを作る（alignest.rotationMaps。優先度 1 は毎回、最も低い優先度は mapCount 枚に
+            %   1回）。metric：指標の列の名前（"sigma3Vector" など）、thresholds：しきい値（数の並び）、mapCount：計測マップの
+            %   数。名前と値の組：
             %   thresholdKind（"value"：3σ の値・"percent"：指標の分布の累積 n%）・outerRadiusMm（この半径 [mm] 以上の点を
             %   優先度 1 にする。[] = 使わない）・assignment（"order"：表の順・"random"：乱数で振り分ける。乱数の種はメニュー
-            %   「設定」の乱数の種）。省略すると画面の値。
+            %   「設定」の乱数の種）・priorityShotNos（3σ によらず優先度 1 にする Shot の shotNo。[] = 使わない）。省略すると
+            %   画面の値。
             arguments
                 app
                 metric = missing
                 thresholds = missing
-                intervals = missing
+                mapCount = missing
                 options.thresholdKind (1, 1) string
                 options.outerRadiusMm double
                 options.assignment (1, 1) string
+                options.priorityShotNos double
             end
             c = app.Controls;
             if isempty(app.RotationVariability)
@@ -183,8 +194,12 @@ classdef (Abstract) RotationTab < appui.Core
             if ~isa(thresholds, 'missing')
                 c.rotationThresholds.Value = char(strjoin(string(thresholds), " "));
             end
-            if ~isa(intervals, 'missing')
-                c.rotationIntervals.Value = char(strjoin(string(intervals), " "));
+            if ~isa(mapCount, 'missing')
+                if ~isscalar(mapCount) || ~isnumeric(mapCount) || mapCount < 1 || mapCount > app.ROTATION_MAX_MAP_COUNT || ...
+                        mapCount ~= round(mapCount)
+                    error('alignest:rotationMaps', '計測マップの数は 1〜%d の整数で入れてください。', app.ROTATION_MAX_MAP_COUNT);
+                end
+                c.rotationMapCount.Value = double(mapCount);
             end
             if isfield(options, "outerRadiusMm")
                 c.rotationOuterRadius.Value = '';   % [] なら使わない
@@ -195,22 +210,12 @@ classdef (Abstract) RotationTab < appui.Core
             if isfield(options, "assignment")
                 c.rotationAssignment.Value = char(options.assignment);
             end
-            [thresholdValues, ok] = parseNumbers(c.rotationThresholds.Value);
-            if ~ok
-                error('alignest:rotationMaps', 'しきい値は数を空白で区切って入れてください（例：5 3）。');
+            if isfield(options, "priorityShotNos")
+                c.rotationPriorityShots.Value = char(strjoin(string(options.priorityShotNos(:).'), " "));
             end
-            [intervalValues, ok] = parseNumbers(c.rotationIntervals.Value);
-            if ~ok || isempty(intervalValues)
-                error('alignest:rotationMaps', '計測の間隔は数を空白で区切って入れてください（例：1 3）。');
-            end
-            outerRadius = rotationOuterRadius(app);
-            metricName = string(c.rotationMetric.Value);
-            if metricName == "sigma3Target" && ~app.RotationVariability.hasTarget
-                error('alignest:rotationMaps', '目的変数を選んで「ばらつきを求める」を押してから、目的変数の 3σ で分けてください。');
-            end
-            maps = alignest.rotationMaps(app.RotationVariability, metricName, thresholdValues, intervalValues, ...
-                thresholdKind=string(c.rotationThresholdKind.Value), outerRadiusMm=outerRadius, ...
-                assignment=string(c.rotationAssignment.Value), seed=app.Settings.sampling.seed);
+            [metricName, thresholdValues, nameValues] = rotationMapInputs(app);
+            maps = alignest.rotationMaps(app.RotationVariability, metricName, thresholdValues, c.rotationMapCount.Value, ...
+                nameValues{:}, assignment=string(c.rotationAssignment.Value));
             app.RotationMaps = maps;
             app.RotationRun = [];
             names = cellstr(maps.mapNames);
@@ -222,9 +227,48 @@ classdef (Abstract) RotationTab < appui.Core
             showRotationRun(app);
             c.rotationOutputs.SelectedTab = c.rotationMapTab;
             c.rotationMapInfo.Text = char(sprintf("計測マップ %d 枚、平均の計測率 %.1f%%。", maps.nMaps, ...
-                100 * maps.averageRate) + strjoin(maps.rankNames, "、") + "。" + ternary(maps.assignment == "random", ...
-                sprintf("振り分けは乱数（種 %d）。", maps.seed), ""));
+                100 * maps.averageRate) + strjoin(maps.rankNames, "、") + "。" + assignmentText(maps) + ...
+                ternary(isempty(maps.missingShotNos), "", "表に無い shotNo（優先度 1 にしていません）：" + ...
+                strjoin(string(maps.missingShotNos), " ") + "。"));
             updateRotationEnabled(app);
+        end
+
+        function comparison = compareRotationAssignments(app)
+            %COMPAREROTATIONASSIGNMENTS 「振り分け方を比べる」：③ の優先度・計測マップの数のまま、すべての振り分け方
+            %   （I 最適・D 最適・Sobol 列・ポアソンディスク・ランダム・表の順）で計測マップを作り、指標（マップ間の KL・
+            %   全体との KL・最大の空白・I 基準・D 基準）で比べる（alignest.compareRotationAssignments）。「計測マップ」の
+            %   タブのマップは変えない。
+            c = app.Controls;
+            if isempty(app.RotationVariability)
+                error('alignest:rotationMaps', '先に「ばらつきを求める」を押してください。');
+            end
+            [metricName, thresholdValues, nameValues] = rotationMapInputs(app);
+            dialog = [];
+            if app.Figure.Visible == "on"
+                dialog = uiprogressdlg(app.Figure, 'Title', '振り分けの比較', 'Indeterminate', 'on', ...
+                    'Message', 'すべての振り分け方で計測マップを作っています…');
+            end
+            cleanup = onCleanup(@() closeDialog(dialog));
+            comparison = alignest.compareRotationAssignments(app.RotationVariability, metricName, thresholdValues, ...
+                c.rotationMapCount.Value, nameValues{:});
+            comparison.mapCount = c.rotationMapCount.Value;
+            app.RotationAssignmentComparison = comparison;
+            drawRotationAssignmentComparison(app);
+            c.rotationOutputs.SelectedTab = c.rotationAssignTab;
+        end
+
+        function shotNos = togglePriorityShot(app, shotNo)
+            %TOGGLEPRIORITYSHOT 「優先度 1 の Shot」に shotNo を足す（指定済みなら外す）。計測マップを作ってあれば作り直す
+            %   （図のクリックで指定するときと同じ）。shotNos：指定後の shotNo の並び。
+            c = app.Controls;
+            shotNos = rotationPriorityShotNos(app);
+            if any(shotNos == shotNo)
+                shotNos = shotNos(shotNos ~= shotNo);
+            else
+                shotNos = [shotNos, shotNo];
+            end
+            c.rotationPriorityShots.Value = char(strjoin(string(shotNos), " "));
+            onRotationPriorityShotsChanged(app);
         end
 
         function cumulative = setRotationSpreadView(app, view, showCumulative, ratesPercent)
@@ -400,7 +444,7 @@ classdef (Abstract) RotationTab < appui.Core
             place(c.rotationComputeVariability, 1, 2);
 
             mapHeader = sectionHeader('③ 計測の優先度と計測マップ', 7);
-            mapGrid = uigridlayout(left, [7, 2], 'ColumnWidth', {'fit', '1x'}, 'RowHeight', repmat({'fit'}, 1, 7), ...
+            mapGrid = uigridlayout(left, [9, 2], 'ColumnWidth', {'fit', '1x'}, 'RowHeight', repmat({'fit'}, 1, 9), ...
                 'Padding', 0);
             place(mapGrid, 8, 1);
             label(mapGrid, '指標', 1, 1);
@@ -423,22 +467,36 @@ classdef (Abstract) RotationTab < appui.Core
             c.rotationOuterRadius = uieditfield(mapGrid, 'text', 'Value', '', 'Tooltip', ['Wafer 中心からの半径がこの値以上の' ...
                 '点（Shot ごとのときは Shot 中心）を、3σ によらず優先度 1（毎回計測）にします。空欄なら使いません。']);
             place(c.rotationOuterRadius, 4, 2);
-            label(mapGrid, '計測の間隔', 5, 1);
-            c.rotationIntervals = uieditfield(mapGrid, 'text', 'Value', char(app.ROTATION_DEFAULT_INTERVALS), 'Tooltip', ...
-                ['優先度ごとに、何 Lot に1回計測するか（空白で区切って、優先度の数だけ。例：しきい値 1 つなら「1 3」= ' ...
-                '優先度 1 は毎回、2 は 3 Lot に1回）。計測マップの数は間隔の最小公倍数です。']);
-            place(c.rotationIntervals, 5, 2);
-            label(mapGrid, '振り分け', 6, 1);
-            c.rotationAssignment = uidropdown(mapGrid, 'Items', {'表の順', 'ランダム'}, 'ItemsData', {'order', 'random'}, ...
-                'Tooltip', ['毎回でない優先度（優先度 2 など）の Shot・Mark を計測マップに振り分ける方法。表の順：Shot の順に' ...
-                '1枚目・2枚目…と順に振る。ランダム：乱数で振り分ける（各マップの数はそろう。メニュー「設定」の乱数の種で' ...
-                '決まり、同じ種なら同じ振り分け）。']);
-            place(c.rotationAssignment, 6, 2);
-            label(mapGrid, '重ねる円 [mm]', 7, 1);
+            label(mapGrid, '優先度 1 の Shot', 5, 1);
+            c.rotationPriorityShots = uieditfield(mapGrid, 'text', 'Value', '', 'Placeholder', '例：12 40', ...
+                'ValueChangedFcn', @(~, ~) app.onRotationPriorityShotsChanged(), 'Tooltip', ['3σ によらず優先度 1' ...
+                '（毎回計測）にする Shot の shotNo（空白で区切っていくつでも）。Mark ごとのときは、その Shot のすべての' ...
+                ' Mark を優先度 1 にします。計測マップを作ってあれば作り直します。']);
+            place(c.rotationPriorityShots, 5, 2);
+            c.rotationPriorityClick = uicheckbox(mapGrid, 'Text', '図のクリックで足す・外す', 'Value', false, ...
+                'ValueChangedFcn', @(~, ~) app.onRotationPriorityClickChanged(), 'Tooltip', ['オンにすると、「ばらつき」の' ...
+                '左の図と「計測マップ」の図で Shot をクリックして、優先度 1 の Shot に足します（指定済みの Shot は外します）。']);
+            place(c.rotationPriorityClick, 6, 2);
+            label(mapGrid, '計測マップの数', 7, 1);
+            c.rotationMapCount = uispinner(mapGrid, 'Value', app.ROTATION_DEFAULT_MAP_COUNT, ...
+                'Limits', [1, app.ROTATION_MAX_MAP_COUNT], 'Step', 1, 'RoundFractionalValues', 'on', 'Tooltip', ...
+                ['ローテーションする計測マップの枚数。優先度 1 は毎回（すべてのマップ）、最も低い優先度はこの枚数に1回' ...
+                '（どれか1枚）計測します。優先度が3段以上なら、間の優先度はその間の頻度です（計測マップの説明に出ます）。']);
+            place(c.rotationMapCount, 7, 2);
+            label(mapGrid, '振り分け', 8, 1);
+            [assignmentNames, assignmentLabels] = alignest.rotationAssignments();
+            c.rotationAssignment = uidropdown(mapGrid, 'Items', cellstr(assignmentLabels), ...
+                'ItemsData', cellstr(assignmentNames), 'Value', 'poisson', ...
+                'Tooltip', ['毎回でない優先度（優先度 2 など）の Shot・Mark を計測マップに振り分ける方法。I 最適・D 最適：' ...
+                'すべてのマップの I 基準・D 基準の和が小さくなるように振る。Sobol 列：Sobol 列の点に近い点から順にマップに' ...
+                '振る。ポアソンディスク：マップごとに点どうしが離れて Wafer 全体に散らばるように振る。ランダム：乱数で振る。' ...
+                '表の順：Shot の順に 1枚目・2枚目…と振る。どれも各マップの数はそろう。「振り分けの比較」のタブで比べられます。']);
+            place(c.rotationAssignment, 8, 2);
+            label(mapGrid, '重ねる円 [mm]', 9, 1);
             c.rotationCircles = uieditfield(mapGrid, 'text', 'Value', '', 'ValueChangedFcn', ...
                 @(~, ~) app.onRotationCirclesChanged(), 'Tooltip', ['「ばらつき」と「計測マップ」の図に、Wafer 中心から' ...
                 'この半径の円を重ねます（空白で区切っていくつでも。例：120 140）。空欄なら描きません。']);
-            place(c.rotationCircles, 7, 2);
+            place(c.rotationCircles, 9, 2);
             c.rotationMakeMaps = uibutton(mapHeader, 'Text', '計測マップを作る', 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~, ~) app.onMakeRotationMaps());
             place(c.rotationMakeMaps, 1, 2);
@@ -529,7 +587,12 @@ classdef (Abstract) RotationTab < appui.Core
                 'ButtonPushedFcn', @(~, ~) app.onExportRotationMaps(), 'Tooltip', ['選んだマップを Excel に書き出します' ...
                 '（「2. 面内推定の設定」の「Excel 取込」で読める形）。']);
             place(c.rotationExport, 1, 4);
-            c.rotationMapAxesGrid = uigridlayout(mapsGrid, [2, 3], 'Padding', 0, 'RowSpacing', 6, 'ColumnSpacing', 6);
+            % 並べたマップ（左）と、1つだけの凡例（右。見えない図の凡例）。凡例でマップの大きさが変わらないようにする
+            c.rotationMapArea = uigridlayout(mapsGrid, [1, 2], 'ColumnWidth', {'1x', 0}, 'Padding', 0, 'ColumnSpacing', 4);
+            c.rotationMapAxesGrid = uigridlayout(c.rotationMapArea, [2, 3], 'Padding', 0, 'RowSpacing', 6, 'ColumnSpacing', 6);
+            c.rotationMapAxesGrid.Layout.Column = 1;
+            c.rotationMapLegendAxes = uiaxes(c.rotationMapArea, 'Visible', 'off');
+            c.rotationMapLegendAxes.Layout.Column = 2;
             c.rotationMapAxes = gobjects(1, app.ROTATION_MAX_MAP_AXES);
             for k = 1:app.ROTATION_MAX_MAP_AXES
                 c.rotationMapAxes(k) = uiaxes(c.rotationMapAxesGrid);
@@ -541,6 +604,30 @@ classdef (Abstract) RotationTab < appui.Core
             c.rotationMapAxesGrid.RowHeight = {'1x', 0};
             axesPlaceholder(app, c.rotationMapAxes(1), '③ の「計測マップを作る」を押すと、ここに計測マップが出ます。');
             c.rotationMapTable = uitable(mapsGrid, 'RowName', {}, 'Data', table());
+
+            % 振り分けの比較：同じ優先度・マップの数で、すべての振り分け方の指標を並べる
+            c.rotationAssignTab = uitab(outputs, 'Title', '振り分けの比較');
+            assignGrid = uigridlayout(c.rotationAssignTab, [3, 1], 'RowHeight', {'fit', '1.6x', '1x'}, 'Padding', 6, ...
+                'RowSpacing', 6);
+            assignControls = uigridlayout(assignGrid, [1, 4], 'ColumnWidth', {'fit', 'fit', 160, '1x'}, 'Padding', 0);
+            c.rotationCompareAssignButton = primaryButton(app, assignControls, '振り分け方を比べる', ...
+                @(~, ~) app.onCompareRotationAssignments());
+            place(c.rotationCompareAssignButton, 1, 1);
+            c.rotationCompareAssignButton.Enable = 'off';
+            label(assignControls, '図の指標', 1, 2);
+            c.rotationAssignMetric = uidropdown(assignControls, 'Items', app.ROTATION_ASSIGN_METRICS, ...
+                'ItemsData', app.ROTATION_ASSIGN_METRICS, 'ValueChangedFcn', @(~, ~) app.drawRotationAssignmentComparison(), ...
+                'Tooltip', ['図に出す指標（どれも小さいほど良い）。マップ間の KL：マップどうしの点の散らばり方の違い。' ...
+                '全体との KL：各マップの散らばり方と全点の違い。最大の空白：計測しない点から最も近い計測点までの最大の距離。' ...
+                'I 基準・D 基準：マップごとの基準の平均・最大（最も悪いマップ）。詳しくはヘルプ。']);
+            place(c.rotationAssignMetric, 1, 3);
+            c.rotationAssignInfo = uilabel(assignControls, 'WordWrap', 'on', 'Text', ['③ の優先度・計測マップの数のまま、' ...
+                'すべての振り分け方で計測マップを作って比べます（どの指標も小さいほど良い）。']);
+            place(c.rotationAssignInfo, 1, 4);
+            assignAxesGrid = uigridlayout(assignGrid, [1, 1], 'Padding', 0);   % 図は枠に入れる（ほかのタブと同じ置き方）
+            c.rotationAssignAxes = uiaxes(assignAxesGrid);
+            axesPlaceholder(app, c.rotationAssignAxes, '「振り分け方を比べる」を押すと、ここに振り分け方ごとの指標が出ます。');
+            c.rotationAssignTable = uitable(assignGrid, 'RowName', {}, 'Data', table());
 
             c.rotationRunTab = uitab(outputs, 'Title', 'FB の検証');
             runGrid = uigridlayout(c.rotationRunTab, [3, 1], 'RowHeight', {'1x', '1x', 'fit'}, 'Padding', 6, 'RowSpacing', 6);
@@ -684,6 +771,7 @@ classdef (Abstract) RotationTab < appui.Core
                 (source == "target" && ~isempty(app.TargetRun)))) || (source == "file" && hasRotationFileData(app));
             c.rotationComputeVariability.Enable = onOff(ready);
             c.rotationMakeMaps.Enable = onOff(~isempty(app.RotationVariability));
+            c.rotationCompareAssignButton.Enable = onOff(~isempty(app.RotationVariability));
             hasMaps = ~isempty(app.RotationMaps);
             set([c.rotationRunButton, c.rotationExport], 'Enable', onOff(hasMaps));
             c.rotationTransferMethod.Enable = onOff(string(c.rotationModel.Value) == "highOrder");
@@ -882,10 +970,18 @@ classdef (Abstract) RotationTab < appui.Core
                 shotCenters=variability.shotCenters, shotSizeMm=variability.shotSizeMm, showLegend=false, ...
                 markerSize=markerSize, titleText=metricLabel);
             circles = alignest.plot.radiusCircles(c.rotationSpreadAxes(1), rotationCircleRadii(app));
-            if ~isempty(circles)
-                legend(c.rotationSpreadAxes(1), circles, 'Location', 'southoutside', 'Box', 'off', 'Interpreter', 'none', ...
-                    'NumColumns', min(numel(circles), 3));
+            [priorityShotNos, ok] = parseNumbers(c.rotationPriorityShots.Value);   % 作る前の指定も枠で見せる
+            frames = gobjects(0);
+            if ok
+                frames = alignest.plot.priorityShotFrames(c.rotationSpreadAxes(1), rows, priorityShotNos, ...
+                    variability.shotSizeMm);
             end
+            items = [frames, circles];
+            if ~isempty(items)
+                legend(c.rotationSpreadAxes(1), items, 'Location', 'southoutside', 'Box', 'off', 'Interpreter', 'none', ...
+                    'NumColumns', min(numel(items), 3));
+            end
+            enableRotationShotClicks(app, c.rotationSpreadAxes(1));
             ax = c.rotationSpreadAxes(2);
             if string(c.rotationSpreadView.Value) == "radius"
                 cumulative = drawRotationRadius(app, ax, variability, values, metricLabel);
@@ -989,9 +1085,13 @@ classdef (Abstract) RotationTab < appui.Core
                 legend(ax, 'off');
                 ax.Visible = 'off';
             end
+            cla(c.rotationMapLegendAxes, 'reset');
+            legend(c.rotationMapLegendAxes, 'off');
+            c.rotationMapLegendAxes.Visible = 'off';
             if isempty(maps)
                 c.rotationMapTable.Data = table();
                 c.rotationMapInfo.Text = '';
+                c.rotationMapArea.ColumnWidth = {'1x', 0};
                 c.rotationMapAxesGrid.ColumnWidth = {'1x', 0, 0};
                 c.rotationMapAxesGrid.RowHeight = {'1x', 0};
                 axesPlaceholder(app, c.rotationMapAxes(1), '③ の「計測マップを作る」を押すと、ここに計測マップが出ます。');
@@ -1010,10 +1110,12 @@ classdef (Abstract) RotationTab < appui.Core
                 ax = c.rotationMapAxes(k);
                 ax.Visible = 'on';
                 alignest.plot.rotationMap(ax, maps, chosen(k), waferRadiusMm=app.Settings.data.waferRadiusMm, ...
-                    shotCenters=variability.shotCenters, shotSizeMm=variability.shotSizeMm, showLegend=k == 1, ...
+                    shotCenters=variability.shotCenters, shotSizeMm=variability.shotSizeMm, showLegend=false, ...
                     markerSize=markerSize, circleRadiiMm=radii);
             end
-            styleAxes(app, c.rotationMapAxes(1:nShown), app.SMALL_AXES_FONT_SIZE);
+            drawRotationMapLegend(app, c.rotationMapAxes(1:nShown));
+            styleAxes(app, [c.rotationMapAxes(1:nShown), c.rotationMapLegendAxes], app.SMALL_AXES_FONT_SIZE);
+            enableRotationShotClicks(app, c.rotationMapAxes(1:nShown));
             nRanks = numel(maps.rankNames);
             counts = zeros(maps.nMaps, nRanks);
             for r = 1:nRanks
@@ -1022,6 +1124,41 @@ classdef (Abstract) RotationTab < appui.Core
             data = [table(maps.mapNames.', maps.counts.', round(100 * maps.rates.', 1), 'VariableNames', ...
                 ["計測マップ", "計測数", "計測率 [%]"]), array2table(counts, 'VariableNames', "優先度 " + string(1:nRanks))];
             c.rotationMapTable.Data = data;
+        end
+
+        function drawRotationMapLegend(app, axesList)
+            % 並べた計測マップの凡例を、マップの右の欄に1つだけ出す（どのマップも同じ大きさにするため）。マップに描いた
+            % 区分（計測しない・優先度・指定・円）を、どれかのマップにあれば凡例に入れる。数はマップごとに違うので名前から
+            % 外す（数は下の表）。凡例の見本は、見えない図に、マップの線・点を写して点の位置を空にしたもの
+            c = app.Controls;
+            legendAxes = c.rotationMapLegendAxes;
+            names = strings(1, 0);
+            copies = gobjects(1, 0);
+            for ax = axesList
+                for item = reshape(flipud(findobj(ax, '-regexp', 'DisplayName', '.+')), 1, [])
+                    name = string(regexprep(item.DisplayName, '（\d+）$', ''));
+                    if any(names == name)
+                        continue
+                    end
+                    copy = copyobj(item, legendAxes);
+                    set(copy, 'XData', NaN, 'YData', NaN);   % 見本だけ（見えない図でも線・点は描かれるため）
+                    names(end + 1) = name; %#ok<AGROW>
+                    copies(end + 1) = copy; %#ok<AGROW>
+                end
+            end
+            % 凡例の順：計測しない・優先度 1, 2, …・優先度 1 に指定・重ねた円（描いた順は重なりの順で変わるため）
+            category = 3 * ones(size(names));
+            category(names == "計測しない") = 0;
+            category(~cellfun('isempty', regexp(cellstr(names), '^優先度 \d+$', 'once'))) = 1;
+            category(names == "優先度 1 に指定") = 2;
+            [~, order] = sortrows([category(:), (1:numel(names)).']);
+            names = names(order);
+            copies = copies(order);
+            legendAxes.Visible = 'off';
+            c.rotationMapArea.ColumnWidth = {'1x', ternary(isempty(copies), 0, app.ROTATION_LEGEND_WIDTH)};
+            if ~isempty(copies)
+                legend(legendAxes, copies, cellstr(names), 'Location', 'west', 'Box', 'off', 'Interpreter', 'none');
+            end
         end
 
         function showRotationRun(app)
@@ -1094,12 +1231,12 @@ classdef (Abstract) RotationTab < appui.Core
                     thresholdText = "累積 " + strjoin(string(maps.thresholdPercents), "・") + "%（" + thresholdText + "）";
                 end
                 entry.description = entry.description + "、優先度：" + maps.metricLabel + " " + thresholdText + ...
-                    "（間隔 " + strjoin(string(maps.intervals), "・") + "）";
+                    sprintf("（計測マップ %d 枚）", maps.nMaps);
                 if ~isnan(maps.outerRadiusMm)
                     entry.description = entry.description + sprintf("、半径 %g mm 以上は優先度 1", maps.outerRadiusMm);
                 end
-                if maps.assignment == "random"
-                    entry.description = entry.description + sprintf("、ランダムに振り分け（種 %d）", maps.seed);
+                if maps.assignment ~= "order"
+                    entry.description = entry.description + "、" + erase(assignmentText(maps), "。");
                 end
             end
             if isempty(history)
@@ -1191,8 +1328,10 @@ classdef (Abstract) RotationTab < appui.Core
             app.RotationVariability = [];
             app.RotationMaps = [];
             app.RotationRun = [];
+            app.RotationAssignmentComparison = [];
             drawRotationVariability(app);
             drawRotationMaps(app);
+            drawRotationAssignmentComparison(app);
             showRotationRun(app);
             app.Controls.rotationInfo.Text = '';
             updateRotationEnabled(app);
@@ -1236,7 +1375,7 @@ classdef (Abstract) RotationTab < appui.Core
 
         function onMakeRotationMaps(app)
             runWithAlert(app, @() app.makeRotationMaps(), "計測マップを作れませんでした", ...
-                "しきい値と計測の間隔を確かめてから、もう一度試してください。");
+                "しきい値と計測マップの数を確かめてから、もう一度試してください。");
         end
 
         function onRunRotationFeedback(app)
@@ -1286,6 +1425,150 @@ classdef (Abstract) RotationTab < appui.Core
             app.Controls.rotationError.Text = ternary(ok, '', '重ねる円の半径は数を空白で区切って入れてください（例：120 140）。');
             drawRotationVariability(app);
             drawRotationMaps(app);
+        end
+
+        function [metricName, thresholdValues, nameValues] = rotationMapInputs(app)
+            % ③ の欄の値：優先度を分ける指標・しきい値と、alignest.rotationMaps の名前と値の組（しきい値の決め方・外周・
+            % 優先度 1 の Shot・乱数の種・I 基準と D 基準の基準モデル）。数でない欄は止める
+            c = app.Controls;
+            [thresholdValues, ok] = parseNumbers(c.rotationThresholds.Value);
+            if ~ok
+                error('alignest:rotationMaps', 'しきい値は数を空白で区切って入れてください（例：5 3）。');
+            end
+            outerRadius = rotationOuterRadius(app);
+            priorityShotNos = rotationPriorityShotNos(app);
+            if strcmp(c.rotationError.Text, app.ROTATION_PRIORITY_SHOTS_ERROR)
+                c.rotationError.Text = '';   % 欄が正しくなった
+            end
+            metricName = string(c.rotationMetric.Value);
+            if metricName == "sigma3Target" && ~app.RotationVariability.hasTarget
+                error('alignest:rotationMaps', '目的変数を選んで「ばらつきを求める」を押してから、目的変数の 3σ で分けてください。');
+            end
+            sampling = app.Settings.sampling;
+            features = "XYR";   % 以前の設定（designFeatures が無い）は X・Y・半径
+            if isfield(sampling, "designFeatures") && ~isempty(sampling.designFeatures)
+                features = string(sampling.designFeatures);
+            end
+            nameValues = {"thresholdKind", string(c.rotationThresholdKind.Value), "outerRadiusMm", outerRadius, ...
+                "seed", sampling.seed, "priorityShotNos", priorityShotNos, "waferRadiusMm", app.Settings.data.waferRadiusMm, ...
+                "designOrder", sampling.designOrder, "designFeatures", features};
+        end
+
+        function onCompareRotationAssignments(app)
+            runWithAlert(app, @() app.compareRotationAssignments(), "振り分け方を比べられませんでした", ...
+                "しきい値と計測マップの数を確かめてから、もう一度試してください。");
+        end
+
+        function drawRotationAssignmentComparison(app)
+            % 「振り分けの比較」：選んだ指標を振り分け方ごとの棒で描き（最も良い＝最も小さい棒は橙）、すべての指標を表に出す
+            c = app.Controls;
+            comparison = app.RotationAssignmentComparison;
+            ax = c.rotationAssignAxes;
+            cla(ax, 'reset');
+            legend(ax, 'off');
+            if isempty(comparison)
+                axesPlaceholder(app, ax, '「振り分け方を比べる」を押すと、ここに振り分け方ごとの指標が出ます。');
+                c.rotationAssignTable.Data = table();
+                c.rotationAssignInfo.Text = ['③ の優先度・計測マップの数のまま、すべての振り分け方で計測マップを作って' ...
+                    '比べます（どの指標も小さいほど良い）。'];
+                return
+            end
+            ax.Visible = 'on';
+            column = string(c.rotationAssignMetric.Value);
+            values = comparison.table.(column);
+            colors = repmat(app.ROTATION_POINT_COLOR, numel(values), 1);
+            [~, best] = min(values);   % NaN（作れなかった振り分け）は除く
+            if any(isfinite(values))
+                colors(best, :) = app.ROTATION_CUMULATIVE_COLOR;
+            end
+            bars = bar(ax, 1:numel(values), values, 'FaceColor', 'flat', 'EdgeColor', 'none');
+            bars.CData = colors;
+            shown = isfinite(values);
+            text(ax, find(shown), values(shown), compose(" %.3g", values(shown)), 'HorizontalAlignment', 'center', ...
+                'VerticalAlignment', 'bottom', 'HitTest', 'off');
+            xlim(ax, [0.5, numel(values) + 0.5]);
+            if any(shown) && max(values(shown)) > 0
+                ylim(ax, [0, max(values(shown)) * app.ROTATION_ASSIGN_HEADROOM]);   % 棒の上の数が題名と重ならないように
+            end
+            xticks(ax, 1:numel(values));
+            xticklabels(ax, cellstr(comparison.labels));
+            ylabel(ax, column);
+            title(ax, column + "（小さいほど良い。橙が最も良い）", 'Interpreter', 'none');
+            grid(ax, 'on');
+            box(ax, 'on');
+            styleAxes(app, ax, app.AXES_FONT_SIZE);
+            data = comparison.table;
+            for name = string(data.Properties.VariableNames(2:end))   % 1 列目は振り分けの名前
+                data.(name) = round(data.(name), 4, 'significant');
+            end
+            c.rotationAssignTable.Data = data;
+            c.rotationAssignInfo.Text = char(sprintf("計測マップ %d 枚で比べました。どの指標も小さいほど良い値です。", ...
+                comparison.mapCount) + strjoin(comparison.messages, " "));
+        end
+
+        function shotNos = rotationPriorityShotNos(app)
+            % 「優先度 1 の Shot」の欄の shotNo（空欄なら空の並び）。整数でないときは止める
+            [shotNos, ok] = parseNumbers(app.Controls.rotationPriorityShots.Value);
+            if ~ok || any(shotNos ~= round(shotNos))
+                error('alignest:rotationMaps', app.ROTATION_PRIORITY_SHOTS_ERROR);
+            end
+        end
+
+        function onRotationPriorityShotsChanged(app)
+            % 「優先度 1 の Shot」を変えたら：「ばらつき」の図の枠を描き直し、計測マップを作ってあれば作り直す（見ている
+            % 結果のタブはそのまま）。整数でなければ左の欄の下に知らせる
+            c = app.Controls;
+            try
+                rotationPriorityShotNos(app);
+            catch err
+                c.rotationError.Text = err.message;
+                return
+            end
+            if strcmp(c.rotationError.Text, app.ROTATION_PRIORITY_SHOTS_ERROR)
+                c.rotationError.Text = '';
+            end
+            if isempty(app.RotationMaps)
+                drawRotationVariability(app);
+                return
+            end
+            shownTab = c.rotationOutputs.SelectedTab;
+            try
+                makeRotationMaps(app);
+            catch err
+                c.rotationError.Text = err.message;   % しきい値・間隔が正しくないときなど
+            end
+            c.rotationOutputs.SelectedTab = shownTab;
+        end
+
+        function onRotationPriorityClickChanged(app)
+            % 「図のクリックで足す・外す」を変えたら図を描き直す（オンの間は、図の点や線がクリックを図に渡す）
+            drawRotationVariability(app);
+            drawRotationMaps(app);
+        end
+
+        function enableRotationShotClicks(app, axesList)
+            % 図のクリックで Shot を指定できるようにする。「図のクリックで足す・外す」がオンなら、図の上の点や線は
+            % クリックを図に渡す（オフのときは点の値を見るデータヒントのため、そのままにする）
+            for ax = axesList
+                ax.ButtonDownFcn = @(~, event) app.onRotationShotClicked(event);
+                if app.Controls.rotationPriorityClick.Value
+                    set(ax.Children, 'HitTest', 'off');
+                end
+            end
+        end
+
+        function onRotationShotClicked(app, event)
+            % 図のクリック：クリックした Shot を「優先度 1 の Shot」に足す・外す（「図のクリックで足す・外す」がオンのとき）
+            variability = app.RotationVariability;
+            if ~app.Controls.rotationPriorityClick.Value || isempty(variability) || isempty(event)
+                return
+            end
+            shotNo = clickedShotNo(variability, event.IntersectionPoint(1:2));
+            if isnan(shotNo)
+                return   % Shot の外（Wafer の外など）
+            end
+            runWithAlert(app, @() app.togglePriorityShot(shotNo), "優先度 1 の Shot を指定できませんでした", ...
+                "「優先度 1 の Shot」の欄を確かめてください（例：12 40）。");
         end
 
         function onLoadRotationFile(app)
@@ -1390,6 +1673,39 @@ classdef (Abstract) RotationTab < appui.Core
 end
 
 % ================= このファイルだけで使う小さな関数 =================
+function text = assignmentText(maps)
+% 計測マップの説明の振り分け方（表の順は書かない。乱数を使う振り分けは種も）
+text = "";
+[names, labels] = alignest.rotationAssignments();
+if maps.assignment == "order"
+    return
+end
+label_ = labels(names == maps.assignment);
+text = "振り分けは" + ternary(isempty(regexp(label_, '^[A-Za-z]', 'once')), "", " ") + label_;   % 英字の前は空ける
+if maps.assignment ~= "sobol"
+    text = text + sprintf("（種 %d）", maps.seed);
+end
+text = text + "。";
+end
+
+function shotNo = clickedShotNo(variability, point)
+% クリックした点を含む Shot の shotNo（Shot の大きさが分からないときは、最も近い Shot 中心の Shot）。無ければ NaN
+rows = variability.table;
+[shotNos, first] = unique(rows.shotNo, 'stable');
+centers = [rows.Xc(first), rows.Yc(first)];
+half = variability.shotSizeMm / 2;
+shotNo = NaN;
+if all(isfinite(half))
+    inside = find(abs(centers(:, 1) - point(1)) <= half(1) & abs(centers(:, 2) - point(2)) <= half(2), 1);
+    if ~isempty(inside)
+        shotNo = shotNos(inside);
+    end
+elseif ~isempty(shotNos)
+    [~, nearest] = min(hypot(centers(:, 1) - point(1), centers(:, 2) - point(2)));
+    shotNo = shotNos(nearest);
+end
+end
+
 function entry = waferEntry(unit, label, points)
 entry = struct("label", string(label), "points", points, "lot", string(unit.lotId), "dateTime", string(unit.dateTime), ...
     "operation", string(unit.operation), "eqpId", string(unit.eqpId));
