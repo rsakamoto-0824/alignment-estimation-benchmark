@@ -90,7 +90,7 @@ classdef (Abstract) DataTab < appui.Core
             refreshValueColumns(app);
             fillMappingTable(app, alignest.guessColumnMapping(raw.Properties.VariableNames));
             fillUnitTable(app);
-            c.mappingStatus.Text = sprintf('%d 行・%d 列を読みました。下の対応を確かめて、右上の「③ この対応で読み込む」を押してください。', height(raw), ...
+            c.mappingStatus.Text = sprintf('%d 行・%d 列を読みました。下の対応を確かめて、右下の「③ この対応で読み込む」を押してください。', height(raw), ...
                 width(raw));
             c.mappingStatus.FontColor = app.Palette.text;
             c.applyMapping.Enable = 'on';
@@ -156,7 +156,7 @@ classdef (Abstract) DataTab < appui.Core
             catch err
                 app.Controls.varianceInfo.Text = ['⚠ ばらつきを分けられませんでした：' err.message];
             end
-            clearRotation(app);   % 「8. 計測マップのローテーション」の前のデータの結果を消す
+            clearRotation(app);   % 「8. 計測Mapローテ」の前のデータの結果を消す
             % 質的変数の交互作用：Wafer はすべて、その他の列は質的変数に選んである列。読み込んだら一度調べる
             app.Controls.interactionWafers.Items = cellstr(labels);
             app.Controls.interactionWafers.ItemsData = num2cell(1:numel(labels));
@@ -425,10 +425,10 @@ classdef (Abstract) DataTab < appui.Core
     methods (Access = {?appui.Core})
         % ================= 1. データ読込 =================
         function buildDataTab(app)
-            grid = uigridlayout(app.Tabs.data, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 12, 'RowSpacing', 12);
+            % 上：① ファイルと読み込みの条件、中：② 列の対応などのタブ、下：③ この対応で読み込む（どのタブでも押せる）
+            grid = uigridlayout(app.Tabs.data, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 12, 'RowSpacing', 8);
             filePanel = uipanel(grid, 'Title', '① 計測データのファイルと読み込みの条件');
-            % 欄の幅は中身に合わせて決め、余りは右の空き（5列目）にする（画面が広くてもプルダウンを伸ばさない）。
-            % 「③ この対応で読み込む」は、下のどのタブを開いていても押せるように右上に置く
+            % 欄の幅は中身に合わせて決め、余りは右の空き（5列目）にする（画面が広くてもプルダウンを伸ばさない）
             fileGrid = uigridlayout(filePanel, [5, 5], 'ColumnWidth', {'fit', 260, 240, 170, '1x'}, ...
                 'RowHeight', repmat({'fit'}, 1, 5), 'Padding', 10);
             c.chooseFile = uibutton(fileGrid, 'Text', 'ファイルを選ぶ…', 'ButtonPushedFcn', @(~, ~) app.onChooseFile());
@@ -441,10 +441,6 @@ classdef (Abstract) DataTab < appui.Core
             c.sheet = uidropdown(sheetGrid, 'Items', {'—'}, 'Enable', 'off', 'ValueChangedFcn', @(~, ~) app.onSheetChanged());
             place(c.sheet, 1, 2);
             set([c.sheetLabel, c.sheet], 'Visible', 'off');   % Excel のときだけ出す（CSV にはシートが無い）
-            c.applyMapping = primaryButton(app, fileGrid, '③ この対応で読み込む', @(~, ~) app.onApplyMapping());
-            c.applyMapping.Enable = 'off';
-            c.applyMapping.Tooltip = '下の「② 列の対応・座標の単位」と、この枠の条件で読み込みます。';
-            place(c.applyMapping, 1, [4, 5]);
             onDataOption = @(~, ~) app.onDataOptionsChanged();
             % 読み込みの条件：座標の定義・推定する値・有効半径・Scan 方向の付与
             label(fileGrid, '座標の定義', 2, 1);
@@ -509,6 +505,12 @@ classdef (Abstract) DataTab < appui.Core
 
             c.dataTabs = uitabgroup(grid, 'SelectionChangedFcn', @(~, ~) app.redrawShownResizedCharts());
             c.mappingTab = uitab(c.dataTabs, 'Title', '② 列の対応・座標の単位');
+            applyGrid = uigridlayout(grid, [1, 2], 'ColumnWidth', {'1x', app.APPLY_BUTTON_WIDTH}, 'Padding', 0);
+            place(applyGrid, 3, 1);
+            c.applyMapping = primaryButton(app, applyGrid, '③ この対応で読み込む', @(~, ~) app.onApplyMapping());
+            c.applyMapping.Enable = 'off';
+            c.applyMapping.Tooltip = '「② 列の対応・座標の単位」と、上の「①」の条件で読み込みます。';
+            place(c.applyMapping, 1, 2);
             lower = uigridlayout(c.mappingTab, [1, 2], 'ColumnWidth', {'1x', '1.1x'}, 'Padding', 8, 'ColumnSpacing', 12);
             mappingPanel = uipanel(lower, 'Title', '列の対応');
             mappingGrid = uigridlayout(mappingPanel, [2, 1], 'RowHeight', {'1x', 'fit'}, 'Padding', 10);

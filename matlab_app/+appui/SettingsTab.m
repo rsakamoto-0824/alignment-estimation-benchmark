@@ -1,11 +1,11 @@
 classdef (Abstract) SettingsTab < appui.Core
-    %SETTINGSTAB 「2. 評価の設定と実行」タブ：計測点の選び方・学習 Shot/Mark 数・比べる手法・質的変数・評価の条件・Overlay 補正の
+    %SETTINGSTAB 「2. 面内推定の設定」タブ：計測点の選び方・学習 Shot/Mark 数・比べる手法・質的変数・評価の条件・Overlay 補正の
     %   設定と、設定ファイルの保存・読み込み。評価を始めるボタンと計測マップは RunTab（同じタブの中）。
     %   AlignmentEstimationApp（画面の本体）の一部。画面の部品は Controls、データ・結果は Core のプロパティに持つ。
     %   ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
 
     properties (Constant, Access = {?appui.Core})
-        SAMPLING_PANEL_WIDTH = 600   % 「計測点と計測マップ」の左の欄（学習に使う計測点）の幅 [px]（標準の文字の大きさのとき）
+        SAMPLING_PANEL_WIDTH = 560   % 「計測設定」の左の欄（学習に使う計測点）の幅 [px]（標準の文字の大きさのとき。右の計測マップを広く取る）
     end
 
     methods
@@ -62,10 +62,10 @@ classdef (Abstract) SettingsTab < appui.Core
     end
 
     methods (Access = {?appui.Core})
-        % ================= 2. 評価の設定と実行 =================
+        % ================= 2. 面内推定の設定 =================
         function buildSettingsTab(app)
             % 上：評価を始めるボタン・設定の保存（いつも見える）と、これから計算する組み合わせ。下：中のタブ
-            % （計測点と計測マップ・比べる手法・評価と Overlay 補正）。評価のボタンと計測マップは buildRunTab が作る
+            % （計測設定・比べる手法・評価と Overlay 補正）。評価のボタンと計測マップは buildRunTab が作る
             grid = uigridlayout(app.Tabs.settings, [3, 1], 'RowHeight', {'fit', 'fit', '1x'}, 'Padding', 8, 'RowSpacing', 6);
             onChange = @(~, ~) app.onSettingsChanged();
             c.runBar = uigridlayout(grid, [1, 8], 'ColumnWidth', {200, 0, 0, 'fit', '1x', 'fit', 'fit', 'fit'}, ...
@@ -81,7 +81,7 @@ classdef (Abstract) SettingsTab < appui.Core
             c.runSummary = uilabel(grid, 'WordWrap', 'on', 'Text', '');
             c.countLabel = c.runSummary;   % 組み合わせの数と時間の目安（以前の設定タブの下の欄と同じもの）
             c.settingsTabs = uitabgroup(grid, 'SelectionChangedFcn', @(~, ~) app.onSettingsTabChanged());
-            c.pointsTab = uitab(c.settingsTabs, 'Title', '計測点と計測マップ');
+            c.pointsTab = uitab(c.settingsTabs, 'Title', '計測設定');
             c.methodsTab = uitab(c.settingsTabs, 'Title', '比べる手法');
             c.evaluationTab = uitab(c.settingsTabs, 'Title', '評価・Overlay 補正');
             pointsGrid = uigridlayout(c.pointsTab, [1, 2], 'ColumnWidth', {app.SAMPLING_PANEL_WIDTH, '1x'}, 'Padding', 6, ...
@@ -193,15 +193,15 @@ classdef (Abstract) SettingsTab < appui.Core
             label(selectGrid, '計測しない shotNo', 1, 2);
             c.requiredShots = uieditfield(selectGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['ここに書いた Shot を' ...
                 '必ず学習に入れ、残りを I 最適（またはランダム）で選びます（拡張 I 最適計画）。Mark 単位の計画では、その Shot の' ...
-                ' Mark をすべて計測します。「2. 評価の設定と実行」の計測マップでクリックしても指定できます。']);
+                ' Mark をすべて計測します。「2. 面内推定の設定」の計測マップでクリックしても指定できます。']);
             place(c.requiredShots, 2, 1);
             c.excludedShots = uieditfield(selectGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['ここに書いた Shot は' ...
                 '学習に選びません（評価には使います）。I 最適・D 最適・ランダムの Shot と、Mark 単位の計画の Mark に効きます。' ...
-                '「2. 評価の設定と実行」の計測マップでクリックしても指定できます。']);
+                '「2. 面内推定の設定」の計測マップでクリックしても指定できます。']);
             place(c.excludedShots, 2, 2);
             label(selectGrid, '必ず計測する Mark', 3, 1);
             label(selectGrid, '計測しない Mark', 3, 2);
-            markTip = '「shotNo-markNo」（例：12-3）を空白で区切って入れます。「2. 評価の設定と実行」の Mark 単位の計測マップでクリックしても指定できます。';
+            markTip = '「shotNo-markNo」（例：12-3）を空白で区切って入れます。「2. 面内推定の設定」の Mark 単位の計測マップでクリックしても指定できます。';
             c.requiredMarks = uieditfield(selectGrid, 'text', 'ValueChangedFcn', onChange, 'Placeholder', '例：12-3 40-1', ...
                 'Tooltip', ['Mark 単位の計画で必ず計測する Mark。' markTip]);
             place(c.requiredMarks, 4, 1);

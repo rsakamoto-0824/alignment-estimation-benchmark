@@ -1,5 +1,5 @@
 classdef (Abstract) RunTab < appui.Core
-    %RUNTAB 「2. 評価の設定と実行」タブの評価の実行・中断・再開・条件の追加（上の帯）と、計測マップ（「計測点と計測マップ」の右）。
+    %RUNTAB 「2. 面内推定の設定」タブの評価の実行・中断・再開・条件の追加（上の帯）と、計測マップ（「計測設定」の右）。
     %   AlignmentEstimationApp（画面の本体）の一部。画面の部品は Controls、データ・結果は Core のプロパティに持つ。
     %   ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
 
@@ -8,6 +8,7 @@ classdef (Abstract) RunTab < appui.Core
             '計画だけに効きます（必ず計測する Shot は、Mark 単位ではその Shot の Mark すべて）。左の「必ず計測する・計測しない' ...
             ' Shot と Mark」の欄でも指定できます。計測しない Shot・Mark は学習に使わず、評価には使います。']
         MEASURE_BUTTON_WIDTHS = {150, 150, 110, 170}   % 計測マップのボタンの幅 [px]（標準の文字の大きさのとき）
+        MEASURE_INFO_HEIGHT = 112   % 計測マップの下の説明・指定・成分の差の欄の高さ [px]（図の場所を広く取るため低めにする）
     end
 
     methods
@@ -48,7 +49,7 @@ classdef (Abstract) RunTab < appui.Core
         end
 
         function results = extendEvaluation(app, showProgress)
-            %EXTENDEVALUATION 評価済みの結果に、「2. 評価の設定と実行」で増やした手法・学習パターン（学習 Shot 数・計測率など）を
+            %EXTENDEVALUATION 評価済みの結果に、「2. 面内推定の設定」で増やした手法・学習パターン（学習 Shot 数・計測率など）を
             %   足して評価する。済んだ組み合わせ（Wafer × 学習パターン × 手法）は計算せず、無いものだけを計算して結果に
             %   加える（alignest.runEvaluation の "extend"）。推定の結果を変える設定（データ・質的変数・制約・評価の条件・
             %   Overlay 補正など。alignest.extensionConflicts）を変えたときは追加できない（「評価を始める」で計算し直す）。
@@ -65,7 +66,7 @@ classdef (Abstract) RunTab < appui.Core
         end
 
         function [plans, components] = drawMeasurementMap(app, unitIndex, planLabels)
-            %DRAWMEASUREMENTMAP 選んだ Wafer・学習パターン（省略時は画面の選択。どちらも複数可）の計測マップを「2. 評価の設定と実行」に
+            %DRAWMEASUREMENTMAP 選んだ Wafer・学習パターン（省略時は画面の選択。どちらも複数可）の計測マップを「2. 面内推定の設定」に
             %   並べて描く（Wafer × 学習パターン、最大 MAX_MEASURE_PANELS 枚）。学習に使う（計測する）Shot・必ず計測する Shot・
             %   計測しない Shot を塗り分け、選べば Scan 方向（Shot の内側の色の枠と ▲・▼）と同心円の制約の区切りも描く。
             %   評価の前に使える。学習パターンは評価と同じ作り方なので、同じ設定なら評価でも同じ Shot を使う。
@@ -82,21 +83,24 @@ classdef (Abstract) RunTab < appui.Core
                 error('alignest:settings', '%s', strjoin(settingsErrors, newline));
             end
             refreshMeasurementChoices(app);
+            % 画面のプルダウンは1つずつ選ぶ。関数から呼ぶときは、Wafer・学習パターンを複数渡すと図を並べる（最大 6 枚）
+            units = c.measureWafer.Value;
+            labels = string(c.measurePlan.Value);
             if nargin >= 2
-                c.measureWafer.Value = num2cell(unitIndex);
+                units = unitIndex;
+                c.measureWafer.Value = unitIndex(1);
             end
             if nargin >= 3
                 planLabels = string(planLabels);
                 unknown = planLabels(~ismember(planLabels, string(c.measurePlan.Items)));
                 if ~isempty(unknown)
-                    error('alignest:measurementPlan', '学習パターン「%s」はありません（「2. 評価の設定と実行」を確かめてください）。', ...
+                    error('alignest:measurementPlan', '学習パターン「%s」はありません（「2. 面内推定の設定」を確かめてください）。', ...
                         unknown(1));
                 end
-                c.measurePlan.Value = cellstr(planLabels);
+                labels = planLabels;
+                c.measurePlan.Value = char(planLabels(1));
             end
             specs = alignest.buildPlanSpecs(app.Settings.sampling);
-            units = cell2mat(c.measureWafer.Value);
-            labels = string(c.measurePlan.Value);
             if isempty(units) || isempty(labels)
                 error('alignest:measurementPlan', 'Wafer と学習パターンを1つ以上選んでください。');
             end
@@ -200,7 +204,7 @@ classdef (Abstract) RunTab < appui.Core
                 error('alignest:settings', '%s', strjoin(settingsErrors, newline));
             end
             refreshMeasurementChoices(app);
-            selected = cell2mat(app.Controls.measureWafer.Value);
+            selected = app.Controls.measureWafer.Value;
             if isempty(selected)
                 error('alignest:measurementPlan', '書き出す Wafer を選んでください。');
             end
@@ -271,7 +275,7 @@ classdef (Abstract) RunTab < appui.Core
                 string(samplingControls(1).Items{strcmp(samplingControls(1).ItemsData, samplingControls(1).Value)}) + "：" + ...
                 strjoin(string(samplingControls(2).Items(ismember(samplingControls(2).ItemsData, ...
                 samplingControls(2).Value))), "、"); "学習パターンの列は 1 = 計測する（学習に使う）、0 = 計測しない（評価に使う）。" + ...
-                "最外周・指定で必ず計測は 1 = そうである。"; "「2. 評価の設定と実行」の Overlay 補正（" + componentText + "）を、" + ...
+                "最外周・指定で必ず計測は 1 = そうである。"; "「2. 面内推定の設定」の Overlay 補正（" + componentText + "）を、" + ...
                 "全計測と計測配置の点（計測する Mark）だけで X・Y 別に最小二乗で当てはめ、成分（Wafer 線形・Wafer 高次・" + ...
                 "Shot 共通 低次・Shot 共通 高次・合計）の補正量を全計測の Mark の位置で比べた。全計測の成分は全計測で求めた" + ...
                 "補正量の |平均|+3σ、差は 計測配置の点で求めた補正量 − 全計測で求めた補正量 の |平均|+3σ と絶対値の最大 [nm]。" + ...
@@ -321,9 +325,9 @@ classdef (Abstract) RunTab < appui.Core
     end
 
     methods (Access = {?appui.Core})
-        % ================= 2. 評価の設定と実行（評価のボタンと計測マップ） =================
+        % ================= 2. 面内推定の設定（評価のボタンと計測マップ） =================
         function buildRunTab(app)
-            % 「2. 評価の設定と実行」の上の帯に評価のボタン、「計測点と計測マップ」の右に計測マップを作る
+            % 「2. 面内推定の設定」の上の帯に評価のボタン、「計測設定」の右に計測マップを作る
             % （帯と計測マップの枠は buildSettingsTab が作る：Controls.runBar・measureHost）
             buttonGrid = app.Controls.runBar;
             c.run = primaryButton(app, buttonGrid, '評価を始める', @(~, ~) app.onRun());
@@ -344,40 +348,40 @@ classdef (Abstract) RunTab < appui.Core
             c.runStatus = uilabel(buttonGrid, 'WordWrap', 'on', 'Text', '');
             place(c.runStatus, 1, 5);
             % 計測マップ：評価の前に、学習に使う（計測する）Shot を Wafer 上で確かめ、クリックで必ず計測・計測しないを指定する
-            mapGrid = uigridlayout(app.Controls.measureHost, [5, 1], 'RowHeight', {'fit', 'fit', 'fit', '1x', 150}, ...
-                'Padding', 8, 'RowSpacing', 6);
-            choose = uigridlayout(mapGrid, [1, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1.4x'}, 'RowHeight', {88}, ...
-                'Padding', 0);
-            label(choose, 'Wafer', 1, 1);
+            % 上の欄は3行に詰め（Wafer・学習パターンはプルダウン）、図の場所を広く取る
+            mapGrid = uigridlayout(app.Controls.measureHost, [5, 1], 'RowHeight', {'fit', 'fit', 'fit', '1x', ...
+                app.MEASURE_INFO_HEIGHT}, 'Padding', 6, 'RowSpacing', 4);
             onMeasure = @(~, ~) app.onDrawMeasurementMap();
             onMeasureDisplay = @(~, ~) app.onMeasureDisplayChanged();   % 表示の切り替えでは、描いた図を描き直すだけ
-            multiTip = 'Ctrl・Shift で複数選ぶと、Wafer × 学習パターンの図を並べます（最大 6 枚）。';
-            c.measureWafer = uilistbox(choose, 'Items', {'—'}, 'ItemsData', {1}, 'Multiselect', 'on', 'Tooltip', multiTip);
+            choose = uigridlayout(mapGrid, [1, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1.4x'}, 'Padding', 0);
+            label(choose, 'Wafer', 1, 1);
+            c.measureWafer = uidropdown(choose, 'Items', {'—'}, 'ItemsData', {1}, 'ValueChangedFcn', onMeasureDisplay, ...
+                'Tooltip', '計測マップを描く Wafer。');
             place(c.measureWafer, 1, 2);
             label(choose, '学習パターン', 1, 3);
-            c.measurePlan = uilistbox(choose, 'Items', {'—'}, 'Multiselect', 'on', 'Tooltip', multiTip);
+            c.measurePlan = uidropdown(choose, 'Items', {'—'}, 'ValueChangedFcn', onMeasureDisplay, ...
+                'Tooltip', '計測マップを描く学習パターン。');
             place(c.measurePlan, 1, 4);
-            options = uigridlayout(mapGrid, [2, 4], 'ColumnWidth', {'fit', 150, 'fit', '1x'}, 'RowHeight', {'fit', 'fit'}, ...
-                'Padding', 0, 'RowSpacing', 2);
-            c.measureScan = uicheckbox(options, 'Text', 'Scan 方向を色で示す', 'Value', true, ...
+            options = uigridlayout(mapGrid, [1, 6], 'ColumnWidth', {'fit', 'fit', 'fit', 140, 'fit', '1x'}, 'Padding', 0);
+            c.measureScan = uicheckbox(options, 'Text', 'Scan 方向の色', 'Value', true, ...
                 'ValueChangedFcn', onMeasureDisplay, 'Tooltip', ['Shot の内側の枠の色と ▲・▼ で Scan 方向を示します' ...
                 '（Scan 方向の制約で Shot 数がそろっているかを確かめる）。色と向きはメニュー「設定」で変えられます。']);
-            place(c.measureScan, 1, [1, 2]);
-            c.measureRings = uicheckbox(options, 'Text', '同心円の区切りを描く', 'Value', true, ...
+            place(c.measureScan, 1, 1);
+            c.measureRings = uicheckbox(options, 'Text', '同心円の区切り', 'Value', true, ...
                 'ValueChangedFcn', onMeasureDisplay, 'Tooltip', ['半径の制約を使うとき、区切りの半径（Shot 単位は' ...
                 ' Shot 中心、Mark 単位は Mark の半径で区画を分ける）を橙の一点鎖線で描きます。']);
-            place(c.measureRings, 1, [3, 4]);
-            label(options, 'クリックで', 2, 1);
+            place(c.measureRings, 1, 2);
+            label(options, 'クリックで', 1, 3);
             c.measureClickMode = uidropdown(options, 'Items', {'見るだけ', '必ず計測にする', '計測しないにする', '指定を外す'}, ...
                 'ItemsData', {'none', 'required', 'excluded', 'clear'}, 'Tooltip', app.MEASURE_SELECT_NOTE);
-            place(c.measureClickMode, 2, 2);
-            c.measureRange = uicheckbox(options, 'Text', '範囲で選ぶ（2点をクリック）', ...
+            place(c.measureClickMode, 1, 4);
+            c.measureRange = uicheckbox(options, 'Text', '範囲で選ぶ', ...
                 'ValueChangedFcn', @(~, ~) app.clearMeasureRangeStart(), 'Tooltip', ['オン：図の2点（四角の向かい合う角）を' ...
                 'クリックすると、その四角に中心が入る Shot（Mark 単位の図では四角に入る Mark）をまとめて、「クリックで」の' ...
                 '指定にします。']);
-            place(c.measureRange, 2, 3);
+            place(c.measureRange, 1, 5);
             c.measureSelectNote = uilabel(options, 'Text', '', 'Visible', 'off');   % 範囲選びの途中の知らせ（ふだんは出さない）
-            place(c.measureSelectNote, 2, 4);
+            place(c.measureSelectNote, 1, 6);
             % 決まった幅 [px]（文字の大きさに合わせて広がる）。'fit' では文字の大きさ・フォントによって文字が切れるため
             buttons = uigridlayout(mapGrid, [1, 4], 'ColumnWidth', app.MEASURE_BUTTON_WIDTHS, 'Padding', 0);
             c.drawMeasure = uibutton(buttons, 'Text', '計測マップを作る', 'ButtonPushedFcn', onMeasure);
@@ -412,7 +416,7 @@ classdef (Abstract) RunTab < appui.Core
                 '差 = 計測配置の点 − 全計測。単位は計測値と同じ（分散は単位の2乗）。']);
             c.measureComponents = uitable(componentGrid, 'RowName', {}, 'ColumnName', {'Wafer｜学習パターン', '成分', ...
                 '全計測|X [nm]', '全計測|Y [nm]', '差|X [nm]', '差|Y [nm]'}, 'ColumnWidth', {170, 118, 54, 54, 54, 54}, ...
-                'Data', cell(0, 6), 'Tooltip', ['全計測との成分の差：「2. 評価の設定と実行」の Overlay 補正の Wafer 成分・Shot 共通成分を、' ...
+                'Data', cell(0, 6), 'Tooltip', ['全計測との成分の差：「2. 面内推定の設定」の Overlay 補正の Wafer 成分・Shot 共通成分を、' ...
                 '全計測と計測配置の点だけで当てはめ、成分ごとの補正量を全計測の Mark の位置で比べます。全計測：全計測で求めた成分の' ...
                 '補正量の |平均|+3σ。差：計測配置の点で求めた成分 − 全計測で求めた成分 の |平均|+3σ（Shot ごとの成分は使いません。' ...
                 '詳しくは「ヘルプ」）。']);
@@ -557,7 +561,7 @@ classdef (Abstract) RunTab < appui.Core
 
         function onExtendRun(app)
             runWithAlert(app, @() app.extendEvaluation(true), "条件を追加して評価できませんでした", ...
-                "「2. 評価の設定と実行」で変えたのが手法・説明変数の組・質的変数・学習 Shot 数（計測率）だけか確かめてください。" + ...
+                "「2. 面内推定の設定」で変えたのが手法・説明変数の組・質的変数・学習 Shot 数（計測率）だけか確かめてください。" + ...
                 "ほかの設定を変えたときは「評価を始める」で最初から計算してください。");
         end
 
@@ -595,7 +599,7 @@ classdef (Abstract) RunTab < appui.Core
         end
 
         function onMeasureDisplayChanged(app)
-            % 「Scan 方向を色で示す」「同心円の区切りを描く」を切り替えたとき：計測マップを描いてあるときだけ描き直す
+            % Wafer・学習パターン・「Scan 方向の色」「同心円の区切り」を変えたとき：計測マップを描いてあるときだけ描き直す
             % （まだ作っていなければ何もしない。学習パターンを作るのは「計測マップを作る」を押したときだけ）
             if hasMeasurementMap(app)
                 onDrawMeasurementMap(app);
@@ -708,12 +712,12 @@ classdef (Abstract) RunTab < appui.Core
                         " Shot の Mark・指定した Mark）", numel(fixedMarks));
                 end
             end
-            text = text + "。「2. 評価の設定と実行」の計測マップで確かめられます。";
+            text = text + "。「2. 面内推定の設定」の計測マップで確かめられます。";
         end
 
         function onRun(app)
             runWithAlert(app, @() app.runEvaluationNow(true), "評価を実行できませんでした", ...
-                "「1. データ読込」と「2. 評価の設定と実行」を確かめてから、もう一度実行してください。");
+                "「1. データ読込」と「2. 面内推定の設定」を確かめてから、もう一度実行してください。");
         end
 
         function refreshRunSummary(app)
@@ -762,7 +766,7 @@ classdef (Abstract) RunTab < appui.Core
                 try
                     [seconds, detail] = alignest.estimateRunSeconds(app.Data.units, app.Settings);
                 catch
-                    % 設定が正しくないときは目安を出さない（「2. 評価の設定と実行」に理由が出る）
+                    % 設定が正しくないときは目安を出さない（「2. 面内推定の設定」に理由が出る）
                 end
             end
             nuText = "";
@@ -804,7 +808,7 @@ classdef (Abstract) RunTab < appui.Core
                 specs = alignest.buildPlanSpecs(app.Settings.sampling);
                 labels = unique(string({specs.label}), 'stable');
             catch
-                % 設定が正しくないときは選べない（「2. 評価の設定と実行」に理由が出る）
+                % 設定が正しくないときは選べない（「2. 面内推定の設定」に理由が出る）
             end
             if ~isequal(string(c.measurePlan.Items), labels)
                 previous = string(c.measurePlan.Value);
@@ -813,7 +817,7 @@ classdef (Abstract) RunTab < appui.Core
                 if isempty(kept)
                     kept = labels(1);
                 end
-                c.measurePlan.Value = cellstr(kept);
+                c.measurePlan.Value = char(kept(1));
             end
             units = "—";
             if ~isempty(app.Data)
@@ -822,7 +826,7 @@ classdef (Abstract) RunTab < appui.Core
             if ~isequal(string(c.measureWafer.Items), units)
                 c.measureWafer.Items = cellstr(units);
                 c.measureWafer.ItemsData = num2cell(1:numel(units));
-                c.measureWafer.Value = {1};
+                c.measureWafer.Value = 1;
             end
             signature = {app.Settings.sampling, app.Settings.data.waferRadiusMm, numel(app.Data)};
             if ~isequaln(signature, c.measurePanel.UserData)
@@ -894,12 +898,12 @@ classdef (Abstract) RunTab < appui.Core
         end
 
         function onSettingsTabChanged(app)
-            % 「2. 評価の設定と実行」の中のタブを変えたとき：計測マップの欄を開いたら、まだ描いていなければ描く
+            % 「2. 面内推定の設定」の中のタブを変えたとき：計測マップの欄を開いたら、まだ描いていなければ描く
             autoDrawMeasurementMap(app);
         end
 
         function autoDrawMeasurementMap(app)
-            % 「計測点と計測マップ」が見えていて、データがあり、計測マップをまだ描いていなければ、選んである Wafer・
+            % 「計測設定」が見えていて、データがあり、計測マップをまだ描いていなければ、選んである Wafer・
             % 学習パターン（はじめは最初の1つずつ）で描く。描けないときは図の下の欄に理由を出すだけにする
             c = app.Controls;
             if app.TabGroup.SelectedTab ~= app.Tabs.settings || c.settingsTabs.SelectedTab ~= c.pointsTab || ...
@@ -908,10 +912,6 @@ classdef (Abstract) RunTab < appui.Core
             end
             try
                 refreshMeasurementChoices(app);
-                if numel(c.measurePlan.Value) ~= 1 || numel(c.measureWafer.Value) ~= 1
-                    c.measureWafer.Value = c.measureWafer.ItemsData(1);
-                    c.measurePlan.Value = c.measurePlan.Items(1);
-                end
                 drawMeasurementMap(app);
             catch err
                 c.measureInfo.Value = {['⚠ 計測マップを描けませんでした：' err.message]};
@@ -927,7 +927,7 @@ classdef (Abstract) RunTab < appui.Core
             try
                 [fixedMarks, fixedInfo] = alignest.markPlanFixedMarks(unit, app.Settings.sampling);
             catch
-                return   % 指定の文字が正しくないときは描かない（「2. 評価の設定と実行」の欄の下に理由）
+                return   % 指定の文字が正しくないときは描かない（「2. 面内推定の設定」の欄の下に理由）
             end
             selection = fixedInfo.selection;
             excludedShots = selection.excludedShots;
@@ -960,7 +960,7 @@ classdef (Abstract) RunTab < appui.Core
                 end
                 key = sprintf("%d-%d", marks.shotNo(nearest), marks.markNo(nearest));
                 runWithAlert(app, @() app.setMeasurementSelection("mark", key, mode), "指定できませんでした", ...
-                    "「2. 評価の設定と実行」の計測点の選び方を確かめてください。");
+                    "「2. 面内推定の設定」の計測点の選び方を確かめてください。");
             else
                 shots = unit.shots;
                 inside = abs(shots.Xmm - point(1)) <= unit.shotSizeMm(1) / 2 & abs(shots.Ymm - point(2)) <= unit.shotSizeMm(2) / 2;
@@ -968,7 +968,7 @@ classdef (Abstract) RunTab < appui.Core
                     return
                 end
                 runWithAlert(app, @() app.setMeasurementSelection("shot", shots.shotNo(find(inside, 1)), mode), ...
-                    "指定できませんでした", "「2. 評価の設定と実行」の計測点の選び方を確かめてください。");
+                    "指定できませんでした", "「2. 面内推定の設定」の計測点の選び方を確かめてください。");
             end
         end
 
@@ -1007,7 +1007,7 @@ classdef (Abstract) RunTab < appui.Core
                 return
             end
             runWithAlert(app, @() app.setMeasurementSelection(kind, targets, mode), "指定できませんでした", ...
-                "「2. 評価の設定と実行」の計測点の選び方を確かめてください。");
+                "「2. 面内推定の設定」の計測点の選び方を確かめてください。");
             showMeasureNote(app, char(sprintf("%d 個の %s を指定しました。", numel(targets), ternary(markLevel, "Mark", "Shot"))));
         end
 
@@ -1037,7 +1037,7 @@ classdef (Abstract) RunTab < appui.Core
         end
 
         function selectionChanged(app)
-            % 指定を変えた後：「2. 評価の設定と実行」の欄と指定の一覧を直し、計測マップを描いてあれば作り直す
+            % 指定を変えた後：「2. 面内推定の設定」の欄と指定の一覧を直し、計測マップを描いてあれば作り直す
             c = app.Controls;
             hadMap = hasMeasurementMap(app);   % 設定を直すと図は消えるので、先に覚える
             c.requiredShots.Value = char(strjoin(string(app.Settings.sampling.requiredShots), " "));

@@ -57,17 +57,17 @@ classdef TestAppConsistency < matlab.unittest.TestCase
         end
 
         function screenLayoutRules(testCase)
-            % 画面の配置：「2. 評価の設定と実行」は評価の設定と実行・計測マップを1つにまとめる（上の帯は評価のボタンと設定の
-            % 保存、中のタブは計測点と計測マップ・比べる手法・評価と Overlay 補正）。押せないボタン・使わない欄はしまう。
+            % 画面の配置：「2. 面内推定の設定」は評価の設定と実行・計測マップを1つにまとめる（上の帯は評価のボタンと設定の
+            % 保存、中のタブは計測設定・比べる手法・評価と Overlay 補正）。押せないボタン・使わない欄はしまう。
             % 結果一覧・Shot 高次補正の中のタブはまとまりに分ける。絞り込みの半径の上限は空欄で上限なし
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
             c = app.Controls;
-            testCase.verifyEqual(string({app.TabGroup.Children.Title}), ["1. データ読込", "2. 評価の設定と実行", ...
+            testCase.verifyEqual(string({app.TabGroup.Children.Title}), ["1. データ読込", "2. 面内推定の設定", ...
                 "3. 結果一覧", "4. Waferごとのマップ", "5. 未知の座標の推定", "6. Shot高次補正", "7. Mark配置の最適化", ...
-                "8. 計測マップのローテーション"]);
+                "8. 計測Mapローテ"]);
             testCase.verifyEqual(app.Tabs.run, app.Tabs.settings);
-            testCase.verifyEqual(string({c.settingsTabs.Children.Title}), ["計測点と計測マップ", "比べる手法", "評価・Overlay 補正"]);
+            testCase.verifyEqual(string({c.settingsTabs.Children.Title}), ["計測設定", "比べる手法", "評価・Overlay 補正"]);
             testCase.verifyEqual(c.run.Parent, c.runBar);
             testCase.verifyEqual(ancestor(c.measurePanel, 'uitab'), c.pointsTab, "計測マップは計測点の右");
             testCase.verifyEqual(string({c.resumeRun.Visible, c.extendRun.Visible}), ["off", "off"], "押せないときは出さない");
@@ -81,8 +81,9 @@ classdef TestAppConsistency < matlab.unittest.TestCase
             c.samplingMethod.ValueChangedFcn([], []);
             testCase.verifyEqual(grid.RowHeight{12}, 90, "Excel 取込を選ぶと出す");
             testCase.verifyEqual(string(c.randomRepeats.Visible), "on");
-            % データ読込：③ この対応で読み込む は上の枠（どのタブでも押せる）
-            testCase.verifyEqual(c.applyMapping.Parent, c.chooseFile.Parent);
+            % データ読込：③ この対応で読み込む は ② のタブの下（どのタブでも押せる）
+            testCase.verifyEqual(c.applyMapping.Parent.Parent, c.dataTabs.Parent);
+            testCase.verifyEqual(c.applyMapping.Parent.Layout.Row, 3);
             testCase.verifyEqual(string(c.sheet.Visible), "off", "CSV・読む前はシートの欄を出さない");
             % 結果一覧と Shot 高次補正の中のタブのまとまり
             testCase.verifyEqual(string({c.resultTabs.Children.Title}), ["表・グラフ", "計測配置", "誤差の分析", "補正の比較"]);

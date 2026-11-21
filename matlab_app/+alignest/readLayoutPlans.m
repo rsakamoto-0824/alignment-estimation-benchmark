@@ -1,5 +1,5 @@
 function layouts = readLayoutPlans(filePath, sheetName)
-%READLAYOUTPLANS 学習に使う Shot・Mark の指定を Excel・CSV から読む（「2. 評価の設定と実行」の「Excel 取込」）。
+%READLAYOUTPLANS 学習に使う Shot・Mark の指定を Excel・CSV から読む（「2. 面内推定の設定」の「Excel 取込」）。
 %   layouts = alignest.readLayoutPlans(filePath)
 %   layouts = alignest.readLayoutPlans(filePath, sheetName)
 %   シートを指定しないときは「計測マップ_Mark」、無ければ「計測マップ」、無ければ先頭のシート（「計測マップを Excel に

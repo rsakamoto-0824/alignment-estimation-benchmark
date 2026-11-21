@@ -32,6 +32,7 @@ classdef (Abstract) Core < handle
         NONE_LABEL = "（なし）"
         MAX_CURVES = 8
         METHOD_COLUMN_WIDTH = 440        % 結果の表の手法の列の幅 [px]（最も長い名前が収まる幅）
+        APPLY_BUTTON_WIDTH = 320         % 「1. データ読込」の「③ この対応で読み込む」の幅 [px]
         FILL_TABLE_MAX_GROUPS = 6        % 結果の表の列（学習パターン）がこの数以下なら、手法の列を広げて表を画面の幅いっぱいにする
         VALUE_COLUMN_WIDTH = 90          % 結果の表の数値の列の幅 [px]
         PROGRESS_INTERVAL_SECONDS = 0.2
@@ -127,7 +128,7 @@ classdef (Abstract) Core < handle
         EstimatedCorrection = []     % 「3. 結果一覧」の「実測値と推定値の補正」の結果（alignest.estimatedCorrectionComparison）
         DataVariance = []            % 「1. データ読込」の「ばらつき分解」の結果（alignest.dataVarianceDecomposition）
         CorrectionVariance = []      % 「3. 結果一覧」の「補正残差のばらつき分解」の結果（alignest.correctionVarianceDecomposition）
-        RotationWafers = []          % 「8. 計測マップのローテーション」の入力の Wafer（label・points・lot・dateTime・operation・eqpId）
+        RotationWafers = []          % 「8. 計測Mapローテ」の入力の Wafer（label・points・lot・dateTime・operation・eqpId）
         RotationVariability = []     % 「8.」の Shot・Mark ごとのばらつき（alignest.markVariability）
         RotationMaps = []            % 「8.」の計測マップ（alignest.rotationMaps）
         RotationRun = []             % 「8.」の直近の FB の検証（alignest.feedbackSimulation）
@@ -136,7 +137,7 @@ classdef (Abstract) Core < handle
         RotationFile = []            % 「8.」で読み込んだ Excel・CSV（raw・info：alignest.readHighOrderFile、data：選んだ列で整理した
                                      %  Wafer ごとのデータ（alignest.prepareHighOrderData。まだなら []）、mapping・directionRule）
         WaferRanking = []       % 「3. 結果一覧」の「Wafer のベスト・ワースト」の結果（alignest.waferRanking。結果が変わると求め直す）
-        MeasureRangeStart = []  % 「2. 評価の設定と実行」の計測マップで「範囲で選ぶ」の1点目（Wafer・図の種類・角の座標・図・印。無ければ []）
+        MeasureRangeStart = []  % 「2. 面内推定の設定」の計測マップで「範囲で選ぶ」の1点目（Wafer・図の種類・角の座標・図・印。無ければ []）
         MeasurementCandidates = []  % 「3. 結果一覧」の「計測を足す場所」で最後に出した候補（alignest.measurementCandidates の表と条件）
         MarkLayoutFile = []     % 「7. Mark配置の最適化」で読み込んだ Excel・CSV（raw・info：alignest.readHighOrderFile、mapping、
                                 %  wafers・coordinates・dataInfo：選んだ列で整理した入力（alignest.markLayoutFileData。まだなら dataInfo は []））
@@ -211,14 +212,14 @@ classdef (Abstract) Core < handle
             app.RootGrid = root;
             app.TabGroup = uitabgroup(root);
             app.Tabs.data = uitab(app.TabGroup, 'Title', '1. データ読込');
-            app.Tabs.settings = uitab(app.TabGroup, 'Title', '2. 評価の設定と実行');
-            app.Tabs.run = app.Tabs.settings;   % 評価の実行と計測マップも同じタブ（以前の「2. 評価の設定と実行」）
+            app.Tabs.settings = uitab(app.TabGroup, 'Title', '2. 面内推定の設定');
+            app.Tabs.run = app.Tabs.settings;   % 評価の実行と計測マップも同じタブ（以前の「2. 面内推定の設定」）
             app.Tabs.results = uitab(app.TabGroup, 'Title', '3. 結果一覧');
             app.Tabs.map = uitab(app.TabGroup, 'Title', '4. Waferごとのマップ');
             app.Tabs.target = uitab(app.TabGroup, 'Title', '5. 未知の座標の推定');
             app.Tabs.highOrder = uitab(app.TabGroup, 'Title', '6. Shot高次補正');
             app.Tabs.markLayout = uitab(app.TabGroup, 'Title', '7. Mark配置の最適化');
-            app.Tabs.rotation = uitab(app.TabGroup, 'Title', '8. 計測マップのローテーション');
+            app.Tabs.rotation = uitab(app.TabGroup, 'Title', '8. 計測Mapローテ');
             app.TabGroup.SelectionChangedFcn = @(~, event) app.onTabChanged(event);
             buildDataTab(app);
             buildSettingsTab(app);
@@ -339,12 +340,12 @@ classdef (Abstract) Core < handle
         function requireEstimates(app)
             % 推定値を計算し直す機能（分析・散布図・分布の比較・推定値の書き出し）を使える結果か確かめる
             if isempty(app.Results)
-                error('alignest:noResults', '先に「2. 評価の設定と実行」で評価してください。');
+                error('alignest:noResults', '先に「2. 面内推定の設定」で評価してください。');
             end
             if isImportedResults(app.Results) && isempty(app.ImportedEstimates)
                 error('alignest:importedResults', ['Excel から読み込んだ結果では推定値を計算できません。' ...
                     '「推定値の Excel を読み込む…」で推定値の Excel も読み込むか、計測ファイルを読み込んで' ...
-                    '「2. 評価の設定と実行」で評価し直してください。']);
+                    '「2. 面内推定の設定」で評価し直してください。']);
             end
         end
 
@@ -454,7 +455,7 @@ classdef (Abstract) Core < handle
             end
             c.residualVariableTable.Data = {};
             c.runStatus.Text = "";
-            c.mapInfo.Text = "「2. 評価の設定と実行」で評価すると、ここに Wafer ごとの図が出ます。";
+            c.mapInfo.Text = "「2. 面内推定の設定」で評価すると、ここに Wafer ごとの図が出ます。";
             c.resultSource.Text = '';
             c.resultControls.RowHeight{3} = 0;
             c.importEstimates.Enable = 'off';

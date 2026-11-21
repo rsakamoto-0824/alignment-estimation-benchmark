@@ -1,5 +1,5 @@
 classdef (Abstract) RotationTab < appui.Core
-    %ROTATIONTAB 「8. 計測マップのローテーション」タブ：Shot・Mark ごとのばらつき（3σ）、しきい値で分けた計測の優先度と
+    %ROTATIONTAB 「8. 計測Mapローテ」タブ：Shot・Mark ごとのばらつき（3σ）、しきい値で分けた計測の優先度と
     %   ローテーションする計測マップ、取り込んだ Wafer を FB 側と検証側に分けて、FB の補正値を検証側に当てた補正残差、条件を
     %   変えた検証の結果の比較、計測マップの書き出し。入力は「1. データ読込」の計測データ・「3. 結果一覧」の評価の推定値・
     %   「5. 未知の座標の推定」の推定値・このタブで読み込む Excel・CSV（列は「Excel・CSV の列」で選ぶ）。
@@ -320,7 +320,7 @@ classdef (Abstract) RotationTab < appui.Core
 
         function exportRotationMapsTo(app, filePath, selection)
             %EXPORTROTATIONMAPSTO 選んだ計測マップ（selection：マップの番号。省略すると「計測マップ」のタブで選んでいる
-            %   マップ）を Excel（.xlsx）に書き出す（alignest.exportRotationMaps。「2. 評価の設定と実行」の「Excel 取込」で
+            %   マップ）を Excel（.xlsx）に書き出す（alignest.exportRotationMaps。「2. 面内推定の設定」の「Excel 取込」で
             %   そのまま読める形）。
             maps = app.RotationMaps;
             if isempty(maps)
@@ -377,7 +377,7 @@ classdef (Abstract) RotationTab < appui.Core
                 'Text', '');
             place(c.rotationInputInfo, 3, 1);
 
-            spreadHeader = sectionHeader('② Shot・Mark ごとのばらつき（3σ）', 4);
+            spreadHeader = sectionHeader('② ばらつき', 4);   % Shot・Mark ごとの Wafer 間の 3σ（1行に収める）
             spreadGrid = uigridlayout(left, [3, 2], 'ColumnWidth', {'fit', '1x'}, 'RowHeight', repmat({'fit'}, 1, 3), ...
                 'Padding', 0);
             place(spreadGrid, 5, 1);
@@ -467,7 +467,7 @@ classdef (Abstract) RotationTab < appui.Core
             label(fbGrid, '補正のモデル', 4, 1);
             c.rotationModel = uidropdown(fbGrid, 'Items', {'2. の Overlay 補正', '6. の Shot 高次補正'}, ...
                 'ItemsData', {'overlay', 'highOrder'}, 'ValueChangedFcn', @(~, ~) app.updateRotationEnabled(), 'Tooltip', ...
-                ['FB の補正値を求めるモデル。2. の Overlay 補正：「2. 評価の設定と実行」の Wafer 成分＋Shot 共通成分＋Shot ごとの' ...
+                ['FB の補正値を求めるモデル。2. の Overlay 補正：「2. 面内推定の設定」の Wafer 成分＋Shot 共通成分＋Shot ごとの' ...
                 '成分。6. の Shot 高次補正：「6. Shot高次補正」の補正の式・くくり・回帰の設定。どちらも FB の補正値を' ...
                 'そのまま検証側に当てます。']);
             place(c.rotationModel, 4, [2, 3]);
@@ -527,7 +527,7 @@ classdef (Abstract) RotationTab < appui.Core
             place(c.rotationMapInfo, 1, 3);
             c.rotationExport = uibutton(mapControls, 'Text', '計測マップを書き出す…', 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~, ~) app.onExportRotationMaps(), 'Tooltip', ['選んだマップを Excel に書き出します' ...
-                '（「2. 評価の設定と実行」の「Excel 取込」で読める形）。']);
+                '（「2. 面内推定の設定」の「Excel 取込」で読める形）。']);
             place(c.rotationExport, 1, 4);
             c.rotationMapAxesGrid = uigridlayout(mapsGrid, [2, 3], 'Padding', 0, 'RowSpacing', 6, 'ColumnSpacing', 6);
             c.rotationMapAxes = gobjects(1, app.ROTATION_MAX_MAP_AXES);
@@ -697,7 +697,7 @@ classdef (Abstract) RotationTab < appui.Core
                     end
                 case "estimate"
                     if ~hasResults
-                        infoText = "「2. 評価の設定と実行」で評価してください（計測データを読み込んで評価した結果の推定値を使います）。";
+                        infoText = "「2. 面内推定の設定」で評価してください（計測データを読み込んで評価した結果の推定値を使います）。";
                     end
                 case "target"
                     if isempty(app.TargetRun)
@@ -748,7 +748,7 @@ classdef (Abstract) RotationTab < appui.Core
                 case "estimate"
                     results = app.Results;
                     if isempty(results) || isImportedResults(results)
-                        error('alignest:rotationInput', '先に「2. 評価の設定と実行」で評価してください。');
+                        error('alignest:rotationInput', '先に「2. 面内推定の設定」で評価してください。');
                     end
                     methodIndex = c.rotationMethod.Value;
                     planLabel = string(c.rotationPlan.Value);

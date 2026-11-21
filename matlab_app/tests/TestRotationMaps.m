@@ -1,5 +1,5 @@
 classdef TestRotationMaps < matlab.unittest.TestCase
-    %TESTROTATIONMAPS 計測マップのローテーション（「8. 計測マップのローテーション」）：Shot・Mark ごとのばらつき（3σ）、しきい値で
+    %TESTROTATIONMAPS 計測マップのローテーション（「8. 計測Mapローテ」）：Shot・Mark ごとのばらつき（3σ）、しきい値で
     %   分けた優先度とローテーションする計測マップ、FB 側・検証側に分けた補正残差（2. の Overlay 補正・6. の Shot 高次補正）、
     %   画面の流れ（入力・対象・目的変数・条件の比較・書き出しと読み直し）、しきい値の累積 %・外周を優先度 1・ランダムな
     %   振り分け・円の重ね描き、このタブで読み込む Excel・CSV（列を選ぶ）を確かめる。

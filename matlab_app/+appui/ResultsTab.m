@@ -4,7 +4,7 @@ classdef (Abstract) ResultsTab < appui.Core
     %   ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
 
     properties (Constant, Access = {?appui.Core})
-        CORRECTION_MODEL_NOTE = ['補正のモデルは「2. 評価の設定と実行」の Overlay 補正の評価です（Wafer 成分・Shot 共通成分・Shot ごとの' ...
+        CORRECTION_MODEL_NOTE = ['補正のモデルは「2. 面内推定の設定」の Overlay 補正の評価です（Wafer 成分・Shot 共通成分・Shot ごとの' ...
             '成分）。実測値で補正：全 Mark の計測値で求めた補正。推定値で補正：学習に使った Mark の計測値とほかの Mark の推定値で' ...
             '求めた補正。どちらも計測値に当てた残差で、すべての点と推定対象の点（学習に使わなかった Mark）で比べます。']
     end
@@ -12,7 +12,7 @@ classdef (Abstract) ResultsTab < appui.Core
     methods
         function comparison = compareEstimatedCorrection(app, methodIndex, group, unitIndex)
             %COMPAREESTIMATEDCORRECTION 「実測値と推定値の補正」：実測値で求めた補正と、推定値で求めた補正を、実測値に当てて
-            %   比べる（alignest.estimatedCorrectionComparison）。補正のモデルは「2. 評価の設定と実行」の Overlay 補正の評価（Wafer 成分・
+            %   比べる（alignest.estimatedCorrectionComparison）。補正のモデルは「2. 面内推定の設定」の Overlay 補正の評価（Wafer 成分・
             %   Shot 共通成分・Shot ごとの成分）。すべての点と推定対象の点（学習に使わなかった Mark）で比べる。methodIndex：手法の
             %   番号（複数可）、group：学習パターンの列、unitIndex：Wafer の番号（0 = すべて）。省略すると画面の選択。
             c = app.Controls;
@@ -90,7 +90,7 @@ classdef (Abstract) ResultsTab < appui.Core
                 filter = alignest.defaultPointFilter();
             end
             if isempty(app.BaseResults)
-                error('alignest:noResults', '先に「2. 評価の設定と実行」で評価してください。');
+                error('alignest:noResults', '先に「2. 面内推定の設定」で評価してください。');
             end
             validateFilter(filter);
             if isImportedResults(app.BaseResults)
@@ -131,7 +131,7 @@ classdef (Abstract) ResultsTab < appui.Core
             end
             c = app.Controls;
             if isempty(app.Results)
-                error('alignest:noResults', '先に「2. 評価の設定と実行」で評価してください。');
+                error('alignest:noResults', '先に「2. 面内推定の設定」で評価してください。');
             end
             fields = ["method", "group", "wafer", "criterion", "axis", "statistic", "level", "mode", "count", "threshold"];
             controls = [c.candidateMethod, c.candidateGroup, c.candidateWafer, c.candidateCriterion, c.candidateAxis, ...
@@ -222,8 +222,8 @@ classdef (Abstract) ResultsTab < appui.Core
         end
 
         function added = addMeasurementCandidates(app)
-            %ADDMEASUREMENTCANDIDATES 「必ず計測の欄に入れる」：出した候補のうち「足す」にチェックを入れた候補を「2. 評価の設定と実行」の
-            %   必ず計測する shotNo（単位が Mark なら必ず計測する Mark）に足す（setMeasurementSelection と同じ。2. 評価の設定と実行の計測の
+            %ADDMEASUREMENTCANDIDATES 「必ず計測の欄に入れる」：出した候補のうち「足す」にチェックを入れた候補を「2. 面内推定の設定」の
+            %   必ず計測する shotNo（単位が Mark なら必ず計測する Mark）に足す（setMeasurementSelection と同じ。2. 面内推定の設定の計測の
             %   指定にも出る）。added は足した場所（shotNo の数、または "shotNo-markNo" の文字）。
             found = app.MeasurementCandidates;
             if isempty(found) || height(found.table) == 0
@@ -241,14 +241,14 @@ classdef (Abstract) ResultsTab < appui.Core
             setMeasurementSelection(app, found.level, added, "required");
             where = ternary(found.level == "mark", "必ず計測する Mark", "必ず計測する shotNo");
             note = ternary(found.level == "mark", "Mark の指定は Mark 単位の学習パターンだけに効きます。", "");
-            app.Controls.candidateInfo.Text = char(sprintf("「2. 評価の設定と実行」の「%s」に %d 個を足しました（2. 評価の設定と実行の計測の" + ...
-                "指定にも出ます）。%s「2. 評価の設定と実行」で評価し直すと、足した場所を計測した結果になります。", where, numel(added), note));
+            app.Controls.candidateInfo.Text = char(sprintf("「2. 面内推定の設定」の「%s」に %d 個を足しました（2. 面内推定の設定の計測の" + ...
+                "指定にも出ます）。%s「2. 面内推定の設定」で評価し直すと、足した場所を計測した結果になります。", where, numel(added), note));
         end
 
         function exportResultsTo(app, filePath)
             %EXPORTRESULTSTO 結果を Excel に書き出す。
             if isempty(app.Results)
-                error('alignest:noResults', '先に「2. 評価の設定と実行」で評価してください。');
+                error('alignest:noResults', '先に「2. 面内推定の設定」で評価してください。');
             end
             if isImportedResults(app.Results)
                 error('alignest:importedResults', ['Excel から読み込んだ結果は書き出せません（読み込んだファイル「%s」を' ...
@@ -265,7 +265,7 @@ classdef (Abstract) ResultsTab < appui.Core
         function results = importResultsFrom(app, filePath)
             %IMPORTRESULTSFROM 「結果を Excel に書き出す」で書き出したファイルを読み込み、結果の画面に出す。
             %   表・グラフ・基準の手法との比較を見られる。推定値は Excel に無いので、Wafer マップ・推定値と誤差の分布・
-            %   散布図・分布の比較は使えない（計測ファイルを読み込んで「2. 評価の設定と実行」で評価し直すと使える）。
+            %   散布図・分布の比較は使えない（計測ファイルを読み込んで「2. 面内推定の設定」で評価し直すと使える）。
             results = alignest.importResults(filePath);
             clearResults(app);
             app.Results = results;
@@ -512,7 +512,7 @@ classdef (Abstract) ResultsTab < appui.Core
             %   summary は X・Y の alignest.stats.correlationTest の結果（1変数は X だけ）と、表（table）。
             c = app.Controls;
             if isempty(app.Results)
-                error('alignest:noResults', '先に「2. 評価の設定と実行」で評価してください。');
+                error('alignest:noResults', '先に「2. 面内推定の設定」で評価してください。');
             end
             if nargin >= 2
                 c.residualVariableMethod.Value = methodIndex;
@@ -860,7 +860,7 @@ classdef (Abstract) ResultsTab < appui.Core
             label(chartControls, '横軸', 1, 1);
             c.chartXAxis = uidropdown(chartControls, 'Items', {'学習 Shot 数', ...
                 'I 基準と D 基準', 'I 効率と D 効率（全計測に対する）'}, 'ItemsData', {'plan', 'criteria', 'efficiency'}, ...
-                'Tooltip', ['学習 Shot の組の I 基準 tr(M⁻¹) と D 基準 det(M)^(−1/p)（「2. 評価の設定と実行」の I 最適の基準モデル）、または全計測に' ...
+                'Tooltip', ['学習 Shot の組の I 基準 tr(M⁻¹) と D 基準 det(M)^(−1/p)（「2. 面内推定の設定」の I 最適の基準モデル）、または全計測に' ...
                 '対する I 効率・D 効率 [%] に対する推定誤差。点は学習パターンの列ごとの Wafer の集計。基準・効率は Wafer の平均。'], ...
                 'ValueChangedFcn', @(~, ~) app.drawChart());
             place(c.chartXAxis, 1, 2);
@@ -976,8 +976,8 @@ classdef (Abstract) ResultsTab < appui.Core
                 'ButtonPushedFcn', @(~, ~) app.onFindMeasurementCandidates());
             place(c.findCandidatesButton, 2, 8);
             c.addCandidatesButton = uibutton(ruleGrid, 'Text', '必ず計測の欄に入れる', 'Enable', 'off', ...
-                'ButtonPushedFcn', @(~, ~) app.onAddMeasurementCandidates(), 'Tooltip', ['出した候補を「2. 評価の設定と実行」の' ...
-                '「必ず計測する shotNo」（単位が Mark なら「必ず計測する Mark」）に足します（2. 評価の設定と実行の計測の指定にも出ます）。']);
+                'ButtonPushedFcn', @(~, ~) app.onAddMeasurementCandidates(), 'Tooltip', ['出した候補を「2. 面内推定の設定」の' ...
+                '「必ず計測する shotNo」（単位が Mark なら「必ず計測する Mark」）に足します（2. 面内推定の設定の計測の指定にも出ます）。']);
             place(c.addCandidatesButton, 2, 9);
             candidateTableGrid = uigridlayout(candidateGrid, [2, 1], 'RowHeight', {'1x', 'fit'}, 'Padding', 0, ...
                 'RowSpacing', 4);
@@ -1148,7 +1148,7 @@ classdef (Abstract) ResultsTab < appui.Core
             place(c.scatterWafer, 2, 3);
             c.scatterColor = uidropdown(scatterControls, 'Items', {'—'}, ...
                 'Tooltip', ['点の色を分ける項目（LotID・EqpId・Operation・Scan 方向・Mark 番号・Shot 行・外周と内側' ...
-                '（「2. 評価の設定と実行」の外周の半径）・象限・ファイルのその他の列）']);
+                '（「2. 面内推定の設定」の外周の半径）・象限・ファイルのその他の列）']);
             place(c.scatterColor, 2, 4);
             c.drawScatterButton = uibutton(scatterControls, 'Text', '描く', 'ButtonPushedFcn', @(~, ~) app.onDrawScatter());
             place(c.drawScatterButton, 2, 5);
@@ -1382,7 +1382,7 @@ classdef (Abstract) ResultsTab < appui.Core
                 end
             end
             styleAxes(app, c.estimatedCorrectionAxes, app.AXES_FONT_SIZE);
-            c.estimatedCorrectionModel.Text = char("補正のモデル（「2. 評価の設定と実行」の Overlay 補正の評価）：" + comparison.description);
+            c.estimatedCorrectionModel.Text = char("補正のモデル（「2. 面内推定の設定」の Overlay 補正の評価）：" + comparison.description);
             numberText = "図の番号：" + strjoin(string(1:numel(names)) + " = " + names(:).', "、") + "。";
             c.estimatedCorrectionInfo.Text = char(strjoin([numberText; "すべての点：残差のある全 Mark。推定対象の点：学習に使わなかった" + ...
                 " Mark（推定値が補正に入る点）。差 = 推定値で補正した残差 − 実測値で補正した残差（正なら、推定値で補正すると" + ...
@@ -1391,7 +1391,7 @@ classdef (Abstract) ResultsTab < appui.Core
 
         function onCompareEstimatedCorrection(app)
             runWithAlert(app, @() app.compareEstimatedCorrection(), "実測値と推定値の補正を比べられませんでした", ...
-                "手法・学習パターン・Wafer と、「2. 評価の設定と実行」の Overlay 補正の評価を確かめてから、もう一度試してください。");
+                "手法・学習パターン・Wafer と、「2. 面内推定の設定」の Overlay 補正の評価を確かめてから、もう一度試してください。");
         end
 
         function refreshCorrectionVariance(app)
@@ -1426,7 +1426,7 @@ classdef (Abstract) ResultsTab < appui.Core
             % 「計算する」：「実測値と推定値の補正」の手法・学習パターン・Wafer で比べ（ばらつき分解も描き直す）、このタブを見せる
             c = app.Controls;
             runWithAlert(app, @() app.compareEstimatedCorrection(), "補正前の値と補正した残差を求められませんでした", ...
-                "「実測値と推定値の補正」の手法・学習パターン・Wafer と、「2. 評価の設定と実行」の Overlay 補正の評価を確かめてから、" + ...
+                "「実測値と推定値の補正」の手法・学習パターン・Wafer と、「2. 面内推定の設定」の Overlay 補正の評価を確かめてから、" + ...
                 "もう一度試してください。");
             showResultTab(app, c.correctionVarianceTab);
         end
@@ -1810,7 +1810,7 @@ classdef (Abstract) ResultsTab < appui.Core
                 if isempty(app.ImportedEstimates)
                     c.resultSource.Text = sourceText + "表・グラフ・基準の手法との比較を見られます。" + ...
                         "Wafer マップ・推定値と誤差の分布・散布図・分布の比較は、「推定値の Excel を読み込む…」で" + ...
-                        "推定値の Excel も読み込むと使えます（または計測ファイルを読み込んで「2. 評価の設定と実行」で評価し直す）。";
+                        "推定値の Excel も読み込むと使えます（または計測ファイルを読み込んで「2. 面内推定の設定」で評価し直す）。";
                     c.mapInfo.Text = "Excel から読み込んだ結果で Wafer ごとの図を描くには、「3. 結果一覧」の" + ...
                         "「推定値の Excel を読み込む…」で推定値の Excel も読み込んでください。";
                     refreshResults(app);
@@ -2088,7 +2088,7 @@ classdef (Abstract) ResultsTab < appui.Core
             end
             results = app.Results;
             if ~(isfield(results, "overlayEvaluated") && results.overlayEvaluated)
-                c.degradationInfo.Text = ['Overlay 補正を評価していない結果です（「2. 評価の設定と実行」の Overlay 補正の評価を' ...
+                c.degradationInfo.Text = ['Overlay 補正を評価していない結果です（「2. 面内推定の設定」の Overlay 補正の評価を' ...
                     '「なし」以外にして評価すると描けます）。'];
                 return
             end

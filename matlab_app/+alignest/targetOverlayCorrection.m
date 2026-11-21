@@ -5,7 +5,7 @@ function correction = targetOverlayCorrection(unit, training, method, settings, 
 %   - 元の実測値：学習に使った Mark の計測値（training は alignest.predictTargets と同じ）
 %   - 推定値     ：学習しなかった Shot（Mark）の有効な Mark の推定値（学習パターンのとき。alignest.estimateWafer）
 %   - 未知の座標の推定値：targetTable（alignest.predictTargets の result.table）。Wafer の外の点は除く
-%   補正モデルは「2. 評価の設定と実行」の Overlay 補正（alignest.overlayChoice：Wafer 成分 + Shot 共通成分 + Shot ごとの
+%   補正モデルは「2. 面内推定の設定」の Overlay 補正（alignest.overlayChoice：Wafer 成分 + Shot 共通成分 + Shot ごとの
 %   成分。設計行列は alignest.overlayDesign）。X・Y 別に最小二乗で当てはめ、係数（補正値）・点ごとの補正量・
 %   補正後の残差（値 − 補正量）を返す。
 %   未知の座標の点の Shot：点を含む Shot（targetTable.shotIndex）。Shot 内の座標は点 − その Shot の中心。どの Shot にも
@@ -31,7 +31,7 @@ COMPONENT_LABELS = ["Wafer 成分", "Shot 共通成分", "Shot ごとの成分"]
 AXIS_NAMES = ["X", "Y"];
 choice = alignest.overlayChoice(settings);
 if ~choice.enabled
-    error('alignest:overlayModel', ['補正モデルがありません。「2. 評価の設定と実行」の Overlay 補正で、Wafer 成分・Shot 共通成分・' ...
+    error('alignest:overlayModel', ['補正モデルがありません。「2. 面内推定の設定」の Overlay 補正で、Wafer 成分・Shot 共通成分・' ...
         'Shot ごとの成分のどれかを選んでください（%s）。'], choice.description);
 end
 marks = unit.marks;
