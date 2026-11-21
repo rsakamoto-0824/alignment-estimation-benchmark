@@ -713,10 +713,12 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyTrue(all(ismember([37, 50], plan.shotNos)));
             testCase.verifyEqual(numel(plan.requiredShotIndex), 30);
             names = string(get(findobj(app.Controls.measureAxes, 'Type', 'patch'), 'DisplayName'));
-            testCase.verifyTrue(any(names == "必ず計測する Shot（指定・最外周など）（30）"));
-            testCase.verifyTrue(any(names == "選んで計測する Shot（10）"));
-            testCase.verifyTrue(startsWith(string(app.Controls.measureInfo.Value{1}), ...
-                "SIM02 (EXP01)｜I最適 計測率 40%｜計測 40 / 候補 99 Shot"));
+            testCase.verifyTrue(any(names == "必ず計測（30）"), "凡例は短い名前");
+            testCase.verifyTrue(any(names == "計測（10）"));
+            testCase.verifyEmpty(app.Controls.measureAxes.XLabel.String, "軸ラベルは付けず、図を大きくする");
+            info = string(app.Controls.measureInfo.Value);
+            testCase.verifyEqual(info(1:4), ["SIM02 (EXP01)｜I最適 計測率 40%"; "計測 40 / 候補 99 Shot"; "計測率 40.4%"; ...
+                "必ず計測 30 Shot"], "説明は項目ごとに1行");
             % 設定を変えると、古い計測マップは消える
             app.Controls.requireOuter.Value = false;
             app.Controls.requireOuter.ValueChangedFcn([], []);
@@ -1003,7 +1005,9 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyTrue(contains(app.Controls.zoneError.Text, "150 mm より小さい"));
             app.Controls.zoneEdges.Value = '67.5 105';
             app.Controls.zoneEdges.ValueChangedFcn([], []);
-            % 計測マップを並べる（2 Wafer × 2 学習パターン）。Scan 方向の印と同心円の区切りも描く
+            % 計測マップを並べる（2 Wafer × 2 学習パターン）。Scan 方向の印と同心円の区切りも描く（初期はどちらもオフ）
+            testCase.verifyFalse(app.Controls.measureScan.Value || app.Controls.measureRings.Value);
+            [app.Controls.measureScan.Value, app.Controls.measureRings.Value] = deal(true);
             plans = app.drawMeasurementMap([1, 2], ["I最適 10 Shot", "I最適 20 Shot"]);
             testCase.verifyEqual(numel(plans), 4);
             testCase.verifyEqual(numel(app.Controls.measureAxes), 4);
@@ -1148,7 +1152,7 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             plans = app.drawMeasurementMap(1, "Mark最適 1 点/Shot");
             testCase.verifyEqual(numel(plans.markIndex), 99);
             names = string(get(findobj(app.Controls.measureAxes(1), '-regexp', 'DisplayName', '.+'), 'DisplayName'));
-            testCase.verifyTrue(any(names == "計測する Mark（99）"));
+            testCase.verifyTrue(any(names == "計測 Mark（99）"));
             testCase.verifyTrue(any(contains(string(app.Controls.measureInfo.Value), "Mark 番号ごとの計測数")));
             % 評価して、計測配置の比較とマップのワースト値・95%値
             results = app.runEvaluationNow(false);

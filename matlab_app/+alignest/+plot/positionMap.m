@@ -1,5 +1,5 @@
 function summary = positionMap(ax, positions, meanValues, covariance, options)
-%POSITIONMAP Mark の位置ごとの値の平均（矢印）と共分散楕円を、Shot 内の座標で描く（「7. Mark配置の最適化」の Shot スタックマップ）。
+%POSITIONMAP Mark の位置ごとの値の平均（矢印）と共分散楕円を、Shot 内の座標で描く（「7. Mark配置最適化」の Shot スタックマップ）。
 %   summary = alignest.plot.positionMap(ax, positions, meanValues, covariance, options)
 %   positions：Mark の位置 [mm]（位置の数 × 2）、meanValues：平均 [nm]（位置の数 × 2）、covariance：[X の分散, Y の分散, X・Y の
 %   共分散]（位置の数 × 3 [nm²]。alignest.plot.covarianceEllipses）。options.measured：計測する Mark（●で描く）、

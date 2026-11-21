@@ -139,10 +139,10 @@ classdef (Abstract) Core < handle
         WaferRanking = []       % 「3. 結果一覧」の「Wafer のベスト・ワースト」の結果（alignest.waferRanking。結果が変わると求め直す）
         MeasureRangeStart = []  % 「2. 面内推定の設定」の計測マップで「範囲で選ぶ」の1点目（Wafer・図の種類・角の座標・図・印。無ければ []）
         MeasurementCandidates = []  % 「3. 結果一覧」の「計測を足す場所」で最後に出した候補（alignest.measurementCandidates の表と条件）
-        MarkLayoutFile = []     % 「7. Mark配置の最適化」で読み込んだ Excel・CSV（raw・info：alignest.readHighOrderFile、mapping、
+        MarkLayoutFile = []     % 「7. Mark配置最適化」で読み込んだ Excel・CSV（raw・info：alignest.readHighOrderFile、mapping、
                                 %  wafers・coordinates・dataInfo：選んだ列で整理した入力（alignest.markLayoutFileData。まだなら dataInfo は []））
-        MarkLayoutInput = []    % 「7. Mark配置の最適化」の今の入力の候補の Mark と Shot ごとの値（alignest.markCandidates。入力が無ければ []）
-        MarkLayoutStudy = []    % 「7. Mark配置の最適化」で最後に計算した結果（alignest.markLayoutStudy と、計算したときの入力・設定）
+        MarkLayoutInput = []    % 「7. Mark配置最適化」の今の入力の候補の Mark と Shot ごとの値（alignest.markCandidates。入力が無ければ []）
+        MarkLayoutStudy = []    % 「7. Mark配置最適化」で最後に計算した結果（alignest.markLayoutStudy と、計算したときの入力・設定）
         MarkLayoutSelection = zeros(0, 1)  % 「候補の Mark」の表で選んでいる行（「選んだ行を消す」で使う）
         MarkLayoutShapes = []   % 「乱数で Shot を生成する」で作った形（shapes：alignest.randomShotShapes、key：作ったときの条件）
         HelpWindow = []         % ヘルプの窓（メニュー「ヘルプ」で開く。閉じていれば []）
@@ -218,7 +218,7 @@ classdef (Abstract) Core < handle
             app.Tabs.map = uitab(app.TabGroup, 'Title', '4. Waferごとのマップ');
             app.Tabs.target = uitab(app.TabGroup, 'Title', '5. 未知の座標の推定');
             app.Tabs.highOrder = uitab(app.TabGroup, 'Title', '6. Shot高次補正');
-            app.Tabs.markLayout = uitab(app.TabGroup, 'Title', '7. Mark配置の最適化');
+            app.Tabs.markLayout = uitab(app.TabGroup, 'Title', '7. Mark配置最適化');
             app.Tabs.rotation = uitab(app.TabGroup, 'Title', '8. 計測Mapローテ');
             app.TabGroup.SelectionChangedFcn = @(~, event) app.onTabChanged(event);
             buildDataTab(app);

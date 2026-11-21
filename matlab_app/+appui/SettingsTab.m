@@ -730,7 +730,7 @@ classdef (Abstract) SettingsTab < appui.Core
             validateSettings(app);
             updateEnabled(app);
             highOrderSettingsToControls(app);   % 「6. Shot高次補正」の欄（設定ファイルの highOrder）
-            markLayoutSettingsToControls(app);  % 「7. Mark配置の最適化」の欄（設定ファイルの markLayout）
+            markLayoutSettingsToControls(app);  % 「7. Mark配置最適化」の欄（設定ファイルの markLayout）
         end
 
         function controlsToSettings(app)

@@ -1,5 +1,5 @@
 function [wafers, coordinates, info] = markLayoutFileData(raw, mapping)
-%MARKLAYOUTFILEDATA 「7. Mark配置の最適化」で読み込んだ Excel・CSV の表（alignest.readHighOrderFile）を、選んだ列で入力にする。
+%MARKLAYOUTFILEDATA 「7. Mark配置最適化」で読み込んだ Excel・CSV の表（alignest.readHighOrderFile）を、選んだ列で入力にする。
 %   [wafers, coordinates, info] = alignest.markLayoutFileData(raw, mapping)
 %   mapping：項目名（alignest.markLayoutColumns の name）→ ファイルの列の名前（"" は列なし）。Shot 内の座標（markXmm・markYmm）
 %   は必ず選ぶ。X・Y の値（measX・measY）は両方選ぶか、両方選ばない（座標だけの表。乱数の Shot の形で評価する）。

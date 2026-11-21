@@ -1,5 +1,5 @@
 function [candidates, shots] = markCandidates(wafers, coordinates, required, excluded)
-%MARKCANDIDATES 「7. Mark配置の最適化」の候補の Mark（Shot 内の位置）と、Shot ごとの値を作る。
+%MARKCANDIDATES 「7. Mark配置最適化」の候補の Mark（Shot 内の位置）と、Shot ごとの値を作る。
 %   [candidates, shots] = alignest.markCandidates(wafers)                 % 計測データの点から
 %   [candidates, shots] = alignest.markCandidates([], coordinates)        % 座標だけ（画面で入力した座標。値は無い）
 %   [candidates, shots] = alignest.markCandidates(..., required)          % 必ず計測する Mark の座標（点の数 × 2 [mm]）

@@ -1,5 +1,5 @@
 function options = markLayoutOptions(settings)
-%MARKLAYOUTOPTIONS 「7. Mark配置の最適化」の設定 settings.markLayout を確かめ、説明の文を付けて返す。
+%MARKLAYOUTOPTIONS 「7. Mark配置最適化」の設定 settings.markLayout を確かめ、説明の文を付けて返す。
 %   options = alignest.markLayoutOptions(settings)
 %   項目（alignest.defaultSettings の markLayout）：
 %   - maker・excludedTerms・vifThreshold：補正の式・使わない k の番号・「VIF で選ぶ」のしきい値（「6. Shot高次補正」と同じ）

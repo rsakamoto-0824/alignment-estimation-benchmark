@@ -1,7 +1,7 @@
 classdef TestPlanTimeAndRadius < matlab.unittest.TestCase
     %TESTPLANTIMEANDRADIUS 計測マップの表示の切り替え（描いた図だけ描き直す）、時間の目安に学習パターンを作る時間を含める、
     %   Mark 単位の計画の必ず計測する Shot・Mark（設定タブの欄）と同心円の区切り（Mark の半径のバランス）、
-    %   「7. Mark配置の最適化」の採用した I 最適計画の式。
+    %   「7. Mark配置最適化」の採用した I 最適計画の式。
 
     properties
         Data
@@ -162,7 +162,7 @@ classdef TestPlanTimeAndRadius < matlab.unittest.TestCase
         end
 
         function markLayoutCriterionShowsFormula(testCase)
-            % 「7. Mark配置の最適化」：配置を選んだ I 最適計画の式と、F の列に使った項・点の数
+            % 「7. Mark配置最適化」：配置を選んだ I 最適計画の式と、F の列に使った項・点の数
             [gx, gy] = meshgrid(linspace(-12, 12, 5), linspace(-15, 15, 5));
             [candidates, shots] = alignest.markCandidates([], [gx(:), gy(:)], [0, 0]);
             settings = alignest.defaultSettings();
