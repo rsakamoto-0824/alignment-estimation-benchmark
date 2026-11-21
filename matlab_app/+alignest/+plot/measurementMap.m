@@ -4,6 +4,8 @@ function measurementMap(ax, unit, plan, waferRadiusMm, titleText, options)
 %   alignest.plot.measurementMap(..., showScan=true, ringRadiiMm=[67.5, 105], showLegend=false)
 %   plan は alignest.planTrainingShots の結果（shotIndex：計測する Shot、requiredShotIndex：必ず計測する Shot）。
 %   塗りの区分：必ず計測する Shot（太い枠）・選んで計測する Shot・計測しない Shot（評価に使う）・計測値の無い Shot。
+%   凡例は意味が分かる短い名前にする（「必ず計測」「計測」「計測しない」「計測値なし」。数は（）の中）。
+%   図を大きく描くため、軸ラベル（x [mm]・y [mm]）は付けない（目盛の数字は mm）。
 %   色だけで区別しないよう、必ず計測する Shot は太い枠、計測する Shot の shotNo は太字にする。
 %   Mark 単位の計画（plan.markIndex が空でない）では、Shot はすべて計測するので薄い塗りにし、計測する Mark を
 %   塗りつぶした ●、計測しない Mark（評価に使う）を白抜きの ○ で描く。
@@ -46,6 +48,7 @@ REQUIRED_MARK_SIZE = 7;
 SCAN_FRAME_INSET = 0.16;   % Scan 方向の枠を Shot の内側に縮める割合（塗りの枠と重ならないように）
 LABEL_FONT_SIZE = 7;
 MARGIN_MM = 8;
+TICK_STEP_MM = 100;   % 目盛の間隔（小さな図でも数字が重ならないように）
 shots = unit.shots;
 nShots = numel(shots.Xmm);
 hasData = shots.nValidX + shots.nValidY > 0;
@@ -53,11 +56,11 @@ required = ismember((1:nShots).', plan.requiredShotIndex);
 measured = ismember((1:nShots).', plan.shotIndex);
 markLevel = isfield(plan, "markIndex") && ~isempty(plan.markIndex);
 categories = {measured & required, measured & ~required, ~measured & hasData, ~hasData};
-names = ["必ず計測する Shot（指定・最外周など）", "選んで計測する Shot", "計測しない Shot（評価に使う）", ...
-    "計測値の無い Shot"];
+names = ["必ず計測", "計測", "計測しない", "計測値なし"];
 colors = [REQUIRED_COLOR; SELECTED_COLOR; UNUSED_COLOR; NO_DATA_COLOR];
 if markLevel
-    names(2) = "計測する Shot（Mark を選んで計測）";
+    % Mark の印（●・○）と並ぶので、塗りが Shot の区分だと分かるように「Shot」を付ける
+    names(1:3) = names(1:3) + " Shot";
     colors(2, :) = MARK_SHOT_COLOR;
 end
 edgeColors = [REQUIRED_EDGE_COLOR; EDGE_COLOR; EDGE_COLOR; EDGE_COLOR];
@@ -92,29 +95,29 @@ if markLevel
     chosen(plan.markIndex) = true;
     legendItems(end + 1) = plot(ax, marks.x(chosen), marks.y(chosen), 'o', 'MarkerSize', MARK_SIZE, ...
         'MarkerFaceColor', MARK_COLOR, 'MarkerEdgeColor', MARK_COLOR, 'LineStyle', 'none', ...
-        'DisplayName', sprintf("計測する Mark（%d）", nnz(chosen)));
+        'DisplayName', sprintf("計測 Mark（%d）", nnz(chosen)));
     legendItems(end + 1) = plot(ax, marks.x(candidate & ~chosen), marks.y(candidate & ~chosen), 'o', ...
         'MarkerSize', MARK_SIZE, 'MarkerFaceColor', [1, 1, 1], 'MarkerEdgeColor', MARK_COLOR, 'LineStyle', 'none', ...
-        'DisplayName', sprintf("計測しない Mark（評価に使う）（%d）", nnz(candidate & ~chosen)));
+        'DisplayName', sprintf("計測しない Mark（%d）", nnz(candidate & ~chosen)));
 end
 if ~isempty(options.excludedShots)
     select = options.excludedShots(:).';
     patchX = shots.Xmm(select).' + [-1; 1; 1; -1] * half(1);
     patchY = shots.Ymm(select).' + [-1; -1; 1; 1] * half(2);
     legendItems(end + 1) = patch(ax, 'XData', patchX, 'YData', patchY, 'FaceColor', 'none', 'EdgeColor', EXCLUDED_COLOR, ...
-        'LineStyle', '--', 'LineWidth', 1.5, 'DisplayName', sprintf("計測しないに指定した Shot（%d）", numel(select)));
+        'LineStyle', '--', 'LineWidth', 1.5, 'DisplayName', sprintf("除外 Shot（%d）", numel(select)));
 end
 if ~isempty(options.requiredMarks)
     marks = unit.marks;
     legendItems(end + 1) = plot(ax, marks.x(options.requiredMarks), marks.y(options.requiredMarks), 's', ...
         'MarkerSize', REQUIRED_MARK_SIZE, 'MarkerEdgeColor', REQUIRED_EDGE_COLOR, 'LineWidth', 1.5, 'LineStyle', 'none', ...
-        'DisplayName', sprintf("必ず計測する Mark（%d）", numel(options.requiredMarks)));
+        'DisplayName', sprintf("必ず計測 Mark（%d）", numel(options.requiredMarks)));
 end
 if ~isempty(options.excludedMarks)
     marks = unit.marks;
     legendItems(end + 1) = plot(ax, marks.x(options.excludedMarks), marks.y(options.excludedMarks), 'x', ...
         'MarkerSize', REQUIRED_MARK_SIZE, 'MarkerEdgeColor', EXCLUDED_COLOR, 'LineWidth', 1.5, 'LineStyle', 'none', ...
-        'DisplayName', sprintf("計測しないに指定した Mark（%d）", numel(options.excludedMarks)));
+        'DisplayName', sprintf("除外 Mark（%d）", numel(options.excludedMarks)));
 end
 if options.showScan
     directions = nan(nShots, 1);
@@ -143,8 +146,13 @@ axis(ax, 'equal');
 limit = waferRadiusMm + MARGIN_MM;
 xlim(ax, [-limit, limit]);
 ylim(ax, [-limit, limit]);
-xlabel(ax, 'x [mm]');
-ylabel(ax, 'y [mm]');
+tickStep = TICK_STEP_MM;
+while floor(limit / tickStep) < 1
+    tickStep = tickStep / 2;   % 小さな Wafer でも 0 の両側に目盛を出す
+end
+ticks = tickStep * (-floor(limit / tickStep):floor(limit / tickStep));
+xticks(ax, ticks);
+yticks(ax, ticks);
 title(ax, titleText, 'Interpreter', 'none');
 box(ax, 'on');
 if options.showLegend

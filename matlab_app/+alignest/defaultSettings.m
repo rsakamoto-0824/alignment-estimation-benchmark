@@ -152,7 +152,7 @@ settings.highOrder.penaltyOrders = 2:6;    % 正則化をかける項の次数�
 settings.highOrder.penaltyOrdersY = -1;    % Y の正則化をかける項の次数（-1 なら X と同じ）
 settings.highOrder.lambda = 1e-5;          % 正則化の強さ λ（列を平均0・標準偏差1にそろえた係数に対して。正則化をかけるときに使う）
 
-% 「7. Mark配置の最適化」：Shot 高次補正の計測 Mark の配置を、Mark の数ごとに I 最適計画で選び、補正した制御残差と比べる
+% 「7. Mark配置最適化」：Shot 高次補正の計測 Mark の配置を、Mark の数ごとに I 最適計画で選び、補正した制御残差と比べる
 % （alignest.markLayoutStudy）。補正の式・回帰の項目の意味は highOrder と同じ
 settings.markLayout.maker = "nikon";        % 補正の式：asml・canon・nikon・custom（k1〜k38 から選ぶ）
 settings.markLayout.excludedTerms = zeros(1, 0);  % 使わない k の番号（「VIF で選ぶ」・画面で外した項。k1〜k6 は外さない）

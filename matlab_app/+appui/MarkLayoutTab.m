@@ -1,5 +1,5 @@
 classdef (Abstract) MarkLayoutTab < appui.Core
-    %MARKLAYOUTTAB 「7. Mark配置の最適化」タブ：Shot 高次補正の計測 Mark の配置を、Mark の数ごとに I 最適計画で選び、選んだ
+    %MARKLAYOUTTAB 「7. Mark配置最適化」タブ：Shot 高次補正の計測 Mark の配置を、Mark の数ごとに I 最適計画で選び、選んだ
     %   配置で補正した制御残差を I 効率と比べる（alignest.markLayoutStudy）。
     %   入力：「1. データ読込」の計測データ・「6. Shot高次補正」の入力のデータ・このタブで読み込む Excel・CSV（列は読んだ後で
     %   選ぶ。座標だけの表も読める）・画面で入力する座標（格子で置ける）。候補の Mark の表で、必ず計測する Mark を選ぶ（配置の
@@ -331,7 +331,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             end
             dialog = [];
             if app.Figure.Visible == "on"
-                dialog = appui.ProgressWindow(app.Figure, "Mark配置の最適化", "計算を始めています…", app.Palette, ...
+                dialog = appui.ProgressWindow(app.Figure, "Mark配置最適化", "計算を始めています…", app.Palette, ...
                     app.FontSize, "止める");
             end
             cleanup = onCleanup(@() closeDialog(dialog));

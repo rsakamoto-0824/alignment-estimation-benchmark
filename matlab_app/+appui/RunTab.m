@@ -8,7 +8,9 @@ classdef (Abstract) RunTab < appui.Core
             '計画だけに効きます（必ず計測する Shot は、Mark 単位ではその Shot の Mark すべて）。左の「必ず計測する・計測しない' ...
             ' Shot と Mark」の欄でも指定できます。計測しない Shot・Mark は学習に使わず、評価には使います。']
         MEASURE_BUTTON_WIDTHS = {150, 150, 110, 170}   % 計測マップのボタンの幅 [px]（標準の文字の大きさのとき）
-        MEASURE_INFO_HEIGHT = 112   % 計測マップの下の説明・指定・成分の差の欄の高さ [px]（図の場所を広く取るため低めにする）
+        MEASURE_TABLE_HEIGHT = 130     % 計測マップの下の「成分の差」「統計量の差」の表の高さ [px]（幅は欄いっぱい）
+        MEASURE_SIDE_WIDTH = 240       % 計測マップの左の説明（I 基準など）と指定した Shot・Mark の欄の幅 [px]
+        MEASURE_SELECTION_HEIGHT = 64  % 「指定した Shot・Mark」の一覧の高さ [px]
     end
 
     methods
@@ -149,6 +151,9 @@ classdef (Abstract) RunTab < appui.Core
                     any(spec(1).type == alignest.markPlanTypes()) || ~isempty(plan.markIndex));
                 axesList(k) = ax;
                 plans(end + 1, 1) = orderfields(plan, alignest.planTemplate()); %#ok<AGROW>
+                if k > 1
+                    lines = [lines; ""]; %#ok<AGROW>   % 図ごとの説明の間を1行あける
+                end
                 lines = [lines; measurementLines(app, unit, plan)]; %#ok<AGROW>
                 components(end + 1, 1) = alignest.planComponentDifference(unit, plan, app.Settings); %#ok<AGROW>
                 panelLabel = ternary(oneWafer, plan.label, ternary(onePlan, unit.label, unit.label + "｜" + plan.label));
@@ -169,12 +174,9 @@ classdef (Abstract) RunTab < appui.Core
             c.measureStatistics.ColumnName = names;
             refreshMeasureSelectionInfo(app);
             if nPanels > 1
-                % 並べるときは凡例を1つだけ右に、短い名前で出す（区分の数は図ごとに違うので、数は下の欄に書く）
+                % 並べるときは凡例を1つだけ右に出す（区分の数は図ごとに違うので、数は左の欄に書く）
                 items = flipud(findobj(axesList(1), '-regexp', 'DisplayName', '.+'));
                 names = regexprep(string(get(items, 'DisplayName')), '（\d+）$', '');
-                names = replace(names, ["必ず計測する Shot（指定・最外周など）", "選んで計測する Shot", ...
-                    "計測しない Shot（評価に使う）", "計測値の無い Shot"], ["必ず計測", "選んで計測", "計測しない（評価）", ...
-                    "計測値なし"]);
                 shown = legend(axesList(1), items, cellstr(names), 'Box', 'off', 'FontSize', app.SMALL_AXES_FONT_SIZE);
                 shown.Layout.Tile = 'east';
             end
@@ -349,8 +351,9 @@ classdef (Abstract) RunTab < appui.Core
             place(c.runStatus, 1, 5);
             % 計測マップ：評価の前に、学習に使う（計測する）Shot を Wafer 上で確かめ、クリックで必ず計測・計測しないを指定する
             % 上の欄は3行に詰め（Wafer・学習パターンはプルダウン）、図の場所を広く取る
+            % 中段は左に説明（I 基準など）と指定した Shot・Mark、右に Wafer マップ。下段は全計測との差の表（幅いっぱい）
             mapGrid = uigridlayout(app.Controls.measureHost, [5, 1], 'RowHeight', {'fit', 'fit', 'fit', '1x', ...
-                app.MEASURE_INFO_HEIGHT}, 'Padding', 6, 'RowSpacing', 4);
+                app.MEASURE_TABLE_HEIGHT}, 'Padding', 6, 'RowSpacing', 4);
             onMeasure = @(~, ~) app.onDrawMeasurementMap();
             onMeasureDisplay = @(~, ~) app.onMeasureDisplayChanged();   % 表示の切り替えでは、描いた図を描き直すだけ
             choose = uigridlayout(mapGrid, [1, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1.4x'}, 'Padding', 0);
@@ -363,11 +366,11 @@ classdef (Abstract) RunTab < appui.Core
                 'Tooltip', '計測マップを描く学習パターン。');
             place(c.measurePlan, 1, 4);
             options = uigridlayout(mapGrid, [1, 6], 'ColumnWidth', {'fit', 'fit', 'fit', 140, 'fit', '1x'}, 'Padding', 0);
-            c.measureScan = uicheckbox(options, 'Text', 'Scan 方向の色', 'Value', true, ...
+            c.measureScan = uicheckbox(options, 'Text', 'Scan 方向の色', 'Value', false, ...
                 'ValueChangedFcn', onMeasureDisplay, 'Tooltip', ['Shot の内側の枠の色と ▲・▼ で Scan 方向を示します' ...
                 '（Scan 方向の制約で Shot 数がそろっているかを確かめる）。色と向きはメニュー「設定」で変えられます。']);
             place(c.measureScan, 1, 1);
-            c.measureRings = uicheckbox(options, 'Text', '同心円の区切り', 'Value', true, ...
+            c.measureRings = uicheckbox(options, 'Text', '同心円の区切り', 'Value', false, ...
                 'ValueChangedFcn', onMeasureDisplay, 'Tooltip', ['半径の制約を使うとき、区切りの半径（Shot 単位は' ...
                 ' Shot 中心、Mark 単位は Mark の半径で区画を分ける）を橙の一点鎖線で描きます。']);
             place(c.measureRings, 1, 2);
@@ -391,31 +394,36 @@ classdef (Abstract) RunTab < appui.Core
             c.exportMeasure = uibutton(buttons, 'Text', 'Excel に書き出す…', ...
                 'ButtonPushedFcn', @(~, ~) app.onExportMeasurementMap(), 'Tooltip', ['計測マップを Excel に書き出す：選んだ Wafer の Shot ごとに、' ...
                 'すべての学習パターンで計測するか（1）しないか（0）を書き出します。']);
+            body = uigridlayout(mapGrid, [1, 2], 'ColumnWidth', {app.MEASURE_SIDE_WIDTH, '1x'}, 'Padding', 0, ...
+                'ColumnSpacing', 6);
+            side = uigridlayout(body, [4, 1], 'RowHeight', {'1x', 'fit', app.MEASURE_SELECTION_HEIGHT, 'fit'}, 'Padding', 0, ...
+                'RowSpacing', 2);
+            c.measureInfo = uitextarea(side, 'Editable', 'off', 'Value', ...
+                {'左で計測点の選び方を決め、Wafer と学習パターンを選んで「計測マップを作る」を押してください。'});
+            label(side, '指定した Shot・Mark', 2, 1);
+            c.measureSelectionInfo = uitextarea(side, 'Editable', 'off', 'Value', {'（なし）'});
+            place(c.measureSelectionInfo, 3, 1);
+            c.clearMeasureSelections = uibutton(side, 'Text', '指定をすべて外す', ...
+                'ButtonPushedFcn', @(~, ~) app.onClearMeasureSelections());
+            place(c.clearMeasureSelections, 4, 1);
             % 図は専用の枠に、並べる数に合わせて tiledlayout で作る（凡例を1つにまとめて右に置くため）
-            c.measurePanel = uipanel(mapGrid, 'BorderType', 'none');
+            c.measurePanel = uipanel(body, 'BorderType', 'none');
             placeholder(app, c.measurePanel, 'Wafer と学習パターンを選んで「計測マップを作る」を押すと、ここに計測マップが出ます。');
             c.measureAxes = gobjects(1, 0);
-            infoGrid = uigridlayout(mapGrid, [1, 3], 'ColumnWidth', {'0.75x', '0.55x', '1.6x'}, 'Padding', 0, 'ColumnSpacing', 6);
-            c.measureInfo = uitextarea(infoGrid, 'Editable', 'off', 'Value', ...
-                {'左で計測点の選び方を決め、Wafer と学習パターンを選んで「計測マップを作る」を押してください。'});
-            selectionGrid = uigridlayout(infoGrid, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 0, 'RowSpacing', 2);
-            label(selectionGrid, '指定した Shot・Mark', 1, 1);
-            c.measureSelectionInfo = uitextarea(selectionGrid, 'Editable', 'off', 'Value', {'（なし）'});
-            c.clearMeasureSelections = uibutton(selectionGrid, 'Text', '指定をすべて外す', ...
-                'ButtonPushedFcn', @(~, ~) app.onClearMeasureSelections());
             % 全計測との差：成分（Overlay 補正）と統計量をタブで切り替える
-            infoTabs = uitabgroup(infoGrid);
+            % 下段の幅いっぱい（列の名前が折り返さないように）。最後の列にも余りの幅を分け、縦のスクロールバーで隠れないようにする
+            infoTabs = uitabgroup(mapGrid);
             componentTab = uitab(infoTabs, 'Title', '成分の差');
             statisticTab = uitab(infoTabs, 'Title', '統計量の差');
             componentGrid = uigridlayout(componentTab, [1, 1], 'Padding', 0);
             statisticGrid = uigridlayout(statisticTab, [1, 1], 'Padding', 0);
             c.measureStatistics = uitable(statisticGrid, 'RowName', {}, 'ColumnName', {'学習パターン', '統計量', ...
-                '全計測|X', '全計測|Y', '計測配置|X', '計測配置|Y', '差|X', '差|Y'}, 'ColumnWidth', ...
-                {150, 64, 58, 58, 64, 64, 58, 58}, 'Data', cell(0, 8), 'Tooltip', ['全計測との統計量の差：計測配置の点（計測する' ...
+                '全計測 X', '全計測 Y', '計測配置 X', '計測配置 Y', '差 X', '差 Y'}, 'ColumnWidth', ...
+                [{'3x'}, repmat({'fit'}, 1, 6), {'1x'}], 'Data', cell(0, 8), 'Tooltip', ['全計測との統計量の差：計測配置の点（計測する' ...
                 ' Mark）の計測値の平均・中央値・分散（不偏分散）・最大・最小を、全計測（有効なすべての Mark）と比べます。' ...
                 '差 = 計測配置の点 − 全計測。単位は計測値と同じ（分散は単位の2乗）。']);
             c.measureComponents = uitable(componentGrid, 'RowName', {}, 'ColumnName', {'Wafer｜学習パターン', '成分', ...
-                '全計測|X [nm]', '全計測|Y [nm]', '差|X [nm]', '差|Y [nm]'}, 'ColumnWidth', {170, 118, 54, 54, 54, 54}, ...
+                '全計測 X [nm]', '全計測 Y [nm]', '差 X [nm]', '差 Y [nm]'}, 'ColumnWidth', [{'3x'}, repmat({'fit'}, 1, 4), {'1x'}], ...
                 'Data', cell(0, 6), 'Tooltip', ['全計測との成分の差：「2. 面内推定の設定」の Overlay 補正の Wafer 成分・Shot 共通成分を、' ...
                 '全計測と計測配置の点だけで当てはめ、成分ごとの補正量を全計測の Mark の位置で比べます。全計測：全計測で求めた成分の' ...
                 '補正量の |平均|+3σ。差：計測配置の点で求めた成分 − 全計測で求めた成分 の |平均|+3σ（Shot ごとの成分は使いません。' ...
@@ -844,47 +852,47 @@ classdef (Abstract) RunTab < appui.Core
         end
 
         function lines = measurementLines(app, unit, plan)
-            % 計測マップの説明（Shot 数・計測率・必ず計測した数・I 基準・D 基準・shotNo・メモ）
+            % 計測マップの説明（Shot 数・計測率・必ず計測した数・I 基準・D 基準・shotNo・メモ）。左の細い欄で読みやすいよう、
+            % 項目ごとに1行にする（効率は全計測に対する割合）
             nCandidates = nnz(unit.shots.nValidX + unit.shots.nValidY > 0);
+            criteria = [sprintf("I 基準 %.4g・効率 %.1f%%", plan.criterionI, 100 * plan.efficiencyI); ...
+                sprintf("D 基準 %.4g・効率 %.1f%%", plan.criterionD, 100 * plan.efficiencyD)];
             if ~isempty(plan.markIndex)
                 % Mark 単位の計画：計測する Mark の数と、Mark 番号ごとの数（全計測での割合と比べる）
                 marks = unit.marks;
                 candidateMarks = ismember(marks.shotIndex, find(unit.shots.nValidX + unit.shots.nValidY > 0)) & ...
                     (marks.validX | marks.validY);
                 levels = unique(marks.markNo(candidateMarks)).';
-                shares = string(arrayfun(@(level) sprintf("M%d %d（全計測 %.0f%%）", level, ...
+                shares = string(arrayfun(@(level) sprintf("M%d：%d（全計測 %.0f%%）", level, ...
                     nnz(marks.markNo(plan.markIndex) == level), 100 * nnz(marks.markNo(candidateMarks) == level) / ...
                     nnz(candidateMarks)), levels, 'UniformOutput', false));
-                lines = sprintf(['%s｜%s｜計測 %d / 候補 %d Mark（計測率 %.1f%%）｜%s｜I 基準 %.4g・' ...
-                    'D 基準 %.4g｜全計測に対する I 効率 %.1f%%・D 効率 %.1f%%｜制約の違反量 %d'], unit.label, plan.label, ...
-                    numel(plan.markIndex), nnz(candidateMarks), 100 * numel(plan.markIndex) / max(nnz(candidateMarks), 1), ...
-                    markShotText(unit, plan, nCandidates), plan.criterionI, plan.criterionD, 100 * plan.efficiencyI, ...
-                    100 * plan.efficiencyD, plan.violation);
-                lines = [lines; "Mark 番号ごとの計測数：" + strjoin(shares, "、")];
-                if plan.message ~= ""
-                    lines = [lines; "メモ：" + plan.message];
+                lines = [unit.label + "｜" + plan.label; ...
+                    sprintf("計測 %d / 候補 %d Mark", numel(plan.markIndex), nnz(candidateMarks)); ...
+                    sprintf("計測率 %.1f%%", 100 * numel(plan.markIndex) / max(nnz(candidateMarks), 1)); ...
+                    markShotText(unit, plan, nCandidates); criteria; sprintf("制約の違反量 %d", plan.violation); ...
+                    "Mark 番号ごとの計測数："; "　" + shares(:)];
+            else
+                lines = [unit.label + "｜" + plan.label; ...
+                    sprintf("計測 %d / 候補 %d Shot", plan.nShots, nCandidates); ...
+                    sprintf("計測率 %.1f%%", 100 * plan.nShots / max(nCandidates, 1)); ...
+                    sprintf("必ず計測 %d Shot", numel(plan.requiredShotIndex)); criteria];
+                if any(plan.type == ["ioptimal", "doptimal", "random", "sobol", "poisson"])
+                    lines = [lines; sprintf("制約の違反量 %d", plan.violation)];
                 end
-                return
+                lines = [lines; "計測する shotNo：" + strjoin(string(plan.shotNos(:).'), " ")];
             end
-            lines = sprintf(['%s｜%s｜計測 %d / 候補 %d Shot（計測率 %.1f%%）｜必ず計測 %d Shot｜I 基準 %.4g・D 基準 %.4g' ...
-                '｜全計測に対する I 効率 %.1f%%・D 効率 %.1f%%'], unit.label, plan.label, plan.nShots, nCandidates, ...
-                100 * plan.nShots / max(nCandidates, 1), numel(plan.requiredShotIndex), plan.criterionI, plan.criterionD, ...
-                100 * plan.efficiencyI, 100 * plan.efficiencyD);
-            if any(plan.type == ["ioptimal", "doptimal", "random", "sobol", "poisson"])
-                lines = lines + sprintf("｜制約の違反量 %d", plan.violation);
-            end
-            lines = [lines; "計測する shotNo：" + strjoin(string(plan.shotNos(:).'), " ")];
             if plan.message ~= ""
                 lines = [lines; "メモ：" + plan.message];
             end
         end
 
         function layout = resetMeasurePanel(app, nPanels)
-            % 計測マップの枠を空にし、nPanels 枚を並べる tiledlayout を作る（枠の縦横に合わせ、1枚が最も大きくなる並べ方）
+            % 計測マップの枠を空にし、nPanels 枚を並べる tiledlayout を作る（枠の縦横に合わせ、1枚が最も大きくなる並べ方。
+            % 図を大きくするため、図の周りと図どうしの間は詰める）
             clearMeasurePanel(app);
             delete(app.Controls.measurePanel.Children);   % 空のときの案内を消す
             [nRows, nColumns] = tileShape(app.Controls.measurePanel, nPanels);
-            layout = tiledlayout(app.Controls.measurePanel, nRows, nColumns, 'TileSpacing', 'compact', 'Padding', 'compact');
+            layout = tiledlayout(app.Controls.measurePanel, nRows, nColumns, 'TileSpacing', 'tight', 'Padding', 'tight');
         end
 
         function clearMeasurePanel(app)
