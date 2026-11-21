@@ -1,5 +1,5 @@
 classdef (Abstract) HighOrderCompareTab < appui.Core
-    %HIGHORDERCOMPARETAB 「7. Shot高次補正」の比べる部分：補正の比較（条件をまとめて計算する。くくり・λ のスイープ・回帰・
+    %HIGHORDERCOMPARETAB 「6. Shot高次補正」の比べる部分：補正の比較（条件をまとめて計算する。くくり・λ のスイープ・回帰・
     %   保存した項の組み合わせ）、2つの条件を並べる（基準を左に、改善・悪化した Shot を示す）、Wafer の比較（k パラメータ・
     %   残差を Wafer ごとに並べる）、項の組み合わせの保存と呼び出し。
     %   入力のデータ・補正の計算・マップは HighOrderTab.m。AlignmentEstimationApp（画面の本体）の一部で、ほかのタブの関数も
@@ -127,7 +127,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             app.HighOrderComparison = struct("table", comparison, "conditions", app.HighOrderConditions, ...
                 "source", string(c.highOrderSource.Value), "selection", {c.highOrderWafer.Value}, ...
                 "measured", c.highOrderMeasured.Value, "results", {results}, "wafers", wafers);
-            c.highOrderOutputs.SelectedTab = c.highOrderCompareTab;
+            showHighOrderTab(app, c.highOrderCompareTab);
             c.highOrderCompareResults.SelectedTab = c.highOrderCompareTableTab;   % 比べた結果の表を見せる
             showHighOrderComparison(app);
         end
@@ -457,7 +457,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
     end
 
     methods (Access = {?appui.Core})
-        % ================= 7. Shot高次補正：補正の比較・Wafer の比較・項の組み合わせ =================
+        % ================= 6. Shot高次補正：補正の比較・Wafer の比較・項の組み合わせ =================
         function buildHighOrderCompareTab(app, outputs)
             % 「補正の比較」のタブ：足す条件を選んで足す、条件の表（消す）、すべて計算して比べる、結果の表と図
             c = struct();
@@ -874,7 +874,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             % 「2つの条件を並べる」を開いているときだけ描き直す（2つのマップを描くので、設定を変えるたびには描かない。
             % 閉じているときは、開いたときに描く：onHighOrderOutputChanged）
             c = app.Controls;
-            if isfield(c, 'highOrderPairTab') && c.highOrderOutputs.SelectedTab == c.highOrderPairTab
+            if isfield(c, 'highOrderPairTab') && selectedHighOrderTab(app) == c.highOrderPairTab
                 drawHighOrderPair(app);
             end
         end

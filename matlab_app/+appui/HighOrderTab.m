@@ -1,5 +1,5 @@
 classdef (Abstract) HighOrderTab < appui.Core
-    %HIGHORDERTAB 「7. Shot高次補正」タブ：Shot 高次補正（Shot 内の座標の補正の式）の評価。入力のデータ（計測データ・未知の座標の
+    %HIGHORDERTAB 「6. Shot高次補正」タブ：Shot 高次補正（Shot 内の座標の補正の式）の評価。入力のデータ（計測データ・未知の座標の
     %   推定値・Excel（列は読んだ後で選ぶ））、補正の式と k パラメータ（VIF で選ぶ。カスタムの式は k1〜k38）、k の組のくくり
     %   （Wafer 内で共通・Scan 方向ごと・行の偶奇ごと・Shot ごと）、回帰（ロバスト回帰・選んだ次数の項だけの L2・L1 正則化）、補正の評価・
     %   補正値・マップ（グリッド・並べて表示）・書き出し。計算は alignest.shotHighOrder。補正の比較・Wafer の比較・項の
@@ -38,7 +38,7 @@ classdef (Abstract) HighOrderTab < appui.Core
         end
 
         function setHighOrderSource(app, source)
-            %SETHIGHORDERSOURCE 入力のデータを選ぶ："data"（「1. データ読込」の計測データ）・"target"（「6. 未知の座標の
+            %SETHIGHORDERSOURCE 入力のデータを選ぶ："data"（「1. データ読込」の計測データ）・"target"（「5. 未知の座標の
             %   推定」の推定値）・"file"（「Excel・CSV を読み込む…」で読み込んだデータ）。
             app.Controls.highOrderSource.Value = char(source);
             onHighOrderSourceChanged(app);
@@ -173,7 +173,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             highOrderInputChanged(app, "file");   % 前に読んだ表で求めた結果は消す
             c = app.Controls;
             showHighOrderMapping(app, info.mapping);
-            c.highOrderOutputs.SelectedTab = c.highOrderColumnTab;
+            showHighOrderTab(app, c.highOrderColumnTab);
             data = [];
             required = string({alignest.highOrderColumns().name});
             required = required([alignest.highOrderColumns().required]);
@@ -384,7 +384,7 @@ classdef (Abstract) HighOrderTab < appui.Core
         end
 
         function result = computeHighOrder(app, waferChoice)
-            %COMPUTEHIGHORDER 選んだ Wafer（「6. 未知の座標の推定」のときは Wafer × 学習データの組み合わせ）の Shot 高次補正を
+            %COMPUTEHIGHORDER 選んだ Wafer（「5. 未知の座標の推定」のときは Wafer × 学習データの組み合わせ）の Shot 高次補正を
             %   求め、補正の評価・補正値・Wafer の比較・マップに出す（alignest.shotHighOrder。設定は settings.highOrder）。
             %   点の数が最も少ない k の組で求められない項は、k の小さい順に絞って求め、表の「使う」からも外す（メッセージで知らせる）。
             %   waferChoice：一覧の番号（複数可。0 = すべて）。省略すると画面で選んでいるもの。
@@ -425,7 +425,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             app.HighOrderRun = struct("result", result, "wafers", wafers, "source", string(c.highOrderSource.Value), ...
                 "selection", {c.highOrderWafer.Value}, "settings", app.Settings.highOrder, ...
                 "measured", c.highOrderMeasured.Value);
-            c.highOrderOutputs.SelectedTab = c.highOrderSummaryTab;   % 結果（補正の評価）を見せる
+            showHighOrderTab(app, c.highOrderSummaryTab);   % 結果（補正の評価）を見せる
             addHighOrderHistory(app);   % 結果の履歴に足す（条件を変えて計算するたびに比べられる）
             showHighOrderRun(app);
             updateHighOrderEnabled(app);   % 「計算した値を写す」
@@ -769,7 +769,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             end
         end
 
-        % ================= 7. Shot高次補正 =================
+        % ================= 6. Shot高次補正 =================
         function buildHighOrderTab(app)
             % 左：入力のデータ・補正の式・回帰の設定。右：メッセージと、使う項と VIF（k パラメータを選ぶ表）・補正の評価・
             % 補正値・マップ（中のタブで切り替える）
@@ -784,9 +784,9 @@ classdef (Abstract) HighOrderTab < appui.Core
             place(inputGrid, 2, 1);
             label(inputGrid, '入力', 1, 1);
             c.highOrderSource = uidropdown(inputGrid, 'Items', {'1. データ読込の計測データ', ...
-                '6. 未知の座標の推定の推定値', 'Excel・CSV から読み込んだデータ'}, 'ItemsData', {'data', 'target', 'file'}, ...
+                '5. 未知の座標の推定の推定値', 'Excel・CSV から読み込んだデータ'}, 'ItemsData', {'data', 'target', 'file'}, ...
                 'ValueChangedFcn', @(~, ~) app.onHighOrderSourceChanged(), 'Tooltip', ['計測データ：「1. データ読込」で' ...
-                '読み込んだ計測値（面内推定の入力と同じ）。推定値：「6. 未知の座標の推定」で推定した点の値（Wafer × 学習データの' ...
+                '読み込んだ計測値（面内推定の入力と同じ）。推定値：「5. 未知の座標の推定」で推定した点の値（Wafer × 学習データの' ...
                 '組み合わせごと）。Excel・CSV：右のボタンで読み込んだ表（列は読んだ後で「Excel・CSV の列」で選ぶ）。']);
             place(c.highOrderSource, 1, 2);
             c.highOrderLoad = uibutton(inputGrid, 'Text', 'Excel・CSV を読み込む…', ...
@@ -795,7 +795,7 @@ classdef (Abstract) HighOrderTab < appui.Core
                 'Wafer・shotNo・Scan 方向など（任意）の列を選びます。このアプリが書き出した推定値の Excel も読めます。']);
             place(c.highOrderLoad, 1, 3);
             c.highOrderMeasured = uicheckbox(inputGrid, 'Text', '実測値も使う', 'Value', false, ...
-                'ValueChangedFcn', @(~, ~) app.onHighOrderInputEdited(), 'Tooltip', ['「6. 未知の座標の推定」の推定値に、' ...
+                'ValueChangedFcn', @(~, ~) app.onHighOrderInputEdited(), 'Tooltip', ['「5. 未知の座標の推定」の推定値に、' ...
                 'その推定の学習に使った Mark の計測値を足して補正を求めます。']);
             place(c.highOrderMeasured, 2, [2, 3]);
             c.highOrderInputInfo = uilabel(left, 'WordWrap', 'on', 'FontColor', app.Palette.muted, 'UserData', "muted", ...
@@ -813,13 +813,17 @@ classdef (Abstract) HighOrderTab < appui.Core
             modelGrid = uigridlayout(left, [13, 4], 'ColumnWidth', {'fit', '1x', 'fit', '1x'}, 'RowHeight', ...
                 repmat({'fit'}, 1, 13), 'Padding', 0);
             place(modelGrid, 6, 1);
+            c.highOrderModelGrid = modelGrid;
+            % 段の見出しは押すと開け閉めできる（閉じた段の欄はしまう。layoutHighOrderSections）
             sectionNames = ["Wafer 補正", "Shot 共通補正", "Shot ごとの補正"];
             sectionRows = [3, 6, 10];
+            c.highOrderSectionButtons = gobjects(1, numel(sectionNames));
             for k = 1:numel(sectionNames)
-                sectionLabel = label(modelGrid, sectionNames(k), sectionRows(k), [1, 4]);
-                sectionLabel.FontWeight = 'bold';
-                sectionLabel.FontColor = app.Palette.muted;
-                sectionLabel.UserData = "muted";
+                c.highOrderSectionButtons(k) = uibutton(modelGrid, 'Text', char("▼ " + sectionNames(k)), ...
+                    'UserData', struct("name", sectionNames(k), "open", true), 'FontWeight', 'bold', ...
+                    'HorizontalAlignment', 'left', 'Tooltip', '押すと、この段の欄を閉じる・開く', ...
+                    'ButtonPushedFcn', @(source, ~) app.onToggleHighOrderSection(source));
+                place(c.highOrderSectionButtons(k), sectionRows(k), [1, 4]);
             end
             label(modelGrid, '補正の式', 11, 1);
             c.highOrderMaker = uidropdown(modelGrid, 'Items', app.HIGH_ORDER_MAKER_LABELS, ...
@@ -907,7 +911,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             c.highOrderCommonMaker = uidropdown(modelGrid, 'Items', [{'Shot ごとと同じ'}, app.HIGH_ORDER_MAKER_LABELS], ...
                 'ItemsData', [{'same'}, app.HIGH_ORDER_MAKER_NAMES], 'ValueChangedFcn', onSetting, 'Enable', 'off', ...
                 'Tooltip', ['Shot 共通の k に使う補正の式。Shot ごとと同じ：下の「Shot ごとの補正」の補正の式。ほかの式を選ぶと、' ...
-                'Shot 共通はその式で求め（VIF で選ぶ：Shot 共通・保存した組み合わせでその式の項を選べる）、残りを Shot ごとの' ...
+                'Shot 共通はその式で求め（この段の「VIF で選ぶ」・保存した組み合わせでその式の項を選べる）、残りを Shot ごとの' ...
                 '補正の式で求めます。']);
             place(c.highOrderCommonMaker, 8, 2);
             % Shot 共通の k に使う項：保存した項の組み合わせから写す（選ぶと表の「共通」の列に写し、選択は元に戻す）
@@ -922,18 +926,18 @@ classdef (Abstract) HighOrderTab < appui.Core
                 '（k1〜k6 は外しません）。VIF は Shot 内の座標だけで決まります。'];
             commonButtons = uigridlayout(modelGrid, [1, 2], 'ColumnWidth', {'1x', '1x'}, 'Padding', 0);
             place(commonButtons, 9, [1, 4]);
-            c.highOrderVifSelectCommon = uibutton(commonButtons, 'Text', 'VIF で選ぶ：Shot 共通', 'ButtonPushedFcn', ...
+            c.highOrderVifSelectCommon = uibutton(commonButtons, 'Text', 'VIF で選ぶ', 'ButtonPushedFcn', ...
                 @(~, ~) app.onHighOrderVifSelect("common"), 'Enable', 'off', 'Tooltip', ['Shot 共通補正を「計算する」とき、' ...
                 'Shot 共通の k に使う項（表の「共通」）だけを選びます（Shot ごとの補正の項は変えません）。' vifTip]);
-            c.highOrderAllCommonTerms = uibutton(commonButtons, 'Text', 'すべての項を使う：Shot 共通', 'Enable', 'off', ...
+            c.highOrderAllCommonTerms = uibutton(commonButtons, 'Text', 'すべての項を使う', 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~, ~) app.useAllHighOrderTerms("common"), 'Tooltip', ['Shot 共通の k に、Shot 共通の' ...
                 '補正の式のすべての項を使います（Shot ごとの補正の項は変えません）。']);
             eachButtons = uigridlayout(modelGrid, [1, 2], 'ColumnWidth', {'1x', '1x'}, 'Padding', 0);
             place(eachButtons, 13, [1, 4]);
-            c.highOrderVifSelect = uibutton(eachButtons, 'Text', 'VIF で選ぶ：Shot 高次', 'ButtonPushedFcn', ...
+            c.highOrderVifSelect = uibutton(eachButtons, 'Text', 'VIF で選ぶ', 'ButtonPushedFcn', ...
                 @(~, ~) app.onHighOrderVifSelect("terms"), 'Tooltip', ['Shot 高次補正（Shot ごとの補正）に使う項（表の' ...
                 '「使う」）だけを選びます（Shot 共通の項は変えません）。' vifTip]);
-            c.highOrderAllTerms = uibutton(eachButtons, 'Text', 'すべての項を使う：Shot 高次', 'ButtonPushedFcn', ...
+            c.highOrderAllTerms = uibutton(eachButtons, 'Text', 'すべての項を使う', 'ButtonPushedFcn', ...
                 @(~, ~) app.useAllHighOrderTerms("terms"), 'Tooltip', ['Shot 高次補正（Shot ごとの補正）に、補正の式の' ...
                 'すべての項を使います（外周の式を分けるときは外周の式も。Shot 共通の項は変えません）。']);
             c.highOrderTermInfo = uilabel(left, 'WordWrap', 'on', 'FontColor', app.Palette.muted, 'UserData', "muted", ...
@@ -954,9 +958,19 @@ classdef (Abstract) HighOrderTab < appui.Core
             c.highOrderMessage = uitextarea(right, 'Editable', 'off', 'Value', {['入力のデータと Wafer を選び、補正の式・' ...
                 '回帰を決めてから「補正を計算する」を押してください。']});
             place(c.highOrderMessage, 1, 1);
-            outputs = uitabgroup(right, 'SelectionChangedFcn', @(~, event) app.onHighOrderOutputChanged(event));
-            place(outputs, 2, 1);
-            c.highOrderOutputs = outputs;
+            % 中のタブは3つのまとまり（入力と項／結果／比べる）に分け、その中にタブを並べる（14 個を1列に並べると、
+            % 矢印を押さないと見えないタブが出るため）。開くタブは showHighOrderTab、開いているタブは selectedHighOrderTab
+            c.highOrderOutputs = uitabgroup(right, 'SelectionChangedFcn', @(~, ~) app.onHighOrderCategoryChanged());
+            place(c.highOrderOutputs, 2, 1);
+            onInner = @(~, event) app.onHighOrderOutputChanged(event);
+            categories = [uitab(c.highOrderOutputs, 'Title', '入力と項'), uitab(c.highOrderOutputs, 'Title', '結果'), ...
+                uitab(c.highOrderOutputs, 'Title', '比べる')];
+            innerGroups = gobjects(1, 3);
+            for k = 1:3
+                innerGroups(k) = uitabgroup(uigridlayout(categories(k), [1, 1], 'Padding', 0), 'SelectionChangedFcn', onInner);
+            end
+            [inputGroup, resultGroup, compareGroup] = deal(innerGroups(1), innerGroups(2), innerGroups(3));
+            outputs = inputGroup;
             columnTab = uitab(outputs, 'Title', 'Excel・CSV の列');
             c.highOrderColumnTab = columnTab;
             columnGrid = uigridlayout(columnTab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 6, 'RowSpacing', 4);
@@ -1009,8 +1023,8 @@ classdef (Abstract) HighOrderTab < appui.Core
             c.highOrderVifInfo.FontColor = app.Palette.muted;
             c.highOrderVifInfo.UserData = "muted";
             buildHighOrderTermSetControls(app, termGrid, 4);
-            buildHighOrderSelectionTab(app, outputs);   % 「k の選定」は「使う項と VIF」の右
-            summaryTab = uitab(outputs, 'Title', '補正の評価');
+            buildHighOrderSelectionTab(app, inputGroup);   % 「k の選定」は「使う項と VIF」の右
+            summaryTab = uitab(resultGroup, 'Title', '補正の評価');
             c.highOrderSummaryTab = summaryTab;
             summaryGrid = uigridlayout(summaryTab, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 6, 'RowSpacing', 4);
             zoneGrid = uigridlayout(summaryGrid, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
@@ -1023,13 +1037,13 @@ classdef (Abstract) HighOrderTab < appui.Core
             c.highOrderSummaryTable = uitable(summaryGrid, 'RowName', {}, 'Data', table(), 'ColumnWidth', ...
                 [{170, 40}, {120, 150, 130, 130, 110, 110}, {76, 90}, repmat({76}, 1, 7)]);
             place(c.highOrderSummaryTable, 2, 1);
-            buildHighOrderHistoryTab(app, outputs);    % 「結果の履歴」「他の Wafer の補正」は「補正の評価」の右
-            buildHighOrderTransferTab(app, outputs);
-            buildHighOrderCompareTab(app, outputs);
-            buildHighOrderPairTab(app, outputs);
-            buildHighOrderSweepTab(app, outputs);
-            buildHighOrderWaferTab(app, outputs);
-            mapTab = uitab(outputs, 'Title', 'マップ');
+            buildHighOrderHistoryTab(app, compareGroup);    % 「比べる」：結果の履歴・他の Wafer の補正・補正の比較・…
+            buildHighOrderTransferTab(app, compareGroup);
+            buildHighOrderCompareTab(app, compareGroup);
+            buildHighOrderPairTab(app, compareGroup);
+            buildHighOrderSweepTab(app, compareGroup);
+            buildHighOrderWaferTab(app, compareGroup);
+            mapTab = uitab(resultGroup, 'Title', 'マップ');
             c.highOrderMapTab = mapTab;
             mapGrid = uigridlayout(mapTab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 6, 'RowSpacing', 4);
             mapControls = uigridlayout(mapGrid, [5, 7], 'ColumnWidth', {'fit', '1x', 'fit', '1.2x', 'fit', '1.1x', 'fit'}, ...
@@ -1130,11 +1144,11 @@ classdef (Abstract) HighOrderTab < appui.Core
                 '「補正を計算する」を押すと、補正後の残差を描きます。', 'UserData', '「補正を計算する」を押すと、補正後の残差を描きます。');
             place(c.highOrderMapInfo, 3, 1);
             set([c.highOrderExport, c.highOrderSaveFigure, c.highOrderCopyFigure], 'Enable', 'off');
-            outputs.SelectedTab = termTab;   % 「Excel・CSV の列」は表を読み込んだときに開く
+            inputGroup.SelectedTab = termTab;   % 「Excel・CSV の列」は表を読み込んだときに開く
             app.Controls = mergeStruct(app.Controls, c);
-            buildHighOrderHistogramTab(app, outputs);
-            buildHighOrderCoefficientTab(app, outputs);   % 「補正値テーブル」は「書き出し」の左
-            buildHighOrderOutputTab(app, outputs);
+            buildHighOrderHistogramTab(app, resultGroup);
+            buildHighOrderCoefficientTab(app, resultGroup);   % 「補正値テーブル」は「書き出し」の左
+            buildHighOrderOutputTab(app, resultGroup);
             highOrderSettingsToControls(app);
             refreshHighOrderChoices(app);
         end
@@ -1327,6 +1341,37 @@ classdef (Abstract) HighOrderTab < appui.Core
                 c.highOrderTermView.Items = viewItems;
                 c.highOrderTermView.Enable = onOff(differs);
             end
+            layoutHighOrderSections(app);
+        end
+
+        function onToggleHighOrderSection(app, button)
+            % 段の見出しを押したとき：その段を開く・閉じる
+            state = button.UserData;
+            state.open = ~state.open;
+            button.UserData = state;
+            button.Text = char(ternary(state.open, "▼ ", "▶ ") + state.name);
+            layoutHighOrderSections(app);
+        end
+
+        function layoutHighOrderSections(app)
+            % 「② 補正の式と k パラメータ」の段の欄を、開け閉めと今の設定に合わせて出す・しまう（使わない欄は灰色で並べない）：
+            % RT の次数は Wafer RT を使うとき、Shot 共通の補正の式・項・VIF のボタンは Shot 共通を計算するとき、
+            % Shot ごとの補正の式・次数・VIF のボタンはくくりが Wafer 内・選択 Wafer で共通でないとき
+            c = app.Controls;
+            if ~isfield(c, 'highOrderSectionButtons')
+                return
+            end
+            open = arrayfun(@(button) button.UserData.open, c.highOrderSectionButtons);
+            grid = c.highOrderModelGrid;
+            usesRt = string(c.highOrderRtRange.Value) ~= "none";
+            shared = isSharedUnit(c.highOrderUnit.Value);
+            commonFit = string(c.highOrderShotCommon.Value) == "fit";
+            showRows(grid, 4, open(1));
+            showRows(grid, 5, open(1) && usesRt);
+            showRows(grid, 7, open(2));
+            showRows(grid, [8, 9], open(2) && commonFit);
+            showRows(grid, [11, 13], open(3) && ~shared);
+            showRows(grid, 12, open(3));
         end
 
         function onHighOrderSettingsChanged(app)
@@ -1383,10 +1428,10 @@ classdef (Abstract) HighOrderTab < appui.Core
                 case "target"
                     if ~isempty(app.TargetRun)
                         labels = reshape(string(app.TargetRun.labels), 1, []);
-                        info = sprintf("「6. 未知の座標の推定」の推定値：%d 組（Wafer × 学習データ）、手法 %s。", ...
+                        info = sprintf("「5. 未知の座標の推定」の推定値：%d 組（Wafer × 学習データ）、手法 %s。", ...
                             numel(labels), app.TargetRun.method.label);
                     else
-                        info = "「6. 未知の座標の推定」で推定してください（推定した点の値を使います）。";
+                        info = "「5. 未知の座標の推定」で推定してください（推定した点の値を使います）。";
                     end
                 case "file"
                     if isempty(app.HighOrderFile)
@@ -1585,8 +1630,8 @@ classdef (Abstract) HighOrderTab < appui.Core
                 end
             end
             if any(short)
-                addStyle(table_, uistyle('FontColor', app.Palette.error, 'FontWeight', 'bold'), 'row', unique(rowOf(short)));
-                pointText = "⚠ 赤い太字の項は、点の数が最も少ない Shot（k の組）では決まりません（右上のメッセージ）。" + pointText;
+                addStyle(table_, uistyle('FontColor', app.Palette.caution, 'FontWeight', 'bold'), 'row', unique(rowOf(short)));
+                pointText = "⚠ 橙の太字の項は、点の数が最も少ない Shot（k の組）では決まりません（右上のメッセージ）。" + pointText;
             end
             counts = strings(1, numel(zones));
             for z = 1:numel(zones)
@@ -1599,11 +1644,11 @@ classdef (Abstract) HighOrderTab < appui.Core
             end
             termText = ternary(commonView, "Shot 共通の k に使う項：", "使う項：") + strjoin(counts, "、");
             if any(short)
-                termText = "⚠ 点の数が最も少ない Shot では決まらない項があります（右の表の赤い太字。" + ...
+                termText = "⚠ 点の数が最も少ない Shot では決まらない項があります（右の表の橙の太字。" + ...
                     sprintf("dx %d 項・dy %d 項）。", nnz(short & terms.axis == "dx"), nnz(short & terms.axis == "dy")) + termText;
             end
             c.highOrderTermInfo.Text = char(termText);
-            c.highOrderTermInfo.FontColor = ternary(any(short), app.Palette.error, app.Palette.muted);
+            c.highOrderTermInfo.FontColor = ternary(any(short), app.Palette.caution, app.Palette.muted);
             if commonFormulaDiffers(options) && ~commonView
                 pointText = pointText + " " + commonFormulaText(options) + "（「表の式」で Shot 共通補正を選ぶと、表で項を選べます）";
             end
@@ -1637,9 +1682,9 @@ classdef (Abstract) HighOrderTab < appui.Core
                 return
             end
             instruction = "入力のデータと Wafer を選び、補正の式・回帰を決めてから「補正を計算する」を押してください。";
-            messages = highOrderCheckMessages(app);
+            messages = shortHighOrderMessages(highOrderCheckMessages(app));
             c.highOrderMessage.Value = cellstr([messages; instruction]);
-            c.highOrderMessage.FontColor = ternary(isempty(messages), app.Palette.text, app.Palette.error);
+            c.highOrderMessage.FontColor = ternary(isempty(messages), app.Palette.text, app.Palette.caution);
         end
 
         function messages = highOrderCheckMessages(app)
@@ -1828,7 +1873,7 @@ classdef (Abstract) HighOrderTab < appui.Core
                 case "target"
                     run = app.TargetRun;
                     if isempty(run)
-                        error('alignest:noTargets', '先に「6. 未知の座標の推定」で推定してください。');
+                        error('alignest:noTargets', '先に「5. 未知の座標の推定」で推定してください。');
                     end
                     if alignest.valueSpec(app.Settings.data).scalar
                         error('alignest:highOrderScalar', ['Shot 高次補正は X・Y の2成分（dx・dy）が要ります（1変数の推定' ...
@@ -1874,7 +1919,7 @@ classdef (Abstract) HighOrderTab < appui.Core
                 case "data"
                     text = "「1. データ読込」の計測データ（" + app.FilePath + "）";
                 case "target"
-                    text = "「6. 未知の座標の推定」の推定値（手法 " + app.TargetRun.method.label + "）";
+                    text = "「5. 未知の座標の推定」の推定値（手法 " + app.TargetRun.method.label + "）";
                     if app.HighOrderRun.measured
                         text = text + "と、学習に使った Mark の実測値";
                     end
@@ -2081,9 +2126,10 @@ classdef (Abstract) HighOrderTab < appui.Core
                 % 設定・入力を変えた後は、今の設定での計算の前の確かめも先に出す
                 messages = [stale; highOrderCheckMessages(app); messages];
             end
+            messages = shortHighOrderMessages(messages);
             c.highOrderMessage.Value = cellstr(messages);
             warn = stale ~= "" || any(startsWith(messages, "⚠"));
-            c.highOrderMessage.FontColor = ternary(warn, app.Palette.error, app.Palette.text);
+            c.highOrderMessage.FontColor = ternary(warn, app.Palette.caution, app.Palette.text);   % 計算はできる注意なので橙
         end
 
         function text = staleHighOrderText(app)
@@ -2180,7 +2226,7 @@ classdef (Abstract) HighOrderTab < appui.Core
         end
 
         function highOrderInputChanged(app, kind)
-            % 「1. データ読込」のデータ・「6. 未知の座標の推定」の推定値・読み込んだ表が変わったら、それを入力にした結果を
+            % 「1. データ読込」のデータ・「5. 未知の座標の推定」の推定値・読み込んだ表が変わったら、それを入力にした結果を
             % 消す（kind = "data"：計測データ、"target"：推定値、"file"：表。計測データが変わると推定値も消えるので、どちらも消す）
             c = app.Controls;
             if ~isfield(c, 'highOrderSource')
@@ -2223,6 +2269,24 @@ classdef (Abstract) HighOrderTab < appui.Core
             drawShownHighOrderAnalysis(app);
             showHighOrderCheck(app);   % 計算の前の確かめと、計算のしかたの知らせ
             updateHighOrderEnabled(app);   % 「計算した値を写す」
+        end
+
+        function showHighOrderTab(app, tab)
+            % Shot 高次補正の中のタブ tab を開く（まとまりのタブ・中のタブの両方を選ぶ）
+            tab.Parent.SelectedTab = tab;
+            app.Controls.highOrderOutputs.SelectedTab = ancestor(tab.Parent, 'uitab');
+        end
+
+        function tab = selectedHighOrderTab(app)
+            % Shot 高次補正で開いている中のタブ（まとまりの中で選んであるタブ）
+            category = app.Controls.highOrderOutputs.SelectedTab;
+            group = findobj(category, 'Type', 'uitabgroup', '-depth', 2);
+            tab = group(1).SelectedTab;
+        end
+
+        function onHighOrderCategoryChanged(app)
+            % まとまりを変えたとき：そのまとまりで選んであるタブを開いたときと同じく、図を描き直す
+            onHighOrderOutputChanged(app, struct("NewValue", selectedHighOrderTab(app)));
         end
 
         function onHighOrderOutputChanged(app, event)
@@ -2632,4 +2696,10 @@ end
 used = unique(used(:).');
 text = "Shot 共通は " + names.(options.shotCommonMaker) + " の式の " + numel(used) + " 項（" + ...
     strjoin("k" + string(used), "・") + "）で求めます。";
+end
+
+function messages = shortHighOrderMessages(messages)
+% 右上の知らせを短くする：決まらない項の k の一覧（「（k7・k11・…）」）は下の表の橙の太字で分かるので、文からは外す
+messages = regexprep(string(messages), "（k\d+(・k\d+)*）", "");
+messages = regexprep(messages, "が決まりません。", "が決まりません（使う項と VIF の表の橙の太字）。", 'once');
 end

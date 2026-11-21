@@ -22,7 +22,7 @@ if ~active
 end
 if ~isfield(results, "pointEstimates") || numel(results.pointEstimates) ~= height(results.table)
     error('alignest:filterResults', ['この結果には評価点ごとの推定値が無いため、絞り込んで計算し直せません' ...
-        '（Excel から読み込んだ結果など）。「3. 実行」で評価してください。']);
+        '（Excel から読み込んだ結果など）。「2. 評価の設定と実行」で評価してください。']);
 end
 settings = results.settings;
 outerMm = alignest.upgradeRadiusSettings(settings).evaluation.outerRadiusMm;

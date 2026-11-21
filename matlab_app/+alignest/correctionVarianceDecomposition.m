@@ -1,5 +1,5 @@
 function result = correctionVarianceDecomposition(comparison, methodPlan, scope)
-%CORRECTIONVARIANCEDECOMPOSITION 補正前の値と、実測値・推定値で補正した残差のばらつき分解（「4. 結果一覧」の
+%CORRECTIONVARIANCEDECOMPOSITION 補正前の値と、実測値・推定値で補正した残差のばらつき分解（「3. 結果一覧」の
 %   「補正残差のばらつき分解」）。補正で Lot 間・Wafer 間・Shot 間・その他のばらつきがどう変わるかを比べる。
 %   result = alignest.correctionVarianceDecomposition(comparison, methodPlan, scope)
 %   comparison：「実測値と推定値の補正」の結果（alignest.estimatedCorrectionComparison。points・stageNames・stageUsed を使う）。

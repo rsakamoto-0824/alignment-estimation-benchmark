@@ -1,5 +1,5 @@
 function layouts = iOptimalMarks(designs, required, counts, options)
-%IOPTIMALMARKS 候補の Mark から、計測する Mark の数ごとに I 最適計画の配置を選ぶ（「8. Mark配置の最適化」）。
+%IOPTIMALMARKS 候補の Mark から、計測する Mark の数ごとに I 最適計画の配置を選ぶ（「7. Mark配置の最適化」）。
 %   layouts = alignest.iOptimalMarks(designs, required, counts, starts=5, seed=1, progressFcn=...)
 %   designs：補正の式ごとの設計行列のセル配列（{dx の式, dy の式}。候補の数 × 項の数。列は使う項）。
 %   required：必ず計測する Mark（候補の数 × 1 の logical）。どの数の配置にも必ず入れる。

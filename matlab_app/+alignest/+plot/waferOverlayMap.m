@@ -1,5 +1,5 @@
 function summary = waferOverlayMap(ax, layers, options)
-%WAFEROVERLAYMAP 複数の Wafer の値（ベクトル）を、Wafer ごとに色を変えて1つの図に重ねて描く（「7. Shot高次補正」のマップ）。
+%WAFEROVERLAYMAP 複数の Wafer の値（ベクトル）を、Wafer ごとに色を変えて1つの図に重ねて描く（「6. Shot高次補正」のマップ）。
 %   summary = alignest.plot.waferOverlayMap(ax, layers, scaleMmPerNm=..., stack=false, waferRadiusMm=150, shotSizeMm=[26 33], ...
 %       titleText="", valueLabel="")
 %   layers：Wafer ごとの構造体の配列（label：Wafer の名前、positions：点の位置 [mm]（点の数 × 2）、values：点の値 [nm]（点の数 × 2））。

@@ -258,9 +258,9 @@ classdef TestPlanSelectionAndScreens < matlab.unittest.TestCase
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
             c = app.Controls;
-            sections = string({c.highOrderShotCommon.Parent.Children(arrayfun(@(item) isa(item, ...
-                'matlab.ui.control.Label') && item.FontWeight == "bold", c.highOrderShotCommon.Parent.Children)).Text});
-            testCase.verifyTrue(all(ismember(["Wafer 補正", "Shot 共通補正", "Shot ごとの補正"], sections)));
+            sections = arrayfun(@(button) button.UserData.name, c.highOrderSectionButtons);   % 押すと開け閉めする見出し
+            testCase.verifyEqual(sections, ["Wafer 補正", "Shot 共通補正", "Shot ごとの補正"]);
+            testCase.verifyEqual(c.highOrderSectionButtons(1).Parent, c.highOrderShotCommon.Parent);
             testCase.verifyLessThan(c.highOrderWaferOrder.Layout.Row, c.highOrderShotCommon.Layout.Row);
             % 補正のくくりは一番上、補正の式は「Shot ごとの補正」の行（くくりと補正の式の場所を入れ替えた）
             testCase.verifyEqual(c.highOrderUnit.Layout.Row, 1);

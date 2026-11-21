@@ -1,5 +1,5 @@
 function options = highOrderOptions(settings)
-%HIGHORDEROPTIONS Shot 高次補正の評価（「7. Shot高次補正」）の設定 settings.highOrder を確かめ、説明の文を付けて返す。
+%HIGHORDEROPTIONS Shot 高次補正の評価（「6. Shot高次補正」）の設定 settings.highOrder を確かめ、説明の文を付けて返す。
 %   options.maker：補正の式（"asml"・"canon"・"nikon"（Shot 高次補正の式）・"custom"（k1〜k38 から選ぶ）・"linear"（1次：
 %                 k1〜k6）・"quadratic"（2次：k1〜k12）。alignest.highOrderTerms）
 %   options.termSets：保存した項の組み合わせ（1行 = "名前|式|k の番号 …"。画面の「組み合わせを保存」）

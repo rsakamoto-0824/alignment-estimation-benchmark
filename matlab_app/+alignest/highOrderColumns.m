@@ -1,5 +1,5 @@
 function columns = highOrderColumns()
-%HIGHORDERCOLUMNS Shot 高次補正の入力にする Excel・CSV の項目（「7. Shot高次補正」の「Excel・CSV の列」で、ファイルの列を選ぶ）。
+%HIGHORDERCOLUMNS Shot 高次補正の入力にする Excel・CSV の項目（「6. Shot高次補正」の「Excel・CSV の列」で、ファイルの列を選ぶ）。
 %   columns：構造体の配列。name（Overlay 計測ルールの標準の項目名。alignest.prepareData に渡す名前）・meaning（意味）・
 %   required（必ず列を選ぶ項目）・aliases（見出しがこの名前の列も、その項目と推定する。大文字・小文字は区別しない）。
 %   値は mm・nm（座標の単位は変換しない）。Wafer が無ければ全行を1枚、shotNo が無ければ座標から番号を付ける、

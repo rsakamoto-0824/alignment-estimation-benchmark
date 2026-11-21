@@ -1,5 +1,5 @@
 classdef TestMarkLayout < matlab.unittest.TestCase
-    %TESTMARKLAYOUT 「8. Mark配置の最適化」：I 最適計画の配置（総当たりの最適と同じ・必ず計測する Mark）、乱数の Shot の形
+    %TESTMARKLAYOUT 「7. Mark配置の最適化」：I 最適計画の配置（総当たりの最適と同じ・必ず計測する Mark）、乱数の Shot の形
     %   （同じ種なら同じ・飛び値の割合と大きさ）、制御残差（Shot ごとに当てはめたときと同じ・値の無い Mark）、候補の Mark・
     %   Excel・CSV の入力、最低数・最大数、画面（入力・必ず計測・計算・図・配置・表・書き出し・設定の読み込み）。
 
@@ -187,7 +187,7 @@ classdef TestMarkLayout < matlab.unittest.TestCase
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
             c = app.Controls;
-            testCase.verifyEqual(app.Tabs.markLayout.Title, '8. Mark配置の最適化');
+            testCase.verifyEqual(app.Tabs.markLayout.Title, '7. Mark配置の最適化');
             testCase.verifyFalse(isfield(app.Tabs, 'help'), "ヘルプはメニュー");
             testCase.verifyTrue(startsWith(string(c.markOptInputInfo.Text), "⚠"), "座標が無いと知らせる");
             candidates = app.makeMarkLayoutGrid([24, 30], [5, 7]);
@@ -267,7 +267,7 @@ classdef TestMarkLayout < matlab.unittest.TestCase
         end
 
         function screenReadsFileAndOtherTabs(testCase)
-            % 画面：このタブで読む Excel・CSV（値あり・座標だけ）、「7. Shot高次補正」の入力、配置の図のクリックで必ず計測
+            % 画面：このタブで読む Excel・CSV（値あり・座標だけ）、「6. Shot高次補正」の入力、配置の図のクリックで必ず計測
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
             c = app.Controls;
@@ -298,13 +298,13 @@ classdef TestMarkLayout < matlab.unittest.TestCase
             markers = findobj(c.markOptMapAxes, 'Type', 'scatter');
             markers(1).ButtonDownFcn(markers(1), struct("IntersectionPoint", [10, 12, 0]));
             testCase.verifyFalse(any(app.MarkLayoutInput.candidates.required), "もう一度で外れる");
-            % 「7. Shot高次補正」の入力
+            % 「6. Shot高次補正」の入力
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
             app.applyMapping();
             app.setHighOrderSource("data");
             c.highOrderWafer.Value = {1, 2};
             app.setMarkLayoutSource("highOrder");
-            testCase.verifyTrue(startsWith(string(c.markOptInputInfo.Text), "「7. Shot高次補正」の入力のデータ（2 Wafer）"));
+            testCase.verifyTrue(startsWith(string(c.markOptInputInfo.Text), "「6. Shot高次補正」の入力のデータ（2 Wafer）"));
             testCase.verifyEqual(numel(app.MarkLayoutInput.shots.label), 2 * 99, "2 Wafer の Shot");
         end
 
@@ -366,7 +366,7 @@ classdef TestMarkLayout < matlab.unittest.TestCase
         end
 
         function markLayoutSettingsDoNotBlockResume(testCase)
-            % 「8. Mark配置の最適化」の設定を変えても、評価の続きから再開できる
+            % 「7. Mark配置の最適化」の設定を変えても、評価の続きから再開できる
             settings = alignest.defaultSettings();
             changed = settings;
             changed.markLayout.maxMarks = 12;
@@ -390,7 +390,7 @@ classdef TestMarkLayout < matlab.unittest.TestCase
         end
 
         function settingsWithoutMarkLayoutUseDefaults(testCase)
-            % markLayout の無い以前の設定でも、「8. Mark配置の最適化」は初期値で動く
+            % markLayout の無い以前の設定でも、「7. Mark配置の最適化」は初期値で動く
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
             settings = rmfield(alignest.defaultSettings(), "markLayout");

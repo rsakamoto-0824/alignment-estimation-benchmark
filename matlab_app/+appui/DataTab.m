@@ -46,7 +46,7 @@ classdef (Abstract) DataTab < appui.Core
 
         function setVarianceQuantity(app, target, quantity)
             %SETVARIANCEQUANTITY ばらつき分解の「縦軸」：target："data"（「1. データ読込」の「ばらつき分解」）・"correction"
-            %   （「4. 結果一覧」の「補正残差のばらつき分解」）。quantity："sigma3"（段ごとの 3σ の積み上げ。表も 3σ）・"variance"
+            %   （「3. 結果一覧」の「補正残差のばらつき分解」）。quantity："sigma3"（段ごとの 3σ の積み上げ。表も 3σ）・"variance"
             %   （分散の積み上げ。表も分散）。省略すると画面の選択のまま描き直す。
             c = app.Controls;
             control = ternary(string(target) == "data", c.varianceQuantity, c.correctionVarianceQuantity);
@@ -80,15 +80,17 @@ classdef (Abstract) DataTab < appui.Core
             if all(sheets == "")
                 c.sheet.Items = {'（CSV にはシートがありません）'};
                 c.sheet.Enable = 'off';
+                set([c.sheetLabel, c.sheet], 'Visible', 'off');   % CSV ではシートの欄を出さない
             else
                 c.sheet.Items = cellstr(sheets);
                 c.sheet.Value = char(sheetName);
                 c.sheet.Enable = 'on';
+                set([c.sheetLabel, c.sheet], 'Visible', 'on');
             end
             refreshValueColumns(app);
             fillMappingTable(app, alignest.guessColumnMapping(raw.Properties.VariableNames));
             fillUnitTable(app);
-            c.mappingStatus.Text = sprintf('%d 行・%d 列を読みました。「この対応で読み込む」を押してください。', height(raw), ...
+            c.mappingStatus.Text = sprintf('%d 行・%d 列を読みました。下の対応を確かめて、右上の「③ この対応で読み込む」を押してください。', height(raw), ...
                 width(raw));
             c.mappingStatus.FontColor = app.Palette.text;
             c.applyMapping.Enable = 'on';
@@ -154,7 +156,7 @@ classdef (Abstract) DataTab < appui.Core
             catch err
                 app.Controls.varianceInfo.Text = ['⚠ ばらつきを分けられませんでした：' err.message];
             end
-            clearRotation(app);   % 「9. 計測マップのローテーション」の前のデータの結果を消す
+            clearRotation(app);   % 「8. 計測マップのローテーション」の前のデータの結果を消す
             % 質的変数の交互作用：Wafer はすべて、その他の列は質的変数に選んである列。読み込んだら一度調べる
             app.Controls.interactionWafers.Items = cellstr(labels);
             app.Controls.interactionWafers.ItemsData = num2cell(1:numel(labels));
@@ -424,38 +426,75 @@ classdef (Abstract) DataTab < appui.Core
         % ================= 1. データ読込 =================
         function buildDataTab(app)
             grid = uigridlayout(app.Tabs.data, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 12, 'RowSpacing', 12);
-            filePanel = uipanel(grid, 'Title', '計測データのファイル');
-            % 欄の幅は中身に合わせて決め、余りは右の空き（5列目）にする（画面が広くてもプルダウンを伸ばさない）
-            fileGrid = uigridlayout(filePanel, [6, 5], 'ColumnWidth', {'fit', 260, 240, 170, '1x'}, ...
-                'RowHeight', {'fit', 'fit', 'fit', 'fit', 'fit', 'fit'}, 'Padding', 10);
-            label(fileGrid, 'ファイル', 2, [1, 2]);
-            label(fileGrid, 'シート', 2, 3);
-            label(fileGrid, '有効半径 [mm]', 2, 4);
+            filePanel = uipanel(grid, 'Title', '① 計測データのファイルと読み込みの条件');
+            % 欄の幅は中身に合わせて決め、余りは右の空き（5列目）にする（画面が広くてもプルダウンを伸ばさない）。
+            % 「③ この対応で読み込む」は、下のどのタブを開いていても押せるように右上に置く
+            fileGrid = uigridlayout(filePanel, [5, 5], 'ColumnWidth', {'fit', 260, 240, 170, '1x'}, ...
+                'RowHeight', repmat({'fit'}, 1, 5), 'Padding', 10);
             c.chooseFile = uibutton(fileGrid, 'Text', 'ファイルを選ぶ…', 'ButtonPushedFcn', @(~, ~) app.onChooseFile());
-            c.chooseFile.Layout.Row = 3;
-            c.chooseFile.Layout.Column = 1;
+            place(c.chooseFile, 1, 1);
             c.filePath = uilabel(fileGrid, 'Text', 'まだ選んでいません', 'Tooltip', '');
-            c.filePath.Layout.Row = 3;
-            c.filePath.Layout.Column = 2;
-            c.sheet = uidropdown(fileGrid, 'Items', {'—'}, 'Enable', 'off', 'ValueChangedFcn', @(~, ~) app.onSheetChanged());
-            c.sheet.Layout.Row = 3;
-            c.sheet.Layout.Column = 3;
-            c.validRadius = uieditfield(fileGrid, 'numeric', 'Value', app.Settings.data.validRadiusMm, 'Limits', [1, 1000], ...
-                'ValueDisplayFormat', '%.1f', 'ValueChangedFcn', @(~, ~) app.invalidatePreparedData());
-            c.validRadius.Layout.Row = 3;
-            c.validRadius.Layout.Column = 4;
+            place(c.filePath, 1, 2);
+            sheetGrid = uigridlayout(fileGrid, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
+            place(sheetGrid, 1, 3);
+            c.sheetLabel = label(sheetGrid, 'シート', 1, 1);
+            c.sheet = uidropdown(sheetGrid, 'Items', {'—'}, 'Enable', 'off', 'ValueChangedFcn', @(~, ~) app.onSheetChanged());
+            place(c.sheet, 1, 2);
+            set([c.sheetLabel, c.sheet], 'Visible', 'off');   % Excel のときだけ出す（CSV にはシートが無い）
+            c.applyMapping = primaryButton(app, fileGrid, '③ この対応で読み込む', @(~, ~) app.onApplyMapping());
+            c.applyMapping.Enable = 'off';
+            c.applyMapping.Tooltip = '下の「② 列の対応・座標の単位」と、この枠の条件で読み込みます。';
+            place(c.applyMapping, 1, [4, 5]);
             onDataOption = @(~, ~) app.onDataOptionsChanged();
-            c.excludeZeroMeasurements = uicheckbox(fileGrid, 'Text', '測定値 X・Y が両方 0 の行を除外', ...
+            % 読み込みの条件：座標の定義・推定する値・有効半径・Scan 方向の付与
+            label(fileGrid, '座標の定義', 2, 1);
+            c.coordinateMode = uidropdown(fileGrid, 'Items', {'Shot 中心＋Shot 内の位置', ...
+                'Wafer 上の絶対座標だけ'}, 'ItemsData', {'shotMark', 'absolute'}, ...
+                'ValueChangedFcn', onDataOption, 'Tooltip', ['絶対座標だけ：Xmm・Ymm の項目に点の Wafer 上の座標の列を' ...
+                '対応づけます。shotNo があれば同じ Shot の点の平均を Shot 中心に、markXmm・markYmm があれば' ...
+                '点の座標 − markXmm を Shot 中心にします。どちらも無ければ点を1つずつ Shot として扱います。']);
+            place(c.coordinateMode, 2, 2);
+            valueGrid = uigridlayout(fileGrid, [1, 4], 'ColumnWidth', {'fit', '1x', 'fit', 70}, 'Padding', 0);
+            place(valueGrid, 2, [3, 4]);
+            label(valueGrid, '推定する値', 1, 1);
+            c.valueColumn = uidropdown(valueGrid, 'Items', {'X・Y 成分'}, 'ItemsData', {''}, ...
+                'ValueChangedFcn', onDataOption, 'Tooltip', ['膜厚・線幅など、ファイルの1つの列を1変数として推定するときは' ...
+                'その列を選びます（measX・measY は使いません。Overlay 補正の評価と RT モデルは使えません）。']);
+            place(c.valueColumn, 1, 2);
+            label(valueGrid, '単位', 1, 3);
+            c.valueUnit = uieditfield(valueGrid, 'text', 'Value', char(app.Settings.data.valueUnit), ...
+                'ValueChangedFcn', @(~, ~) app.onValueUnitChanged(), 'Tooltip', '1変数の単位（画面と Excel の表示だけ。換算はしません）');
+            place(c.valueUnit, 1, 4);
+            radiusGrid = uigridlayout(fileGrid, [1, 2], 'ColumnWidth', {'fit', 90}, 'Padding', 0);
+            place(radiusGrid, 2, 5);
+            label(radiusGrid, '有効半径 [mm]', 1, 1);
+            c.validRadius = uieditfield(radiusGrid, 'numeric', 'Value', app.Settings.data.validRadiusMm, 'Limits', [1, 1000], ...
+                'ValueDisplayFormat', '%.1f', 'ValueChangedFcn', @(~, ~) app.invalidatePreparedData(), ...
+                'Tooltip', 'Wafer 中心からこの半径より外の点は読み込みません。');
+            place(c.validRadius, 1, 2);
+            label(fileGrid, 'Scan 方向の付与', 3, 1);
+            [ruleNames, ~, ruleLabels] = alignest.directionRules();
+            c.directionRule = uidropdown(fileGrid, 'Items', cellstr(ruleLabels), 'ItemsData', cellstr(ruleNames), ...
+                'Tooltip', ['Direction の列が無いとき（または空の行）に、規則で Scan 方向 1・2 を付けます' ...
+                '（Direction の列に値がある行はそのまま使います）。行・列は Wafer ごとに Shot 中心の座標から数えます。' ...
+                '付けた結果は「Shot レイアウト」で確かめられます。'], 'ValueChangedFcn', onDataOption);
+            place(c.directionRule, 3, 2);
+            c.invertDirection = uicheckbox(fileGrid, 'Text', '付ける 1 と 2 を入れ替える', 'ValueChangedFcn', onDataOption);
+            place(c.invertDirection, 3, 3);
+            % 除外：測定値 0 の行・Sts −1 の行・異常値
+            exclusionLabel = label(fileGrid, '除外', 4, 1);
+            exclusionLabel.FontWeight = 'bold';
+            exclusionGrid = uigridlayout(fileGrid, [1, 3], 'ColumnWidth', {'fit', 'fit', 'fit'}, 'Padding', 0, ...
+                'ColumnSpacing', 16);
+            place(exclusionGrid, 4, [2, 5]);
+            c.excludeZeroMeasurements = uicheckbox(exclusionGrid, 'Text', '測定値 X・Y が両方 0 の行', ...
                 'Tooltip', 'measX = 0 かつ measY = 0 の入力行を、重複の平均前に除外します。', 'ValueChangedFcn', onDataOption);
-            place(c.excludeZeroMeasurements, 4, [1, 2]);
-            c.excludeUnmeasuredRecords = uicheckbox(fileGrid, 'Text', 'StsX または StsY が −1 の行を除外', ...
+            c.excludeUnmeasuredRecords = uicheckbox(exclusionGrid, 'Text', 'StsX または StsY が −1 の行', ...
                 'Tooltip', 'どちらかが−1なら行全体を除外します。オフの場合も、無効な軸の測定値は解析に使いません。', ...
                 'ValueChangedFcn', onDataOption);
-            place(c.excludeUnmeasuredRecords, 4, [3, 4]);
             % 異常値の除外：Wafer ごとに中心 ± n × ばらつき の外の Mark（X か Y が外れたら両方）を除く（nσ・MAD）
-            outlierGrid = uigridlayout(fileGrid, [1, 4], 'ColumnWidth', {'fit', 120, 'fit', 60}, 'Padding', 0);
-            place(outlierGrid, 4, 5);
-            c.dataExcludeOutliers = uicheckbox(outlierGrid, 'Text', '異常値を除外', ...
+            outlierGrid = uigridlayout(exclusionGrid, [1, 4], 'ColumnWidth', {'fit', 120, 'fit', 60}, 'Padding', 0);
+            c.dataExcludeOutliers = uicheckbox(outlierGrid, 'Text', '異常値', ...
                 'ValueChangedFcn', onDataOption, 'Tooltip', ['Wafer ごとに、計測値の中心とばらつきを X・Y 別に求め、' ...
                 '中心 ± n × ばらつき の外にある Mark を除きます（X か Y が外れたら両方。重複を平均した後に1回だけ判定）。']);
             c.dataOutlierMethod = uidropdown(outlierGrid, 'Items', {'平均と σ', '中央値と MAD'}, ...
@@ -467,49 +506,17 @@ classdef (Abstract) DataTab < appui.Core
             c.dataOutlierSigma = uieditfield(outlierGrid, 'numeric', 'Value', 3, 'Limits', [0.1, 100], ...
                 'ValueChangedFcn', onDataOption, 'Tooltip', '異常値とみなすばらつきの倍数（例：3 なら中心 ± 3 × ばらつき の外）。');
             place(c.dataOutlierSigma, 1, 4);
-            label(fileGrid, 'Scan 方向の付与', 5, 1);
-            [ruleNames, ~, ruleLabels] = alignest.directionRules();
-            c.directionRule = uidropdown(fileGrid, 'Items', cellstr(ruleLabels), 'ItemsData', cellstr(ruleNames), ...
-                'Tooltip', ['Direction の列が無いとき（または空の行）に、規則で Scan 方向 1・2 を付けます。' ...
-                '行・列は Wafer ごとに Shot 中心の座標から数えます。付けた結果は「Shot レイアウト」で確かめられます。'], ...
-                'ValueChangedFcn', onDataOption);
-            place(c.directionRule, 5, 2);
-            c.invertDirection = uicheckbox(fileGrid, 'Text', '付ける 1 と 2 を入れ替える', 'ValueChangedFcn', onDataOption);
-            place(c.invertDirection, 5, 3);
-            directionHelp = label(fileGrid, 'Direction の列に値がある行はそのまま使います。', 5, [4, 5]);
-            directionHelp.FontColor = app.Palette.muted;
-            % 座標の定義（Shot 中心＋Shot 内の位置、または絶対座標だけ）と、推定する値（X・Y 成分、または1つの列）
-            label(fileGrid, '座標の定義', 6, 1);
-            c.coordinateMode = uidropdown(fileGrid, 'Items', {'Shot 中心＋Shot 内の位置', ...
-                'Wafer 上の絶対座標だけ'}, 'ItemsData', {'shotMark', 'absolute'}, ...
-                'ValueChangedFcn', onDataOption, 'Tooltip', ['絶対座標だけ：Xmm・Ymm の項目に点の Wafer 上の座標の列を' ...
-                '対応づけます。shotNo があれば同じ Shot の点の平均を Shot 中心に、markXmm・markYmm があれば' ...
-                '点の座標 − markXmm を Shot 中心にします。どちらも無ければ点を1つずつ Shot として扱います。']);
-            place(c.coordinateMode, 6, 2);
-            valueGrid = uigridlayout(fileGrid, [1, 4], 'ColumnWidth', {'fit', '1x', 'fit', 70}, 'Padding', 0);
-            place(valueGrid, 6, [3, 4]);
-            label(valueGrid, '推定する値', 1, 1);
-            c.valueColumn = uidropdown(valueGrid, 'Items', {'X・Y 成分'}, 'ItemsData', {''}, ...
-                'ValueChangedFcn', onDataOption, 'Tooltip', ['膜厚・線幅など、ファイルの1つの列を1変数として推定するときは' ...
-                'その列を選びます（measX・measY は使いません。Overlay 補正の評価と RT モデルは使えません）。']);
-            place(c.valueColumn, 1, 2);
-            label(valueGrid, '単位', 1, 3);
-            c.valueUnit = uieditfield(valueGrid, 'text', 'Value', char(app.Settings.data.valueUnit), ...
-                'ValueChangedFcn', @(~, ~) app.onValueUnitChanged(), 'Tooltip', '1変数の単位（画面と Excel の表示だけ。換算はしません）');
-            place(c.valueUnit, 1, 4);
 
             c.dataTabs = uitabgroup(grid, 'SelectionChangedFcn', @(~, ~) app.redrawShownResizedCharts());
-            c.mappingTab = uitab(c.dataTabs, 'Title', '列の対応・座標の単位');
+            c.mappingTab = uitab(c.dataTabs, 'Title', '② 列の対応・座標の単位');
             lower = uigridlayout(c.mappingTab, [1, 2], 'ColumnWidth', {'1x', '1.1x'}, 'Padding', 8, 'ColumnSpacing', 12);
             mappingPanel = uipanel(lower, 'Title', '列の対応');
-            mappingGrid = uigridlayout(mappingPanel, [3, 1], 'RowHeight', {'1x', 'fit', 'fit'}, 'Padding', 10);
+            mappingGrid = uigridlayout(mappingPanel, [2, 1], 'RowHeight', {'1x', 'fit'}, 'Padding', 10);
             c.mapping = uitable(mappingGrid, 'ColumnName', {'標準の項目', '意味', '必須', 'ファイルの列'}, ...
                 'ColumnEditable', [false, false, false, true], 'RowName', {}, 'ColumnWidth', {100, 'auto', 50, 150}, ...
                 'CellEditCallback', @(~, event) app.onMappingEdited(event));
             c.mappingStatus = uilabel(mappingGrid, 'WordWrap', 'on', ...
                 'Text', '「ファイルを選ぶ…」で計測データを読み込んでください。');
-            c.applyMapping = primaryButton(app, mappingGrid, 'この対応で読み込む', @(~, ~) app.onApplyMapping());
-            c.applyMapping.Enable = 'off';
 
             right = uigridlayout(lower, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 0, 'RowSpacing', 12);
             unitPanel = uipanel(right, 'Title', '座標の単位');
@@ -757,7 +764,10 @@ classdef (Abstract) DataTab < appui.Core
         function onApplyMapping(app)
             ok = runWithAlert(app, @() app.applyMapping(), "データを整理できませんでした", ...
                 "「ファイルの列」と「座標の入力単位」を選び直してから、もう一度「この対応で読み込む」を押してください。");
-            if ~ok
+            if ok
+                app.Controls.dataTabs.SelectedTab = app.Controls.previewTab;   % 次に見る Wafer マップを開く
+                redrawShownResizedCharts(app);
+            else
                 app.Controls.mappingStatus.Text = "⚠ 読み込めませんでした。列の対応を確かめてください。";
                 app.Controls.mappingStatus.FontColor = app.Palette.error;
             end

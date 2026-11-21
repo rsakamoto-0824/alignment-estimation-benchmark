@@ -1,5 +1,5 @@
 function summary = shotGridMap(ax, centers, sizeMm, displacement, options)
-%SHOTGRIDMAP Shot の形（補正量で変形させたグリッド）を描く（「7. Shot高次補正」のマップの「グリッド（Shot の形）」）。
+%SHOTGRIDMAP Shot の形（補正量で変形させたグリッド）を描く（「6. Shot高次補正」のマップの「グリッド（Shot の形）」）。
 %   summary = alignest.plot.shotGridMap(ax, centers, sizeMm, displacement, options)
 %   centers：Shot 中心 [mm]（Shot の数 × 2）、sizeMm：Shot の大きさ [幅, 高さ] [mm]、
 %   displacement：関数 @(local) [dx, dy]。Shot 内の位置 local [mm]（位置の数 × 2）での変位 [nm]（Shot の数 × 位置の数 の

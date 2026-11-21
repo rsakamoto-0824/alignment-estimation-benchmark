@@ -1,5 +1,5 @@
 classdef TestShotHighOrderShotCommon < matlab.unittest.TestCase
-    %TESTSHOTHIGHORDERSHOTCOMMON Shot 共通を先に引いてから Shot ごとに求める Shot 高次補正（「7. Shot高次補正」の
+    %TESTSHOTHIGHORDERSHOTCOMMON Shot 共通を先に引いてから Shot ごとに求める Shot 高次補正（「6. Shot高次補正」の
     %   「Shot 共通補正」）：計算した Shot 共通・入力した Shot 共通、Shot ごとの次数の上限、外周の式、点が足りない Shot の扱い、
     %   補正値の段階・Shot ごとの表・グリッド、回帰の自由度、設定の確かめ、書き出し、画面。
 

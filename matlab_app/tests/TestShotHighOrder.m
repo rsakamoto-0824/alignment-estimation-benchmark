@@ -1,5 +1,5 @@
 classdef TestShotHighOrder < matlab.unittest.TestCase
-    %TESTSHOTHIGHORDER Shot 高次補正の評価（「7. Shot高次補正」）：補正の式の項（カスタムの k1〜k38 を含む）と VIF・VIF で
+    %TESTSHOTHIGHORDER Shot 高次補正の評価（「6. Shot高次補正」）：補正の式の項（カスタムの k1〜k38 を含む）と VIF・VIF で
     %   選ぶ項、点の数で項を絞る（k の小さい順）、ロバスト回帰と高次項だけの L2 正則化（組ごとの項を一緒に解く）、k の組の
     %   くくり（Wafer 内で共通・Scan 方向ごと・行の偶奇ごと・Shot ごと）、Shot ごとの1次（k1〜k6）で補正した残差、|残差| の
     %   95% 点・中央値、補正の比較（くくり・λ のスイープ・項の組み合わせ）、Shot の形のグリッド、入力（計測データ・未知の
@@ -561,7 +561,7 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
             c = app.Controls;
-            testCase.verifyEqual(app.Tabs.highOrder.Title, '7. Shot高次補正');
+            testCase.verifyEqual(app.Tabs.highOrder.Title, '6. Shot高次補正');
             testCase.verifyFalse(isfield(app.Tabs, 'help'), "ヘルプはメニュー");
             testCase.verifyEqual(string(c.highOrderCompute.Enable), "off", "データが無いうちは計算できない");
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
@@ -684,7 +684,8 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
                 ["ロット_ウェハ", "SX", "SY", "LX", "LY", "OVL_X", "OVL_Y", "ScanDir"]), free);
             removeFree = onCleanup(@() delete(free));
             testCase.verifyEmpty(app.loadHighOrderFile(free));
-            testCase.verifyEqual(c.highOrderOutputs.SelectedTab, c.highOrderColumnTab);
+            testCase.verifyEqual(c.highOrderColumnTab.Parent.SelectedTab, c.highOrderColumnTab);
+            testCase.verifyEqual(c.highOrderOutputs.SelectedTab.Title, '入力と項');
             testCase.verifyEqual(string(c.highOrderCompute.Enable), "off", "列を選ぶまで計算できない");
             testCase.verifyEqual(size(c.highOrderMappingTable.Data, 1), numel(alignest.highOrderColumns()));
             testCase.verifyError(@() app.applyHighOrderMapping(struct("Xmm", "SX")), 'alignest:highOrderFile');
@@ -709,7 +710,8 @@ classdef TestShotHighOrder < matlab.unittest.TestCase
             testCase.verifyEqual(size(c.highOrderConditionTable.Data, 1), 7);
             comparison = app.compareHighOrderConditionsNow();
             testCase.verifyEqual(height(comparison), 14);
-            testCase.verifyEqual(c.highOrderOutputs.SelectedTab, c.highOrderCompareTab);
+            testCase.verifyEqual(c.highOrderCompareTab.Parent.SelectedTab, c.highOrderCompareTab);
+            testCase.verifyEqual(c.highOrderOutputs.SelectedTab.Title, '比べる');
             testCase.verifyEqual(height(c.highOrderCompareTable.Data), 14);
             testCase.verifyEqual(comparison.unit(1:5).', ["common", "wafers", "scan", "row", "shot"]);
             testCase.verifyTrue(all(isfinite(comparison.rSquared)), "補正の比較にも決定係数");

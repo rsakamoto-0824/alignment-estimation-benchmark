@@ -1,10 +1,10 @@
 classdef (Abstract) MarkLayoutTab < appui.Core
-    %MARKLAYOUTTAB 「8. Mark配置の最適化」タブ：Shot 高次補正の計測 Mark の配置を、Mark の数ごとに I 最適計画で選び、選んだ
+    %MARKLAYOUTTAB 「7. Mark配置の最適化」タブ：Shot 高次補正の計測 Mark の配置を、Mark の数ごとに I 最適計画で選び、選んだ
     %   配置で補正した制御残差を I 効率と比べる（alignest.markLayoutStudy）。
-    %   入力：「1. データ読込」の計測データ・「7. Shot高次補正」の入力のデータ・このタブで読み込む Excel・CSV（列は読んだ後で
+    %   入力：「1. データ読込」の計測データ・「6. Shot高次補正」の入力のデータ・このタブで読み込む Excel・CSV（列は読んだ後で
     %   選ぶ。座標だけの表も読める）・画面で入力する座標（格子で置ける）。候補の Mark の表で、必ず計測する Mark を選ぶ（配置の
     %   図をクリックしても選べる）。補正の式（ASML・Canon・Nikon・カスタム、保存した項の組み合わせ。VIF で項を選ぶ）と回帰
-    %   （ロバスト回帰・正則化）は「7. Shot高次補正」と同じ。実測値の無い座標は、乱数の Shot の形（最大 1000 通り。次数ごとの
+    %   （ロバスト回帰・正則化）は「6. Shot高次補正」と同じ。実測値の無い座標は、乱数の Shot の形（最大 1000 通り。次数ごとの
     %   大きさ・計測のばらつき・飛び値）で評価する。
     %   AlignmentEstimationApp（画面の本体）の一部。画面の部品は Controls、データ・結果は Core のプロパティに持つ。
 
@@ -21,7 +21,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
     methods
         function setMarkLayoutSource(app, source)
             %SETMARKLAYOUTSOURCE 入力を選ぶ："manual"（画面で入力する座標）・"data"（「1. データ読込」の計測データ）・
-            %   "highOrder"（「7. Shot高次補正」で選んでいる入力のデータと Wafer）・"file"（このタブで読み込んだ Excel・CSV）。
+            %   "highOrder"（「6. Shot高次補正」で選んでいる入力のデータと Wafer）・"file"（このタブで読み込んだ Excel・CSV）。
             app.Controls.markOptSource.Value = char(source);
             onMarkLayoutSourceChanged(app);
         end
@@ -304,7 +304,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
         end
 
         function copyHighOrderFormula(app)
-            %COPYHIGHORDERFORMULA 「7. の式を写す」：「7. Shot高次補正」の補正の式（内周の式）・使う項・VIF のしきい値・回帰の
+            %COPYHIGHORDERFORMULA 「7. の式を写す」：「6. Shot高次補正」の補正の式（内周の式）・使う項・VIF のしきい値・回帰の
             %   設定を、このタブの設定にする（くくりが Wafer 内・選択 Wafer で共通なら、Shot 共通補正の式・項）。
             readHighOrderControls(app);
             source = alignest.highOrderSharedFormula(alignest.highOrderOptions(app.Settings));
@@ -491,11 +491,11 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             colorbar(stackAx, 'off');
             input = app.MarkLayoutInput;
             if isempty(input)
-                cla(ax, 'reset');
-                legend(ax, 'off');
+                axesPlaceholder(app, ax, '候補の Mark を決めて「配置を最適化する」を押すと、ここに配置が出ます。');
                 c.markOptMapInfo.Text = '';
                 return
             end
+            cla(ax, 'reset');   % 空のときの案内を消し、目盛りの枠を出す
             candidates = input.candidates;
             selected = false(height(candidates), 1);
             titleText = sprintf('候補の Mark %d 点（必ず計測 %d 点）', height(candidates), nnz(candidates.required));
@@ -529,12 +529,17 @@ classdef (Abstract) MarkLayoutTab < appui.Core
         function drawMarkCandidates(app)
             %DRAWMARKCANDIDATES 「候補の Mark」の右の図：候補の Mark が Shot のどこにあるかと、必ず計測・計測しない Mark を描く。
             input = app.MarkLayoutInput;
-            ax = app.Controls.markOptCandidateAxes;
-            if isempty(input)
-                cla(ax, 'reset');
-                legend(ax, 'off');
+            c = app.Controls;
+            ax = c.markOptCandidateAxes;
+            noCandidates = isempty(input) || height(input.candidates) == 0;
+            % 候補が無いときは「格子で置く」を目立たせる（まず候補の Mark を置く）
+            c.markOptMakeGrid.BackgroundColor = ternary(noCandidates, app.Palette.accent, app.Palette.button);
+            c.markOptMakeGrid.FontColor = ternary(noCandidates, [1, 1, 1], app.Palette.text);
+            if noCandidates
+                axesPlaceholder(app, ax, sprintf('「格子で置く」を押すか\n表に座標を入れると\nここに候補の Mark が出ます'));
                 return
             end
+            cla(ax, 'reset');   % 空のときの案内を消し、目盛りの枠を出す
             drawMarkPositions(app, ax, input.candidates, false(height(input.candidates), 1), '');
         end
 
@@ -557,6 +562,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             input = app.MarkLayoutInput;
             if isempty(input) || isempty(app.MarkLayoutShapes)
                 c.markOptShapeInfo.Text = '「乱数で Shot を生成する」で形を作ります。';
+                axesPlaceholder(app, axesList, '「乱数で Shot を生成する」を押すと、ここに Shot の形が出ます。');
                 return
             end
             readMarkLayoutControls(app);
@@ -670,10 +676,10 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             place(inputGrid, 2, 1);
             label(inputGrid, '入力', 1, 1);
             c.markOptSource = uidropdown(inputGrid, 'Items', {'画面で入力する座標', '1. データ読込の計測データ', ...
-                '7. Shot高次補正の入力のデータ', 'Excel・CSV から読み込んだデータ'}, 'ItemsData', {'manual', 'data', ...
+                '6. Shot高次補正の入力のデータ', 'Excel・CSV から読み込んだデータ'}, 'ItemsData', {'manual', 'data', ...
                 'highOrder', 'file'}, 'Value', 'manual', 'ValueChangedFcn', @(~, ~) app.onMarkLayoutSourceChanged(), ...
                 'Tooltip', ['画面で入力する座標：右の「候補の Mark」で座標を入れる（格子で置ける）。実測値が無いので、乱数の ' ...
-                'Shot の形で評価します。計測データ：「1. データ読込」の計測値。7. の入力：「7. Shot高次補正」で選んでいる' ...
+                'Shot の形で評価します。計測データ：「1. データ読込」の計測値。7. の入力：「6. Shot高次補正」で選んでいる' ...
                 '入力のデータと Wafer。Excel・CSV：右のボタンで読み込んだ表（座標だけの表も読めます）。']);
             place(c.markOptSource, 1, 2);
             c.markOptLoad = uibutton(inputGrid, 'Text', 'Excel・CSV を読み込む…', ...
@@ -697,8 +703,8 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             label(modelGrid, '補正の式', 1, 1);
             c.markOptMaker = uidropdown(modelGrid, 'Items', app.HIGH_ORDER_MAKER_LABELS, ...
                 'ItemsData', app.HIGH_ORDER_MAKER_NAMES, 'ValueChangedFcn', onSetting, 'Tooltip', ['Overlay 計測' ...
-                'ルールの Shot 高次補正の式（「7. Shot高次補正」と同じ）。カスタム：k1〜k38 から使う項を右の「使う項と VIF」で' ...
-                '選びます。1次：k1〜k6、2次：k1〜k12。「7. Shot高次補正」で保存した項の組み合わせも選べます。式は「ヘルプ」。']);
+                'ルールの Shot 高次補正の式（「6. Shot高次補正」と同じ）。カスタム：k1〜k38 から使う項を右の「使う項と VIF」で' ...
+                '選びます。1次：k1〜k6、2次：k1〜k12。「6. Shot高次補正」で保存した項の組み合わせも選べます。式は「ヘルプ」。']);
             place(c.markOptMaker, 1, 2);
             label(modelGrid, 'VIF のしきい値', 1, 3);
             c.markOptVifThreshold = uieditfield(modelGrid, 'numeric', 'Limits', [1, Inf], 'LowerLimitInclusive', 'off', ...
@@ -713,7 +719,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             c.markOptAllTerms = uibutton(termButtons, 'Text', 'すべての項を使う', 'ButtonPushedFcn', ...
                 @(~, ~) app.useAllMarkLayoutTerms());
             c.markOptCopyFormula = uibutton(termButtons, 'Text', '7. の式を写す', 'ButtonPushedFcn', ...
-                @(~, ~) app.onCopyHighOrderFormula(), 'Tooltip', ['「7. Shot高次補正」の補正の式（内周の式）・使う項・' ...
+                @(~, ~) app.onCopyHighOrderFormula(), 'Tooltip', ['「6. Shot高次補正」の補正の式（内周の式）・使う項・' ...
                 'VIF のしきい値・回帰の設定を、このタブに写します。']);
             c.markOptTermInfo = uilabel(left, 'WordWrap', 'on', 'FontColor', app.Palette.muted, 'UserData', "muted", ...
                 'Text', '');
@@ -722,8 +728,8 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             c.markOptRegression = regressionControls(left, onSetting);
             place(c.markOptRegression.grid, 8, 1);
 
-            design = uigridlayout(left, [3, 6], 'ColumnWidth', {'fit', 70, 'fit', 70, 'fit', 70}, 'RowHeight', ...
-                {'fit', 'fit', 'fit'}, 'Padding', 0);
+            design = uigridlayout(left, [4, 6], 'ColumnWidth', {'fit', 70, 'fit', 70, 'fit', 70}, 'RowHeight', ...
+                {'fit', 'fit', 'fit', 'fit'}, 'Padding', 0);
             place(design, 9, 1);
             designHeading = label(design, '④ 配置の選び方と評価', 1, [1, 6]);
             designHeading.FontWeight = 'bold';
@@ -742,6 +748,9 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                 '1つずつ足した配置・乱数で選んだ配置から交換法で解き、最もよい配置を使う）。多いほどよい配置が見つかり' ...
                 'やすくなりますが、時間がかかります。']);
             place(c.markOptStarts, 2, 6);
+            countNote = label(design, '最低数・最大数の 0 は自動（最低数は使う項の数、最大数はすべての候補）', 4, [1, 6]);
+            countNote.FontColor = app.Palette.muted;
+            countNote.UserData = "muted";
             label(design, '評価に使う値', 3, 1);
             c.markOptValues = uidropdown(design, 'Items', {'実測値', '乱数 Shot'}, ...
                 'ItemsData', {'measured', 'random'}, 'ValueChangedFcn', @(~, ~) app.onMarkLayoutValuesChanged(), ...
@@ -1066,7 +1075,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
         end
 
         function refreshMarkLayoutFormulaChoices(app)
-            % 補正の式の選択肢：ASML・Canon・Nikon・カスタム・1次・2次と、「7. Shot高次補正」で保存した項の組み合わせ
+            % 補正の式の選択肢：ASML・Canon・Nikon・カスタム・1次・2次と、「6. Shot高次補正」で保存した項の組み合わせ
             c = app.Controls;
             sets = termSetTable(fieldOr(app.Settings.highOrder, "termSets", strings(0, 1)));
             items = [string(app.HIGH_ORDER_MAKER_LABELS), ...
@@ -1185,7 +1194,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                 case "highOrder"
                     wafers = highOrderWafers(app);
                     [candidates, shots] = alignest.markCandidates(wafers, zeros(0, 2), required, excluded);
-                    text = sprintf("「7. Shot高次補正」の入力のデータ（%d Wafer）", numel(wafers));
+                    text = sprintf("「6. Shot高次補正」の入力のデータ（%d Wafer）", numel(wafers));
                 otherwise
                     file = app.MarkLayoutFile;
                     if isempty(file)
@@ -1662,7 +1671,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
 
         function onCopyHighOrderFormula(app)
             runWithAlert(app, @() app.copyHighOrderFormula(), "7. の式を写せませんでした", ...
-                "「7. Shot高次補正」の補正の式・回帰の欄を確かめてください。");
+                "「6. Shot高次補正」の補正の式・回帰の欄を確かめてください。");
         end
 
         function onOptimizeMarkLayout(app)
@@ -1760,7 +1769,7 @@ end
 
 function ax = axesInPanel(parent, row)
 % 図を枠（uipanel）に入れて格子の row 行目に置く（格子に直に置くと、下の行の説明が長くなったときに図の大きさが
-% 遅れて変わり、説明と重なることがあるため。「7. Shot高次補正」のマップと同じ）
+% 遅れて変わり、説明と重なることがあるため。「6. Shot高次補正」のマップと同じ）
 panel = uipanel(parent, 'BorderType', 'none');
 place(panel, row, 1);
 ax = uiaxes(uigridlayout(panel, [1, 1], 'Padding', 0));

@@ -113,7 +113,7 @@ settings.overlay.waferFormula = struct("dx", "k1 + k3*x + k5*y", "dy", "k2 + k4*
 settings.overlay.shotFormula = struct("dx", "k1 + k3*x + k5*y", "dy", "k2 + k4*y + k6*x");
 settings.overlay.perShotFormula = struct("dx", "k1 + k3*x + k5*y", "dy", "k2 + k4*y + k6*x");  % Shot ごとの成分の式（Shot 内の座標）
 
-% Shot 高次補正の評価（「7. Shot高次補正」のタブ。alignest.highOrderOptions。推定の評価には使わない）
+% Shot 高次補正の評価（「6. Shot高次補正」のタブ。alignest.highOrderOptions。推定の評価には使わない）
 settings.highOrder.maker = "custom";       % 補正の式：asml（k1〜k19 の全項）・canon・nikon（Overlay 計測ルールの式）・
                                            % custom（カスタム：k1〜k38 から選ぶ）・linear（1次：k1〜k6）・quadratic（2次：k1〜k12）
 settings.highOrder.unit = "common";        % k のくくり：common（Wafer 内の Shot で共通）・wafers（選択 Wafer で共通）・
@@ -152,7 +152,7 @@ settings.highOrder.penaltyOrders = 2:6;    % 正則化をかける項の次数�
 settings.highOrder.penaltyOrdersY = -1;    % Y の正則化をかける項の次数（-1 なら X と同じ）
 settings.highOrder.lambda = 1e-5;          % 正則化の強さ λ（列を平均0・標準偏差1にそろえた係数に対して。正則化をかけるときに使う）
 
-% 「8. Mark配置の最適化」：Shot 高次補正の計測 Mark の配置を、Mark の数ごとに I 最適計画で選び、補正した制御残差と比べる
+% 「7. Mark配置の最適化」：Shot 高次補正の計測 Mark の配置を、Mark の数ごとに I 最適計画で選び、補正した制御残差と比べる
 % （alignest.markLayoutStudy）。補正の式・回帰の項目の意味は highOrder と同じ
 settings.markLayout.maker = "nikon";        % 補正の式：asml・canon・nikon・custom（k1〜k38 から選ぶ）
 settings.markLayout.excludedTerms = zeros(1, 0);  % 使わない k の番号（「VIF で選ぶ」・画面で外した項。k1〜k6 は外さない）

@@ -1,10 +1,10 @@
 classdef (Abstract) ResultsTab < appui.Core
-    %RESULTSTAB 「4. 結果一覧」タブ：表・グラフ・基準の手法との比較・計測配置の比較・推定値と誤差の分布・箱ひげ図・散布図・残差と説明変数・分布の比較・処理時間の内訳と、評価点の絞り込み・結果の書き出しと読み込み。
+    %RESULTSTAB 「3. 結果一覧」タブ：表・グラフ・基準の手法との比較・計測配置の比較・推定値と誤差の分布・箱ひげ図・散布図・残差と説明変数・分布の比較・処理時間の内訳と、評価点の絞り込み・結果の書き出しと読み込み。
     %   AlignmentEstimationApp（画面の本体）の一部。画面の部品は Controls、データ・結果は Core のプロパティに持つ。
     %   ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
 
     properties (Constant, Access = {?appui.Core})
-        CORRECTION_MODEL_NOTE = ['補正のモデルは「2. 評価の設定」の Overlay 補正の評価です（Wafer 成分・Shot 共通成分・Shot ごとの' ...
+        CORRECTION_MODEL_NOTE = ['補正のモデルは「2. 評価の設定と実行」の Overlay 補正の評価です（Wafer 成分・Shot 共通成分・Shot ごとの' ...
             '成分）。実測値で補正：全 Mark の計測値で求めた補正。推定値で補正：学習に使った Mark の計測値とほかの Mark の推定値で' ...
             '求めた補正。どちらも計測値に当てた残差で、すべての点と推定対象の点（学習に使わなかった Mark）で比べます。']
     end
@@ -12,7 +12,7 @@ classdef (Abstract) ResultsTab < appui.Core
     methods
         function comparison = compareEstimatedCorrection(app, methodIndex, group, unitIndex)
             %COMPAREESTIMATEDCORRECTION 「実測値と推定値の補正」：実測値で求めた補正と、推定値で求めた補正を、実測値に当てて
-            %   比べる（alignest.estimatedCorrectionComparison）。補正のモデルは「2. 評価の設定」の Overlay 補正の評価（Wafer 成分・
+            %   比べる（alignest.estimatedCorrectionComparison）。補正のモデルは「2. 評価の設定と実行」の Overlay 補正の評価（Wafer 成分・
             %   Shot 共通成分・Shot ごとの成分）。すべての点と推定対象の点（学習に使わなかった Mark）で比べる。methodIndex：手法の
             %   番号（複数可）、group：学習パターンの列、unitIndex：Wafer の番号（0 = すべて）。省略すると画面の選択。
             c = app.Controls;
@@ -90,7 +90,7 @@ classdef (Abstract) ResultsTab < appui.Core
                 filter = alignest.defaultPointFilter();
             end
             if isempty(app.BaseResults)
-                error('alignest:noResults', '先に「3. 実行」で評価してください。');
+                error('alignest:noResults', '先に「2. 評価の設定と実行」で評価してください。');
             end
             validateFilter(filter);
             if isImportedResults(app.BaseResults)
@@ -131,7 +131,7 @@ classdef (Abstract) ResultsTab < appui.Core
             end
             c = app.Controls;
             if isempty(app.Results)
-                error('alignest:noResults', '先に「3. 実行」で評価してください。');
+                error('alignest:noResults', '先に「2. 評価の設定と実行」で評価してください。');
             end
             fields = ["method", "group", "wafer", "criterion", "axis", "statistic", "level", "mode", "count", "threshold"];
             controls = [c.candidateMethod, c.candidateGroup, c.candidateWafer, c.candidateCriterion, c.candidateAxis, ...
@@ -222,8 +222,8 @@ classdef (Abstract) ResultsTab < appui.Core
         end
 
         function added = addMeasurementCandidates(app)
-            %ADDMEASUREMENTCANDIDATES 「必ず計測の欄に入れる」：出した候補のうち「足す」にチェックを入れた候補を「2. 評価の設定」の
-            %   必ず計測する shotNo（単位が Mark なら必ず計測する Mark）に足す（setMeasurementSelection と同じ。3. 実行の計測の
+            %ADDMEASUREMENTCANDIDATES 「必ず計測の欄に入れる」：出した候補のうち「足す」にチェックを入れた候補を「2. 評価の設定と実行」の
+            %   必ず計測する shotNo（単位が Mark なら必ず計測する Mark）に足す（setMeasurementSelection と同じ。2. 評価の設定と実行の計測の
             %   指定にも出る）。added は足した場所（shotNo の数、または "shotNo-markNo" の文字）。
             found = app.MeasurementCandidates;
             if isempty(found) || height(found.table) == 0
@@ -241,14 +241,14 @@ classdef (Abstract) ResultsTab < appui.Core
             setMeasurementSelection(app, found.level, added, "required");
             where = ternary(found.level == "mark", "必ず計測する Mark", "必ず計測する shotNo");
             note = ternary(found.level == "mark", "Mark の指定は Mark 単位の学習パターンだけに効きます。", "");
-            app.Controls.candidateInfo.Text = char(sprintf("「2. 評価の設定」の「%s」に %d 個を足しました（3. 実行の計測の" + ...
-                "指定にも出ます）。%s「3. 実行」で評価し直すと、足した場所を計測した結果になります。", where, numel(added), note));
+            app.Controls.candidateInfo.Text = char(sprintf("「2. 評価の設定と実行」の「%s」に %d 個を足しました（2. 評価の設定と実行の計測の" + ...
+                "指定にも出ます）。%s「2. 評価の設定と実行」で評価し直すと、足した場所を計測した結果になります。", where, numel(added), note));
         end
 
         function exportResultsTo(app, filePath)
             %EXPORTRESULTSTO 結果を Excel に書き出す。
             if isempty(app.Results)
-                error('alignest:noResults', '先に「3. 実行」で評価してください。');
+                error('alignest:noResults', '先に「2. 評価の設定と実行」で評価してください。');
             end
             if isImportedResults(app.Results)
                 error('alignest:importedResults', ['Excel から読み込んだ結果は書き出せません（読み込んだファイル「%s」を' ...
@@ -265,7 +265,7 @@ classdef (Abstract) ResultsTab < appui.Core
         function results = importResultsFrom(app, filePath)
             %IMPORTRESULTSFROM 「結果を Excel に書き出す」で書き出したファイルを読み込み、結果の画面に出す。
             %   表・グラフ・基準の手法との比較を見られる。推定値は Excel に無いので、Wafer マップ・推定値と誤差の分布・
-            %   散布図・分布の比較は使えない（計測ファイルを読み込んで「3. 実行」で評価し直すと使える）。
+            %   散布図・分布の比較は使えない（計測ファイルを読み込んで「2. 評価の設定と実行」で評価し直すと使える）。
             results = alignest.importResults(filePath);
             clearResults(app);
             app.Results = results;
@@ -512,7 +512,7 @@ classdef (Abstract) ResultsTab < appui.Core
             %   summary は X・Y の alignest.stats.correlationTest の結果（1変数は X だけ）と、表（table）。
             c = app.Controls;
             if isempty(app.Results)
-                error('alignest:noResults', '先に「3. 実行」で評価してください。');
+                error('alignest:noResults', '先に「2. 評価の設定と実行」で評価してください。');
             end
             if nargin >= 2
                 c.residualVariableMethod.Value = methodIndex;
@@ -790,7 +790,7 @@ classdef (Abstract) ResultsTab < appui.Core
     end
 
     methods (Access = {?appui.Core})
-        % ================= 4. 結果一覧 =================
+        % ================= 3. 結果一覧 =================
         function buildResultsTab(app)
             grid = uigridlayout(app.Tabs.results, [3, 1], 'RowHeight', {'fit', 'fit', '1x'}, 'Padding', 12, 'RowSpacing', 8);
             % ボタンは右に 2 × 2 でまとめる（横に並べると、狭い窓で基準の手法の欄が無くなり、見出しが縦に長く折り返すため）
@@ -814,18 +814,14 @@ classdef (Abstract) ResultsTab < appui.Core
             place(c.statistic, 2, 2);
             c.reference = uidropdown(controls, 'Items', {'—'}, 'ValueChangedFcn', onChange);
             place(c.reference, 2, 3);
-            buttons = uigridlayout(controls, [2, 3], 'ColumnWidth', {'fit', 'fit', 'fit'}, 'RowHeight', {'fit', 'fit'}, ...
+            % 右上のボタン：1段目は書き出し、2段目は読み込み（図の保存・コピーは各タブの図の右上）
+            buttons = uigridlayout(controls, [2, 2], 'ColumnWidth', {'fit', 'fit'}, 'RowHeight', {'fit', 'fit'}, ...
                 'Padding', 0, 'RowSpacing', 4);
             buttons.Layout.Row = [1, 2];
             buttons.Layout.Column = 4;
             c.export = primaryButton(app, buttons, '結果を Excel に書き出す…', @(~, ~) app.onExport());
             place(c.export, 1, 1);
-            c.saveChart = uibutton(buttons, 'Text', 'グラフを画像で保存…', 'ButtonPushedFcn', @(~, ~) app.onSaveChart());
-            place(c.saveChart, 1, 2);
-            c.copyChart = uibutton(buttons, 'Text', 'グラフをコピー', 'Tooltip', app.COPY_TOOLTIP, ...
-                'ButtonPushedFcn', @(source, ~) app.onCopyFigure("chart", source));
-            place(c.copyChart, 1, 3);
-            set([c.export, c.saveChart, c.copyChart], 'Enable', 'off');
+            c.export.Enable = 'off';
             c.importResults = uibutton(buttons, 'Text', '結果を読み込む…', 'ButtonPushedFcn', @(~, ~) app.onImportResults(), ...
                 'Tooltip', '「結果を Excel に書き出す」で書き出したファイルを読み込み、表・グラフ・基準の手法との比較を見ます。');
             place(c.importResults, 2, 1);
@@ -841,19 +837,30 @@ classdef (Abstract) ResultsTab < appui.Core
             c.filterResults = buildFilterControls(app, grid, "results");
 
             % 表・グラフ・比較・誤差の分布は、それぞれ画面の幅いっぱいに出す（手法の名前が切れないように）
-            c.resultTabs = uitabgroup(grid, 'SelectionChangedFcn', @(~, event) app.onResultTabChanged(event));
-            tableTab = uitab(c.resultTabs, 'Title', '表');
+            % 中のタブは4つのまとまり（表・グラフ／計測配置／誤差の分析／補正の比較）に分け、その中にタブを並べる
+            % （15 個を1列に並べると、矢印を押さないと見えないタブが出るため）。開くタブは showResultTab で選ぶ
+            c.resultTabs = uitabgroup(grid, 'SelectionChangedFcn', @(~, ~) app.onResultCategoryChanged());
+            onInner = @(~, event) app.onResultTabChanged(event);
+            categoryTabs = [uitab(c.resultTabs, 'Title', '表・グラフ'), uitab(c.resultTabs, 'Title', '計測配置'), ...
+                uitab(c.resultTabs, 'Title', '誤差の分析'), uitab(c.resultTabs, 'Title', '補正の比較')];
+            groups = gobjects(1, numel(categoryTabs));
+            for k = 1:numel(categoryTabs)
+                groups(k) = uitabgroup(uigridlayout(categoryTabs(k), [1, 1], 'Padding', 0), 'SelectionChangedFcn', onInner);
+            end
+            c.resultCategoryGroups = groups;
+            tableTab = uitab(groups(1), 'Title', '表');
             tableGrid = uigridlayout(tableTab, [1, 1], 'Padding', 8);
             c.summaryTable = uitable(tableGrid, 'RowName', {}, 'ColumnName', {'手法'});
-            c.chartTab = uitab(c.resultTabs, 'Title', 'グラフ');
+            c.chartTab = uitab(groups(1), 'Title', 'グラフ');
             chartGrid = uigridlayout(c.chartTab, [2, 2], 'RowHeight', {'fit', '1x'}, 'ColumnWidth', {'1x', 380}, 'Padding', 8);
             registerResponsiveColumn(app, chartGrid, 2);
-            chartControls = uigridlayout(chartGrid, [1, 5], 'ColumnWidth', {'fit', 380, 'fit', 190, 'fit'}, 'Padding', 0);
+            chartControls = uigridlayout(chartGrid, [1, 8], 'ColumnWidth', {'fit', 380, 'fit', 190, 'fit', '1x', 'fit', 'fit'}, ...
+                'Padding', 0);
             place(chartControls, 1, 1);
             label(chartControls, '横軸', 1, 1);
             c.chartXAxis = uidropdown(chartControls, 'Items', {'学習 Shot 数', ...
                 'I 基準と D 基準', 'I 効率と D 効率（全計測に対する）'}, 'ItemsData', {'plan', 'criteria', 'efficiency'}, ...
-                'Tooltip', ['学習 Shot の組の I 基準 tr(M⁻¹) と D 基準 det(M)^(−1/p)（「2. 評価の設定」の I 最適の基準モデル）、または全計測に' ...
+                'Tooltip', ['学習 Shot の組の I 基準 tr(M⁻¹) と D 基準 det(M)^(−1/p)（「2. 評価の設定と実行」の I 最適の基準モデル）、または全計測に' ...
                 '対する I 効率・D 効率 [%] に対する推定誤差。点は学習パターンの列ごとの Wafer の集計。基準・効率は Wafer の平均。'], ...
                 'ValueChangedFcn', @(~, ~) app.drawChart());
             place(c.chartXAxis, 1, 2);
@@ -866,6 +873,13 @@ classdef (Abstract) ResultsTab < appui.Core
             c.chartPoints = uicheckbox(chartControls, 'Text', 'Wafer ごとの点', ...
                 'ValueChangedFcn', @(~, ~) app.drawChart());
             place(c.chartPoints, 1, 5);
+            % 図の保存・コピーは図の右上（ほかのタブと同じ置き場所）
+            c.saveChart = uibutton(chartControls, 'Text', '図を画像で保存…', 'ButtonPushedFcn', @(~, ~) app.onSaveChart());
+            place(c.saveChart, 1, 7);
+            c.copyChart = uibutton(chartControls, 'Text', '図をコピー', 'Tooltip', app.COPY_TOOLTIP, ...
+                'ButtonPushedFcn', @(source, ~) app.onCopyFigure("chart", source));
+            place(c.copyChart, 1, 8);
+            set([c.saveChart, c.copyChart], 'Enable', 'off');
             c.chartPanel = uipanel(chartGrid, 'BorderType', 'none');
             place(c.chartPanel, 2, 1);
             c.chartAxesGrid = uigridlayout(c.chartPanel, [1, 2], 'ColumnWidth', {'1x', 0}, 'Padding', 0, 'ColumnSpacing', 8);
@@ -874,13 +888,13 @@ classdef (Abstract) ResultsTab < appui.Core
             label(chartGrid, 'グラフに描く手法', 1, 2);
             c.chartMethods = uilistbox(chartGrid, 'Items', {}, 'Multiselect', 'on', 'ValueChangedFcn', @(~, ~) app.drawChart());
             place(c.chartMethods, 2, 2);
-            compareTab = uitab(c.resultTabs, 'Title', '基準の手法との比較');
+            compareTab = uitab(groups(1), 'Title', '基準の手法との比較');
             compareGrid = uigridlayout(compareTab, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 8);
             c.comparisonNote = uilabel(compareGrid, 'WordWrap', 'on', 'Text', '');
             c.comparisonTable = uitable(compareGrid, 'RowName', {}, ...
                 'ColumnName', {'手法', '列', '基準との差', '95% 区間', '基準より良かった割合', 'Wafer 数'});
             % Wafer のベスト・ワースト：指標ごとに、最も良い・平均に近い・最も悪い Wafer（指標でワーストが違うことがある）
-            c.waferRankingTab = uitab(c.resultTabs, 'Title', 'Wafer のベスト・ワースト');
+            c.waferRankingTab = uitab(groups(1), 'Title', 'Wafer のベスト・ワースト');
             rankingGrid = uigridlayout(c.waferRankingTab, [4, 2], 'RowHeight', {'fit', '1x', '1x', 'fit'}, ...
                 'ColumnWidth', {'1x', 300}, 'Padding', 8, 'RowSpacing', 8, 'ColumnSpacing', 12);
             registerResponsiveColumn(app, rankingGrid, 2);
@@ -908,7 +922,7 @@ classdef (Abstract) ResultsTab < appui.Core
             c.rankingInfo = uilabel(rankingGrid, 'WordWrap', 'on', 'Text', '');
             place(c.rankingInfo, 4, [1, 2]);
             % 計測を足す場所：推定誤差・GPR の推定の分散の大きい上位 n の場所を出し、必ず計測する Shot・Mark の欄に入れる
-            c.candidateTab = uitab(c.resultTabs, 'Title', '計測を足す場所');
+            c.candidateTab = uitab(groups(2), 'Title', '計測を足す場所');
             candidateGrid = uigridlayout(c.candidateTab, [4, 2], 'RowHeight', {'fit', 'fit', '1x', 'fit'}, ...
                 'ColumnWidth', {'1x', '1x'}, 'Padding', 8, 'RowSpacing', 6, 'ColumnSpacing', 12);
             chooseGrid = uigridlayout(candidateGrid, [2, 3], 'ColumnWidth', {'1x', 220, 220}, 'RowHeight', {'fit', 'fit'}, ...
@@ -962,8 +976,8 @@ classdef (Abstract) ResultsTab < appui.Core
                 'ButtonPushedFcn', @(~, ~) app.onFindMeasurementCandidates());
             place(c.findCandidatesButton, 2, 8);
             c.addCandidatesButton = uibutton(ruleGrid, 'Text', '必ず計測の欄に入れる', 'Enable', 'off', ...
-                'ButtonPushedFcn', @(~, ~) app.onAddMeasurementCandidates(), 'Tooltip', ['出した候補を「2. 評価の設定」の' ...
-                '「必ず計測する shotNo」（単位が Mark なら「必ず計測する Mark」）に足します（3. 実行の計測の指定にも出ます）。']);
+                'ButtonPushedFcn', @(~, ~) app.onAddMeasurementCandidates(), 'Tooltip', ['出した候補を「2. 評価の設定と実行」の' ...
+                '「必ず計測する shotNo」（単位が Mark なら「必ず計測する Mark」）に足します（2. 評価の設定と実行の計測の指定にも出ます）。']);
             place(c.addCandidatesButton, 2, 9);
             candidateTableGrid = uigridlayout(candidateGrid, [2, 1], 'RowHeight', {'1x', 'fit'}, 'Padding', 0, ...
                 'RowSpacing', 4);
@@ -987,7 +1001,7 @@ classdef (Abstract) ResultsTab < appui.Core
             c.candidateInfo = uilabel(candidateGrid, 'WordWrap', 'on', 'Text', '');
             place(c.candidateInfo, 4, [1, 2]);
             % 計測配置の比較：選び方（I 最適・D 最適・Excel で指定など）ごとに、学習点の数に対する指標を比べる
-            c.layoutCompareTab = uitab(c.resultTabs, 'Title', '計測配置の比較');
+            c.layoutCompareTab = uitab(groups(2), 'Title', '計測配置の比較');
             layoutGrid = uigridlayout(c.layoutCompareTab, [3, 2], 'RowHeight', {'fit', '1x', 'fit'}, ...
                 'ColumnWidth', {'1.2x', '1x'}, 'Padding', 8, 'ColumnSpacing', 12);
             layoutControls = uigridlayout(layoutGrid, [1, 6], 'ColumnWidth', {'fit', '1x', 'fit', 220, 'fit', 280}, ...
@@ -1023,7 +1037,7 @@ classdef (Abstract) ResultsTab < appui.Core
             c.compareLayoutInfo = uilabel(layoutGrid, 'WordWrap', 'on', 'Text', '');
             place(c.compareLayoutInfo, 3, [1, 2]);
             % 補正の悪化：推定誤差・計測数に対する、推定による重ね合わせ補正（Overlay 補正）の悪化（alignest.overlayDegradation）
-            c.degradationTab = uitab(c.resultTabs, 'Title', '補正の悪化');
+            c.degradationTab = uitab(groups(2), 'Title', '補正の悪化');
             degradationGrid = uigridlayout(c.degradationTab, [3, 2], 'RowHeight', {'fit', '1x', 'fit'}, ...
                 'ColumnWidth', {'1x', 300}, 'Padding', 8, 'ColumnSpacing', 12);
             registerResponsiveColumn(app, degradationGrid, 2);
@@ -1065,7 +1079,7 @@ classdef (Abstract) ResultsTab < appui.Core
             c.degradationInfo = uilabel(degradationGrid, 'WordWrap', 'on', 'Text', '');
             place(c.degradationInfo, 3, [1, 2]);
 
-            analysisTab = uitab(c.resultTabs, 'Title', '推定値と誤差の分布');
+            analysisTab = uitab(groups(3), 'Title', '推定値と誤差の分布');
             analysisGrid = uigridlayout(analysisTab, [5, 1], 'RowHeight', {'fit', '3x', 96, '1x', 'fit'}, ...
                 'Padding', 8, 'RowSpacing', 8);
             analysisControls = uigridlayout(analysisGrid, [2, 6], 'ColumnWidth', {'1x', 150, 220, 'fit', 300, 'fit'}, ...
@@ -1106,7 +1120,7 @@ classdef (Abstract) ResultsTab < appui.Core
                 '計算しなかったときは、表の W の欄に理由（点数など）を出します。' ...
                 '「ほかの変数で調整」は、ほかの質的変数の効果を差し引いた主効果（交互作用なし、Type II）の検定です。']);
             % 残差の箱ひげ図：「推定値と誤差の分布」で分析した残差を、質的変数の水準ごとに X・Y 別に描く（ANOVA の中身を見る）
-            c.boxTab = uitab(c.resultTabs, 'Title', '残差の箱ひげ図');
+            c.boxTab = uitab(groups(3), 'Title', '残差の箱ひげ図');
             boxGrid = uigridlayout(c.boxTab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 8, 'RowSpacing', 8);
             boxControls = uigridlayout(boxGrid, [1, 3], 'ColumnWidth', {'fit', 260, '1x'}, 'Padding', 0);
             label(boxControls, '質的変数', 1, 1);
@@ -1118,7 +1132,7 @@ classdef (Abstract) ResultsTab < appui.Core
             c.boxAxes = [uiaxes(boxAxesGrid), uiaxes(boxAxesGrid)];
             set(c.boxAxes, 'Visible', 'off');
             c.boxInfo = uilabel(boxGrid, 'WordWrap', 'on', 'Text', '');
-            c.scatterTab = uitab(c.resultTabs, 'Title', '推定値と実測値の散布図');
+            c.scatterTab = uitab(groups(3), 'Title', '推定値と実測値の散布図');
             scatterGrid = uigridlayout(c.scatterTab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 8, 'RowSpacing', 8);
             scatterControls = uigridlayout(scatterGrid, [2, 5], 'ColumnWidth', {'1x', 150, 220, 240, 'fit'}, ...
                 'RowHeight', {'fit', 'fit'}, 'Padding', 0);
@@ -1134,7 +1148,7 @@ classdef (Abstract) ResultsTab < appui.Core
             place(c.scatterWafer, 2, 3);
             c.scatterColor = uidropdown(scatterControls, 'Items', {'—'}, ...
                 'Tooltip', ['点の色を分ける項目（LotID・EqpId・Operation・Scan 方向・Mark 番号・Shot 行・外周と内側' ...
-                '（「2. 評価の設定」の外周の半径）・象限・ファイルのその他の列）']);
+                '（「2. 評価の設定と実行」の外周の半径）・象限・ファイルのその他の列）']);
             place(c.scatterColor, 2, 4);
             c.drawScatterButton = uibutton(scatterControls, 'Text', '描く', 'ButtonPushedFcn', @(~, ~) app.onDrawScatter());
             place(c.drawScatterButton, 2, 5);
@@ -1142,7 +1156,7 @@ classdef (Abstract) ResultsTab < appui.Core
             c.scatterAxes = [uiaxes(c.scatterAxesGrid), uiaxes(c.scatterAxesGrid)];
             c.scatterInfo = uilabel(scatterGrid, 'WordWrap', 'on', 'Text', '');
             % 残差と説明変数：評価点の残差に、説明変数（座標・半径・方位角・Shot 内の位置）の傾向が残っていないかを見る
-            c.residualVariableTab = uitab(c.resultTabs, 'Title', '残差と説明変数');
+            c.residualVariableTab = uitab(groups(3), 'Title', '残差と説明変数');
             variableGrid = uigridlayout(c.residualVariableTab, [4, 1], 'RowHeight', {'fit', '1x', 118, 'fit'}, ...
                 'Padding', 8, 'RowSpacing', 8);
             variableControls = uigridlayout(variableGrid, [2, 5], 'ColumnWidth', {'1x', 150, 220, 250, 'fit'}, ...
@@ -1174,7 +1188,7 @@ classdef (Abstract) ResultsTab < appui.Core
                 'p 値', 'Y の残差：r', 'p 値', '点数'}, 'ColumnWidth', {220, 110, 90, 110, 90, 'auto'});
             c.residualVariableInfo = uilabel(variableGrid, 'WordWrap', 'on', 'Text', '');
             % 分布の比較：Wafer 全面・学習データ・予測対象の計測値と、予測対象の実測値と推定値
-            c.distributionTab = uitab(c.resultTabs, 'Title', '分布の比較');
+            c.distributionTab = uitab(groups(3), 'Title', '分布の比較');
             distributionGrid = uigridlayout(c.distributionTab, [4, 1], 'RowHeight', {'fit', '1.5x', '1x', 'fit'}, ...
                 'Padding', 8, 'RowSpacing', 8);
             distributionControls = uigridlayout(distributionGrid, [2, 5], 'ColumnWidth', {'1x', 150, 220, 90, 'fit'}, ...
@@ -1206,7 +1220,7 @@ classdef (Abstract) ResultsTab < appui.Core
                 '見ること'}, 'ColumnWidth', {35, 270, 120, 'auto'});
             c.distributionInfo = uilabel(distributionGrid, 'WordWrap', 'on', 'Text', '');
             % 処理時間の内訳：1つの条件の処理を段階（学習パターンの作成・異常値の判定・学習・推論など）に分けて測る
-            c.timingTab = uitab(c.resultTabs, 'Title', '処理時間の内訳');
+            c.timingTab = uitab(groups(3), 'Title', '処理時間の内訳');
             timingGrid = uigridlayout(c.timingTab, [4, 1], 'RowHeight', {'fit', '1x', 120, 'fit'}, 'Padding', 8, ...
                 'RowSpacing', 8);
             timingControls = uigridlayout(timingGrid, [2, 5], 'ColumnWidth', {220, 220, '1x', 110, 'fit'}, ...
@@ -1233,7 +1247,7 @@ classdef (Abstract) ResultsTab < appui.Core
             c.timingTable = uitable(timingGrid, 'RowName', {}, 'ColumnName', {'手法'});
             c.timingInfo = uilabel(timingGrid, 'WordWrap', 'on', 'Text', '');
             % 実測値と推定値の補正：実測値で求めた Shot 高次補正と、推定値で求めた Shot 高次補正を実測値に当てて比べる
-            c.estimatedCorrectionTab = uitab(c.resultTabs, 'Title', '実測値と推定値の補正');
+            c.estimatedCorrectionTab = uitab(groups(4), 'Title', '実測値と推定値の補正');
             correctionGrid = uigridlayout(c.estimatedCorrectionTab, [4, 1], 'RowHeight', {'fit', 'fit', '1x', 'fit'}, ...
                 'Padding', 8, 'RowSpacing', 6);
             correctionControls = uigridlayout(correctionGrid, [2, 4], 'ColumnWidth', {'1x', 220, 220, 'fit'}, ...
@@ -1265,7 +1279,7 @@ classdef (Abstract) ResultsTab < appui.Core
                 uiaxes(correctionAxesGrid), uiaxes(correctionAxesGrid)];
             c.estimatedCorrectionInfo = uilabel(correctionGrid, 'WordWrap', 'on', 'Text', '');
             % 補正残差のばらつき分解：補正前の値と、実測値・推定値で補正した残差のばらつきを Lot 間・Wafer 間などに分けて比べる
-            c.correctionVarianceTab = uitab(c.resultTabs, 'Title', '補正残差のばらつき分解');
+            c.correctionVarianceTab = uitab(groups(4), 'Title', '補正残差のばらつき分解');
             varianceGrid = uigridlayout(c.correctionVarianceTab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 8, ...
                 'RowSpacing', 6);
             varianceControls = uigridlayout(varianceGrid, [1, 7], 'ColumnWidth', {'fit', 320, 'fit', 150, 'fit', 'fit', 110}, ...
@@ -1368,7 +1382,7 @@ classdef (Abstract) ResultsTab < appui.Core
                 end
             end
             styleAxes(app, c.estimatedCorrectionAxes, app.AXES_FONT_SIZE);
-            c.estimatedCorrectionModel.Text = char("補正のモデル（「2. 評価の設定」の Overlay 補正の評価）：" + comparison.description);
+            c.estimatedCorrectionModel.Text = char("補正のモデル（「2. 評価の設定と実行」の Overlay 補正の評価）：" + comparison.description);
             numberText = "図の番号：" + strjoin(string(1:numel(names)) + " = " + names(:).', "、") + "。";
             c.estimatedCorrectionInfo.Text = char(strjoin([numberText; "すべての点：残差のある全 Mark。推定対象の点：学習に使わなかった" + ...
                 " Mark（推定値が補正に入る点）。差 = 推定値で補正した残差 − 実測値で補正した残差（正なら、推定値で補正すると" + ...
@@ -1377,7 +1391,7 @@ classdef (Abstract) ResultsTab < appui.Core
 
         function onCompareEstimatedCorrection(app)
             runWithAlert(app, @() app.compareEstimatedCorrection(), "実測値と推定値の補正を比べられませんでした", ...
-                "手法・学習パターン・Wafer と、「2. 評価の設定」の Overlay 補正の評価を確かめてから、もう一度試してください。");
+                "手法・学習パターン・Wafer と、「2. 評価の設定と実行」の Overlay 補正の評価を確かめてから、もう一度試してください。");
         end
 
         function refreshCorrectionVariance(app)
@@ -1412,9 +1426,9 @@ classdef (Abstract) ResultsTab < appui.Core
             % 「計算する」：「実測値と推定値の補正」の手法・学習パターン・Wafer で比べ（ばらつき分解も描き直す）、このタブを見せる
             c = app.Controls;
             runWithAlert(app, @() app.compareEstimatedCorrection(), "補正前の値と補正した残差を求められませんでした", ...
-                "「実測値と推定値の補正」の手法・学習パターン・Wafer と、「2. 評価の設定」の Overlay 補正の評価を確かめてから、" + ...
+                "「実測値と推定値の補正」の手法・学習パターン・Wafer と、「2. 評価の設定と実行」の Overlay 補正の評価を確かめてから、" + ...
                 "もう一度試してください。");
-            c.resultTabs.SelectedTab = c.correctionVarianceTab;
+            showResultTab(app, c.correctionVarianceTab);
         end
 
         function onFindMeasurementCandidates(app)
@@ -1631,9 +1645,9 @@ classdef (Abstract) ResultsTab < appui.Core
         end
 
         function f = buildFilterControls(app, parent, source)
-            % 評価点の絞り込みの欄。「4. 結果一覧」と「5. Waferごとのマップ」に同じものを置き、どちらで変えても両方をそろえる
-            f.grid = uigridlayout(parent, [2, 14], 'ColumnWidth', {'fit', 64, 'fit', 64, 'fit', 175, 110, 'fit', 80, 'fit', ...
-                160, 'fit', 'fit', '1x'}, 'RowHeight', {'fit', 'fit'}, 'Padding', 0, 'ColumnSpacing', 4, 'RowSpacing', 2);
+            % 評価点の絞り込みの欄。「3. 結果一覧」と「4. Waferごとのマップ」に同じものを置き、どちらで変えても両方をそろえる
+            f.grid = uigridlayout(parent, [1, 14], 'ColumnWidth', {'fit', 64, 'fit', 64, 'fit', 175, 110, 'fit', 80, 'fit', ...
+                160, 'fit', 'fit', '1x'}, 'RowHeight', {'fit'}, 'Padding', 0, 'ColumnSpacing', 4);
             arrayfun(@(column) registerResponsiveColumn(app, f.grid, column), [2, 4, 6, 7, 11]);
             filterTip = ['評価点（学習しなかった Shot の Mark）を、Mark の半径・Shot の条件で絞り込み、指標を計算し直して' ...
                 '表・グラフ・比較・マップを描き直します（推定はやり直しません）。'];
@@ -1644,8 +1658,8 @@ classdef (Abstract) ResultsTab < appui.Core
                 'Tooltip', 'Mark の半径の下限 [mm]（この値以上）');
             place(f.radiusMin, 1, 2);
             label(f.grid, '〜', 1, 3);
-            f.radiusMax = uieditfield(f.grid, 'numeric', 'Limits', [0, Inf], 'Value', Inf, 'ValueDisplayFormat', '%g', ...
-                'Tooltip', 'Mark の半径の上限 [mm]（この値未満。Inf なら上限なし）');
+            f.radiusMax = uieditfield(f.grid, 'text', 'Value', '', 'Placeholder', '上限なし', ...
+                'Tooltip', 'Mark の半径の上限 [mm]（この値未満。空欄なら上限なし）');
             place(f.radiusMax, 1, 4);
             label(f.grid, 'Shot', 1, 5);
             f.shotMode = uidropdown(f.grid, 'Items', {'すべて', '右の shotNo だけ', '右の shotNo を除く'}, ...
@@ -1666,8 +1680,9 @@ classdef (Abstract) ResultsTab < appui.Core
             place(f.apply, 1, 12);
             f.clear = uibutton(f.grid, 'Text', '解除', 'Enable', 'off', 'ButtonPushedFcn', @(~, ~) app.onClearFilter());
             place(f.clear, 1, 13);
-            f.status = uilabel(f.grid, 'WordWrap', 'on', 'Text', '絞り込みなし');
-            place(f.status, 2, [1, 14]);
+            f.status = uilabel(f.grid, 'WordWrap', 'on', 'Text', '絞り込みなし', 'FontColor', app.Palette.muted, ...
+                'UserData', "muted");
+            place(f.status, 1, 14);   % 条件と同じ行の右（2段にしない）
         end
 
         function onApplyFilter(app, source)
@@ -1706,7 +1721,7 @@ classdef (Abstract) ResultsTab < appui.Core
                 end
                 f = app.Controls.(name);
                 f.radiusMin.Value = filter.radiusMinMm;
-                f.radiusMax.Value = filter.radiusMaxMm;
+                f.radiusMax.Value = char(ternary(isfinite(filter.radiusMaxMm), string(filter.radiusMaxMm), ""));   % 上限なしは空欄
                 f.shotMode.Value = char(filter.shotMode);
                 f.shotNos.Value = char(strjoin(string(filter.shotNos), " "));
                 f.scan.Value = filter.scan;
@@ -1795,8 +1810,8 @@ classdef (Abstract) ResultsTab < appui.Core
                 if isempty(app.ImportedEstimates)
                     c.resultSource.Text = sourceText + "表・グラフ・基準の手法との比較を見られます。" + ...
                         "Wafer マップ・推定値と誤差の分布・散布図・分布の比較は、「推定値の Excel を読み込む…」で" + ...
-                        "推定値の Excel も読み込むと使えます（または計測ファイルを読み込んで「3. 実行」で評価し直す）。";
-                    c.mapInfo.Text = "Excel から読み込んだ結果で Wafer ごとの図を描くには、「4. 結果一覧」の" + ...
+                        "推定値の Excel も読み込むと使えます（または計測ファイルを読み込んで「2. 評価の設定と実行」で評価し直す）。";
+                    c.mapInfo.Text = "Excel から読み込んだ結果で Wafer ごとの図を描くには、「3. 結果一覧」の" + ...
                         "「推定値の Excel を読み込む…」で推定値の Excel も読み込んでください。";
                     refreshResults(app);
                     return
@@ -1974,8 +1989,12 @@ classdef (Abstract) ResultsTab < appui.Core
             end
             c.summaryTable.Data = data;
             c.summaryTable.ColumnName = cellstr(["手法", summary.groups]);
-            c.summaryTable.ColumnWidth = [{scaledPixels(app, app.METHOD_COLUMN_WIDTH)}, ...
-                repmat({scaledPixels(app, app.VALUE_COLUMN_WIDTH)}, 1, numel(summary.groups))];
+            methodWidth = {scaledPixels(app, app.METHOD_COLUMN_WIDTH)};
+            if numel(summary.groups) <= app.FILL_TABLE_MAX_GROUPS
+                methodWidth = {'1x'};   % 列が少ないときは手法の列を広げて、表を画面の幅いっぱいにする
+            end
+            c.summaryTable.ColumnWidth = [methodWidth, repmat({scaledPixels(app, app.VALUE_COLUMN_WIDTH)}, 1, ...
+                numel(summary.groups))];
             comparison = alignest.pairedComparison(app.Results, string(c.reference.Value), metric);
             unitText = ternary(comparison.Properties.UserData.lowerIsBetter, "%", "");
             rows = cell(height(comparison), 6);
@@ -2069,7 +2088,7 @@ classdef (Abstract) ResultsTab < appui.Core
             end
             results = app.Results;
             if ~(isfield(results, "overlayEvaluated") && results.overlayEvaluated)
-                c.degradationInfo.Text = ['Overlay 補正を評価していない結果です（「2. 評価の設定」の Overlay 補正の評価を' ...
+                c.degradationInfo.Text = ['Overlay 補正を評価していない結果です（「2. 評価の設定と実行」の Overlay 補正の評価を' ...
                     '「なし」以外にして評価すると描けます）。'];
                 return
             end
@@ -2250,7 +2269,7 @@ classdef (Abstract) ResultsTab < appui.Core
         end
 
         function onSaveChart(app)
-            app.Controls.resultTabs.SelectedTab = app.Controls.chartTab;   % 保存するグラフを見せる
+            showResultTab(app, app.Controls.chartTab);   % 保存するグラフを見せる
             saveFigureWithDialog(app, "chart", 'metric_by_plan.png');
         end
 
@@ -2688,7 +2707,13 @@ function filter = readFilterControls(controls)
 % 評価点の絞り込みの欄（buildFilterControls）から条件を作る
 filter = alignest.defaultPointFilter();
 filter.radiusMinMm = controls.radiusMin.Value;
-filter.radiusMaxMm = controls.radiusMax.Value;
+filter.radiusMaxMm = Inf;   % 空欄なら上限なし
+[values, ok] = parseNumbers(controls.radiusMax.Value);
+if ~ok || numel(values) > 1
+    error('alignest:pointFilter', '半径の上限は数を1つ入れてください（上限なしなら空欄）。');
+elseif ~isempty(values)
+    filter.radiusMaxMm = values;
+end
 filter.shotMode = string(controls.shotMode.Value);
 [values, ok] = parseNumbers(controls.shotNos.Value);
 if ~ok || any(values ~= round(values))

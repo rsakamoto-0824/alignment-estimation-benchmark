@@ -1,5 +1,5 @@
 classdef (Abstract) HighOrderHistoryTab < appui.Core
-    %HIGHORDERHISTORYTAB 「7. Shot高次補正」の3つのタブ：
+    %HIGHORDERHISTORYTAB 「6. Shot高次補正」の3つのタブ：
     %   - 「k の選定」：単純な回帰で k パラメータ（補正の式の項）を選ぶ（変数重要度 |t| で一括して外す・BIC でステップワイズに
     %     足す（指標は BIC・AIC・自由度調整済 R²）。alignest.highOrderTermSelection）。結果を見てから「反映する」で表の「使う」に写す
     %   - 「結果の履歴」：「補正を計算する」を押すたびに結果（すべての Wafer の評価と設定）を足し、条件どうしを表と図で比べる。

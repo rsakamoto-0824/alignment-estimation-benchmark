@@ -1,5 +1,5 @@
 classdef TestShotHighOrderSweep < matlab.unittest.TestCase
-    %TESTSHOTHIGHORDERSWEEP Shot 高次補正（「7. Shot高次補正」）の λ・c のスイープ：1点抜きの予測の誤差（最小二乗では
+    %TESTSHOTHIGHORDERSWEEP Shot 高次補正（「6. Shot高次補正」）の λ・c のスイープ：1点抜きの予測の誤差（最小二乗では
     %   求め直した値と同じ）、当てはめた残差と 1点抜きの誤差の推移、範囲と刻み、途中で止める、画面（図・表・最もよい値を使う）。
 
     properties

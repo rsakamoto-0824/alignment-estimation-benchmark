@@ -1,6 +1,6 @@
 function [comparison, results] = compareHighOrderConditions(wafers, settings, conditions)
 %COMPAREHIGHORDERCONDITIONS Shot 高次補正の条件（補正の式・使う項・くくり・回帰・λ・外周の式など）をまとめて計算し、すべての
-%   Wafer をまとめた評価を並べる（「7. Shot高次補正」の「補正の比較」。λ のスイープ・くくり・回帰の比較にも使う）。
+%   Wafer をまとめた評価を並べる（「6. Shot高次補正」の「補正の比較」。λ のスイープ・くくり・回帰の比較にも使う）。
 %   [comparison, results] = alignest.compareHighOrderConditions(wafers, settings, conditions)
 %   wafers・settings は alignest.shotHighOrder と同じ。conditions：構造体の配列。label（条件の名前）・highOrder（その条件の
 %   settings.highOrder。足りない項目は settings.highOrder の値）。

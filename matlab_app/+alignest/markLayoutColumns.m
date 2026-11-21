@@ -1,5 +1,5 @@
 function columns = markLayoutColumns()
-%MARKLAYOUTCOLUMNS 「8. Mark配置の最適化」で読み込む Excel・CSV の項目（「Excel・CSV の列」で、ファイルの列を選ぶ）。
+%MARKLAYOUTCOLUMNS 「7. Mark配置の最適化」で読み込む Excel・CSV の項目（「Excel・CSV の列」で、ファイルの列を選ぶ）。
 %   columns：構造体の配列。name（項目名。alignest.highOrderColumns と同じ名前で、見出しからの推定も同じ）・meaning（意味）・
 %   required（必ず列を選ぶ項目。Shot 内の座標だけ）。X・Y の値が無い表は、候補の Mark の座標だけとして読む。
 names = ["Wafer", "shotNo", "Xmm", "Ymm", "markXmm", "markYmm", "measX", "measY", "StsX", "StsY"];

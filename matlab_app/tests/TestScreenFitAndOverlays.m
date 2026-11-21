@@ -52,13 +52,13 @@ classdef TestScreenFitAndOverlays < matlab.unittest.TestCase
                 cla(c.histogramAxes(k));   % 描かれていない状態にしてから、タブを開く
             end
             analysisTab = c.histogramGrid.Parent.Parent;
-            c.resultTabs.SelectedTab = analysisTab;
-            c.resultTabs.SelectionChangedFcn(c.resultTabs, struct("NewValue", analysisTab));
+            analysisTab.Parent.SelectedTab = analysisTab;   % 結果一覧の「誤差の分析」の中のタブ
+            analysisTab.Parent.SelectionChangedFcn(analysisTab.Parent, struct("NewValue", analysisTab));
             testCase.verifyEqual(numel(findobj(c.histogramAxes(1), 'Type', 'histogram')), 3, "X も3つ");
             testCase.verifyEqual(numel(findobj(c.histogramAxes(2), 'Type', 'histogram')), 3);
             cla(c.boxAxes(1));
-            c.resultTabs.SelectedTab = c.boxTab;
-            c.resultTabs.SelectionChangedFcn(c.resultTabs, struct("NewValue", c.boxTab));
+            c.boxTab.Parent.SelectedTab = c.boxTab;
+            c.boxTab.Parent.SelectionChangedFcn(c.boxTab.Parent, struct("NewValue", c.boxTab));
             testCase.verifyEqual(numel(findobj(c.boxAxes(1), 'Type', 'BoxChart')), 3);
             testCase.verifyEqual(c.distributionTab.Children(1).RowHeight{3}, '1x', "分布の比較の表は決まった高さにしない");
         end
@@ -99,8 +99,9 @@ classdef TestScreenFitAndOverlays < matlab.unittest.TestCase
             % 画面に合わせる：窓は画面（モニター）の中に収まり、決まった幅の欄は中身の幅の比で狭める
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
-            testCase.verifyEqual(numel(app.ResponsiveColumns), 30, ['絞り込みの欄は結果一覧とマップの2か所。「7. Shot高次補正」' ...
-                '「8. Mark配置の最適化」「9. 計測マップのローテーション」の左の欄、結果一覧の「Wafer のベスト・ワースト」の総合に' ...
+            testCase.verifyEqual(numel(app.ResponsiveColumns), 31, ['「2. 評価の設定と実行」の「計測点と計測マップ」の左の欄。' ...
+                '絞り込みの欄は結果一覧とマップの2か所。「6. Shot高次補正」' ...
+                '「7. Mark配置の最適化」「8. 計測マップのローテーション」の左の欄、結果一覧の「Wafer のベスト・ワースト」の総合に' ...
                 '使う指標の欄・「補正の悪化」の描く手法の欄も']);
             app.Figure.Position = [-5000, -5000, 9000, 8000];
             app.fitToScreen(false);

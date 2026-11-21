@@ -112,8 +112,8 @@ classdef (Abstract) Display < appui.Core
 
         function saveFigureImage(app, figureName, filePath)
             %SAVEFIGUREIMAGE 画面の図を PNG に保存する（「図を画像で保存…」のボタンと同じ）。figureName：
-            %   "measure"（3. 実行の計測マップ）・"chart"（4. 結果一覧のグラフ）・"map"（5. Waferごとのマップ）・
-            %   "target"（6. 未知の座標の図）・"targetResidual"（6. の補正残差の図）・"highOrder"（7. Shot高次補正の
+            %   "measure"（2. 評価の設定と実行の計測マップ）・"chart"（3. 結果一覧のグラフ）・"map"（4. Waferごとのマップ）・
+            %   "target"（5. 未知の座標の図）・"targetResidual"（6. の補正残差の図）・"highOrder"（6. Shot高次補正の
             %   マップ）。凡例・色の目盛りも入れる。
             %   図が2つ以上（グラフの I 基準・D 基準、マップの計測値・推定値・残差）なら横に並べて1枚にする。
             %   画面の部品（uigridlayout）を含む枠は exportgraphics で書き出せない（白紙になり保存に失敗する）ので、
@@ -159,7 +159,7 @@ classdef (Abstract) Display < appui.Core
 
         function setRandomSeed(app, seed)
             %SETRANDOMSEED 「設定」→「乱数の種…」：乱数の種（0〜2^32−1 の整数）を変える。計測点の選び方（ランダム・I 最適・
-            %   D 最適・Mark 単位の交換法の始め方）と、「8. Mark配置の最適化」（乱数の Shot の形・配置を探す始め方）で共通に使う
+            %   D 最適・Mark 単位の交換法の始め方）と、「7. Mark配置の最適化」（乱数の Shot の形・配置を探す始め方）で共通に使う
             %   （設定 sampling.seed。同じ種なら同じ結果。評価の結果が変わるので、評価し直す）。
             alignest.checkRandomSeed(seed);
             app.Settings.sampling.seed = double(seed);
@@ -287,7 +287,7 @@ classdef (Abstract) Display < appui.Core
                 showHighOrderMapping(app, currentHighOrderMapping(app));   % 列を選んでいない必須の項目の色
             end
             showHighOrderComparison(app);   % 設定を変えた後の知らせの色
-            refreshMarkLayoutInput(app);    % 「8. Mark配置の最適化」の表の色・図
+            refreshMarkLayoutInput(app);    % 「7. Mark配置の最適化」の表の色・図
             if ~isempty(app.MarkLayoutFile)
                 showMarkLayoutMapping(app, currentMarkLayoutMapping(app));
             end
@@ -327,7 +327,7 @@ classdef (Abstract) Display < appui.Core
             grid = uigridlayout(dialog, [3, 3], 'RowHeight', {'fit', 'fit', 'fit'}, 'ColumnWidth', {'fit', '1x', 'fit'}, ...
                 'Padding', 14, 'RowSpacing', 10, 'BackgroundColor', palette.background);
             note = label(grid, ['計測点の選び方（ランダム・I 最適・D 最適・Mark 単位の交換法の始め方）と、' ...
-                '「8. Mark配置の最適化」（乱数 Shot・配置を探す始め方）で使う乱数の種。同じ種なら同じ結果になります。'], ...
+                '「7. Mark配置の最適化」（乱数 Shot・配置を探す始め方）で使う乱数の種。同じ種なら同じ結果になります。'], ...
                 1, [1, 3]);
             note.FontColor = palette.text;
             seedLabel = label(grid, '乱数の種', 2, 1);
@@ -762,10 +762,12 @@ wide = any(place == ["northoutside", "southoutside", "tile:north", "tile:south"]
 end
 
 function color = themeColor(current, old, new)
-% 文字の色を、前の色の組での役割（エラー・補足・強調・ふつう）のまま新しい色の組の色にする
+% 文字の色を、前の色の組での役割（エラー・注意・補足・強調・ふつう）のまま新しい色の組の色にする
 near = @(a, b) isnumeric(a) && numel(a) == 3 && all(abs(a(:).' - b) < 0.03);
 if near(current, old.error)
     color = new.error;
+elseif isfield(old, "caution") && near(current, old.caution)
+    color = new.caution;
 elseif near(current, old.muted)
     color = new.muted;
 elseif near(current, old.accent)

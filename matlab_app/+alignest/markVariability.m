@@ -1,5 +1,5 @@
 function variability = markVariability(wafers, options)
-%MARKVARIABILITY Shot・Mark ごとの Wafer 間のばらつき（3σ）を求める（「9. 計測マップのローテーション」の「ばらつき」）。
+%MARKVARIABILITY Shot・Mark ごとの Wafer 間のばらつき（3σ）を求める（「8. 計測マップのローテーション」の「ばらつき」）。
 %   variability = alignest.markVariability(wafers)
 %   variability = alignest.markVariability(wafers, level="shot", shotStatistic="max")
 %   wafers：Wafer ごとの label・points（alignest.rotationPoints の列を持つ点の表）。同じ Shot・Mark（points.key）の値を

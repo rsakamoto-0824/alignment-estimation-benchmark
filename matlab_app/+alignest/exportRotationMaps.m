@@ -1,11 +1,11 @@
 function exportRotationMaps(filePath, maps, selection, description)
-%EXPORTROTATIONMAPS 計測マップ（alignest.rotationMaps）を Excel ファイル（.xlsx）に書き出す（「9. 計測マップのローテーション」）。
+%EXPORTROTATIONMAPS 計測マップ（alignest.rotationMaps）を Excel ファイル（.xlsx）に書き出す（「8. 計測マップのローテーション」）。
 %   alignest.exportRotationMaps(filePath, maps)
 %   alignest.exportRotationMaps(filePath, maps, selection, description)
 %   selection：書き出す計測マップの番号（省略・空ならすべて）。description：「説明」のシートに書く入力・条件の説明。
 %   シート：
 %   - 「計測マップ_Mark」（Mark ごとのとき）・「計測マップ」（Shot ごとのとき）：shotNo（・markNo）・Shot 中心の座標 Xmm・Ymm・
-%     Shot 内の座標 x・y と、計測マップごとの列（1 = 計測する・0 = 計測しない）。「2. 評価の設定」の「Excel ファイルで
+%     Shot 内の座標 x・y と、計測マップごとの列（1 = 計測する・0 = 計測しない）。「2. 評価の設定と実行」の「Excel ファイルで
 %     指定」でそのまま読める（alignest.readLayoutPlans。マップの列がパターンになる）。markNo の分からない点（未知の座標）は、
 %     Shot の中の位置の順に番号を付ける
 %   - 「ばらつき」：行ごとの優先度・計測の間隔・3σ（X・Y・ベクトル・長さ |v|・目的変数）・値のある Wafer の数

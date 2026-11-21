@@ -1,8 +1,8 @@
 classdef (Abstract) RotationTab < appui.Core
-    %ROTATIONTAB 「9. 計測マップのローテーション」タブ：Shot・Mark ごとのばらつき（3σ）、しきい値で分けた計測の優先度と
+    %ROTATIONTAB 「8. 計測マップのローテーション」タブ：Shot・Mark ごとのばらつき（3σ）、しきい値で分けた計測の優先度と
     %   ローテーションする計測マップ、取り込んだ Wafer を FB 側と検証側に分けて、FB の補正値を検証側に当てた補正残差、条件を
-    %   変えた検証の結果の比較、計測マップの書き出し。入力は「1. データ読込」の計測データ・「4. 結果一覧」の評価の推定値・
-    %   「6. 未知の座標の推定」の推定値・このタブで読み込む Excel・CSV（列は「Excel・CSV の列」で選ぶ）。
+    %   変えた検証の結果の比較、計測マップの書き出し。入力は「1. データ読込」の計測データ・「3. 結果一覧」の評価の推定値・
+    %   「5. 未知の座標の推定」の推定値・このタブで読み込む Excel・CSV（列は「Excel・CSV の列」で選ぶ）。
     %   計算は alignest.markVariability・rotationMaps・feedbackSimulation・exportRotationMaps。
     %   AlignmentEstimationApp（画面の本体）の一部。画面の部品は Controls、データ・結果は Core のプロパティに持つ。
 
@@ -21,7 +21,7 @@ classdef (Abstract) RotationTab < appui.Core
     methods
         function setRotationInput(app, source, methodIndex, plan, group)
             %SETROTATIONINPUT 入力を選ぶ（画面で選ぶのと同じ）。source："data"（1. データ読込の計測データ）・"estimate"
-            %   （4. 結果一覧の評価の推定値：学習に使った Mark は計測値、ほかは推定値）・"target"（6. 未知の座標の推定値）・
+            %   （3. 結果一覧の評価の推定値：学習に使った Mark は計測値、ほかは推定値）・"target"（5. 未知の座標の推定値）・
             %   "file"（このタブで読み込んだ Excel・CSV。loadRotationFile）。
             %   methodIndex・plan：評価の推定値の手法の番号と学習パターン（"estimate" のとき）。group：対象の Wafer（"all"、
             %   "op:<Operation>"・"eqp:<EqpId>"・"both:<Operation>|<EqpId>"）。省略した値は今の選択のまま。
@@ -320,7 +320,7 @@ classdef (Abstract) RotationTab < appui.Core
 
         function exportRotationMapsTo(app, filePath, selection)
             %EXPORTROTATIONMAPSTO 選んだ計測マップ（selection：マップの番号。省略すると「計測マップ」のタブで選んでいる
-            %   マップ）を Excel（.xlsx）に書き出す（alignest.exportRotationMaps。「2. 評価の設定」の「Excel 取込」で
+            %   マップ）を Excel（.xlsx）に書き出す（alignest.exportRotationMaps。「2. 評価の設定と実行」の「Excel 取込」で
             %   そのまま読める形）。
             maps = app.RotationMaps;
             if isempty(maps)
@@ -342,15 +342,17 @@ classdef (Abstract) RotationTab < appui.Core
             left = uigridlayout(body, [16, 1], 'RowHeight', repmat({'fit'}, 1, 16), 'Padding', [0, 0, 6, 0], ...
                 'RowSpacing', 5, 'Scrollable', 'on');
             sectionTitle = @(text, row) set(label(left, text, row, 1), 'FontWeight', 'bold');   % 左の欄の見出し（1列なので private の heading は使わない）
+            % ②〜④ の見出しは、右にその段のボタンを置く（スクロールしなくても押せるように）
+            sectionHeader = @(text, row) headerGrid(left, text, row);
             sectionTitle('① 入力', 1);
             inputGrid = uigridlayout(left, [5, 2], 'ColumnWidth', {'fit', '1x'}, 'RowHeight', repmat({'fit'}, 1, 5), 'Padding', 0);
             place(inputGrid, 2, 1);
             label(inputGrid, '入力', 1, 1);
-            c.rotationSource = uidropdown(inputGrid, 'Items', {'1. データ読込の計測データ', '4. 結果一覧の評価の推定値', ...
-                '6. 未知の座標の推定値', 'Excel・CSV ファイル'}, 'ItemsData', {'data', 'estimate', 'target', 'file'}, ...
+            c.rotationSource = uidropdown(inputGrid, 'Items', {'1. データ読込の計測データ', '3. 結果一覧の評価の推定値', ...
+                '5. 未知の座標の推定値', 'Excel・CSV ファイル'}, 'ItemsData', {'data', 'estimate', 'target', 'file'}, ...
                 'ValueChangedFcn', @(~, ~) app.onRotationSourceChanged(), 'Tooltip', ['ばらつきと FB の検証に使う値。' ...
                 '評価の推定値：選んだ手法・学習パターンで、学習に使った Mark は計測値、ほかの Mark は推定値。未知の座標の' ...
-                '推定値：「6.」で推定した点の値（Wafer × 学習データの組み合わせごと）。Excel・CSV ファイル：下のボタンで' ...
+                '推定値：「5.」で推定した点の値（Wafer × 学習データの組み合わせごと）。Excel・CSV ファイル：下のボタンで' ...
                 'このタブに読み込んだ表（列は右の「Excel・CSV の列」で選ぶ）。']);
             place(c.rotationSource, 1, 2);
             c.rotationLoadFile = uibutton(inputGrid, 'Text', 'Excel・CSV を読み込む…', ...
@@ -375,7 +377,7 @@ classdef (Abstract) RotationTab < appui.Core
                 'Text', '');
             place(c.rotationInputInfo, 3, 1);
 
-            sectionTitle('② Shot・Mark ごとのばらつき（3σ）', 4);
+            spreadHeader = sectionHeader('② Shot・Mark ごとのばらつき（3σ）', 4);
             spreadGrid = uigridlayout(left, [3, 2], 'ColumnWidth', {'fit', '1x'}, 'RowHeight', repmat({'fit'}, 1, 3), ...
                 'Padding', 0);
             place(spreadGrid, 5, 1);
@@ -393,11 +395,11 @@ classdef (Abstract) RotationTab < appui.Core
                 '数値の列（列の対応で標準の項目にしなかった列）。選ぶと、その列の Shot・Mark ごとの 3σ も求めます' ...
                 '（1. データ読込の計測データのとき）。']);
             place(c.rotationTarget, 3, 2);
-            c.rotationComputeVariability = uibutton(left, 'Text', 'ばらつきを求める', 'Enable', 'off', ...
+            c.rotationComputeVariability = uibutton(spreadHeader, 'Text', 'ばらつきを求める', 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~, ~) app.onComputeRotationVariability());
-            place(c.rotationComputeVariability, 6, 1);
+            place(c.rotationComputeVariability, 1, 2);
 
-            sectionTitle('③ 計測の優先度と計測マップ', 7);
+            mapHeader = sectionHeader('③ 計測の優先度と計測マップ', 7);
             mapGrid = uigridlayout(left, [7, 2], 'ColumnWidth', {'fit', '1x'}, 'RowHeight', repmat({'fit'}, 1, 7), ...
                 'Padding', 0);
             place(mapGrid, 8, 1);
@@ -437,11 +439,11 @@ classdef (Abstract) RotationTab < appui.Core
                 @(~, ~) app.onRotationCirclesChanged(), 'Tooltip', ['「ばらつき」と「計測マップ」の図に、Wafer 中心から' ...
                 'この半径の円を重ねます（空白で区切っていくつでも。例：120 140）。空欄なら描きません。']);
             place(c.rotationCircles, 7, 2);
-            c.rotationMakeMaps = uibutton(left, 'Text', '計測マップを作る', 'Enable', 'off', ...
+            c.rotationMakeMaps = uibutton(mapHeader, 'Text', '計測マップを作る', 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~, ~) app.onMakeRotationMaps());
-            place(c.rotationMakeMaps, 9, 1);
+            place(c.rotationMakeMaps, 1, 2);
 
-            sectionTitle('④ FB の検証', 10);
+            fbHeader = sectionHeader('④ FB の検証', 10);
             fbGrid = uigridlayout(left, [6, 3], 'ColumnWidth', {'fit', '1x', 70}, 'RowHeight', repmat({'fit'}, 1, 6), ...
                 'Padding', 0);
             place(fbGrid, 11, 1);
@@ -463,28 +465,25 @@ classdef (Abstract) RotationTab < appui.Core
             place(c.rotationLots, 3, 2);
             label(fbGrid, 'Lot ごと', 3, 3);
             label(fbGrid, '補正のモデル', 4, 1);
-            c.rotationModel = uidropdown(fbGrid, 'Items', {'2. の Overlay 補正', '7. の Shot 高次補正'}, ...
+            c.rotationModel = uidropdown(fbGrid, 'Items', {'2. の Overlay 補正', '6. の Shot 高次補正'}, ...
                 'ItemsData', {'overlay', 'highOrder'}, 'ValueChangedFcn', @(~, ~) app.updateRotationEnabled(), 'Tooltip', ...
-                ['FB の補正値を求めるモデル。2. の Overlay 補正：「2. 評価の設定」の Wafer 成分＋Shot 共通成分＋Shot ごとの' ...
-                '成分。7. の Shot 高次補正：「7. Shot高次補正」の補正の式・くくり・回帰の設定。どちらも FB の補正値を' ...
+                ['FB の補正値を求めるモデル。2. の Overlay 補正：「2. 評価の設定と実行」の Wafer 成分＋Shot 共通成分＋Shot ごとの' ...
+                '成分。6. の Shot 高次補正：「6. Shot高次補正」の補正の式・くくり・回帰の設定。どちらも FB の補正値を' ...
                 'そのまま検証側に当てます。']);
             place(c.rotationModel, 4, [2, 3]);
             label(fbGrid, '求め方', 5, 1);
             c.rotationTransferMethod = uidropdown(fbGrid, 'Items', {'点ごとに平均して求める', '補正値を平均する'}, ...
-                'ItemsData', {'values', 'coefficients'}, 'Enable', 'off', 'Tooltip', ['7. の Shot 高次補正で FB 側が複数枚の' ...
+                'ItemsData', {'values', 'coefficients'}, 'Enable', 'off', 'Tooltip', ['6. の Shot 高次補正で FB 側が複数枚の' ...
                 'とき：計測値を点ごとに平均して補正値を求めるか、Wafer ごとに求めた補正値を平均するか（2. の Overlay 補正は' ...
                 '点ごとに平均）。']);
             place(c.rotationTransferMethod, 5, [2, 3]);
             c.rotationCompareFull = uicheckbox(fbGrid, 'Text', '全計測とも比べる', 'Value', true, 'Tooltip', ...
                 '同じ分け方で、FB 側の全点を計測したときの検証も「条件の比較」に足します。');
             place(c.rotationCompareFull, 6, [1, 3]);
-            actions = uigridlayout(left, [1, 2], 'ColumnWidth', {'1x', '1x'}, 'Padding', 0);
-            place(actions, 12, 1);
-            c.rotationRunButton = primaryButton(app, actions, '検証する', @(~, ~) app.onRunRotationFeedback());
+            c.rotationRunButton = primaryButton(app, fbHeader, '検証する', @(~, ~) app.onRunRotationFeedback());
+            place(c.rotationRunButton, 1, 2);
             c.rotationRunButton.Enable = 'off';
-            c.rotationExport = uibutton(actions, 'Text', '計測マップを書き出す…', 'Enable', 'off', ...
-                'ButtonPushedFcn', @(~, ~) app.onExportRotationMaps(), 'Tooltip', ['「計測マップ」のタブで選んだマップを' ...
-                ' Excel に書き出します（「2. 評価の設定」の「Excel 取込」で読める形）。']);
+            left.RowHeight([6, 9, 12]) = {0, 0, 0};   % 以前のボタンの行（ボタンは見出しの右に移した）
             c.rotationInfo = uilabel(left, 'WordWrap', 'on', 'Text', '');
             place(c.rotationInfo, 13, 1);
             c.rotationError = errorLabel(app, left, 14, 1);
@@ -513,12 +512,12 @@ classdef (Abstract) RotationTab < appui.Core
             place(c.rotationCumulativeRates, 1, 5);
             spreadAxes = uigridlayout(spread, [1, 2], 'ColumnWidth', {'1x', '1x'}, 'Padding', 0, 'ColumnSpacing', 8);
             c.rotationSpreadAxes = [uiaxes(spreadAxes), uiaxes(spreadAxes)];
-            set(c.rotationSpreadAxes, 'Visible', 'off');
+            axesPlaceholder(app, c.rotationSpreadAxes, '② の「ばらつきを求める」を押すと、ここに Shot・Mark ごとの 3σ が出ます。');
             c.rotationSpreadTable = uitable(spread, 'RowName', {}, 'Data', table());
 
             c.rotationMapTab = uitab(outputs, 'Title', '計測マップ');
             mapsGrid = uigridlayout(c.rotationMapTab, [3, 1], 'RowHeight', {'fit', '1x', 120}, 'Padding', 6, 'RowSpacing', 6);
-            mapControls = uigridlayout(mapsGrid, [1, 3], 'ColumnWidth', {'fit', 260, '1x'}, 'Padding', 0);
+            mapControls = uigridlayout(mapsGrid, [1, 4], 'ColumnWidth', {'fit', 260, '1x', 'fit'}, 'Padding', 0);
             label(mapControls, '描く・書き出すマップ', 1, 1);
             c.rotationMapList = uilistbox(mapControls, 'Items', {}, 'Multiselect', 'on', 'Value', {}, ...
                 'ValueChangedFcn', @(~, ~) app.drawRotationMaps(), 'Tooltip', ['描く計測マップ（6枚まで並べる）と、' ...
@@ -526,6 +525,10 @@ classdef (Abstract) RotationTab < appui.Core
             place(c.rotationMapList, 1, 2);
             c.rotationMapInfo = uilabel(mapControls, 'WordWrap', 'on', 'Text', '');
             place(c.rotationMapInfo, 1, 3);
+            c.rotationExport = uibutton(mapControls, 'Text', '計測マップを書き出す…', 'Enable', 'off', ...
+                'ButtonPushedFcn', @(~, ~) app.onExportRotationMaps(), 'Tooltip', ['選んだマップを Excel に書き出します' ...
+                '（「2. 評価の設定と実行」の「Excel 取込」で読める形）。']);
+            place(c.rotationExport, 1, 4);
             c.rotationMapAxesGrid = uigridlayout(mapsGrid, [2, 3], 'Padding', 0, 'RowSpacing', 6, 'ColumnSpacing', 6);
             c.rotationMapAxes = gobjects(1, app.ROTATION_MAX_MAP_AXES);
             for k = 1:app.ROTATION_MAX_MAP_AXES
@@ -534,13 +537,16 @@ classdef (Abstract) RotationTab < appui.Core
                 c.rotationMapAxes(k).Layout.Column = mod(k - 1, 3) + 1;
             end
             set(c.rotationMapAxes, 'Visible', 'off');
+            c.rotationMapAxesGrid.ColumnWidth = {'1x', 0, 0};
+            c.rotationMapAxesGrid.RowHeight = {'1x', 0};
+            axesPlaceholder(app, c.rotationMapAxes(1), '③ の「計測マップを作る」を押すと、ここに計測マップが出ます。');
             c.rotationMapTable = uitable(mapsGrid, 'RowName', {}, 'Data', table());
 
             c.rotationRunTab = uitab(outputs, 'Title', 'FB の検証');
             runGrid = uigridlayout(c.rotationRunTab, [3, 1], 'RowHeight', {'1x', '1x', 'fit'}, 'Padding', 6, 'RowSpacing', 6);
             runAxes = uigridlayout(runGrid, [1, 2], 'Padding', 0, 'ColumnSpacing', 8);
             c.rotationRunAxes = [uiaxes(runAxes), uiaxes(runAxes)];
-            set(c.rotationRunAxes, 'Visible', 'off');
+            axesPlaceholder(app, c.rotationRunAxes, '④ の「検証する」を押すと、ここに FB 側・検証側の補正残差が出ます。');
             runTables = uitabgroup(runGrid);
             summaryTab = uitab(runTables, 'Title', '補正残差');
             c.rotationRunTable = uitable(uigridlayout(summaryTab, [1, 1], 'Padding', 4), 'RowName', {}, 'Data', table());
@@ -562,7 +568,7 @@ classdef (Abstract) RotationTab < appui.Core
                 'CellSelectionCallback', @(~, event) app.onRotationHistorySelected(event));
             compareAxes = uigridlayout(compareGrid, [1, 2], 'ColumnWidth', {'2x', '1x'}, 'Padding', 0, 'ColumnSpacing', 8);
             c.rotationCompareAxes = [uiaxes(compareAxes), uiaxes(compareAxes)];
-            set(c.rotationCompareAxes, 'Visible', 'off');
+            axesPlaceholder(app, c.rotationCompareAxes, '「検証する」を押すたびに条件が表に足され、ここで比べられます。');
             c.rotationCompareInfo = uilabel(compareGrid, 'WordWrap', 'on', 'Text', ['「検証する」を押すたびに、条件と結果を' ...
                 'ここに足します（アプリを閉じるまで残ります）。']);
 
@@ -691,11 +697,11 @@ classdef (Abstract) RotationTab < appui.Core
                     end
                 case "estimate"
                     if ~hasResults
-                        infoText = "「3. 実行」で評価してください（計測データを読み込んで評価した結果の推定値を使います）。";
+                        infoText = "「2. 評価の設定と実行」で評価してください（計測データを読み込んで評価した結果の推定値を使います）。";
                     end
                 case "target"
                     if isempty(app.TargetRun)
-                        infoText = "「6. 未知の座標の推定」で推定してください。";
+                        infoText = "「5. 未知の座標の推定」で推定してください。";
                     end
                 case "file"
                     if isempty(app.RotationFile)
@@ -742,7 +748,7 @@ classdef (Abstract) RotationTab < appui.Core
                 case "estimate"
                     results = app.Results;
                     if isempty(results) || isImportedResults(results)
-                        error('alignest:rotationInput', '先に「3. 実行」で評価してください。');
+                        error('alignest:rotationInput', '先に「2. 評価の設定と実行」で評価してください。');
                     end
                     methodIndex = c.rotationMethod.Value;
                     planLabel = string(c.rotationPlan.Value);
@@ -763,14 +769,14 @@ classdef (Abstract) RotationTab < appui.Core
                 otherwise
                     run = app.TargetRun;
                     if isempty(run)
-                        error('alignest:rotationInput', '先に「6. 未知の座標の推定」で推定してください。');
+                        error('alignest:rotationInput', '先に「5. 未知の座標の推定」で推定してください。');
                     end
                     for k = 1:numel(run.labels)
                         unit = app.Data.units(run.unitIndex(k));
                         points = alignest.rotationPoints(alignest.highOrderTargetPoints(unit, run.results{k}.table));
                         wafers(end + 1) = waferEntry(unit, string(run.labels(k)), points); %#ok<AGROW>
                     end
-                    description = "6. 未知の座標の推定値（" + run.method.label + "）";
+                    description = "5. 未知の座標の推定値（" + run.method.label + "）";
             end
             if group ~= "all"
                 wafers = wafers(arrayfun(@(wafer) inGroup(wafer, group), wafers));
@@ -860,7 +866,7 @@ classdef (Abstract) RotationTab < appui.Core
                 legend(ax, 'off');
             end
             if isempty(variability)
-                set(c.rotationSpreadAxes, 'Visible', 'off');
+                axesPlaceholder(app, c.rotationSpreadAxes, '② の「ばらつきを求める」を押すと、ここに Shot・Mark ごとの 3σ が出ます。');
                 c.rotationSpreadTable.Data = table();
                 return
             end
@@ -986,6 +992,9 @@ classdef (Abstract) RotationTab < appui.Core
             if isempty(maps)
                 c.rotationMapTable.Data = table();
                 c.rotationMapInfo.Text = '';
+                c.rotationMapAxesGrid.ColumnWidth = {'1x', 0, 0};
+                c.rotationMapAxesGrid.RowHeight = {'1x', 0};
+                axesPlaceholder(app, c.rotationMapAxes(1), '③ の「計測マップを作る」を押すと、ここに計測マップが出ます。');
                 return
             end
             chosen = cell2mat(c.rotationMapList.Value);
@@ -1024,7 +1033,7 @@ classdef (Abstract) RotationTab < appui.Core
                 legend(ax, 'off');
             end
             if isempty(run)
-                set(c.rotationRunAxes, 'Visible', 'off');
+                axesPlaceholder(app, c.rotationRunAxes, '④ の「検証する」を押すと、ここに FB 側・検証側の補正残差が出ます。');
                 c.rotationRunTable.Data = table();
                 c.rotationAssignmentTable.Data = table();
                 c.rotationRunInfo.Text = '';
@@ -1072,7 +1081,7 @@ classdef (Abstract) RotationTab < appui.Core
             if ~isempty(history)
                 number = max([history.number]) + 1;
             end
-            modelNames = struct("overlay", "2. Overlay 補正", "highOrder", "7. Shot 高次補正");
+            modelNames = struct("overlay", "2. Overlay 補正", "highOrder", "6. Shot 高次補正");
             entry = struct("number", number, "kind", string(kind), "model", modelNames.(result.options.model), ...
                 "input", string(app.RotationVariability.description), ...
                 "description", result.description, "rate", result.measurementRate, ...
@@ -1129,7 +1138,7 @@ classdef (Abstract) RotationTab < appui.Core
             end
             data = table();
             if isempty(history)
-                set(c.rotationCompareAxes, 'Visible', 'off');
+                axesPlaceholder(app, c.rotationCompareAxes, '「検証する」を押すたびに条件が表に足され、ここで比べられます。');
                 return
             end
             rows = app.RotationHistorySelection;
@@ -1408,4 +1417,12 @@ value = fallback;
 if ~isempty(values)
     value = values(1);
 end
+end
+
+function grid = headerGrid(parent, text, row)
+% 左の欄の段の見出し：太字の見出しと、右にその段のボタンを置く格子（ボタンは呼んだ側で place(button, 1, 2)）
+grid = uigridlayout(parent, [1, 2], 'ColumnWidth', {'1x', 'fit'}, 'Padding', 0);
+place(grid, row, 1);
+title_ = uilabel(grid, 'Text', text, 'FontWeight', 'bold', 'WordWrap', 'on');
+place(title_, 1, 1);
 end

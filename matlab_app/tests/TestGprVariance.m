@@ -1,6 +1,6 @@
 classdef TestGprVariance < matlab.unittest.TestCase
     %TESTGPRVARIANCE GPR の推定の分散（予測分散）：式どおりの値、学習点の近くで小さく遠くで大きいこと、評価の結果に残ること、
-    %   「5. Waferごとのマップ」の「推定の分散を並べる（GPR）」と「6. 未知の座標の推定」の分散の図・表・書き出し。
+    %   「4. Waferごとのマップ」の「推定の分散を並べる（GPR）」と「5. 未知の座標の推定」の分散の図・表・書き出し。
 
     properties
         Root
@@ -71,8 +71,8 @@ classdef TestGprVariance < matlab.unittest.TestCase
         end
 
         function screensShowVariance(testCase)
-            % 「5. Waferごとのマップ」：GPR なら4つ目の図に推定の分散。GPR 以外は描かずに知らせる。
-            % 「6. 未知の座標の推定」：分散の色の図・表の列・Excel の列
+            % 「4. Waferごとのマップ」：GPR なら4つ目の図に推定の分散。GPR 以外は描かずに知らせる。
+            % 「5. 未知の座標の推定」：分散の色の図・表の列・Excel の列
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
             c = app.Controls;

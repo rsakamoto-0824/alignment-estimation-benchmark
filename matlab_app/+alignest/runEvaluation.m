@@ -35,7 +35,7 @@ mode = string(mode);
 timer = tic;
 methods = alignest.activeMethods(settings);   % 1変数では RT モデルを除く
 if isempty(methods)
-    error('alignest:noMethod', '比べる手法が選ばれていません。「2. 評価の設定」で手法を1つ以上選んでください。');
+    error('alignest:noMethod', '比べる手法が選ばれていません。「2. 評価の設定と実行」で手法を1つ以上選んでください。');
 end
 specs = alignest.buildPlanSpecs(settings.sampling);
 units = data.units;
@@ -46,7 +46,7 @@ if isfield(data, "attributeNames")
     missingColumns = columns(~ismember(columns, data.attributeNames));
     if ~isempty(missingColumns)
         error('alignest:factorColumn', ['質的変数に選んだ列が、読み込んだデータにありません: %s。' ...
-            '「2. 評価の設定」の質的変数を選び直すか、その列を含むファイルを読み込んでください。'], strjoin(missingColumns, "、"));
+            '「2. 評価の設定と実行」の質的変数を選び直すか、その列を含むファイルを読み込んでください。'], strjoin(missingColumns, "、"));
     end
 end
 previousSeconds = 0;
@@ -298,7 +298,7 @@ methods = [reshape(previous.methods, 1, []), methods(~ismember(string({methods.i
 newSpecs = specs(~ismember(string({specs.label}), string({previousSpecs.label})));
 specs = sortSpecs([reshape(previousSpecs, 1, []), reshape(newSpecs, 1, [])]);
 if mode == "extend" && numel(methods) == numel(previous.methods) && isempty(newSpecs) && ~addedUnits
-    error('alignest:extend', ['評価済みの結果に無い手法・学習パターン・Wafer がありません。「2. 評価の設定」で手法・' ...
+    error('alignest:extend', ['評価済みの結果に無い手法・学習パターン・Wafer がありません。「2. 評価の設定と実行」で手法・' ...
         '学習 Shot 数（計測率）・評価に使う Wafer の枚数（割合）を増やしてから実行してください。']);
 end
 end

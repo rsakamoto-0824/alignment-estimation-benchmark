@@ -1,5 +1,5 @@
 classdef TestShotHighOrderWaferRt < matlab.unittest.TestCase
-    %TESTSHOTHIGHORDERWAFERRT Wafer RT（「7. Shot高次補正」で RT モデルを Wafer レベルの補正に使う）：すべての Shot・外周だけの
+    %TESTSHOTHIGHORDERWAFERRT Wafer RT（「6. Shot高次補正」で RT モデルを Wafer レベルの補正に使う）：すべての Shot・外周だけの
     %   補正、次数の上限、補正の段階の残差、自由度、係数・Shot ごとの表・グリッド、書き出し、画面。
 
     properties

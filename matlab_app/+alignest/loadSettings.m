@@ -4,7 +4,7 @@ function settings = loadSettings(filePath, source)
 %   型は初期設定に合わせる（文字列の並び・数値の行ベクトルなど）。知らない項目は無視する。
 %   学習 Shot 数の開始・終了・刻みが無い以前の設定ファイルは、Shot 数の並びから決める（alignest.syncShotCounts）。
 %   同心円の区切り・外周の半径を Wafer 半径に対する比で書いた以前の設定は、mm の値に直す（alignest.upgradeRadiusSettings）。
-%   「7. Shot高次補正」の以前の L2 のオン・オフ（highOrder.l2）は、正則化の種類（highOrder.regularization）に直す。
+%   「6. Shot高次補正」の以前の L2 のオン・オフ（highOrder.l2）は、正則化の種類（highOrder.regularization）に直す。
 %   質的変数（factors）を書いてあり、Y 成分を別に選ぶか（factors.separateY）が無い以前の設定は、Y 成分も X 成分と同じ
 %   （separateY = false）として読む（初期設定は別に選ぶ）。
 %   変えたい項目だけを書いたファイル（既定の設定ファイルなど）で、学習 Shot 数の開始・終了・刻みだけがあり並び nShots が

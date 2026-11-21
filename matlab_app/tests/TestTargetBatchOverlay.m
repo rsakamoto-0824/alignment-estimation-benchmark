@@ -1,7 +1,7 @@
 classdef TestTargetBatchOverlay < matlab.unittest.TestCase
     %TESTTARGETBATCHOVERLAY 未知の座標の推定：Wafer の外の点（推定値 0・図から除く）、Wafer × 学習データの一括推定、
     %   推定した後の重ね合わせ補正値（補正モデルの当てはめ・係数・Excel の書き出し）、補正残差のベクトル場、
-    %   「補正のモデル」の欄（「2. 評価の設定」の Overlay 補正と同じ設定）を確かめる。
+    %   「補正のモデル」の欄（「2. 評価の設定と実行」の Overlay 補正と同じ設定）を確かめる。
 
     properties
         Data
@@ -221,7 +221,7 @@ classdef TestTargetBatchOverlay < matlab.unittest.TestCase
         end
 
         function appCorrectionModelAndMap(testCase)
-            % 画面：「補正のモデル」で変えた式は「2. 評価の設定」と同じ設定（逆も同じ）。計算の後にモデルを変えると
+            % 画面：「補正のモデル」で変えた式は「2. 評価の設定と実行」と同じ設定（逆も同じ）。計算の後にモデルを変えると
             % 計算し直すよう知らせる。「補正残差のマップ」に残差のベクトル場を描く
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
@@ -237,7 +237,7 @@ classdef TestTargetBatchOverlay < matlab.unittest.TestCase
             testCase.verifyGreaterThan(summary.n, 0);
             testCase.verifyTrue(contains(c.targetResidualInfo.Text, "補正後の残差"));
             testCase.verifyEqual(c.targetResidualSave.Enable, matlab.lang.OnOffSwitchState('on'));
-            % 「補正のモデル」で変える → 設定と「2. 評価の設定」の欄も変わる。補正値は前のモデルなので知らせる
+            % 「補正のモデル」で変える → 設定と「2. 評価の設定と実行」の欄も変わる。補正値は前のモデルなので知らせる
             newPerShot = 'none';   % 今と違うもの（並進は選べない）
             if string(c.targetOverlayPerShot.Value) == "none"
                 newPerShot = 'linear';
@@ -248,7 +248,7 @@ classdef TestTargetBatchOverlay < matlab.unittest.TestCase
             testCase.verifyEqual(c.overlayPerShot.Value, newPerShot);
             testCase.verifyTrue(startsWith(string(c.targetOverlayInfo.Text), "⚠ 補正モデルを変えました"));
             testCase.verifyTrue(startsWith(string(c.targetResidualInfo.Text), "⚠ 補正モデルを変えました"));
-            % 式の誤りは両方の欄の下に出る。「2. 評価の設定」で変えると「補正のモデル」も変わる
+            % 式の誤りは両方の欄の下に出る。「2. 評価の設定と実行」で変えると「補正のモデル」も変わる
             c.targetOverlayShotCommon.Value = 'formula';
             c.targetOverlayShotCommon.ValueChangedFcn([], []);
             testCase.verifyEqual(c.targetOverlayShotDx.Enable, matlab.lang.OnOffSwitchState('on'));

@@ -1,5 +1,5 @@
 classdef (Abstract) HighOrderAnalysisTab < appui.Core
-    %HIGHORDERANALYSISTAB 「7. Shot高次補正」の残差を調べて書き出す部分：ヒストグラム（補正前の値・Shot ごとの1次の残差・
+    %HIGHORDERANALYSISTAB 「6. Shot高次補正」の残差を調べて書き出す部分：ヒストグラム（補正前の値・Shot ごとの1次の残差・
     %   Wafer 高次補正だけの残差・Wafer 高次補正＋Shot 共通補正の残差・高次補正の残差、または補正の比較の条件の残差を、X・Y を
     %   並べて重ねる。内周・外周で分けられる）、書き出し
     %   （点ごとの補正量・残差を計測データの形で、Shot ごとの k を横に並べて、補正の比較の全条件をまとめて。CSV・Excel）。
@@ -126,9 +126,9 @@ classdef (Abstract) HighOrderAnalysisTab < appui.Core
             kind = string(c.highOrderOutputKind.Value);
             value = string(c.highOrderOutputValue.Value);
             if filePath ~= "" && kind ~= "conditions" && ~isempty(app.HighOrderRun) && staleHighOrderText(app) ~= ""
-                shown = c.highOrderOutputs.SelectedTab;
+                shown = selectedHighOrderTab(app);
                 computeHighOrder(app);   % 画面と同じ結果を書くため、今の設定・入力で計算し直す
-                c.highOrderOutputs.SelectedTab = shown;
+                showHighOrderTab(app, shown);
             end
             [data, notes] = highOrderOutputTable(app, kind, value);
             showHighOrderOutputPreview(app, data);
@@ -139,7 +139,7 @@ classdef (Abstract) HighOrderAnalysisTab < appui.Core
     end
 
     methods (Access = {?appui.Core})
-        % ================= 7. Shot高次補正：ヒストグラム・書き出し =================
+        % ================= 6. Shot高次補正：ヒストグラム・書き出し =================
         function buildHighOrderHistogramTab(app, outputs)
             % 「ヒストグラム」のタブ：重ねる値の種類・Wafer、重ねる値の一覧と、X・Y × すべて・内周・外周の Shot の図（3段）
             c = struct();
@@ -262,9 +262,9 @@ classdef (Abstract) HighOrderAnalysisTab < appui.Core
             if ~isfield(c, 'highOrderOutputTab')
                 return   % 画面を作っている途中
             end
-            if c.highOrderOutputs.SelectedTab == c.highOrderHistogramTab
+            if selectedHighOrderTab(app) == c.highOrderHistogramTab
                 drawHighOrderHistogram(app);
-            elseif c.highOrderOutputs.SelectedTab == c.highOrderOutputTab
+            elseif selectedHighOrderTab(app) == c.highOrderOutputTab
                 showHighOrderOutputPreview(app);
             end
         end
