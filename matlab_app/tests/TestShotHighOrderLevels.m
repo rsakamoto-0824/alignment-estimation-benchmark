@@ -1,5 +1,5 @@
 classdef TestShotHighOrderLevels < matlab.unittest.TestCase
-    %TESTSHOTHIGHORDERLEVELS Shot 高次補正（「7. Shot高次補正」）の、点が足りない Shot の扱い（全体の項を減らす・その Shot だけ
+    %TESTSHOTHIGHORDERLEVELS Shot 高次補正（「6. Shot高次補正」）の、点が足りない Shot の扱い（全体の項を減らす・その Shot だけ
     %   項を減らす・補正しない）、補正の段階（Wafer 高次補正だけ・Wafer 高次補正＋Shot 共通補正の残差と、Wafer 低次・高次・
     %   Shot 共通 低次・高次・Shot 毎 低次・高次の順の書き出し）、外れ値とみなした点、グリッドの刻みと倍率、画面（点が足りない
     %   Shot の欄・外周の式の使う項・Wafer の比較の dx・dy の棒・Shot 重ね合わせの5次・質的変数の交互作用の箱ひげ図）を確かめる。

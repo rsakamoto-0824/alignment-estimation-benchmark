@@ -1,6 +1,6 @@
 function data = highOrderShotTable(result)
 %HIGHORDERSHOTTABLE Shot ごとの補正値を、1行 = 1 Shot に、Wafer 低次・Wafer 高次・Wafer RT・Shot 共通 低次・Shot 共通 高次・Shot 毎 低次・
-%   Shot 毎 高次の順に横に並べた表にする（「7. Shot高次補正」の「書き出し」。段階の分け方は alignest.highOrderLevels）。
+%   Shot 毎 高次の順に横に並べた表にする（「6. Shot高次補正」の「書き出し」。段階の分け方は alignest.highOrderLevels）。
 %   data = alignest.highOrderShotTable(result)
 %   result：alignest.shotHighOrder の結果。行は Wafer の順・Shot の番号の順。列：
 %   - Wafer・shotNo・Xmm・Ymm（Shot 中心 [mm]）・Radius・範囲（内周・外周）・くくり（k の組の名前）・点の数

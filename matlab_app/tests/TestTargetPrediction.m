@@ -1,5 +1,5 @@
 classdef TestTargetPrediction < matlab.unittest.TestCase
-    %TESTTARGETPREDICTION 未知の座標の推定（「6. 未知の座標の推定」）：点の読み込み・作り方、評価と同じ推定値になること、
+    %TESTTARGETPREDICTION 未知の座標の推定（「5. 未知の座標の推定」）：点の読み込み・作り方、評価と同じ推定値になること、
     %   学習に無い Mark 番号・外挿の判定、Excel の書き出し、画面の流れを確かめる。
 
     properties
@@ -157,7 +157,7 @@ classdef TestTargetPrediction < matlab.unittest.TestCase
         function appWorkflow(testCase)
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
-            testCase.verifyEqual(app.Tabs.target.Title, '6. 未知の座標の推定');
+            testCase.verifyEqual(app.Tabs.target.Title, '5. 未知の座標の推定');
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.xlsx'));
             app.applyMapping();
             targets = app.loadTargetPoints(fullfile(testCase.Root, 'sample_data', 'sample_targets.xlsx'));

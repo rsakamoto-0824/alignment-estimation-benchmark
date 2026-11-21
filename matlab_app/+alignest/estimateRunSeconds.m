@@ -1,5 +1,5 @@
 function [seconds, detail] = estimateRunSeconds(units, settings)
-%ESTIMATERUNSECONDS 評価にかかる時間の目安 [秒]（「2. 評価の設定」と「3. 実行」に出す）。
+%ESTIMATERUNSECONDS 評価にかかる時間の目安 [秒]（「2. 評価の設定と実行」と「2. 評価の設定と実行」に出す）。
 %   [seconds, detail] = alignest.estimateRunSeconds(data.units, settings)
 %   目安 = 推定の時間 + 学習パターンを作る時間。
 %   推定の時間 = 1条件（Wafer × 学習パターン × 手法 の1つ）あたり 2 秒 × 条件の数。

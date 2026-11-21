@@ -1,5 +1,5 @@
 function rows = markLayoutCriterion(study)
-%MARKLAYOUTCRITERION 「8. Mark配置の最適化」で配置を選んだ I 最適計画の式（採用した演算式）と、その中身（使った項・点の数）。
+%MARKLAYOUTCRITERION 「7. Mark配置の最適化」で配置を選んだ I 最適計画の式（採用した演算式）と、その中身（使った項・点の数）。
 %   rows = alignest.markLayoutCriterion(study)   % study：alignest.markLayoutStudy の結果
 %   rows：[項目, 内容] の2列の文字列（画面の「I 最適の式」タブと、Excel の「説明」シートに出す）。
 %   式は alignest.iOptimalMarks と同じ：I(S) = Σ_式 trace(M_S⁻¹ W)、M_S = F_S' F_S（計測する Mark の行）、

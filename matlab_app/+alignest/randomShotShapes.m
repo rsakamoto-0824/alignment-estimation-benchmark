@@ -1,5 +1,5 @@
 function shapes = randomShotShapes(xMm, yMm, options)
-%RANDOMSHOTSHAPES 乱数で Shot の形（Shot 内の座標の多項式の歪み）を作る（「8. Mark配置の最適化」で実測値の無い座標の評価に使う）。
+%RANDOMSHOTSHAPES 乱数で Shot の形（Shot 内の座標の多項式の歪み）を作る（「7. Mark配置の最適化」で実測値の無い座標の評価に使う）。
 %   shapes = alignest.randomShotShapes(xMm, yMm, shapes=200, seed=1, orderSigmaNm=[3, 3, 1.5, 1, 0.5, 0.3, 0, 0], noiseNm=0.5, ...
 %       outlierPercent=0, outlierNm=10)
 %   xMm・yMm：候補の Mark の Shot 内の座標 [mm]（Shot 中心から）。

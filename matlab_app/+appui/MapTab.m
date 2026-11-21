@@ -1,5 +1,5 @@
 classdef (Abstract) MapTab < appui.Core
-    %MAPTAB 「5. Waferごとのマップ」タブ：1つの条件の計測値・推定値・残差、条件を並べて比べる図、Shot スタックマップ。
+    %MAPTAB 「4. Waferごとのマップ」タブ：1つの条件の計測値・推定値・残差、条件を並べて比べる図、Shot スタックマップ。
     %   AlignmentEstimationApp（画面の本体）の一部。画面の部品は Controls、データ・結果は Core のプロパティに持つ。
     %   ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
 
@@ -23,11 +23,11 @@ classdef (Abstract) MapTab < appui.Core
         end
 
         function conditions = addMapCondition(app, optionIndex, planLabel, methodIndex)
-            %ADDMAPCONDITION 「5. Waferごとのマップ」の並べて比べる一覧に、条件（Wafer・平均 × 学習パターン × 手法）を足して
+            %ADDMAPCONDITION 「4. Waferごとのマップ」の並べて比べる一覧に、条件（Wafer・平均 × 学習パターン × 手法）を足して
             %   並べて描く（並べ方を「一覧の条件を並べて比べる」にする）。引数を省くと画面の選択。同じ条件は足さない。
             c = app.Controls;
             if isempty(app.Results)
-                error('alignest:noResults', '先に「3. 実行」で評価してください。');
+                error('alignest:noResults', '先に「2. 評価の設定と実行」で評価してください。');
             end
             if nargin >= 2
                 c.mapWafer.Value = optionIndex;
@@ -61,7 +61,7 @@ classdef (Abstract) MapTab < appui.Core
     end
 
     methods (Access = {?appui.Core})
-        % ================= 5. Waferごとのマップ =================
+        % ================= 4. Waferごとのマップ =================
         function buildMapTab(app)
             grid = uigridlayout(app.Tabs.map, [5, 1], 'RowHeight', {'fit', 'fit', 'fit', '1x', 'fit'}, 'Padding', 12, ...
                 'RowSpacing', 8);
@@ -77,7 +77,7 @@ classdef (Abstract) MapTab < appui.Core
             label(controls, '共分散楕円', 1, 9);
             label(controls, '表示', 1, 5);
             label(controls, '矢印の倍率', 1, 6);
-            label(controls, '色の点の大きさ', 1, 7);
+            label(controls, '点の大きさ', 1, 7);
             onChange = @(~, ~) app.drawMap();
             c.mapWafer = uidropdown(controls, 'Items', {'—'}, 'ValueChangedFcn', onChange);
             place(c.mapWafer, 2, 1);
@@ -88,13 +88,14 @@ classdef (Abstract) MapTab < appui.Core
             c.mapContent = uidropdown(controls, 'Items', {'推定', ...
                 'Overlay 補正'}, 'ItemsData', {'estimate', 'overlay'}, ...
                 'Tooltip', ['Overlay 補正：実測値で補正した残差、推定値で補正した残差（学習 Shot は計測値、それ以外は推定値で' ...
-                '補正を求めて実際の値に当てた残差）、推定による変化（両者の差）。補正モデルは「2. 評価の設定」で選びます。'], ...
+                '補正を求めて実際の値に当てた残差）、推定による変化（両者の差）。補正モデルは「2. 評価の設定と実行」で選びます。'], ...
                 'ValueChangedFcn', onChange);
             place(c.mapContent, 2, 4);
             c.mapMode = uidropdown(controls, 'Items', {'ベクトル', 'X（色）', 'Y（色）'}, ...
                 'ItemsData', {'vector', 'X', 'Y'}, 'ValueChangedFcn', onChange);
             place(c.mapMode, 2, 5);
-            c.mapScale = uieditfield(controls, 'numeric', 'Value', 0, 'Limits', [0, Inf], 'ValueChangedFcn', onChange);
+            c.mapScale = uieditfield(controls, 'text', 'Value', '', 'Placeholder', '自動', 'ValueChangedFcn', onChange, ...
+                'Tooltip', '矢印の倍率（空欄なら、値の大きさから自動で決める）。');
             place(c.mapScale, 2, 6);
             c.mapMarkerSize = markerSizeSpinner(app, controls, onChange);
             place(c.mapMarkerSize, 2, 7);
@@ -104,14 +105,15 @@ classdef (Abstract) MapTab < appui.Core
             place(c.mapEllipse, 2, 9);
             % 図に重ねるもの：Shot の枠・Scan 方向の色の Shot の枠・同心円の制約の区切りと、「ベクトルを描かない（楕円だけ）」
             % （上の行の右に置くと、手法・図の内容の欄が狭くなるため）
-            extras = uigridlayout(grid, [1, 7], 'ColumnWidth', {'fit', 'fit', 'fit', 'fit', 'fit', 'fit', '1x'}, 'Padding', 0);
+            extras = uigridlayout(grid, [1, 9], 'ColumnWidth', {'fit', 'fit', 'fit', 'fit', 'fit', 'fit', '1x', 'fit', 'fit'}, ...
+                'Padding', 0);   % 右端は図の保存・コピー（ほかのタブと同じく図の右上）
             c.mapShotFrames = uicheckbox(extras, 'Text', 'Shot の枠', 'Value', true, 'ValueChangedFcn', onChange);
             c.mapShotNumbers = uicheckbox(extras, 'Text', 'Shot 番号', 'Value', false, 'ValueChangedFcn', onChange, ...
                 'Tooltip', 'Shot 中心に shotNo を重ねて描きます。');
             c.mapScanFrames = uicheckbox(extras, 'Text', 'Shot の枠を Scan 方向で色分け', ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['Shot の枠を Scan 方向の色で描き、枠の左上に ▲（上向き）・' ...
                 '▼（下向き）を付けます。Scan 方向が無い Shot は灰色の枠です。色と、Scan 方向 1・2 のどちらが上向きかは' ...
-                '「2. 評価の設定」の表示で変えられます。']);
+                '「2. 評価の設定と実行」の表示で変えられます。']);
             c.mapRings = uicheckbox(extras, 'Text', '同心円の区切りを描く', 'ValueChangedFcn', onChange, ...
                 'Tooltip', ['評価で I 最適・ランダムの同心円の制約を使ったとき、区切りの半径（Shot 中心の半径 [mm]）を' ...
                 '橙の一点鎖線で描きます。']);
@@ -121,6 +123,9 @@ classdef (Abstract) MapTab < appui.Core
                 '推定の分散（予測分散。計測のばらつきは含めない）の色の図を並べます。X（色）なら X の分散、Y（色）なら Y の' ...
                 '分散、ベクトルなら X と Y の分散の和です。']);
             c.mapExtrasInfo = uilabel(extras, 'Text', '', 'FontColor', app.Palette.muted);
+            c.saveMap = uibutton(extras, 'Text', '図を画像で保存…', 'ButtonPushedFcn', @(~, ~) app.onSaveMap());
+            c.copyMap = uibutton(extras, 'Text', '図をコピー', 'Tooltip', app.COPY_TOOLTIP, ...
+                'ButtonPushedFcn', @(source, ~) app.onCopyFigure("map", source));
             c.filterMap = buildFilterControls(app, grid, "map");
             % 図（1つの条件の3枚、または並べて比べる図）と、並べて比べる条件の一覧
             body = uigridlayout(grid, [1, 2], 'ColumnWidth', {'1x', 300}, 'Padding', 0, 'ColumnSpacing', 10);
@@ -133,8 +138,9 @@ classdef (Abstract) MapTab < appui.Core
             c.mapVarianceAxes = uiaxes(axesGrid, 'Visible', 'off');   % 推定の分散（GPR。「推定の分散を並べる」のとき）
             c.comparePanel = uipanel(c.mapStack, 'BorderType', 'none');
             c.compareAxes = gobjects(1, 0);
-            side = uigridlayout(body, [14, 1], 'RowHeight', {'fit', 'fit', 'fit', 'fit', 'fit', 'fit', 'fit', 'fit', '1x', ...
-                'fit', 'fit', 'fit', 'fit', 'fit'}, 'Padding', 0, 'RowSpacing', 4);
+            side = uigridlayout(body, [12, 1], 'RowHeight', {'fit', 'fit', 'fit', 'fit', 0, 0, 0, 'fit', '1x', ...
+                'fit', 'fit', 'fit'}, 'Padding', 0, 'RowSpacing', 4);
+            c.mapSide = side;   % Shot スタックマップの欄は、並べ方がスタックマップのときだけ出す（drawMap）
             label(side, '並べ方', 1, 1);
             c.mapView = uidropdown(side, 'Items', {'1つの条件', '一覧の条件を並べて比べる', ...
                 'Shot スタックマップ'}, 'ItemsData', {'single', 'compare', 'stack'}, ...
@@ -170,22 +176,17 @@ classdef (Abstract) MapTab < appui.Core
             c.mapClearConditions = uibutton(side, 'Text', '一覧を空にする', ...
                 'ButtonPushedFcn', @(~, ~) app.removeMapConditions(1:numel(app.MapConditions)));
             place(c.mapClearConditions, 12, 1);
-            % 図の保存は右の列の一番下（上の欄の行に置くと、狭い窓で欄が詰まる・はみ出すため）
-            c.saveMap = uibutton(side, 'Text', '図を画像で保存…', 'ButtonPushedFcn', @(~, ~) app.onSaveMap());
-            place(c.saveMap, 13, 1);
-            c.copyMap = uibutton(side, 'Text', '図をコピー', 'Tooltip', app.COPY_TOOLTIP, ...
-                'ButtonPushedFcn', @(source, ~) app.onCopyFigure("map", source));
-            place(c.copyMap, 14, 1);
+            showRows(side, 3:7, false);   % 「1つの条件」では使わない欄（drawMap で並べ方に合わせて出す）
             set([c.mapWafer, c.mapPlan, c.mapMethod, c.mapContent, c.mapMode, c.mapScale, c.mapMarkerSize, ...
                 c.mapMarkerShape, c.mapEllipse, c.mapEllipseOnly, c.mapShotFrames, c.saveMap, c.copyMap, c.mapScanFrames, c.mapRings, ...
                 c.mapView, c.mapCompareValue, c.mapConditions, c.mapAddCondition, c.mapRemoveCondition, ...
                 c.mapClearConditions, c.mapStackBy, c.mapStackAll], 'Enable', 'off');
-            c.mapInfo = uilabel(grid, 'WordWrap', 'on', 'Text', '「3. 実行」で評価すると、ここに Wafer ごとの図が出ます。');
+            c.mapInfo = uilabel(grid, 'WordWrap', 'on', 'Text', '「2. 評価の設定と実行」で評価すると、ここに Wafer ごとの図が出ます。');
             app.Controls = mergeStruct(app.Controls, c);
         end
 
         function drawMap(app)
-            % 「5. Waferごとのマップ」を描く：1つの条件の 計測値・推定値・残差（または Overlay 補正の3つ）を並べるか、
+            % 「4. Waferごとのマップ」を描く：1つの条件の 計測値・推定値・残差（または Overlay 補正の3つ）を並べるか、
             % 一覧の条件を同じ値の種類で並べて比べる
             if isempty(app.Results) || (isImportedResults(app.Results) && isempty(app.ImportedEstimates))
                 return
@@ -211,6 +212,8 @@ classdef (Abstract) MapTab < appui.Core
                 "区切り：" + strjoin(string(rings), "・") + " mm");
             view = string(c.mapView.Value);
             c.mapStack.RowHeight = ternary(view ~= "single", {0, '1x'}, {'1x', 0});
+            showRows(c.mapSide, [3, 4], view ~= "single");   % 並べて比べる値・スタックする値
+            showRows(c.mapSide, 5:7, view == "stack");        % Shot スタックマップの分け方
             if view == "compare"
                 drawComparison(app);
                 return
@@ -235,7 +238,9 @@ classdef (Abstract) MapTab < appui.Core
             for k = 1:3
                 drawMapPanel(app, c.mapAxes(k), f, k, scale(k), limits(k), magnitudes(k), f.titles(k), true, ranges{k});
             end
-            c.mapInfo.Text = f.info + drawVariancePanel(app, f, overlayContent);
+            info = f.info + drawVariancePanel(app, f, overlayContent);
+            c.mapInfo.Text = regexprep(info, "（shotNo：[^）]*）", "");   % 学習 Shot の番号の並びは長いので、文字に乗せたときだけ出す
+            c.mapInfo.Tooltip = char(info);
         end
 
         function note = drawVariancePanel(app, f, overlayContent)
@@ -430,7 +435,7 @@ classdef (Abstract) MapTab < appui.Core
             if spec.scalar
                 mode = "X";
             end
-            scale = c.mapScale.Value;
+            scale = mapScaleValue(app);
             if scale <= 0
                 % Shot の短い辺の 18% の矢印が、基準の値の大きさの95%点になる倍率（図をまたいで共通）
                 scale = alignest.plot.vectorScale(reference) * min(f.sizeMm) * 0.18 / 12;
@@ -517,13 +522,21 @@ classdef (Abstract) MapTab < appui.Core
             styleAxes(app, ax, app.AXES_FONT_SIZE);
         end
 
+        function scale = mapScaleValue(app)
+            % 「矢印の倍率」の値（空欄・数でない・0 以下なら 0 = 自動）
+            [values, ok] = parseNumbers(app.Controls.mapScale.Value);
+            scale = 0;
+            if ok && isscalar(values) && values > 0
+                scale = values;
+            end
+        end
+
         function [scale, limit, magnitudes] = mapScales(app, values, referenceIndex, separateThird)
             % 矢印の倍率（0 = 自動なら基準の値から）・色の範囲（基準の値の最大の絶対値）・矢印の色の範囲。
             % separateThird（Overlay 補正）なら、3つ目（推定による変化）は小さいので自分の値で倍率を決める
-            c = app.Controls;
             reference = values{referenceIndex};
-            scale = repmat(c.mapScale.Value, 1, 3);
-            if c.mapScale.Value <= 0
+            scale = repmat(mapScaleValue(app), 1, 3);
+            if scale(1) <= 0
                 scale(:) = alignest.plot.vectorScale(reference);
                 if separateThird
                     scale(3) = alignest.plot.vectorScale(values{3});

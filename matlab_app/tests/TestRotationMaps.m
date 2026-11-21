@@ -1,6 +1,6 @@
 classdef TestRotationMaps < matlab.unittest.TestCase
-    %TESTROTATIONMAPS 計測マップのローテーション（「9. 計測マップのローテーション」）：Shot・Mark ごとのばらつき（3σ）、しきい値で
-    %   分けた優先度とローテーションする計測マップ、FB 側・検証側に分けた補正残差（2. の Overlay 補正・7. の Shot 高次補正）、
+    %TESTROTATIONMAPS 計測マップのローテーション（「8. 計測マップのローテーション」）：Shot・Mark ごとのばらつき（3σ）、しきい値で
+    %   分けた優先度とローテーションする計測マップ、FB 側・検証側に分けた補正残差（2. の Overlay 補正・6. の Shot 高次補正）、
     %   画面の流れ（入力・対象・目的変数・条件の比較・書き出しと読み直し）、しきい値の累積 %・外周を優先度 1・ランダムな
     %   振り分け・円の重ね描き、このタブで読み込む Excel・CSV（列を選ぶ）を確かめる。
 
@@ -241,7 +241,7 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             testCase.verifyEqual(slow.assignment.map(1:4).', [1, 1, 1, 1]);
             testCase.verifyLessThan(slow.summary.nCorrected(1), full.summary.nCorrected(1));
             testCase.verifyTrue(any(contains(slow.messages, "一度も計測していない")));
-            % 割合・読み込みの順・7. の Shot 高次補正（同じ値なら FB の補正値は検証側でも同じ残差）
+            % 割合・読み込みの順・6. の Shot 高次補正（同じ値なら FB の補正値は検証側でも同じ残差）
             ratio = alignest.feedbackSimulation(wafers, maps, settings, order="input", splitKind="ratio", splitValue=0.5);
             testCase.verifyEqual(ratio.assignment.wafer(1:3).', ["W1", "W2", "W3"]);
             testCase.verifyEqual(nnz(ratio.assignment.role == "FB"), 3);

@@ -10,7 +10,7 @@ function summary = correctionMap(ax, correction, unit, options)
 %   options.titleText：題名の1行目（2行目に値の名前と |平均| + 3σ を足す。options.showStatistics = false なら
 %   1行目だけ）、options.waferRadiusMm：Wafer の半径 [mm]、options.legendLocation：凡例の位置（既定は図の下）。
 %   options.valueLabel：値の名前を変えるとき（例："Shot ごとの1次で補正した残差"。既定は options.value の名前）、
-%   options.markMeasured：false なら実測値の点に四角を重ねない（すべての点が計測値のとき。「7. Shot高次補正」）。
+%   options.markMeasured：false なら実測値の点に四角を重ねない（すべての点が計測値のとき。「6. Shot高次補正」）。
 %   options.scaleMmPerNm・colorLimit・magnitudeLimit：矢印の倍率・色の範囲・矢印の色の上限（0 なら値から決める。図を並べる
 %   ときにそろえる）。
 %   summary は描いた点の数 n と、X・Y の |平均| + 3σ [nm]（meanPlus3SigmaX・Y）、値の名前 valueLabel。

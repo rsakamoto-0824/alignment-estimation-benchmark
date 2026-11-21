@@ -1,5 +1,5 @@
 classdef (Abstract) HighOrderSweepTab < appui.Core
-    %HIGHORDERSWEEPTAB 「7. Shot高次補正」の「λ・c のスイープ」：正則化の強さ λ・Huber の c を、範囲（開始・終了）と評価数で
+    %HIGHORDERSWEEPTAB 「6. Shot高次補正」の「λ・c のスイープ」：正則化の強さ λ・Huber の c を、範囲（開始・終了）と評価数で
     %   変えて計算し、補正残差（当てはめた残差と 1点抜きの予測の誤差）の推移を図と表に出す（alignest.sweepHighOrder）。
     %   基準（最小二乗・正則化なし）を図に描き、Wafer 間のばらつきをエラーバーで描ける。途中で一時中断し、続きから再開できる。
     %   X・Y それぞれで 1点抜きの誤差が最も小さい値を、左の設定にできる。入力のデータ・補正の計算は HighOrderTab.m。
@@ -349,7 +349,7 @@ classdef (Abstract) HighOrderSweepTab < appui.Core
             sweep.regression = highOrderSweepRegression(app);
             app.HighOrderSweep = sweep;
             c.highOrderTuneApply.Enable = 'on';
-            c.highOrderOutputs.SelectedTab = c.highOrderTuneTab;
+            showHighOrderTab(app, c.highOrderTuneTab);
             drawHighOrderSweep(app);
 
             function continueRun = reportProgress(done, total, message)

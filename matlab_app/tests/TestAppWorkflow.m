@@ -721,7 +721,7 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             app.Controls.requireOuter.Value = false;
             app.Controls.requireOuter.ValueChangedFcn([], []);
             testCase.verifyEmpty(app.Controls.measureAxes);
-            testCase.verifyEmpty(app.Controls.measurePanel.Children);
+            testCase.verifyEmpty(findobj(app.Controls.measurePanel, 'Type', 'axes'), "図は消え、案内だけになる");
             % すべての学習パターンの計測マップを Excel に書き出す
             folder = tempname;
             mkdir(folder);
@@ -743,7 +743,7 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             results = app.runEvaluationNow(false);
             testCase.verifyEqual(results.groups, ["計測率 10%", "計測率 40%"]);
             testCase.verifyEqual(unique(results.table.nShots(results.table.group == "計測率 10%")), 10);
-            app.Controls.resultTabs.SelectedTab = app.Controls.chartTab;
+            app.Controls.chartTab.Parent.SelectedTab = app.Controls.chartTab;   % 「表・グラフ」の中のタブ
             app.Controls.chartXAxis.Value = 'plan';
             app.Controls.chartXAxis.ValueChangedFcn([], []);
             testCase.verifyEqual(string(app.Controls.chartAxes.XLabel.String), "計測率 [%]");
@@ -861,7 +861,7 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             plan = results.plans(1);
             testCase.verifyTrue(all(ismember([50, 99, 2, 4], plan.shotNos)) && ~any(plan.shotNos == 1));
             % グラフのエラーバー
-            app.Controls.resultTabs.SelectedTab = app.Controls.chartTab;
+            app.Controls.chartTab.Parent.SelectedTab = app.Controls.chartTab;   % 「表・グラフ」の中のタブ
             app.Controls.chartErrorBars.Value = 'sd';
             app.Controls.chartErrorBars.ValueChangedFcn([], []);
             testCase.verifyEqual(numel(findobj(app.Controls.chartAxes, 'Type', 'errorbar')), numel(app.Controls.chartMethods.Value));
@@ -1036,10 +1036,10 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             before = app.Controls.summaryTable.Data;
             filter = alignest.defaultPointFilter();
             filter.radiusMaxMm = 100;
-            app.Controls.filterMap.radiusMax.Value = 100;
+            app.Controls.filterMap.radiusMax.Value = '100';
             app.Controls.filterMap.apply.ButtonPushedFcn([], []);
             testCase.verifyEqual(app.ResultFilter, filter, "マップの欄からも絞り込める");
-            testCase.verifyEqual(app.Controls.filterResults.radiusMax.Value, 100, "結果一覧の欄にもそろえる");
+            testCase.verifyEqual(string(app.Controls.filterResults.radiusMax.Value), "100", "結果一覧の欄にもそろえる");
             testCase.verifyTrue(startsWith(app.Controls.filterResults.status.Text, "絞り込み中：半径 0〜100 mm"));
             testCase.verifyFalse(isequal(app.Controls.summaryTable.Data, before));
             testCase.verifyTrue(all(app.Results.table.nTest_X <= app.BaseResults.table.nTest_X));

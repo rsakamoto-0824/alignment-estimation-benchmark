@@ -1,6 +1,6 @@
 function levels = highOrderLevels(result)
 %HIGHORDERLEVELS Shot 高次補正の補正値（係数）を、補正の段階ごとに Wafer 低次・Wafer 高次・Wafer RT・Shot 共通 低次・Shot 共通 高次・
-%   Shot 毎 低次・Shot 毎 高次の順に並べた表にする（「7. Shot高次補正」の書き出し）。
+%   Shot 毎 低次・Shot 毎 高次の順に並べた表にする（「6. Shot高次補正」の書き出し）。
 %   levels = alignest.highOrderLevels(result)
 %   result：alignest.shotHighOrder の結果。低次は定数と1次の項（Shot は k1〜k6、Wafer 成分は Xc・Yc の1次）、高次は2次以上の項。
 %   - Wafer：Wafer 成分（Shot 中心の座標 Xc・Yc の多項式。定数は Shot 共通の k1・k2 に含む）

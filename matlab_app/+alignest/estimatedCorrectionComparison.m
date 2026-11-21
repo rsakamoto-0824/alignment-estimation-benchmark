@@ -1,10 +1,10 @@
 function comparison = estimatedCorrectionComparison(data, results, selection, settings, options)
-%ESTIMATEDCORRECTIONCOMPARISON 実測値で求めた補正と、推定値で求めた補正を、実測値に当てて比べる（「4. 結果一覧」）。
+%ESTIMATEDCORRECTIONCOMPARISON 実測値で求めた補正と、推定値で求めた補正を、実測値に当てて比べる（「3. 結果一覧」）。
 %   comparison = alignest.estimatedCorrectionComparison(data, results, selection, settings)
 %   comparison = alignest.estimatedCorrectionComparison(..., cache=推定結果の Map, progressFcn=@(done, total) true)
 %   data：計測データ（alignest.prepareData）、results：評価の結果（alignest.runEvaluation）、selection：methodIndex（手法。
 %   results.methods の何番目か）・groups（学習パターンの列。results.groups の値）・unitIndex（Wafer。data.units の何番目か）。
-%   settings：補正のモデルは「2. 評価の設定」の Overlay 補正の評価（settings.overlay：Wafer 成分・Shot 共通成分・Shot ごとの
+%   settings：補正のモデルは「2. 評価の設定と実行」の Overlay 補正の評価（settings.overlay：Wafer 成分・Shot 共通成分・Shot ごとの
 %   成分。alignest.overlayChoice・overlayProjector）と settings.data.waferRadiusMm。補正は最小二乗で、全 Mark で求める
 %   （alignest.overlayCorrection と同じ）。
 %   - 実測値で補正：全 Mark の計測値で補正を求め、計測値 − 補正量 を残差とする
@@ -36,7 +36,7 @@ AXIS_NAMES = ["X", "Y"];
 STAGE_NAMES = ["Wafer 成分", "＋Shot 共通", "全成分"];   % 補正の段階（stageChoices の順）
 choice = alignest.overlayChoice(settings);
 if ~choice.enabled
-    error('alignest:estimatedCorrection', ['「2. 評価の設定」の Overlay 補正の評価がすべて「なし」です。Wafer 成分・' ...
+    error('alignest:estimatedCorrection', ['「2. 評価の設定と実行」の Overlay 補正の評価がすべて「なし」です。Wafer 成分・' ...
         'Shot 共通成分・Shot ごとの成分のどれかを選んでください。']);
 end
 stages = stageChoices(choice);

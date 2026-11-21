@@ -1,5 +1,5 @@
 function writeHighOrderTable(filePath, data, notes)
-%WRITEHIGHORDERTABLE Shot 高次補正の書き出しの表を、CSV か Excel（.xlsx）に書く（「7. Shot高次補正」の「書き出し」）。
+%WRITEHIGHORDERTABLE Shot 高次補正の書き出しの表を、CSV か Excel（.xlsx）に書く（「6. Shot高次補正」の「書き出し」）。
 %   alignest.writeHighOrderTable(filePath, data)
 %   alignest.writeHighOrderTable(filePath, data, notes)   % notes：Excel のときだけ「説明」シートに書く行（[項目, 内容]）
 %   CSV は UTF-8（先頭に BOM を付ける。Windows の Excel で開いても日本語の列名が化けないように）。値の無いところ（NaN）は空欄

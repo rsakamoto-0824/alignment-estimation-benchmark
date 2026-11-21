@@ -183,8 +183,12 @@ classdef TestTransferSelectionCorrection < matlab.unittest.TestCase
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
             c = app.Controls;
-            titles = string({c.highOrderOutputs.Children.Title});
-            testCase.verifyEqual(find(titles == "補正値テーブル") + 1, find(titles == "書き出し"), "書き出しの左");
+            inner = findobj(c.highOrderOutputs, 'Type', 'uitab');   % まとまり（入力と項・結果・比べる）の中のタブ
+            titles = string({inner(arrayfun(@(tab) isa(tab.Parent, 'matlab.ui.container.TabGroup') && ...
+                tab.Parent ~= c.highOrderOutputs, inner)).Title});
+            resultTitles = string({c.highOrderMapTab.Parent.Children.Title});
+            testCase.verifyEqual(find(resultTitles == "補正値テーブル") + 1, find(resultTitles == "書き出し"), "書き出しの左");
+            testCase.verifyEqual(string({c.highOrderOutputs.Children.Title}), ["入力と項", "結果", "比べる"]);
             testCase.verifyFalse(any(titles == "補正値"));
             testCase.verifyTrue(all(ismember(["k の選定", "結果の履歴", "他の Wafer の補正"], titles)));
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
@@ -266,7 +270,7 @@ classdef TestTransferSelectionCorrection < matlab.unittest.TestCase
         end
 
         function measuredAndEstimatedCorrection(testCase)
-            % 結果一覧：実測値で求めた補正と推定値で求めた補正を、実測値に当てて比べる（補正のモデルは「2. 評価の設定」の
+            % 結果一覧：実測値で求めた補正と推定値で求めた補正を、実測値に当てて比べる（補正のモデルは「2. 評価の設定と実行」の
             % Overlay 補正の評価）。すべての点と推定対象の点（学習に使わなかった Mark）で比べ、X・Y の図を分けて2色の棒で描く
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
@@ -312,7 +316,7 @@ classdef TestTransferSelectionCorrection < matlab.unittest.TestCase
             testCase.verifyEqual(numel(bars), 2, "実測値で補正・推定値で補正");
             testCase.verifyNotEqual(bars(1).FaceColor, bars(2).FaceColor, "2色");
             testCase.verifyTrue(contains(string(c.estimatedCorrectionAxes(3).Title.String), "推定対象の点（X）"));
-            testCase.verifyTrue(contains(string(c.estimatedCorrectionModel.Text), "「2. 評価の設定」の Overlay 補正の評価"));
+            testCase.verifyTrue(contains(string(c.estimatedCorrectionModel.Text), "「2. 評価の設定と実行」の Overlay 補正の評価"));
             % Overlay 補正の評価がすべて「なし」なら比べられない
             none = app.Settings;
             none.overlay.waferOrder = 0;

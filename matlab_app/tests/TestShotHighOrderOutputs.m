@@ -1,5 +1,5 @@
 classdef TestShotHighOrderOutputs < matlab.unittest.TestCase
-    %TESTSHOTHIGHORDEROUTPUTS Shot 高次補正（「7. Shot高次補正」）の正則化（L2・L1、かける次数を選ぶ）と、補正値・補正残差の
+    %TESTSHOTHIGHORDEROUTPUTS Shot 高次補正（「6. Shot高次補正」）の正則化（L2・L1、かける次数を選ぶ）と、補正値・補正残差の
     %   書き出し（点ごとの値を計測データの形で・Shot ごとの k を横に並べて・補正の比較の全条件をまとめて。CSV・Excel）を確かめる。
 
     properties
@@ -215,8 +215,9 @@ classdef TestShotHighOrderOutputs < matlab.unittest.TestCase
             testCase.verifyEqual(app.Settings.highOrder.penaltyOrders, [1, 3]);
             testCase.verifyFalse(isfield(app.Settings.highOrder, "l2"));
             % 書き出しのタブ
-            c.highOrderOutputs.SelectedTab = c.highOrderOutputTab;
-            c.highOrderOutputs.SelectionChangedFcn(c.highOrderOutputs, struct("NewValue", c.highOrderOutputTab));
+            c.highOrderOutputTab.Parent.SelectedTab = c.highOrderOutputTab;   % 「結果」の中のタブ
+            c.highOrderOutputs.SelectedTab = ancestor(c.highOrderOutputTab.Parent, 'uitab');
+            c.highOrderOutputTab.Parent.SelectionChangedFcn(c.highOrderOutputTab.Parent, struct("NewValue", c.highOrderOutputTab));
             values = app.exportHighOrderValues("points", "residual");
             testCase.verifyEqual(height(values), 1980);
             testCase.verifyEqual(height(c.highOrderOutputTable.Data), 200, "画面にははじめの 200 行");

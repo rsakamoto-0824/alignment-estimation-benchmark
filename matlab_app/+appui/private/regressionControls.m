@@ -1,5 +1,5 @@
 function regression = regressionControls(parent, onSetting)
-%REGRESSIONCONTROLS 「③ 回帰」の欄：X・Y の行に、損失関数・Huber の c・正則化・λ・かける次数を並べる（「7.」「8.」で共通）。
+%REGRESSIONCONTROLS 「③ 回帰」の欄：X・Y の行に、損失関数・Huber の c・正則化・λ・かける次数を並べる（「6.」「7.」で共通）。
 %   regression：画面の部品（loss・huber・regularization・lambda は [X, Y]、orders は 2 × 次数の数）と格子 grid。
 MAX_PENALTY_ORDER = 6;   % 正則化をかけられる次数の上限（alignest.highOrderOptions と同じ）
 axisNames = ["X", "Y"];

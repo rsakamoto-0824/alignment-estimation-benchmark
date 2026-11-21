@@ -1,5 +1,5 @@
 function exportMarkLayouts(filePath, study, notes)
-%EXPORTMARKLAYOUTS 「8. Mark配置の最適化」の結果（alignest.markLayoutStudy）を Excel ファイル（.xlsx）に書き出す。
+%EXPORTMARKLAYOUTS 「7. Mark配置の最適化」の結果（alignest.markLayoutStudy）を Excel ファイル（.xlsx）に書き出す。
 %   alignest.exportMarkLayouts(filePath, study)
 %   alignest.exportMarkLayouts(filePath, study, notes)   % notes：「説明」シートに足す行（[項目, 内容] の2列の文字列）
 %   シート：「説明」（作成日時・補正の式と回帰・配置の選び方・I 最適計画の式と使った項（alignest.markLayoutCriterion）・

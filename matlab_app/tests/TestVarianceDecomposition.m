@@ -1,6 +1,6 @@
 classdef TestVarianceDecomposition < matlab.unittest.TestCase
     %TESTVARIANCEDECOMPOSITION ばらつき分解（Lot 間・Wafer 間・Shot 間・その他）：手で決めた値での分け方と合計・3σ、
-    %   「1. データ読込」の「ばらつき分解」（Operation ごとの棒・装置の切り替え）、「4. 結果一覧」の「補正残差のばらつき分解」
+    %   「1. データ読込」の「ばらつき分解」（Operation ごとの棒・装置の切り替え）、「3. 結果一覧」の「補正残差のばらつき分解」
     %   （補正で Wafer 間のばらつきが変わること）を確かめる。
 
     properties
@@ -119,7 +119,7 @@ classdef TestVarianceDecomposition < matlab.unittest.TestCase
         end
 
         function correctionChangesWaferToWaferVariation(testCase)
-            % 「4. 結果一覧」の「補正残差のばらつき分解」：補正前の値と、実測値・推定値で補正した残差（足す成分のある段階）を
+            % 「3. 結果一覧」の「補正残差のばらつき分解」：補正前の値と、実測値・推定値で補正した残差（足す成分のある段階）を
             % 並べる。Wafer 成分（定数を含む）で Wafer ごとに補正すると、実測値で補正した残差の Wafer 間はほぼ 0 になる
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));

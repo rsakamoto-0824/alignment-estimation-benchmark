@@ -1,7 +1,7 @@
 classdef TestMeasurementCandidates < matlab.unittest.TestCase
     %TESTMEASUREMENTCANDIDATES 計測を足す場所（alignest.measurementCandidates）：推定誤差・GPR の推定の分散の大きい上位 n の
     %   場所（Shot・Mark）と閾値より大きい場所、平均・最大、軸、除く場所、学習の行を使わないこと。評価の推定値の表の推定の分散の列。
-    %   「4. 結果一覧」の「計測を足す場所」と、「足す」にチェックを入れた候補だけを必ず計測する Shot・Mark の欄に入れること。
+    %   「3. 結果一覧」の「計測を足す場所」と、「足す」にチェックを入れた候補だけを必ず計測する Shot・Mark の欄に入れること。
 
     properties
         Root
@@ -100,7 +100,7 @@ classdef TestMeasurementCandidates < matlab.unittest.TestCase
             added = app.addMeasurementCandidates();
             testCase.verifyEqual(sort(added), sort(top.shotNo.'));
             testCase.verifyTrue(all(ismember(top.shotNo, app.Settings.sampling.requiredShots)), "必ず計測する shotNo に入る");
-            testCase.verifyTrue(contains(string(c.requiredShots.Value), string(top.shotNo(1))), "2. 評価の設定の欄にも出る");
+            testCase.verifyTrue(contains(string(c.requiredShots.Value), string(top.shotNo(1))), "2. 評価の設定と実行の欄にも出る");
             testCase.verifyTrue(contains(string(c.candidateInfo.Text), "5 個を足しました"));
             % 足した場所は次の候補に出ない
             next = app.findMeasurementCandidates();

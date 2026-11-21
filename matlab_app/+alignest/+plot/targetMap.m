@@ -1,5 +1,5 @@
 function targetMap(ax, result, unit, options)
-%TARGETMAP 未知の座標での推定値を Wafer 上に描く（「6. 未知の座標の推定」）。
+%TARGETMAP 未知の座標での推定値を Wafer 上に描く（「5. 未知の座標の推定」）。
 %   alignest.plot.targetMap(ax, result, unit, options)
 %   result：alignest.predictTargets の結果。unit：その Wafer（Shot の枠を描く）。
 %   推定値を矢印（options.mode = "vector"）または X・Y の色で描き（alignest.plot.waferMap）、学習点（四角）、

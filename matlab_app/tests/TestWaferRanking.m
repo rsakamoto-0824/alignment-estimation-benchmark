@@ -1,6 +1,6 @@
 classdef TestWaferRanking < matlab.unittest.TestCase
     %TESTWAFERRANKING Wafer のベスト・平均・ワースト（alignest.waferRanking）：指標ごとの Wafer、同じ値・ランダムの繰り返し・
-    %   値の無い Wafer の扱い、総合の順位、「4. 結果一覧」の「Wafer のベスト・ワースト」の表と Excel のシート。
+    %   値の無い Wafer の扱い、総合の順位、「3. 結果一覧」の「Wafer のベスト・ワースト」の表と Excel のシート。
 
     properties
         Root

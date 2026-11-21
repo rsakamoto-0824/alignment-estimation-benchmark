@@ -1,5 +1,5 @@
 function data = highOrderConditionTable(results, labels, value)
-%HIGHORDERCONDITIONTABLE 「補正の比較」の条件ごとの点の値（補正量・残差など）を、1つの表に列を並べてまとめる（「7. Shot高次補正」
+%HIGHORDERCONDITIONTABLE 「補正の比較」の条件ごとの点の値（補正量・残差など）を、1つの表に列を並べてまとめる（「6. Shot高次補正」
 %   の「書き出し」）。
 %   data = alignest.highOrderConditionTable(results, labels, value)
 %   results：alignest.compareHighOrderConditions の2つ目の出力（条件ごとの結果。求められなかった条件は []）、labels：条件の

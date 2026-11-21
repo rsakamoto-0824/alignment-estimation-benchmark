@@ -243,7 +243,7 @@ classdef TestComparisonPlansDisplay < matlab.unittest.TestCase
             app.setSettings(settings);
             testCase.verifyEqual(string([app.Controls.scanUpItems.Checked]), ["off", "on"], "1 = 下向きに ✓");
             testCase.verifyTrue(contains(app.Controls.scanColorItems(1).Text, "#FF0000"));
-            testCase.verifyFalse(isfield(app.Controls, 'scan1Up'), "「2. 評価の設定」には欄を出さない");
+            testCase.verifyFalse(isfield(app.Controls, 'scan1Up'), "「2. 評価の設定と実行」には欄を出さない");
             app.setScanStyle(scan2Color=[0, 1, 128 / 255]);
             testCase.verifyEqual(app.Settings.display.scan2Color, [0, 1, 128 / 255], 'AbsTol', 1e-12);
             testCase.verifyTrue(contains(app.Controls.scanColorItems(2).Text, "#00FF80"));

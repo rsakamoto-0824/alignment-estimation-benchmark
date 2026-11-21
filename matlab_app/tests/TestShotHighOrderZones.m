@@ -1,5 +1,5 @@
 classdef TestShotHighOrderZones < matlab.unittest.TestCase
-    %TESTSHOTHIGHORDERZONES Shot 高次補正（「7. Shot高次補正」）の追加の評価：外周の Shot だけ別の式（半径で分ける）と内周・
+    %TESTSHOTHIGHORDERZONES Shot 高次補正（「6. Shot高次補正」）の追加の評価：外周の Shot だけ別の式（半径で分ける）と内周・
     %   外周に分けた評価、Wafer 成分（最大5次）を先に引いてから Shot ごとに補正、2つの条件の Shot ごとの比較（ロバスト回帰が
     %   最小二乗よりよかった Shot）、残差の成分分解（Wafer 線形・Shot 共通・Shot・残り）、ヒストグラムを重ねる区間、画面の流れ
     %   （外周の式の選択・内周外周の表・2つの条件を並べる・ヒストグラム・成分分解・書き出し・設定ファイル）を確かめる。

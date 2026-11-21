@@ -1,6 +1,6 @@
 function setModeChoices(dropdown, spec, withVariance)
 % 図の表示（ベクトル・X・Y）の選択肢。1変数は色（値の名前）だけ。withVariance（省略可）が true なら、GPR の推定の分散を
-% 色で描く選択肢（varianceX・varianceY。1変数は varianceX）も足す（「6. 未知の座標の推定」）
+% 色で描く選択肢（varianceX・varianceY。1変数は varianceX）も足す（「5. 未知の座標の推定」）
 if nargin < 3
     withVariance = false;
 end

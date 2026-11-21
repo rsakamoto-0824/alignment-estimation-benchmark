@@ -1,7 +1,12 @@
 classdef (Abstract) SettingsTab < appui.Core
-    %SETTINGSTAB 「2. 評価の設定」タブ：計測点の選び方・学習 Shot 数・比べる手法・質的変数・Overlay 補正・表示（Scan 方向の色）の設定と、設定ファイルの保存・読み込み。
+    %SETTINGSTAB 「2. 評価の設定と実行」タブ：計測点の選び方・学習 Shot/Mark 数・比べる手法・質的変数・評価の条件・Overlay 補正の
+    %   設定と、設定ファイルの保存・読み込み。評価を始めるボタンと計測マップは RunTab（同じタブの中）。
     %   AlignmentEstimationApp（画面の本体）の一部。画面の部品は Controls、データ・結果は Core のプロパティに持つ。
     %   ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
+
+    properties (Constant, Access = {?appui.Core})
+        SAMPLING_PANEL_WIDTH = 600   % 「計測点と計測マップ」の左の欄（学習に使う計測点）の幅 [px]（標準の文字の大きさのとき）
+    end
 
     methods
         function setSettings(app, settings)
@@ -57,14 +62,34 @@ classdef (Abstract) SettingsTab < appui.Core
     end
 
     methods (Access = {?appui.Core})
-        % ================= 2. 評価の設定 =================
+        % ================= 2. 評価の設定と実行 =================
         function buildSettingsTab(app)
-            grid = uigridlayout(app.Tabs.settings, [2, 2], 'RowHeight', {'1x', 'fit'}, ...
-                'ColumnWidth', {'1x', '1.45x'}, 'Padding', 12, 'ColumnSpacing', 12);
+            % 上：評価を始めるボタン・設定の保存（いつも見える）と、これから計算する組み合わせ。下：中のタブ
+            % （計測点と計測マップ・比べる手法・評価と Overlay 補正）。評価のボタンと計測マップは buildRunTab が作る
+            grid = uigridlayout(app.Tabs.settings, [3, 1], 'RowHeight', {'fit', 'fit', '1x'}, 'Padding', 8, 'RowSpacing', 6);
             onChange = @(~, ~) app.onSettingsChanged();
+            c.runBar = uigridlayout(grid, [1, 8], 'ColumnWidth', {200, 0, 0, 'fit', '1x', 'fit', 'fit', 'fit'}, ...
+                'Padding', 0);   % 2・3 列目は「続きから再開」「条件を追加して評価」（押せるときだけ広げる）
+            saveButton = uibutton(c.runBar, 'Text', '設定を保存…', 'ButtonPushedFcn', @(~, ~) app.onSaveSettings());
+            place(saveButton, 1, 6);
+            loadButton = uibutton(c.runBar, 'Text', '設定を読み込む…', 'ButtonPushedFcn', @(~, ~) app.onLoadSettings());
+            place(loadButton, 1, 7);
+            resetButton = uibutton(c.runBar, 'Text', '初期設定に戻す', 'ButtonPushedFcn', ...
+                @(~, ~) app.setSettings(alignest.siteDefaults()), 'Tooltip', ['アプリの初期設定に戻します（今のフォルダに' ...
+                '既定の設定ファイル alignment_estimation_defaults.json があれば、その値）。']);
+            place(resetButton, 1, 8);
+            c.runSummary = uilabel(grid, 'WordWrap', 'on', 'Text', '');
+            c.countLabel = c.runSummary;   % 組み合わせの数と時間の目安（以前の設定タブの下の欄と同じもの）
+            c.settingsTabs = uitabgroup(grid, 'SelectionChangedFcn', @(~, ~) app.onSettingsTabChanged());
+            c.pointsTab = uitab(c.settingsTabs, 'Title', '計測点と計測マップ');
+            c.methodsTab = uitab(c.settingsTabs, 'Title', '比べる手法');
+            c.evaluationTab = uitab(c.settingsTabs, 'Title', '評価・Overlay 補正');
+            pointsGrid = uigridlayout(c.pointsTab, [1, 2], 'ColumnWidth', {app.SAMPLING_PANEL_WIDTH, '1x'}, 'Padding', 6, ...
+                'ColumnSpacing', 10);
+            registerResponsiveColumn(app, pointsGrid, 1);
 
-            samplingPanel = uipanel(grid, 'Title', '学習に使う計測点');
-            s = uigridlayout(samplingPanel, [38, 2], 'RowHeight', repmat({'fit'}, 1, 38), 'ColumnWidth', {'1x', '1x'}, ...
+            samplingPanel = uipanel(pointsGrid, 'Title', '学習に使う計測点');
+            s = uigridlayout(samplingPanel, [26, 2], 'RowHeight', repmat({'fit'}, 1, 26), 'ColumnWidth', {'1x', '1x'}, ...
                 'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
             label(s, '① データの粒度', 1, 1);
             c.samplingUnit = uidropdown(s, 'Items', {'Shot 単位', 'Mark 単位'}, 'ItemsData', {'shot', 'mark'}, ...
@@ -116,9 +141,11 @@ classdef (Abstract) SettingsTab < appui.Core
                 '計測する Mark の数を決めます。計測率は、Wafer の計測値のある Shot（Mark 単位は Mark）に対する割合です。' ...
                 '1 Shot あたりの Mark 数（Mark 単位）：計測する Mark の数 = この値 × 候補 Shot 数。']);
             place(c.countBy, 5, 2);
+            c.samplingGrid = s;   % 使わない欄の行をしまう（updateEnabled）
             sweep = uigridlayout(s, [4, 4], 'RowHeight', {'fit', 'fit', 'fit', 'fit'}, 'ColumnWidth', {'fit', '1x', '1x', '1x'}, ...
                 'Padding', 0, 'RowSpacing', 2);
             place(sweep, 6, [1, 2]);
+            c.countSweep = sweep;
             label(sweep, '開始', 1, 2);
             label(sweep, '終了', 1, 3);
             label(sweep, '刻み', 1, 4);
@@ -151,7 +178,7 @@ classdef (Abstract) SettingsTab < appui.Core
             c.loadLayouts = uibutton(s, 'Text', 'Excel ファイルを読み込む…', 'ButtonPushedFcn', @(~, ~) app.onLoadLayouts(), ...
                 'Tooltip', ['1行目が見出しの表。shotNo の列（Mark 単位なら markNo の列も）と、名前を見出しにした列を並べます。' ...
                 '1・0 だけの列はパターン（1 を計測する）、1・2・3… の列は優先順（1 = 必ず計測、その次から順に。0 = 計測' ...
-                'しない）で、学習 Shot 数ごとに先頭から使います。「計測マップを Excel に書き出す…」のファイルもそのまま読めます。' ...
+                'しない）で、学習 Shot 数ごとに先頭から使います。計測マップの「Excel に書き出す…」のファイルもそのまま読めます。' ...
                 '選び方の「Excel 取込」も選びます。']);
             place(c.loadLayouts, 11, 2);
             c.layoutPlanInfo = uitextarea(s, 'Editable', 'off', 'Value', {'まだ読み込んでいません'});
@@ -166,15 +193,15 @@ classdef (Abstract) SettingsTab < appui.Core
             label(selectGrid, '計測しない shotNo', 1, 2);
             c.requiredShots = uieditfield(selectGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['ここに書いた Shot を' ...
                 '必ず学習に入れ、残りを I 最適（またはランダム）で選びます（拡張 I 最適計画）。Mark 単位の計画では、その Shot の' ...
-                ' Mark をすべて計測します。「3. 実行」の計測マップでクリックしても指定できます。']);
+                ' Mark をすべて計測します。「2. 評価の設定と実行」の計測マップでクリックしても指定できます。']);
             place(c.requiredShots, 2, 1);
             c.excludedShots = uieditfield(selectGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['ここに書いた Shot は' ...
                 '学習に選びません（評価には使います）。I 最適・D 最適・ランダムの Shot と、Mark 単位の計画の Mark に効きます。' ...
-                '「3. 実行」の計測マップでクリックしても指定できます。']);
+                '「2. 評価の設定と実行」の計測マップでクリックしても指定できます。']);
             place(c.excludedShots, 2, 2);
             label(selectGrid, '必ず計測する Mark', 3, 1);
             label(selectGrid, '計測しない Mark', 3, 2);
-            markTip = '「shotNo-markNo」（例：12-3）を空白で区切って入れます。「3. 実行」の Mark 単位の計測マップでクリックしても指定できます。';
+            markTip = '「shotNo-markNo」（例：12-3）を空白で区切って入れます。「2. 評価の設定と実行」の Mark 単位の計測マップでクリックしても指定できます。';
             c.requiredMarks = uieditfield(selectGrid, 'text', 'ValueChangedFcn', onChange, 'Placeholder', '例：12-3 40-1', ...
                 'Tooltip', ['Mark 単位の計画で必ず計測する Mark。' markTip]);
             place(c.requiredMarks, 4, 1);
@@ -200,7 +227,7 @@ classdef (Abstract) SettingsTab < appui.Core
                 '多項式（5次で 21 項）。']);
             label(s, '交換法の初期配置の数', 23, [1, 2]);
             % 入力欄と時間の目安（目安の文が長くても入力欄が縦に伸びないように、小さな格子に入れる）と、Mark 単位の計画
-            exchangeGrid = uigridlayout(s, [6, 2], 'ColumnWidth', {'1x', '1x'}, 'RowHeight', repmat({'fit'}, 1, 6), ...
+            exchangeGrid = uigridlayout(s, [2, 2], 'ColumnWidth', {'1x', '1x'}, 'RowHeight', repmat({'fit'}, 1, 2), ...
                 'Padding', 0, 'RowSpacing', 2);
             place(exchangeGrid, 24, [1, 2]);
             c.exchangeStarts = uispinner(exchangeGrid, 'Limits', [1, 100], 'RoundFractionalValues', 'on', ...
@@ -210,21 +237,24 @@ classdef (Abstract) SettingsTab < appui.Core
             place(c.exchangeStarts, 1, 1);
             c.exchangeInfo = uilabel(exchangeGrid, 'WordWrap', 'on', 'Text', '');
             place(c.exchangeInfo, 2, [1, 2]);
-            markLabel = label(exchangeGrid, 'Mark 単位の計画', 3, [1, 2]);
-            markLabel.FontWeight = 'bold';
-            c.markCountNote = uilabel(exchangeGrid, 'WordWrap', 'on', 'Text', '', 'FontColor', app.Palette.muted, ...
+            % Mark 単位の I 最適・D 最適・ランダムだけの制約（Mark 番号ごとの計測数・各 Shot の点数）
+            heading(s, 'Mark 単位の I 最適・D 最適・ランダム', 25);
+            markGrid = uigridlayout(s, [3, 2], 'ColumnWidth', {'1x', '1x'}, 'RowHeight', repmat({'fit'}, 1, 3), ...
+                'Padding', 0, 'RowSpacing', 2);
+            place(markGrid, 26, [1, 2]);
+            c.markCountNote = uilabel(markGrid, 'WordWrap', 'on', 'Text', '', 'FontColor', app.Palette.muted, ...
                 'UserData', "muted");
-            place(c.markCountNote, 4, [1, 2]);
-            balanceGrid = uigridlayout(exchangeGrid, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
-            place(balanceGrid, 5, [1, 2]);
+            place(c.markCountNote, 1, [1, 2]);
+            balanceGrid = uigridlayout(markGrid, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
+            place(balanceGrid, 2, [1, 2]);
             label(balanceGrid, 'Mark 番号ごとの計測数', 1, 1);
             c.markBalance = uidropdown(balanceGrid, 'Items', {'そろえない', '全計測の割合にそろえる', '均等にする'}, ...
                 'ItemsData', {'none', 'ratio', 'equal'}, 'ValueChangedFcn', onChange, 'Tooltip', ['最適計画で選ぶ Mark の数を、' ...
                 'Mark 番号ごとにそろえる制約。全計測の割合：候補の全 Mark での割合 × 計測する数 ± 許容幅。均等：計測する数 ÷ ' ...
                 'Mark 番号の数（割り切れないときの1つの差だけ。候補の少ない Mark 番号はその数まで）。']);
             place(c.markBalance, 1, 2);
-            perShotGrid = uigridlayout(exchangeGrid, [1, 3], 'ColumnWidth', {'fit', 'fit', 70}, 'Padding', 0);
-            place(perShotGrid, 6, [1, 2]);
+            perShotGrid = uigridlayout(markGrid, [1, 3], 'ColumnWidth', {'fit', 'fit', 70}, 'Padding', 0);
+            place(perShotGrid, 3, [1, 2]);
             c.markRequirePerShot = uicheckbox(perShotGrid, 'Text', 'Shot ごとに n 点の Mark 計測を必須にする', ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['オン：各 Shot で n 点以上の Mark を必ず計測します（Mark が n 点より' ...
                 '少ない Shot はその Shot の全 Mark）。計測する数が足りないときは増やします。オフ：Shot を問わず、' ...
@@ -233,18 +263,26 @@ classdef (Abstract) SettingsTab < appui.Core
             c.markMinPerShot = uispinner(perShotGrid, 'Limits', [1, 99], 'RoundFractionalValues', 'on', 'Value', 1, ...
                 'ValueChangedFcn', onChange, 'Tooltip', '各 Shot で必ず計測する Mark の数');
             place(c.markMinPerShot, 1, 3);
-            heading(s, '評価', 25);
-            label(s, '外周とみなす Mark の半径 [mm]', 26, [1, 2]);
-            c.outerRadius = uieditfield(s, 'numeric', 'Limits', [0, radiusMm], 'ValueDisplayFormat', '%.1f', ...
+            c.measureHost = uipanel(pointsGrid, 'Title', '計測マップ');   % 中身は buildRunTab
+
+            % 評価・Overlay 補正のタブ
+            evaluationPanel = uipanel(uigridlayout(c.evaluationTab, [1, 2], 'ColumnWidth', {760, '1x'}, 'Padding', 6), ...
+                'Title', '評価と Overlay 補正');   % 欄が横に広がりすぎないように幅を決める
+            e = uigridlayout(evaluationPanel, [14, 2], 'RowHeight', repmat({'fit'}, 1, 14), 'ColumnWidth', {'1x', '1x'}, ...
+                'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
+            radiusMm = app.Settings.data.waferRadiusMm;
+            heading(e, '評価', 1);
+            label(e, '外周とみなす Mark の半径 [mm]', 2, [1, 2]);
+            c.outerRadius = uieditfield(e, 'numeric', 'Limits', [0, radiusMm], 'ValueDisplayFormat', '%.1f', ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['Mark の Wafer 中心からの距離 [mm]。結果一覧の「外周の RMSE」' ...
                 '「内側の RMSE」と、散布図の色分け「外周・内側」の境目です。']);
-            place(c.outerRadius, 27, 1);
-            c.removeLinear = uicheckbox(s, 'ValueChangedFcn', onChange, ...
+            place(c.outerRadius, 3, 1);
+            c.removeLinear = uicheckbox(e, 'ValueChangedFcn', onChange, ...
                 'Text', 'XY 1次を除いてから推定する');
-            place(c.removeLinear, 28, [1, 2]);
-            outlierGrid = uigridlayout(s, [2, 3], 'ColumnWidth', {'1x', 'fit', 70}, 'RowHeight', {'fit', 'fit'}, 'Padding', 0, ...
+            place(c.removeLinear, 4, [1, 2]);
+            outlierGrid = uigridlayout(e, [2, 3], 'ColumnWidth', {'1x', 'fit', 70}, 'RowHeight', {'fit', 'fit'}, 'Padding', 0, ...
                 'RowSpacing', 2);
-            place(outlierGrid, 29, [1, 2]);
+            place(outlierGrid, 5, [1, 2]);
             c.excludeOutliers = uicheckbox(outlierGrid, 'ValueChangedFcn', onChange, ...
                 'Text', '学習データの異常値を除いて推定する', ...
                 'Tooltip', ['Wafer・学習パターンごとに、学習点の中心とばらつきを X・Y 別に求め、|値 − 中心| が n × ばらつき' ...
@@ -259,12 +297,12 @@ classdef (Abstract) SettingsTab < appui.Core
                 'ValueDisplayFormat', '%g', 'ValueChangedFcn', onChange);
             place(c.outlierSigma, 2, 3);
             % 処理時間の記録と、評価に使う Wafer（すべて・枚数・割合、先頭から・ランダム）
-            evaluationGrid = uigridlayout(s, [4, 4], 'ColumnWidth', {'fit', '1x', 70, '1x'}, ...
+            evaluationGrid = uigridlayout(e, [4, 4], 'ColumnWidth', {'fit', '1x', 70, '1x'}, ...
                 'RowHeight', {'fit', 'fit', 'fit', 'fit'}, 'Padding', 0, 'RowSpacing', 3);
-            place(evaluationGrid, 30, [1, 2]);
+            place(evaluationGrid, 6, [1, 2]);
             c.recordTiming = uicheckbox(evaluationGrid, 'ValueChangedFcn', onChange, ...
                 'Text', '処理時間を記録する', ...
-                'Tooltip', ['手法 × 学習パターンごとに、1 枚（X・Y）の推定にかかった秒数を集計し、「4. 結果一覧」の指標と' ...
+                'Tooltip', ['手法 × 学習パターンごとに、1 枚（X・Y）の推定にかかった秒数を集計し、「3. 結果一覧」の指標と' ...
                 'Excel の「処理時間」シートに出します。各手法の初回は予備の推定を1回して、読み込みの時間を除きます。']);
             place(c.recordTiming, 1, [1, 4]);
             label(evaluationGrid, '評価に使う Wafer', 2, 1);
@@ -288,36 +326,36 @@ classdef (Abstract) SettingsTab < appui.Core
             c.waferSelectionInfo = uilabel(evaluationGrid, 'WordWrap', 'on', 'Text', '', 'FontColor', app.Palette.muted, ...
                 'UserData', "muted");
             place(c.waferSelectionInfo, 4, [1, 4]);
-            heading(s, 'Overlay 補正の評価', 31);
-            label(s, 'Wafer 成分', 32, 1);
-            label(s, 'Shot 共通成分', 32, 2);
-            c.overlayWafer = uidropdown(s, 'Items', {'なし', '1次', '2次', '3次', '4次', '5次', ...
+            heading(e, 'Overlay 補正の評価', 7);
+            label(e, 'Wafer 成分', 8, 1);
+            label(e, 'Shot 共通成分', 8, 2);
+            c.overlayWafer = uidropdown(e, 'Items', {'なし', '1次', '2次', '3次', '4次', '5次', ...
                 '式を入力'}, 'ItemsData', {0, 1, 2, 3, 4, 5, app.FORMULA_CHOICE}, 'ValueChangedFcn', onChange);
-            place(c.overlayWafer, 33, 1);
-            c.overlayShotCommon = uidropdown(s, 'Items', {'なし', '1次', '式を入力'}, ...
+            place(c.overlayWafer, 9, 1);
+            c.overlayShotCommon = uidropdown(e, 'Items', {'なし', '1次', '式を入力'}, ...
                 'ItemsData', {'none', 'linear', 'formula'}, 'ValueChangedFcn', onChange, ...
                 'Tooltip', ['1次：Shot 内の座標（markXmm・markYmm）の1次の補正（k1〜k6：並進・倍率・回転・直交度）。' ...
                 '式を入力：下の dx・dy の式。どちらも全 Shot で同じ補正量にします。']);
-            place(c.overlayShotCommon, 33, 2);
+            place(c.overlayShotCommon, 9, 2);
             formulaHelp = ['項を + でつなぎ、各項は係数と x・y のべきの積（例：k1 + k3*x + k5*y + k7*x^2 + k9*x*y）。' ...
                 '係数の値は最小二乗で求めるので、係数の名前・符号は補正量に影響しません。'];
-            [c.overlayWaferDx, c.overlayWaferDy] = formulaFields(s, 34, 1, onChange, ['x・y は Shot 中心の座標' ...
+            [c.overlayWaferDx, c.overlayWaferDy] = formulaFields(e, 10, 1, onChange, ['x・y は Shot 中心の座標' ...
                 '（Wafer 中心から）。' formulaHelp]);
-            [c.overlayShotDx, c.overlayShotDy] = formulaFields(s, 34, 2, onChange, ['x・y は Shot 内の座標' ...
+            [c.overlayShotDx, c.overlayShotDy] = formulaFields(e, 10, 2, onChange, ['x・y は Shot 内の座標' ...
                 '（markXmm・markYmm、Shot 中心から）。' formulaHelp]);
-            label(s, 'Shot ごとの成分', 35, 1);
-            c.overlayPerShot = uidropdown(s, 'Items', {'なし', '1次', '式を入力'}, ...
+            label(e, 'Shot ごとの成分', 11, 1);
+            c.overlayPerShot = uidropdown(e, 'Items', {'なし', '1次', '式を入力'}, ...
                 'ItemsData', {'none', 'linear', 'formula'}, 'ValueChangedFcn', onChange, ...
                 'Tooltip', '式を入力：下の dx・dy の式の係数を、Shot ごとに別々に求めます（x・y は Shot 内の座標）。');
-            place(c.overlayPerShot, 36, 1);
-            [c.overlayPerShotDx, c.overlayPerShotDy] = formulaFields(s, 37, 1, onChange, ['x・y は Shot 内の座標' ...
+            place(c.overlayPerShot, 12, 1);
+            [c.overlayPerShotDx, c.overlayPerShotDy] = formulaFields(e, 13, 1, onChange, ['x・y は Shot 内の座標' ...
                 '（markXmm・markYmm、Shot 中心から）。係数は Shot ごとに求めます。' formulaHelp]);
-            c.overlayHelp = label(s, '', [35, 37], 2);
+            c.overlayHelp = label(e, '', [11, 13], 2);
             c.overlayHelp.FontColor = app.Palette.muted;
             c.overlayHelp.UserData = "muted";
-            c.overlayFormulaError = errorLabel(app, s, 38, [1, 2]);
+            c.overlayFormulaError = errorLabel(app, e, 14, [1, 2]);
 
-            methodPanel = uipanel(grid, 'Title', '比べる手法');
+            methodPanel = uipanel(uigridlayout(c.methodsTab, [1, 1], 'Padding', 6), 'Title', '比べる手法');
             m = uigridlayout(methodPanel, [29, 4], 'RowHeight', repmat({'fit'}, 1, 29), 'ColumnWidth', {'1x', '1x', '1x', '1x'}, ...
                 'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
             presetGrid = uigridlayout(m, [1, 4], 'Padding', 0, 'ColumnWidth', {'fit', 'fit', 'fit', 'fit'});
@@ -532,14 +570,6 @@ classdef (Abstract) SettingsTab < appui.Core
             c.zernikeError = errorLabel(app, m, 28, [1, 4]);
             c.gamShapeError = errorLabel(app, m, 29, [1, 4]);
 
-            footer = uigridlayout(grid, [1, 4], 'ColumnWidth', {'fit', 'fit', 'fit', '1x'}, 'Padding', 0);
-            place(footer, 2, [1, 2]);
-            uibutton(footer, 'Text', '設定を保存…', 'ButtonPushedFcn', @(~, ~) app.onSaveSettings());
-            uibutton(footer, 'Text', '設定を読み込む…', 'ButtonPushedFcn', @(~, ~) app.onLoadSettings());
-            uibutton(footer, 'Text', '初期設定に戻す', 'ButtonPushedFcn', @(~, ~) app.setSettings(alignest.siteDefaults()), ...
-                'Tooltip', ['アプリの初期設定に戻します（今のフォルダに既定の設定ファイル alignment_estimation_defaults.json が' ...
-                'あれば、その値）。']);
-            c.countLabel = uilabel(footer, 'WordWrap', 'on', 'Text', '');
             app.Controls = mergeStruct(app.Controls, c);
         end
 
@@ -699,8 +729,8 @@ classdef (Abstract) SettingsTab < appui.Core
             c.zernikeOrders.Value = char(strjoin(string(methods.zernike.orders), " "));
             validateSettings(app);
             updateEnabled(app);
-            highOrderSettingsToControls(app);   % 「7. Shot高次補正」の欄（設定ファイルの highOrder）
-            markLayoutSettingsToControls(app);  % 「8. Mark配置の最適化」の欄（設定ファイルの markLayout）
+            highOrderSettingsToControls(app);   % 「6. Shot高次補正」の欄（設定ファイルの highOrder）
+            markLayoutSettingsToControls(app);  % 「7. Mark配置の最適化」の欄（設定ファイルの markLayout）
         end
 
         function controlsToSettings(app)
@@ -1083,6 +1113,18 @@ classdef (Abstract) SettingsTab < appui.Core
                 c.markCountNote.Text = 'Wafer 中心に最も近い Mark は必ず計測します。';
             end
             c.markMinPerShot.Enable = onOff(markConstraints && c.markRequirePerShot.Value);
+            % 使わない欄はしまう（灰色で並べない）：学習 Shot/Mark 数の行（数・計測率・1 Shot あたり）、繰り返し回数、Excel 取込、
+            % I 最適・D 最適の基準モデルと交換法、Mark 単位の制約
+            markUnit = string(c.samplingUnit.Value) == "mark";
+            showRows(c.countSweep, 2, usesCounts && countMode == "count");
+            showRows(c.countSweep, 3, usesCounts && countMode == "rate");
+            showRows(c.countSweep, 4, markUnit && countMode == "perShot");
+            showRows(c.countSweep, 1, usesCounts && countMode ~= "perShot");   % 開始・終了・刻みの見出し
+            showRows(c.samplingGrid, [9, 10], any(ismember(method, ["random", "markrandom", "poisson", "markpoisson"])));
+            showRows(c.samplingGrid, [11, 13], any(method == "excel"));
+            showRows(c.samplingGrid, 12, any(method == "excel"), {90});
+            showRows(c.samplingGrid, 20:24, optimal);
+            showRows(c.samplingGrid, [25, 26], markConstraints);
             c.layoutPlanInfo.Enable = onOff(any(method == "excel"));
             c.outlierMethod.Enable = onOff(c.excludeOutliers.Value);
             set([c.overlayPerShotDx, c.overlayPerShotDy], 'Enable', onOff(string(c.overlayPerShot.Value) == "formula"));
@@ -1119,7 +1161,7 @@ classdef (Abstract) SettingsTab < appui.Core
             c.rtOrders.Enable = onOff(c.rt.Value && ~scalar);
             c.overlayHelp.Text = char(ternary(scalar, "1変数の推定（「1. データ読込」の「推定する値」）では、" + ...
                 "Overlay 補正の評価と RT モデルは使いません（X・Y の2成分が要るため）。", ""));
-            syncTargetOverlayControls(app);   % 「6. 未知の座標の推定」の「補正のモデル」も同じ値にする
+            syncTargetOverlayControls(app);   % 「5. 未知の座標の推定」の「補正のモデル」も同じ値にする
         end
 
         function refreshFactorColumns(app, selected, selectedY)

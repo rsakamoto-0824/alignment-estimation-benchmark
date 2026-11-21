@@ -32,6 +32,7 @@ classdef (Abstract) Core < handle
         NONE_LABEL = "（なし）"
         MAX_CURVES = 8
         METHOD_COLUMN_WIDTH = 440        % 結果の表の手法の列の幅 [px]（最も長い名前が収まる幅）
+        FILL_TABLE_MAX_GROUPS = 6        % 結果の表の列（学習パターン）がこの数以下なら、手法の列を広げて表を画面の幅いっぱいにする
         VALUE_COLUMN_WIDTH = 90          % 結果の表の数値の列の幅 [px]
         PROGRESS_INTERVAL_SECONDS = 0.2
         ANALYSIS_METHOD_LIST_HEIGHT = 66   % 「推定値と誤差の分布」の手法の一覧の高さ [px]（3行ほど見える）
@@ -48,7 +49,7 @@ classdef (Abstract) Core < handle
         FORMULA_CHOICE = -1             % Wafer 成分の選択肢「式を入力」の値（次数 0〜5 と区別する）
         MAX_ZERNIKE_ORDER = 7           % Fringe Zernike の次数の上限（Z1〜Z64）
         MAX_COUNT_LIST = 100            % 学習 Shot 数・計測する Mark の数の並びの上限（alignest.shotCountList と同じ）
-        HIGH_ORDER_WAFER_LIST_HEIGHT = 48   % 「7. Shot高次補正」の Wafer の一覧の高さ [px]（以前の約 1/4。2行ほど見える）
+        HIGH_ORDER_WAFER_LIST_HEIGHT = 48   % 「6. Shot高次補正」の Wafer の一覧の高さ [px]（以前の約 1/4。2行ほど見える）
         WORST_PERCENT = 95              % マップに出す「95%値」の百分位（結果一覧の集計と同じ）
         IMAGE_RESOLUTION = 150          % 「図を画像で保存…」の解像度 [dpi]
         IMAGE_GAP_PIXELS = 20           % 図を横に並べて1枚の画像にするときの間 [px]
@@ -60,9 +61,10 @@ classdef (Abstract) Core < handle
         TARGET_GRID_PITCH_MM = 10       % 「格子で置く」の間隔の初期値 [mm]
         TARGET_GRID_RADIUS_MM = 140     % 「格子で置く」の半径の初期値 [mm]（有効半径 150 mm の少し内側）
         TARGET_ALL_TRAINING = "all"     % 学習データの選択肢「計測値のある全 Mark」の値（評価の学習パターンの名前と区別する）
-        TARGET_LIST_HEIGHT = 72         % 「6. 未知の座標の推定」の Wafer・学習データの一覧の高さ [px]（3行ほど見える）
+        TARGET_LIST_HEIGHT = 72         % 「5. 未知の座標の推定」の Wafer・学習データの一覧の高さ [px]（3行ほど見える）
         TARGET_MESSAGE_HEIGHT = 76      % 同じく、メッセージの欄の高さ [px]（長いときは欄の中でスクロール）
         TARGET_COLUMNS = {'名前', 'Xmm', 'Ymm', 'markXmm', 'markYmm', 'markNo', 'shotNo', 'Direction'}  % 推定する点の表の列
+        TARGET_COLUMN_WIDTHS = {76, 62, 62, 86, 86, 70, 66, 84}   % その表の列の幅 [px]（見出しが切れない幅）
     end
 
     properties (SetAccess = {?appui.Core})
@@ -91,7 +93,7 @@ classdef (Abstract) Core < handle
         MapConditions = struct("option", {}, "plan", {}, "method", {}, "label", {})  % マップで並べて比べる条件
         Timing = []             % 「処理時間の内訳」で最後に測った結果（alignest.timingBreakdown）
         Theme = "light"         % 画面の色：light（ライトモード）・dark（ダークモード）。setTheme で変える
-        TargetRun = []          % 「6. 未知の座標の推定」で最後に推定した結果（estimateTargets）
+        TargetRun = []          % 「5. 未知の座標の推定」で最後に推定した結果（estimateTargets）
         Interactions = []       % 「質的変数の交互作用」で最後に調べた結果（alignest.factorInteractions）
         ScreenTimer = []        % 窓が別の画面（モニター）に移ったかを調べるタイマー（画面を出すときだけ）
         ResizeTimer = []        % 窓の大きさを変え終えたかを待つタイマー（画面を出すときだけ。scheduleChartRefresh）
@@ -105,41 +107,41 @@ classdef (Abstract) Core < handle
         LegendMenus = struct()      % 図を右クリックしたときの凡例の位置のメニュー（図ごとに1つ）
         FixedSizes = struct("grid", {}, "property", {}, "index", {}, "size", {})  % 文字の大きさに合わせる決まった大きさ [px] の行・列
         FontVersion = 0         % 文字の大きさを変えた回数（見えていなかったタブを開いたときに、文字を付け直すかの目印）
-        HighOrderFile = []      % 「7. Shot高次補正」で読み込んだ Excel・CSV（raw：読んだ表、info：alignest.readHighOrderFile、
+        HighOrderFile = []      % 「6. Shot高次補正」で読み込んだ Excel・CSV（raw：読んだ表、info：alignest.readHighOrderFile、
                                 %  data：選んだ列で整理した Wafer ごとのデータ（alignest.prepareHighOrderData。まだなら []）、mapping）
-        HighOrderRun = []       % 「7. Shot高次補正」で最後に計算した結果（computeHighOrder。alignest.shotHighOrder の結果と入力）
-        HighOrderSweep = []     % 「7. Shot高次補正」の λ・c のスイープの結果（sweepHighOrderParameters。alignest.sweepHighOrder の
+        HighOrderRun = []       % 「6. Shot高次補正」で最後に計算した結果（computeHighOrder。alignest.shotHighOrder の結果と入力）
+        HighOrderSweep = []     % 「6. Shot高次補正」の λ・c のスイープの結果（sweepHighOrderParameters。alignest.sweepHighOrder の
                                 %  結果と、スイープしたときの入力・設定）
-        HighOrderCheck = []     % 「7. Shot高次補正」の計算の前の確かめ（今の設定・入力で点が足りない k の組。alignest.shotHighOrder の
+        HighOrderCheck = []     % 「6. Shot高次補正」の計算の前の確かめ（今の設定・入力で点が足りない k の組。alignest.shotHighOrder の
                                 %  checkOnly。入力が無ければ []）
-        HighOrderConditions = struct("label", {}, "highOrder", {})  % 「7. Shot高次補正」の補正の比較の条件（名前と settings.highOrder）
+        HighOrderConditions = struct("label", {}, "highOrder", {})  % 「6. Shot高次補正」の補正の比較の条件（名前と settings.highOrder）
         HighOrderConditionSelection = zeros(1, 0)  % 「補正の比較」の条件の表で選んでいる行
-        HighOrderComparison = []  % 「7. Shot高次補正」の補正の比較の結果（compareHighOrderConditionsNow。表・条件ごとの結果と、比べた条件・入力）
+        HighOrderComparison = []  % 「6. Shot高次補正」の補正の比較の結果（compareHighOrderConditionsNow。表・条件ごとの結果と、比べた条件・入力）
         HighOrderHistory = struct("number", {}, "time", {}, "description", {}, "nWafers", {}, "summary", {}, "settings", {}, ...
             "points", {}, "options", {}, "wafers", {}, "source", {})
-                                % 「7. Shot高次補正」の結果の履歴（計算するたびに足す。番号・時刻・説明・Wafer の数・すべての Wafer の評価・設定と、
+                                % 「6. Shot高次補正」の結果の履歴（計算するたびに足す。番号・時刻・説明・Wafer の数・すべての Wafer の評価・設定と、
                                 %  「2つの条件を並べる」に使う点の残差（必要な列だけ）・計算の設定・Wafer（名前と Shot の配置）・入力のデータの種類）
         HighOrderHistorySelection = zeros(1, 0)  % 「結果の履歴」の表で選んでいる行
-        HighOrderTransfer = []  % 「7. Shot高次補正」の「他の Wafer の補正」の結果（alignest.transferHighOrder）
-        HighOrderTermSelection = []  % 「7. Shot高次補正」の「k の選定」の結果（alignest.highOrderTermSelection）
-        EstimatedCorrection = []     % 「4. 結果一覧」の「実測値と推定値の補正」の結果（alignest.estimatedCorrectionComparison）
+        HighOrderTransfer = []  % 「6. Shot高次補正」の「他の Wafer の補正」の結果（alignest.transferHighOrder）
+        HighOrderTermSelection = []  % 「6. Shot高次補正」の「k の選定」の結果（alignest.highOrderTermSelection）
+        EstimatedCorrection = []     % 「3. 結果一覧」の「実測値と推定値の補正」の結果（alignest.estimatedCorrectionComparison）
         DataVariance = []            % 「1. データ読込」の「ばらつき分解」の結果（alignest.dataVarianceDecomposition）
-        CorrectionVariance = []      % 「4. 結果一覧」の「補正残差のばらつき分解」の結果（alignest.correctionVarianceDecomposition）
-        RotationWafers = []          % 「9. 計測マップのローテーション」の入力の Wafer（label・points・lot・dateTime・operation・eqpId）
-        RotationVariability = []     % 「9.」の Shot・Mark ごとのばらつき（alignest.markVariability）
-        RotationMaps = []            % 「9.」の計測マップ（alignest.rotationMaps）
-        RotationRun = []             % 「9.」の直近の FB の検証（alignest.feedbackSimulation）
-        RotationHistory = []         % 「9.」の検証の結果の履歴（条件の比較）
-        RotationHistorySelection = zeros(1, 0)   % 「9.」の条件の比較で選んでいる履歴の番号
-        RotationFile = []            % 「9.」で読み込んだ Excel・CSV（raw・info：alignest.readHighOrderFile、data：選んだ列で整理した
+        CorrectionVariance = []      % 「3. 結果一覧」の「補正残差のばらつき分解」の結果（alignest.correctionVarianceDecomposition）
+        RotationWafers = []          % 「8. 計測マップのローテーション」の入力の Wafer（label・points・lot・dateTime・operation・eqpId）
+        RotationVariability = []     % 「8.」の Shot・Mark ごとのばらつき（alignest.markVariability）
+        RotationMaps = []            % 「8.」の計測マップ（alignest.rotationMaps）
+        RotationRun = []             % 「8.」の直近の FB の検証（alignest.feedbackSimulation）
+        RotationHistory = []         % 「8.」の検証の結果の履歴（条件の比較）
+        RotationHistorySelection = zeros(1, 0)   % 「8.」の条件の比較で選んでいる履歴の番号
+        RotationFile = []            % 「8.」で読み込んだ Excel・CSV（raw・info：alignest.readHighOrderFile、data：選んだ列で整理した
                                      %  Wafer ごとのデータ（alignest.prepareHighOrderData。まだなら []）、mapping・directionRule）
-        WaferRanking = []       % 「4. 結果一覧」の「Wafer のベスト・ワースト」の結果（alignest.waferRanking。結果が変わると求め直す）
-        MeasureRangeStart = []  % 「3. 実行」の計測マップで「範囲で選ぶ」の1点目（Wafer・図の種類・角の座標・図・印。無ければ []）
-        MeasurementCandidates = []  % 「4. 結果一覧」の「計測を足す場所」で最後に出した候補（alignest.measurementCandidates の表と条件）
-        MarkLayoutFile = []     % 「8. Mark配置の最適化」で読み込んだ Excel・CSV（raw・info：alignest.readHighOrderFile、mapping、
+        WaferRanking = []       % 「3. 結果一覧」の「Wafer のベスト・ワースト」の結果（alignest.waferRanking。結果が変わると求め直す）
+        MeasureRangeStart = []  % 「2. 評価の設定と実行」の計測マップで「範囲で選ぶ」の1点目（Wafer・図の種類・角の座標・図・印。無ければ []）
+        MeasurementCandidates = []  % 「3. 結果一覧」の「計測を足す場所」で最後に出した候補（alignest.measurementCandidates の表と条件）
+        MarkLayoutFile = []     % 「7. Mark配置の最適化」で読み込んだ Excel・CSV（raw・info：alignest.readHighOrderFile、mapping、
                                 %  wafers・coordinates・dataInfo：選んだ列で整理した入力（alignest.markLayoutFileData。まだなら dataInfo は []））
-        MarkLayoutInput = []    % 「8. Mark配置の最適化」の今の入力の候補の Mark と Shot ごとの値（alignest.markCandidates。入力が無ければ []）
-        MarkLayoutStudy = []    % 「8. Mark配置の最適化」で最後に計算した結果（alignest.markLayoutStudy と、計算したときの入力・設定）
+        MarkLayoutInput = []    % 「7. Mark配置の最適化」の今の入力の候補の Mark と Shot ごとの値（alignest.markCandidates。入力が無ければ []）
+        MarkLayoutStudy = []    % 「7. Mark配置の最適化」で最後に計算した結果（alignest.markLayoutStudy と、計算したときの入力・設定）
         MarkLayoutSelection = zeros(0, 1)  % 「候補の Mark」の表で選んでいる行（「選んだ行を消す」で使う）
         MarkLayoutShapes = []   % 「乱数で Shot を生成する」で作った形（shapes：alignest.randomShotShapes、key：作ったときの条件）
         HelpWindow = []         % ヘルプの窓（メニュー「ヘルプ」で開く。閉じていれば []）
@@ -209,14 +211,14 @@ classdef (Abstract) Core < handle
             app.RootGrid = root;
             app.TabGroup = uitabgroup(root);
             app.Tabs.data = uitab(app.TabGroup, 'Title', '1. データ読込');
-            app.Tabs.settings = uitab(app.TabGroup, 'Title', '2. 評価の設定');
-            app.Tabs.run = uitab(app.TabGroup, 'Title', '3. 実行');
-            app.Tabs.results = uitab(app.TabGroup, 'Title', '4. 結果一覧');
-            app.Tabs.map = uitab(app.TabGroup, 'Title', '5. Waferごとのマップ');
-            app.Tabs.target = uitab(app.TabGroup, 'Title', '6. 未知の座標の推定');
-            app.Tabs.highOrder = uitab(app.TabGroup, 'Title', '7. Shot高次補正');
-            app.Tabs.markLayout = uitab(app.TabGroup, 'Title', '8. Mark配置の最適化');
-            app.Tabs.rotation = uitab(app.TabGroup, 'Title', '9. 計測マップのローテーション');
+            app.Tabs.settings = uitab(app.TabGroup, 'Title', '2. 評価の設定と実行');
+            app.Tabs.run = app.Tabs.settings;   % 評価の実行と計測マップも同じタブ（以前の「2. 評価の設定と実行」）
+            app.Tabs.results = uitab(app.TabGroup, 'Title', '3. 結果一覧');
+            app.Tabs.map = uitab(app.TabGroup, 'Title', '4. Waferごとのマップ');
+            app.Tabs.target = uitab(app.TabGroup, 'Title', '5. 未知の座標の推定');
+            app.Tabs.highOrder = uitab(app.TabGroup, 'Title', '6. Shot高次補正');
+            app.Tabs.markLayout = uitab(app.TabGroup, 'Title', '7. Mark配置の最適化');
+            app.Tabs.rotation = uitab(app.TabGroup, 'Title', '8. 計測マップのローテーション');
             app.TabGroup.SelectionChangedFcn = @(~, event) app.onTabChanged(event);
             buildDataTab(app);
             buildSettingsTab(app);
@@ -313,7 +315,7 @@ classdef (Abstract) Core < handle
                 app.LegendOverrides = validLegendOverrides(loadPreference(app, 'legendOverrides', struct()), ...
                     app.LEGEND_CHOICES);
                 markLegendItems(app);
-                % 「7. Shot高次補正」で保存した項の組み合わせ（同じ名前なら、既定の設定ファイルより前回保存したものを使う）
+                % 「6. Shot高次補正」で保存した項の組み合わせ（同じ名前なら、既定の設定ファイルより前回保存したものを使う）
                 savedSets = loadPreference(app, 'highOrderTermSets', {});
                 if iscellstr(savedSets) || isstring(savedSets)
                     app.Settings.highOrder.termSets = mergeTermSets(savedSets, app.Settings.highOrder.termSets);
@@ -337,12 +339,12 @@ classdef (Abstract) Core < handle
         function requireEstimates(app)
             % 推定値を計算し直す機能（分析・散布図・分布の比較・推定値の書き出し）を使える結果か確かめる
             if isempty(app.Results)
-                error('alignest:noResults', '先に「3. 実行」で評価してください。');
+                error('alignest:noResults', '先に「2. 評価の設定と実行」で評価してください。');
             end
             if isImportedResults(app.Results) && isempty(app.ImportedEstimates)
                 error('alignest:importedResults', ['Excel から読み込んだ結果では推定値を計算できません。' ...
                     '「推定値の Excel を読み込む…」で推定値の Excel も読み込むか、計測ファイルを読み込んで' ...
-                    '「3. 実行」で評価し直してください。']);
+                    '「2. 評価の設定と実行」で評価し直してください。']);
             end
         end
 
@@ -430,6 +432,7 @@ classdef (Abstract) Core < handle
                 c.candidateStatistic, c.candidateLevel, c.candidateMode, c.candidateCount, c.candidateThreshold, ...
                 c.findCandidatesButton, c.addCandidatesButton, c.selectAllCandidatesButton, c.clearCandidatesButton, ...
                 c.filterResults.apply, c.filterMap.apply], 'Enable', 'off');
+            set([c.resumeRun, c.extendRun], 'Visible', 'off');   % 押せないときは出さない（showRunButtons）
             showFilter(app);
             app.WaferRanking = [];
             showWaferRanking(app);
@@ -451,11 +454,27 @@ classdef (Abstract) Core < handle
             end
             c.residualVariableTable.Data = {};
             c.runStatus.Text = "";
-            c.mapInfo.Text = "「3. 実行」で評価すると、ここに Wafer ごとの図が出ます。";
+            c.mapInfo.Text = "「2. 評価の設定と実行」で評価すると、ここに Wafer ごとの図が出ます。";
             c.resultSource.Text = '';
             c.resultControls.RowHeight{3} = 0;
             c.importEstimates.Enable = 'off';
             c.analysisNote.Text = '';
+        end
+
+        function showResultTab(app, tab)
+            % 結果一覧の中のタブ tab を開く（まとまりのタブ・中のタブの両方を選ぶ）
+            group = tab.Parent;
+            group.SelectedTab = tab;
+            app.Controls.resultTabs.SelectedTab = ancestor(group, 'uitab');
+        end
+
+        function onResultCategoryChanged(app)
+            % 結果一覧のまとまりを変えたとき：そのまとまりで選んであるタブを開いたときと同じく、図を描き直す
+            category = app.Controls.resultTabs.SelectedTab;
+            group = findobj(category, 'Type', 'uitabgroup', '-depth', 2);
+            if ~isempty(group)
+                onResultTabChanged(app, struct("NewValue", group(1).SelectedTab));
+            end
         end
 
         function onResultTabChanged(app, event)
@@ -635,7 +654,7 @@ classdef (Abstract) Core < handle
 
         function showVarianceDecomposition(app, result, target)
             % ばらつき分解の図（上：段ごとの 3σ（全体の 3σ を ◆）か分散の積み上げ（「縦軸」の選択）、下：分散の割合。左が X、右が Y）と表を出す。
-            % target："data"（「1. データ読込」の「ばらつき分解」）・"correction"（「4. 結果一覧」の「補正残差のばらつき分解」）。
+            % target："data"（「1. データ読込」の「ばらつき分解」）・"correction"（「3. 結果一覧」の「補正残差のばらつき分解」）。
             % result が空なら消す
             c = app.Controls;
             if target == "data"
@@ -758,7 +777,7 @@ classdef (Abstract) Core < handle
         function onCopyFigure(app, figureName, button)
             % 「図をコピー」のボタン：図をクリップボードにコピーし、少しの間ボタンに「コピーしました」と出す
             if figureName == "chart"
-                app.Controls.resultTabs.SelectedTab = app.Controls.chartTab;   % コピーするグラフを見せる
+                showResultTab(app, app.Controls.chartTab);   % コピーするグラフを見せる
             end
             if runWithAlert(app, @() app.copyFigureImage(figureName), "図をコピーできませんでした", ...
                     "図を描いてから、もう一度試してください。")

@@ -1,11 +1,11 @@
 classdef (Abstract) TargetTab < appui.Core
-    %TARGETTAB 「6. 未知の座標の推定」タブ：推定する点の表、推定、重ね合わせ補正値、補正残差のマップ、書き出し。
+    %TARGETTAB 「5. 未知の座標の推定」タブ：推定する点の表、推定、重ね合わせ補正値、補正残差のマップ、書き出し。
     %   AlignmentEstimationApp（画面の本体）の一部。画面の部品は Controls、データ・結果は Core のプロパティに持つ。
     %   ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
 
     methods
         function targets = setTargetPoints(app, targets)
-            %SETTARGETPOINTS 「6. 未知の座標の推定」の表を targets（alignest.targetTemplate の形）にする。
+            %SETTARGETPOINTS 「5. 未知の座標の推定」の表を targets（alignest.targetTemplate の形）にする。
             app.Controls.targetTable.Data = targetCells(targets);
             app.TargetSelection = zeros(0, 1);
             onTargetEdited(app);
@@ -58,7 +58,7 @@ classdef (Abstract) TargetTab < appui.Core
         end
 
         function run = estimateTargets(app, unitChoice, trainingChoice, methodIndex)
-            %ESTIMATETARGETS 「6. 未知の座標の推定」：表の点の推定値を、選んだ Wafer × 学習データの組み合わせごとに
+            %ESTIMATETARGETS 「5. 未知の座標の推定」：表の点の推定値を、選んだ Wafer × 学習データの組み合わせごとに
             %   まとめて求め、表・図・メッセージに出す。
             %   unitChoice：Wafer の番号（複数可。0 = すべての Wafer）、trainingChoice："all"（計測値のある全 Mark）または
             %   評価の学習パターンの名前（複数可）、methodIndex：手法の番号（alignest.activeMethods(app.Settings) の何番目か）。
@@ -84,7 +84,7 @@ classdef (Abstract) TargetTab < appui.Core
             targets = currentTargets(app);
             methods = alignest.activeMethods(app.Settings);
             if isempty(methods)
-                error('alignest:noMethods', '手法がありません。「2. 評価の設定」で比べる手法を選んでください。');
+                error('alignest:noMethods', '手法がありません。「2. 評価の設定と実行」で比べる手法を選んでください。');
             end
             method = methods(c.targetMethod.Value);
             units = cell2mat(c.targetWafer.Value);
@@ -133,7 +133,7 @@ classdef (Abstract) TargetTab < appui.Core
             %COMPUTETARGETOVERLAY 最後に推定した未知の座標の推定値を使って、組み合わせ（Wafer × 学習データ）ごとに
             %   重ね合わせ（Overlay）補正値を求め、「重ね合わせ補正」のタブに出す（alignest.targetOverlayCorrection）。
             %   補正に使う点は、元の実測値（学習点）・学習しなかった Mark の推定値・未知の座標の推定値（Wafer の外の点を
-            %   除く）。補正モデルは今の設定（「2. 評価の設定」の Overlay 補正）。overlay は組み合わせごとの結果の cell。
+            %   除く）。補正モデルは今の設定（「2. 評価の設定と実行」の Overlay 補正）。overlay は組み合わせごとの結果の cell。
             run = app.TargetRun;
             if isempty(run)
                 error('alignest:noTargets', '先に「推定する」を押して、未知の座標を推定してください。');
@@ -179,14 +179,14 @@ classdef (Abstract) TargetTab < appui.Core
                 correction = run.overlay{position};
             end
             if isempty(correction)
-                cla(c.targetResidualAxes, 'reset');
-                legend(c.targetResidualAxes, 'off');
+                axesPlaceholder(app, c.targetResidualAxes, '「重ね合わせ補正値を計算する」を押すと、ここに補正残差の図が出ます。');
                 set([c.targetResidualSave, c.targetResidualCopy], 'Enable', 'off');
                 c.targetResidualInfo.Text = '「重ね合わせ補正値を計算する」で残差を描きます。';
                 return
             end
             unit = app.Data.units(run.unitIndex(position));
             % 題名は短く（|平均|+3σ は下の欄に出す。題名が長いと色の目盛りの名前と重なる）
+            cla(c.targetResidualAxes, 'reset');   % 空のときの案内を消し、目盛りの枠を出す
             summary = alignest.plot.correctionMap(c.targetResidualAxes, correction, unit, ...
                 value=string(c.targetResidualValue.Value), source=string(c.targetResidualSource.Value), ...
                 mode=string(c.targetResidualMode.Value), titleText=unit.label, showStatistics=false, ...
@@ -223,7 +223,7 @@ classdef (Abstract) TargetTab < appui.Core
     end
 
     methods (Access = {?appui.Core})
-        % ================= 6. 未知の座標の推定 =================
+        % ================= 5. 未知の座標の推定 =================
         function buildTargetTab(app)
             % 左：推定する点（未知の座標）の表と、その作り方。右：推定の条件・メッセージ・図・推定値の表
             grid = uigridlayout(app.Tabs.target, [1, 1], 'Padding', 12);
@@ -271,7 +271,7 @@ classdef (Abstract) TargetTab < appui.Core
             place(c.targetAddGrid, 2, 8);
             c.targetTable = uitable(left, 'ColumnName', app.TARGET_COLUMNS, 'ColumnEditable', true, 'RowName', 'numbered', ...
                 'Data', cell(0, numel(app.TARGET_COLUMNS)), 'ColumnFormat', repmat({'char'}, 1, numel(app.TARGET_COLUMNS)), ...
-                'ColumnWidth', [{76}, repmat({66}, 1, numel(app.TARGET_COLUMNS) - 1)], ...
+                'ColumnWidth', app.TARGET_COLUMN_WIDTHS, ...
                 'CellEditCallback', @(~, ~) app.onTargetEdited(), ...
                 'CellSelectionCallback', @(~, event) app.onTargetSelected(event));
             place(c.targetTable, 4, 1);
@@ -296,19 +296,19 @@ classdef (Abstract) TargetTab < appui.Core
             c.targetTraining = uilistbox(controls, 'Items', {'全 Mark'}, ...
                 'ItemsData', {char(app.TARGET_ALL_TRAINING)}, 'Multiselect', 'on', 'Value', {char(app.TARGET_ALL_TRAINING)}, ...
                 'Tooltip', ['計測値のある全 Mark：読み込んだ計測値をすべて学習に使います。学習パターン：評価で選んだ ' ...
-                'Shot（Mark）だけを学習に使います（「3. 実行」で評価した後に選べます）。複数選ぶと、まとめて推定します。']);
+                'Shot（Mark）だけを学習に使います（「2. 評価の設定と実行」で評価した後に選べます）。複数選ぶと、まとめて推定します。']);
             place(c.targetTraining, 2, 2);
             methodGrid = uigridlayout(controls, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 0);
             place(methodGrid, 2, 3);
             c.targetMethod = uidropdown(methodGrid, 'Items', {'—'}, 'ItemsData', {1}, ...
-                'Tooltip', '「2. 評価の設定」で選んだ手法から選びます。推定の条件（1次を除く・異常値の除外）も今の設定のとおりです。');
+                'Tooltip', '「2. 評価の設定と実行」で選んだ手法から選びます。推定の条件（1次を除く・異常値の除外）も今の設定のとおりです。');
             place(c.targetMethod, 1, 1);
             actions = uigridlayout(controls, [1, 3], 'ColumnWidth', {160, 'fit', 'fit'}, 'Padding', 0);
             place(actions, 3, [1, 3]);
             c.targetRun = primaryButton(app, actions, '推定する', @(~, ~) app.onEstimateTargets());
             c.targetOverlayButton = uibutton(actions, 'Text', '重ね合わせ補正値を計算する', ...
                 'ButtonPushedFcn', @(~, ~) app.onTargetOverlay(), 'Tooltip', ['推定した後に、元の実測値（学習点）・' ...
-                '学習しなかった Mark の推定値・未知の座標の推定値をまとめて、「2. 評価の設定」の Overlay 補正の' ...
+                '学習しなかった Mark の推定値・未知の座標の推定値をまとめて、「2. 評価の設定と実行」の Overlay 補正の' ...
                 'モデル（Wafer 成分・Shot 共通成分・Shot ごとの成分）を当てはめ、補正値（係数）と補正後の残差を求めます。']);
             c.targetExport = uibutton(actions, 'Text', '推定値を Excel に書き出す…', ...
                 'ButtonPushedFcn', @(~, ~) app.onExportTargets());
@@ -343,9 +343,10 @@ classdef (Abstract) TargetTab < appui.Core
             c.targetPanel = uipanel(figureGrid, 'BorderType', 'none');
             place(c.targetPanel, 2, 1);
             c.targetAxes = uiaxes(uigridlayout(c.targetPanel, [1, 1], 'Padding', 0));
+            axesPlaceholder(app, c.targetAxes, '左の表に点を決めて「推定する」を押すと、ここに推定値の図が出ます。');
             tableTab = uitab(outputs, 'Title', '推定値の表');
             c.targetResultTable = uitable(uigridlayout(tableTab, [1, 1], 'Padding', 6), 'RowName', {}, 'Data', table());
-            % 補正のモデル：「2. 評価の設定」の Overlay 補正と同じ設定を、ここでも変えられる（どちらで変えても同じ）
+            % 補正のモデル：「2. 評価の設定と実行」の Overlay 補正と同じ設定を、ここでも変えられる（どちらで変えても同じ）
             modelTab = uitab(outputs, 'Title', '補正のモデル');
             modelGrid = uigridlayout(modelTab, [6, 3], 'RowHeight', repmat({'fit'}, 1, 6), 'ColumnWidth', {'1x', '1x', '1x'}, ...
                 'Padding', 6, 'RowSpacing', 4);
@@ -353,7 +354,7 @@ classdef (Abstract) TargetTab < appui.Core
             label(modelGrid, 'Shot 共通成分', 2, 2);
             label(modelGrid, 'Shot ごとの成分', 2, 3);
             onModel = @(~, ~) app.onTargetOverlayModelChanged();
-            source = app.Controls;   % 「2. 評価の設定」の欄と同じ選択肢にする
+            source = app.Controls;   % 「2. 評価の設定と実行」の欄と同じ選択肢にする
             c.targetOverlayWafer = uidropdown(modelGrid, 'Items', source.overlayWafer.Items, ...
                 'ItemsData', source.overlayWafer.ItemsData, 'ValueChangedFcn', onModel);
             place(c.targetOverlayWafer, 3, 1);
@@ -416,6 +417,7 @@ classdef (Abstract) TargetTab < appui.Core
             c.targetResidualPanel = uipanel(residualGrid, 'BorderType', 'none');
             place(c.targetResidualPanel, 2, 1);
             c.targetResidualAxes = uiaxes(uigridlayout(c.targetResidualPanel, [1, 1], 'Padding', 0));
+            axesPlaceholder(app, c.targetResidualAxes, '「重ね合わせ補正値を計算する」を押すと、ここに補正残差の図が出ます。');
             c.targetResidualInfo = uilabel(residualGrid, 'WordWrap', 'on', 'Text', '「重ね合わせ補正値を計算する」で残差を描きます。');
             place(c.targetResidualInfo, 3, 1);
             set([c.targetRun, c.targetExport, c.targetSaveFigure, c.targetCopyFigure, c.targetAddShots, c.targetOverlayButton, ...
@@ -426,14 +428,17 @@ classdef (Abstract) TargetTab < appui.Core
         end
 
         function onTabChanged(app, event)
-            % 「6. 未知の座標の推定」を開いたら、選択肢（Wafer・学習データ・手法）を今のデータ・結果・設定に合わせる。
-            % 「7. Shot高次補正」を開いたら、入力のデータの一覧を今のデータ・推定値に合わせる
-            if event.NewValue == app.Tabs.target
+            % 「5. 未知の座標の推定」を開いたら、選択肢（Wafer・学習データ・手法）を今のデータ・結果・設定に合わせる。
+            % 「6. Shot高次補正」を開いたら、入力のデータの一覧を今のデータ・推定値に合わせる。
+            % 「2. 評価の設定と実行」を開いたら、計測マップをまだ描いていなければ描く
+            if event.NewValue == app.Tabs.settings
+                autoDrawMeasurementMap(app);
+            elseif event.NewValue == app.Tabs.target
                 refreshTargetChoices(app);
             elseif event.NewValue == app.Tabs.highOrder
                 refreshHighOrderChoices(app);
             elseif event.NewValue == app.Tabs.markLayout
-                refreshMarkLayoutChoices(app);   % データ・「7. Shot高次補正」の入力・保存した項の組み合わせが変わっていれば合わせる
+                refreshMarkLayoutChoices(app);   % データ・「6. Shot高次補正」の入力・保存した項の組み合わせが変わっていれば合わせる
                 refreshMarkLayoutInput(app);
             elseif event.NewValue == app.Tabs.rotation
                 refreshRotationChoices(app);   % データ・評価の結果・未知の座標の推定が変わっていれば合わせる
@@ -463,7 +468,7 @@ classdef (Abstract) TargetTab < appui.Core
             setModeChoices(c.targetMode, alignest.valueSpec(app.Settings.data), true);   % GPR の推定の分散も選べる
             methods = alignest.activeMethods(app.Settings);   % 1変数では RT モデルを除く
             if isempty(methods)
-                setChoices(c.targetMethod, "—（「2. 評価の設定」で手法を選んでください）", {1});
+                setChoices(c.targetMethod, "—（「2. 評価の設定と実行」で手法を選んでください）", {1});
             else
                 setChoices(c.targetMethod, string({methods.label}), num2cell(1:numel(methods)));
             end
@@ -590,7 +595,7 @@ classdef (Abstract) TargetTab < appui.Core
 
         function onTargetOverlay(app)
             runWithAlert(app, @() app.computeTargetOverlay(), "重ね合わせ補正値を計算できませんでした", ...
-                "「2. 評価の設定」の Overlay 補正で補正モデル（Wafer 成分・Shot 共通成分・Shot ごとの成分）を選んでください。");
+                "「2. 評価の設定と実行」の Overlay 補正で補正モデル（Wafer 成分・Shot 共通成分・Shot ごとの成分）を選んでください。");
         end
 
         function onExportTargets(app)
@@ -691,6 +696,7 @@ classdef (Abstract) TargetTab < appui.Core
                 titleText = unit.label + newline + ternary(run.training(position) == app.TARGET_ALL_TRAINING, ...
                     "計測値のある全 Mark", run.training(position));
             end
+            cla(c.targetAxes, 'reset');   % 空のときの案内を消し、目盛りの枠を出す
             alignest.plot.targetMap(c.targetAxes, run.results{position}, unit, mode=string(c.targetMode.Value), ...
                 titleText=titleText, waferRadiusMm=app.Settings.data.waferRadiusMm, spec=alignest.valueSpec(app.Settings.data));
             styleAxes(app, c.targetAxes, app.AXES_FONT_SIZE);
@@ -733,8 +739,8 @@ classdef (Abstract) TargetTab < appui.Core
         end
 
         function onTargetOverlayModelChanged(app)
-            % 「補正のモデル」で変えた補正モデルを「2. 評価の設定」の Overlay 補正の欄に写し、設定を更新する（同じ設定。
-            % 確かめ・設定への反映・欄の有効／無効は「2. 評価の設定」と同じ処理で、こちらの欄にも写し戻す）
+            % 「補正のモデル」で変えた補正モデルを「2. 評価の設定と実行」の Overlay 補正の欄に写し、設定を更新する（同じ設定。
+            % 確かめ・設定への反映・欄の有効／無効は「2. 評価の設定と実行」と同じ処理で、こちらの欄にも写し戻す）
             pairs = targetOverlayPairs(app.Controls);
             for k = 1:size(pairs, 1)
                 pairs{k, 1}.Value = pairs{k, 2}.Value;
@@ -744,7 +750,7 @@ classdef (Abstract) TargetTab < appui.Core
         end
 
         function syncTargetOverlayControls(app)
-            % 「補正のモデル」の欄を「2. 評価の設定」の Overlay 補正の欄（値・有効／無効・式の誤り）に合わせる
+            % 「補正のモデル」の欄を「2. 評価の設定と実行」の Overlay 補正の欄（値・有効／無効・式の誤り）に合わせる
             c = app.Controls;
             if ~isfield(c, 'targetOverlayWafer')
                 return
@@ -800,12 +806,10 @@ classdef (Abstract) TargetTab < appui.Core
             end
             c.targetResultTable.Data = table();
             removeStyle(c.targetResultTable);
-            cla(c.targetAxes, 'reset');
-            legend(c.targetAxes, 'off');
+            axesPlaceholder(app, c.targetAxes, '左の表に点を決めて「推定する」を押すと、ここに推定値の図が出ます。');
             set([c.targetExport, c.targetSaveFigure, c.targetCopyFigure, c.targetOverlayButton, c.targetOverlayRecompute, c.targetCombination, ...
                 c.targetResidualSave, c.targetResidualCopy, c.targetOverlayExport], 'Enable', 'off');
-            cla(c.targetResidualAxes, 'reset');
-            legend(c.targetResidualAxes, 'off');
+            axesPlaceholder(app, c.targetResidualAxes, '「重ね合わせ補正値を計算する」を押すと、ここに補正残差の図が出ます。');
             c.targetResidualInfo.Text = '「重ね合わせ補正値を計算する」で残差を描きます。';
             setChoices(c.targetCombination, "—", {1});
             c.targetOverlaySummary.Data = table();
@@ -828,7 +832,7 @@ end
 
 % ================= このファイルだけで使う小さな関数 =================
 function pairs = targetOverlayPairs(c)
-% 「2. 評価の設定」の Overlay 補正の欄と、「6. 未知の座標の推定」の「補正のモデル」の欄の組（同じ設定を2か所で変える）
+% 「2. 評価の設定と実行」の Overlay 補正の欄と、「5. 未知の座標の推定」の「補正のモデル」の欄の組（同じ設定を2か所で変える）
 pairs = {c.overlayWafer, c.targetOverlayWafer; c.overlayWaferDx, c.targetOverlayWaferDx; ...
     c.overlayWaferDy, c.targetOverlayWaferDy; c.overlayShotCommon, c.targetOverlayShotCommon; ...
     c.overlayShotDx, c.targetOverlayShotDx; c.overlayShotDy, c.targetOverlayShotDy; ...

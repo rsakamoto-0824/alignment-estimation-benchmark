@@ -1,6 +1,6 @@
 function shots = compareHighOrderShots(reference, other, options)
 %COMPAREHIGHORDERSHOTS 2つの Shot 高次補正の結果の残差を Shot ごとに比べ、基準より残差が小さくなった（改善）・大きくなった
-%   （悪化）Shot を決める（「7. Shot高次補正」の「2つの条件を並べる」。例：最小二乗を基準に、ロバスト回帰がよかった Shot）。
+%   （悪化）Shot を決める（「6. Shot高次補正」の「2つの条件を並べる」。例：最小二乗を基準に、ロバスト回帰がよかった Shot）。
 %   shots = alignest.compareHighOrderShots(reference, other)
 %   shots = alignest.compareHighOrderShots(..., axis="xy", statistic="median", toleranceNm=0.1)
 %   reference・other：同じ入力のデータ・Wafer で計算した alignest.shotHighOrder の result.points（点の並びが同じ表）。

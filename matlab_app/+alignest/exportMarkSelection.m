@@ -1,5 +1,5 @@
 function exportMarkSelection(filePath, study, count)
-%EXPORTMARKSELECTION 「8. Mark配置の最適化」で選んだ1つの配置（Mark の数 count）を Excel ファイル（.xlsx）に書き出す。
+%EXPORTMARKSELECTION 「7. Mark配置の最適化」で選んだ1つの配置（Mark の数 count）を Excel ファイル（.xlsx）に書き出す。
 %   alignest.exportMarkSelection(filePath, study, count)
 %   study：alignest.markLayoutStudy の結果。シート：「配置」（計測する Mark の番号・Shot 内の座標・必ず計測か）、「説明」
 %   （Mark の数・I 効率・D 効率・補正の式と回帰）。

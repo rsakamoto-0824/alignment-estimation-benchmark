@@ -1,9 +1,9 @@
 function options = markLayoutOptions(settings)
-%MARKLAYOUTOPTIONS 「8. Mark配置の最適化」の設定 settings.markLayout を確かめ、説明の文を付けて返す。
+%MARKLAYOUTOPTIONS 「7. Mark配置の最適化」の設定 settings.markLayout を確かめ、説明の文を付けて返す。
 %   options = alignest.markLayoutOptions(settings)
 %   項目（alignest.defaultSettings の markLayout）：
-%   - maker・excludedTerms・vifThreshold：補正の式・使わない k の番号・「VIF で選ぶ」のしきい値（「7. Shot高次補正」と同じ）
-%   - loss・huberTuning・regularization・penaltyOrders・penaltyOrdersY・lambda：回帰（ロバスト回帰と正則化。「7. Shot高次補正」と
+%   - maker・excludedTerms・vifThreshold：補正の式・使わない k の番号・「VIF で選ぶ」のしきい値（「6. Shot高次補正」と同じ）
+%   - loss・huberTuning・regularization・penaltyOrders・penaltyOrdersY・lambda：回帰（ロバスト回帰と正則化。「6. Shot高次補正」と
 %     同じで X・Y 別にできる。[X, Y] の並び。1つなら X・Y で同じ。penaltyOrdersY は -1 なら X と同じ）
 %   - minMarks・maxMarks：計測する Mark の数の最低数・最大数（0 = 使う項の数・すべての候補）
 %   - starts：Mark の数ごとに I 最適な配置を探す始め方の数（1〜50）
@@ -18,13 +18,13 @@ function options = markLayoutOptions(settings)
 %   - requiredXmm・requiredYmm：必ず計測する Mark の Shot 内の座標 [mm]
 %   - excludedXmm・excludedYmm：計測しない Mark の Shot 内の座標 [mm]（残差の評価には使う）
 %   options.description：画面・Excel に出す説明。以前の設定（markLayout が無い・項目が足りない）は初期値を使う。
-MAKER_NAMES = ["asml", "canon", "nikon", "custom", "linear", "quadratic"];   % 1次・2次は「7. Shot高次補正」で保存した組み合わせから
+MAKER_NAMES = ["asml", "canon", "nikon", "custom", "linear", "quadratic"];   % 1次・2次は「6. Shot高次補正」で保存した組み合わせから
 MAKER_LABELS = ["ASML", "Canon", "Nikon", "カスタム（k1〜k38）", "1次（k1〜k6）", "2次（k1〜k12）"];
 LOSS_NAMES = ["ols", "huber", "lad"];
 LOSS_LABELS = ["最小二乗", "Huber（ロバスト回帰）", "LAD（ロバスト回帰）"];
 REGULARIZATION_NAMES = ["none", "l2", "l1"];
 VALUE_NAMES = ["measured", "random"];
-MAX_PENALTY_ORDER = 6;    % 正則化をかけられる次数の上限（「7. Shot高次補正」と同じ）
+MAX_PENALTY_ORDER = 6;    % 正則化をかけられる次数の上限（「6. Shot高次補正」と同じ）
 MAX_STARTS = 50;          % 配置を探す始め方の数の上限
 MAX_SHAPES = 1000;        % 乱数の Shot の形の数の上限
 RANDOM_ORDERS = 8;        % 乱数の形の項の次数の数（0〜7次）

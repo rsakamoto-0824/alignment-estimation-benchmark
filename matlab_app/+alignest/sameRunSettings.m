@@ -1,7 +1,7 @@
 function same = sameRunSettings(first, second)
 %SAMERUNSETTINGS 2つの評価の設定が、推定の結果について同じか（表示の設定 display・Shot 高次補正の設定 highOrder・Mark 配置の
 %   最適化の設定 markLayout は比べない）。一時中断した評価を続きから再開できるかを確かめるときに使う（Scan 方向の色・向きや、
-%   「7. Shot高次補正」「8. Mark配置の最適化」の設定を変えても再開できるように）。
+%   「6. Shot高次補正」「7. Mark配置の最適化」の設定を変えても再開できるように）。
 same = isequaln(withoutUnrelated(first), withoutUnrelated(second));
 end
 

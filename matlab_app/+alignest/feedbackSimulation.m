@@ -1,6 +1,6 @@
 function result = feedbackSimulation(wafers, maps, settings, options)
 %FEEDBACKSIMULATION 計測マップをローテーションして FB の補正値を求め、ほかの Wafer に当てた補正残差を求める
-%   （「9. 計測マップのローテーション」の「FB の検証」）。
+%   （「8. 計測マップのローテーション」の「FB の検証」）。
 %   result = alignest.feedbackSimulation(wafers, maps, settings)
 %   result = alignest.feedbackSimulation(wafers, maps, settings, order="dateTime", splitKind="count", splitValue=3, ...
 %       rotationLots=1, model="overlay", transferMethod="values", fullMeasurement=false)
@@ -15,10 +15,10 @@ function result = feedbackSimulation(wafers, maps, settings, options)
 %      同じマップ）、無ければ Wafer ごとに数え、options.rotationLots 個ごとに次のマップにする（M 枚の後は1枚目に戻る）。
 %      FB 側の Wafer は、そのマップで計測する Shot・Mark の値だけを使う（fullMeasurement なら全点）。
 %   4. FB の補正値（options.model）：
-%      - "overlay"：「2. 評価の設定」の Overlay 補正のモデル（Wafer 成分 + Shot 共通成分 + Shot ごとの成分）。FB 側で計測した
+%      - "overlay"：「2. 評価の設定と実行」の Overlay 補正のモデル（Wafer 成分 + Shot 共通成分 + Shot ごとの成分）。FB 側で計測した
 %        値を Shot・Mark（points.key）ごとに平均し（計測した Wafer だけで）、その値に最小二乗で当てはめた補正量を、検証側の
 %        同じ Shot・Mark に当てる（FB の値をそのまま当てる。FB 側で一度も計測していない Shot・Mark は補正しない）
-%      - "highOrder"：「7. Shot高次補正」の設定（alignest.shotHighOrder）で求めた補正値を、alignest.transferHighOrder で検証側に
+%      - "highOrder"：「6. Shot高次補正」の設定（alignest.shotHighOrder）で求めた補正値を、alignest.transferHighOrder で検証側に
 %        当てる（options.transferMethod："values"（点ごとに平均して求め直す）・"coefficients"（補正値を平均する））
 %   5. 評価：検証側の Wafer・軸ごとに、補正前の値と補正残差（値 − 補正量）の |平均| + 3σ（同じ点で）。
 %   result.summary：wafer（と "すべての検証 Wafer"）・axis・n（値のある点）・nCorrected（補正できた点）・before・residual・
@@ -194,10 +194,10 @@ end
 end
 
 function [corrected, modelText, notes] = applyOverlay(fbWafers, verifyWafers, settings)
-% 「2. 評価の設定」の Overlay 補正のモデル：FB 側の値を点ごとに平均し、当てはめた補正量を検証側の同じ点に当てる
+% 「2. 評価の設定と実行」の Overlay 補正のモデル：FB 側の値を点ごとに平均し、当てはめた補正量を検証側の同じ点に当てる
 choice = alignest.overlayChoice(settings);
 if ~choice.enabled
-    error('alignest:feedbackSimulation', ['「2. 評価の設定」の Overlay 補正のモデルがすべて「なし」です。Wafer 成分・' ...
+    error('alignest:feedbackSimulation', ['「2. 評価の設定と実行」の Overlay 補正のモデルがすべて「なし」です。Wafer 成分・' ...
         'Shot 共通成分・Shot ごとの成分のどれかを選んでください。']);
 end
 waferRadiusMm = settings.data.waferRadiusMm;
@@ -242,10 +242,10 @@ end
 end
 
 function [corrected, modelText, notes] = applyHighOrder(fbWafers, verifyWafers, settings, method)
-% 「7. Shot高次補正」の設定：FB 側の Wafer で補正値を求め、検証側に当てる（alignest.transferHighOrder）
+% 「6. Shot高次補正」の設定：FB 側の Wafer で補正値を求め、検証側に当てる（alignest.transferHighOrder）
 spec = alignest.valueSpec(settings.data);
 if spec.scalar
-    error('alignest:feedbackSimulation', ['7. の Shot 高次補正は X・Y の2成分（dx・dy）が要ります。1変数の推定のデータでは' ...
+    error('alignest:feedbackSimulation', ['6. の Shot 高次補正は X・Y の2成分（dx・dy）が要ります。1変数の推定のデータでは' ...
         '「2. の Overlay 補正」を選んでください。']);
 end
 everything = [fbWafers(:); verifyWafers(:)];
@@ -266,7 +266,7 @@ for j = 1:numel(verifyWafers)
     corrected{j} = withResiduals(points, verifyLabels(j), values);
 end
 methodNames = struct("values", "点ごとに平均して求め直す", "coefficients", "補正値を平均する");
-modelText = "補正：7. の Shot 高次補正（" + result.description + "。FB 側が複数枚のときは" + methodNames.(method) + "）";
+modelText = "補正：6. の Shot 高次補正（" + result.description + "。FB 側が複数枚のときは" + methodNames.(method) + "）";
 notes = reshape(transfer.messages, [], 1);
 end
 

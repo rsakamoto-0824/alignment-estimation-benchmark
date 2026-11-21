@@ -1,5 +1,5 @@
 function [points, info] = highOrderTargetPoints(unit, targetTable, measuredMarks)
-%HIGHORDERTARGETPOINTS 未知の座標の推定値（「6. 未知の座標の推定」）を、Shot 高次補正の点の表にする。
+%HIGHORDERTARGETPOINTS 未知の座標の推定値（「5. 未知の座標の推定」）を、Shot 高次補正の点の表にする。
 %   [points, info] = alignest.highOrderTargetPoints(unit, targetTable)
 %   [points, info] = alignest.highOrderTargetPoints(unit, targetTable, measuredMarks)
 %   unit：推定した Wafer（alignest.prepareData の units の1つ）、targetTable：alignest.predictTargets の result.table。
