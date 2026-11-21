@@ -132,6 +132,7 @@ classdef (Abstract) Core < handle
         RotationVariability = []     % 「8.」の Shot・Mark ごとのばらつき（alignest.markVariability）
         RotationMaps = []            % 「8.」の計測マップ（alignest.rotationMaps）
         RotationRun = []             % 「8.」の直近の FB の検証（alignest.feedbackSimulation）
+        RotationAssignmentComparison = []   % 「8.」の振り分けの比較（alignest.compareRotationAssignments）
         RotationHistory = []         % 「8.」の検証の結果の履歴（条件の比較）
         RotationHistorySelection = zeros(1, 0)   % 「8.」の条件の比較で選んでいる履歴の番号
         RotationFile = []            % 「8.」で読み込んだ Excel・CSV（raw・info：alignest.readHighOrderFile、data：選んだ列で整理した

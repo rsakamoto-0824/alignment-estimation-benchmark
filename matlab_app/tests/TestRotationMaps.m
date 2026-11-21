@@ -1,8 +1,9 @@
 classdef TestRotationMaps < matlab.unittest.TestCase
     %TESTROTATIONMAPS 計測マップのローテーション（「8. 計測Mapローテ」）：Shot・Mark ごとのばらつき（3σ）、しきい値で
     %   分けた優先度とローテーションする計測マップ、FB 側・検証側に分けた補正残差（2. の Overlay 補正・6. の Shot 高次補正）、
-    %   画面の流れ（入力・対象・目的変数・条件の比較・書き出しと読み直し）、しきい値の累積 %・外周を優先度 1・ランダムな
-    %   振り分け・円の重ね描き、このタブで読み込む Excel・CSV（列を選ぶ）を確かめる。
+    %   画面の流れ（入力・対象・目的変数・条件の比較・書き出しと読み直し）、しきい値の累積 %・外周を優先度 1・指定した
+    %   Shot を優先度 1（欄と図のクリック）・ランダムな振り分け・円の重ね描き、このタブで読み込む Excel・CSV（列を選ぶ）を
+    %   確かめる。
 
     properties
         Root
@@ -46,8 +47,9 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             means = alignest.markVariability(wafers, level="shot", shotStatistic="mean");
             testCase.verifyEqual(means.table.sigma3X, arrayfun(@(s) mean(rows.sigma3X(rows.shotNo == s)), ...
                 means.table.shotNo), 'AbsTol', 1e-12);
-            % 優先度と計測マップ：しきい値 4（X の 3σ。6・0・0・0 → 優先度 1 は1点）、間隔 1・3 → 3 枚
-            maps = alignest.rotationMaps(v, "sigma3X", 4, [1, 3]);
+            % 優先度と計測マップ：しきい値 4（X の 3σ。6・0・0・0 → 優先度 1 は1点）、計測マップ 3 枚（優先度 1 は毎回、
+            % 2 は 3 枚に1回）
+            maps = alignest.rotationMaps(v, "sigma3X", 4, 3);
             testCase.verifyEqual(maps.nMaps, 3);
             testCase.verifyEqual(maps.table.rank.', double(maps.table.sigma3X.' < 4) + 1);
             first = maps.table.rank == 1;
@@ -55,17 +57,31 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             testCase.verifyEqual(sum(maps.membership(~first, :), 2), ones(nnz(~first), 1), "優先度 2 は 3 枚に1回");
             testCase.verifyEqual(maps.counts, [2, 2, 2]);
             testCase.verifyEqual(maps.averageRate, 0.5);
-            testCase.verifyEqual(maps.rankNames(2), "優先度 2（4 未満・3 Lot に1回）");
-            % しきい値は大きい順に並べ直す。3σ が分からない点は優先度 1。間隔の数の誤り・多すぎるマップは知らせる
-            three = alignest.rotationMaps(v, "sigma3Y", [1, 5], [1, 2, 4]);
+            testCase.verifyEqual(maps.rankNames(2), "優先度 2（4 未満・3 枚に1回）");
+            testCase.verifyEqual(maps.intervals, [1, 3]);
+            % しきい値は大きい順に並べ直す。3段以上の間の優先度は、マップの数の約数で 1 と枚数の間（等比）に近い頻度
+            three = alignest.rotationMaps(v, "sigma3Y", [1, 5], 4);
             testCase.verifyEqual(three.thresholds, [5, 1]);
             testCase.verifyEqual(three.nMaps, 4);
+            testCase.verifyEqual(three.intervals, [1, 2, 4]);
+            testCase.verifyEqual(alignest.rotationMaps(v, "sigma3Y", [1, 3, 5], 8).intervals, [1, 2, 4, 8]);
+            testCase.verifyEqual(alignest.rotationMaps(v, "sigma3Y", [1, 5], 6).intervals, [1, 2, 6]);
+            testCase.verifyEqual(alignest.rotationMaps(v, "sigma3Y", [1, 5], 5).intervals, [1, 1, 5], ...
+                "約数が 1 と 5 だけなら、近い方の 1");
+            one = alignest.rotationMaps(v, "sigma3X", 4, 1);
+            testCase.verifyTrue(all(one.membership), "1 枚ならすべて毎回");
+            none = alignest.rotationMaps(v, "sigma3X", [], 3);
+            testCase.verifyEqual(none.nMaps, 3);
+            testCase.verifyTrue(all(none.membership, 'all'), "しきい値が無ければすべて優先度 1（毎回）");
+            % 3σ が分からない点は優先度 1。マップの数の誤り（0・小数・2つ以上・多すぎる）は知らせる
             v.table.sigma3X(1) = NaN;
-            testCase.verifyEqual(alignest.rotationMaps(v, "sigma3X", 100, [1, 2]).table.rank(1), 1);
-            testCase.verifyError(@() alignest.rotationMaps(v, "sigma3X", 4, 1), 'alignest:rotationMaps');
-            testCase.verifyError(@() alignest.rotationMaps(v, "sigma3X", [4, 3], [1, 5, 7]), 'alignest:rotationMaps', ...
-                "35 枚は多すぎる");
-            testCase.verifyError(@() alignest.rotationMaps(v, "other", 4, [1, 2]), 'alignest:rotationMaps');
+            testCase.verifyEqual(alignest.rotationMaps(v, "sigma3X", 100, 2).table.rank(1), 1);
+            testCase.verifyError(@() alignest.rotationMaps(v, "sigma3X", 4, 0), 'alignest:rotationMaps');
+            testCase.verifyError(@() alignest.rotationMaps(v, "sigma3X", 4, 2.5), 'alignest:rotationMaps');
+            testCase.verifyError(@() alignest.rotationMaps(v, "sigma3X", 4, [1, 3]), 'alignest:rotationMaps');
+            testCase.verifyError(@() alignest.rotationMaps(v, "sigma3X", [4, 3], 25), 'alignest:rotationMaps', ...
+                "25 枚は多すぎる");
+            testCase.verifyError(@() alignest.rotationMaps(v, "other", 4, 2), 'alignest:rotationMaps');
         end
 
         function mapOptionsChangePrioritiesAndAssignment(testCase)
@@ -77,33 +93,218 @@ classdef TestRotationMaps < matlab.unittest.TestCase
                 wafers(w) = struct("label", "W" + w, "points", handPoints(values{w}, nan(4, 1)));
             end
             v = alignest.markVariability(wafers);   % X の 3σ：6・0・0・0、点の x：−30・−10・10・30 mm
-            percent = alignest.rotationMaps(v, "sigma3X", 75, [1, 2], thresholdKind="percent");
+            percent = alignest.rotationMaps(v, "sigma3X", 75, 2, thresholdKind="percent");
             testCase.verifyEqual(percent.thresholds, alignest.stats.percentile(v.table.sigma3X, 75), 'AbsTol', 1e-12);
             testCase.verifyEqual(percent.thresholds, 1.5, 'AbsTol', 1e-12, "0・0・0・6 の累積 75% は 1.5");
             testCase.verifyEqual(percent.thresholdPercents, 75);
             testCase.verifyEqual(percent.table.rank.', [1, 2, 2, 2]);
             testCase.verifyTrue(contains(percent.rankNames(1), "累積 75%"));
-            testCase.verifyError(@() alignest.rotationMaps(v, "sigma3X", 100, [1, 2], thresholdKind="percent"), ...
+            testCase.verifyError(@() alignest.rotationMaps(v, "sigma3X", 100, 2, thresholdKind="percent"), ...
                 'alignest:rotationMaps', "累積 % は 0〜100 の間");
-            outer = alignest.rotationMaps(v, "sigma3X", 10, [1, 2], outerRadiusMm=25);
+            outer = alignest.rotationMaps(v, "sigma3X", 10, 2, outerRadiusMm=25);
             testCase.verifyEqual(outer.table.rank.', [1, 2, 2, 1], "半径 30 mm の点は 3σ によらず優先度 1");
             testCase.verifyEqual(outer.table.outer.', [true, false, false, true]);
             testCase.verifyTrue(contains(outer.rankNames(1), "半径 25 mm 以上"));
-            testCase.verifyError(@() alignest.rotationMaps(v, "sigma3X", 10, [1, 2], outerRadiusMm=-1), 'alignest:rotationMaps');
+            testCase.verifyError(@() alignest.rotationMaps(v, "sigma3X", 10, 2, outerRadiusMm=-1), 'alignest:rotationMaps');
+            % shotNo の指定：その Shot のすべての Mark を 3σ によらず優先度 1。表に無い shotNo は missingShotNos に返す
+            specified = alignest.rotationMaps(v, "sigma3X", 10, 2, priorityShotNos=[2, 9]);
+            testCase.verifyEqual(specified.table.rank.', [2, 2, 1, 1], "Shot 2 の Mark（3・4 点目）は優先度 1");
+            testCase.verifyEqual(specified.table.specified.', [false, false, true, true]);
+            testCase.verifyEqual(specified.priorityShotNos, [2, 9]);
+            testCase.verifyEqual(specified.missingShotNos, 9);
+            testCase.verifyTrue(contains(specified.rankNames(1), "指定した Shot"));
+            testCase.verifyEqual(specified.membership(3:4, :), true(2, 2), "優先度 1 は毎回計測");
+            testCase.verifyError(@() alignest.rotationMaps(v, "sigma3X", 10, 2, priorityShotNos=1.5), ...
+                'alignest:rotationMaps', "shotNo は整数");
             % ランダムな振り分け：40 点を 4 枚に。同じ種なら同じ、各マップ 10 点、どの点も1回
             big = v;
             big.table = table((1:40).', zeros(40, 1), (1:40).' / 10, 'VariableNames', ["x", "y", "sigma3X"]);
-            ordered = alignest.rotationMaps(big, "sigma3X", 100, [1, 4]);
+            ordered = alignest.rotationMaps(big, "sigma3X", 100, 4);
             testCase.verifyEqual(find(ordered.membership(:, 1)).', 1:4:40, "表の順：1・5・9…点目が 1 枚目");
-            random1 = alignest.rotationMaps(big, "sigma3X", 100, [1, 4], assignment="random", seed=1);
-            random2 = alignest.rotationMaps(big, "sigma3X", 100, [1, 4], assignment="random", seed=1);
-            random3 = alignest.rotationMaps(big, "sigma3X", 100, [1, 4], assignment="random", seed=2);
+            random1 = alignest.rotationMaps(big, "sigma3X", 100, 4, assignment="random", seed=1);
+            random2 = alignest.rotationMaps(big, "sigma3X", 100, 4, assignment="random", seed=1);
+            random3 = alignest.rotationMaps(big, "sigma3X", 100, 4, assignment="random", seed=2);
             testCase.verifyEqual(random1.membership, random2.membership, "同じ種なら同じ振り分け");
             testCase.verifyNotEqual(random1.membership, random3.membership);
             testCase.verifyNotEqual(random1.membership, ordered.membership);
             testCase.verifyEqual(random1.counts, [10, 10, 10, 10]);
             testCase.verifyEqual(sum(random1.membership, 2), ones(40, 1));
             testCase.verifyEqual(random1.assignment, "random");
+            % ポアソンディスク：各マップの数はそろい（差は 1 以内）、どの点も1回、同じ種なら同じ。同じマップの点どうしは
+            % ランダムより離れる（最も近い同じマップの点までの距離の平均）
+            stream = RandStream('mt19937ar', 'Seed', 3);
+            scattered = v;
+            scattered.table = table(rand(stream, 201, 1) * 100, rand(stream, 201, 1) * 100, zeros(201, 1), ...
+                'VariableNames', ["x", "y", "sigma3X"]);
+            poisson1 = alignest.rotationMaps(scattered, "sigma3X", 100, 2, assignment="poisson", seed=1);
+            poisson2 = alignest.rotationMaps(scattered, "sigma3X", 100, 2, assignment="poisson", seed=1);
+            spreadRandom = alignest.rotationMaps(scattered, "sigma3X", 100, 2, assignment="random", seed=1);
+            testCase.verifyEqual(poisson1.membership, poisson2.membership, "同じ種なら同じ振り分け");
+            testCase.verifyEqual(sort(poisson1.counts), [100, 101]);
+            testCase.verifyEqual(sum(poisson1.membership, 2), ones(201, 1));
+            testCase.verifyGreaterThan(meanNearest(scattered.table, poisson1.membership), ...
+                1.2 * meanNearest(scattered.table, spreadRandom.membership), "同じマップの点が離れる");
+            testCase.verifyError(@() alignest.rotationMaps(big, "sigma3X", 100, 4, priorityShotNos=1), ...
+                'alignest:rotationMaps', "shotNo の無い表では指定できない");
+        end
+
+        function assignmentMethodsAndComparison(testCase)
+            % Sobol 列（乱数を使わない）・I 最適・D 最適（ポアソンディスクから始めて、マップごとの基準の和を小さくする）の
+            % 振り分けと、振り分けの比較の指標（マップ間・全体との KL、最大の空白、I 基準・D 基準）
+            stream = RandStream('mt19937ar', 'Seed', 5);
+            nPoints = 120;
+            radius = 100 * sqrt(rand(stream, nPoints, 1));
+            angle = 2 * pi * rand(stream, nPoints, 1);
+            v = struct("metrics", "sigma3X", "metricLabels", "X の 3σ", "level", "mark");
+            v.table = table(radius .* cos(angle), radius .* sin(angle), rand(stream, nPoints, 1), ...
+                'VariableNames', ["x", "y", "sigma3X"]);
+            model = {"waferRadiusMm", 100, "designOrder", 2, "designFeatures", "XY"};   % 6 項（1・x・y・x²・xy・y²）
+            sobol1 = alignest.rotationMaps(v, "sigma3X", 0.8, 3, model{:}, assignment="sobol", seed=1);
+            sobol2 = alignest.rotationMaps(v, "sigma3X", 0.8, 3, model{:}, assignment="sobol", seed=2);
+            testCase.verifyEqual(sobol1.membership, sobol2.membership, "Sobol 列は乱数を使わない");
+            low = sobol1.table.rank == 2;
+            testCase.verifyEqual(sum(sobol1.membership(low, :), 2), ones(nnz(low), 1), "優先度 2 はどれか1枚");
+            testCase.verifyLessThanOrEqual(range(sum(sobol1.membership(low, :), 1)), 1, "各マップの数はそろう");
+            poisson = alignest.rotationMaps(v, "sigma3X", 0.8, 3, model{:}, assignment="poisson", seed=1);
+            ioptimal = alignest.rotationMaps(v, "sigma3X", 0.8, 3, model{:}, assignment="ioptimal", seed=1);
+            doptimal = alignest.rotationMaps(v, "sigma3X", 0.8, 3, model{:}, assignment="doptimal", seed=1);
+            metricsP = alignest.rotationMapMetrics(poisson, model{:});
+            metricsI = alignest.rotationMapMetrics(ioptimal, model{:});
+            metricsD = alignest.rotationMapMetrics(doptimal, model{:});
+            testCase.verifyLessThan(sum(metricsI.criterionI), sum(metricsP.criterionI), "I 最適は I 基準の和を小さくする");
+            testCase.verifyLessThan(sum(metricsD.criterionD), sum(metricsP.criterionD), "D 最適は D 基準の和を小さくする");
+            testCase.verifyEqual(sum(ioptimal.membership, 1), sum(poisson.membership, 1), "入れ替えでマップの数は変わらない");
+            testCase.verifyTrue(all(ioptimal.membership(~low, :), 'all'), "優先度 1 は毎回");
+            % 指標：同じマップばかり（しきい値なし＝すべて毎回）なら KL・空白は 0、基準は全計測の値（I = 項の数、D = 1）
+            same = alignest.rotationMaps(v, "sigma3X", [], 3, model{:});
+            metricsSame = alignest.rotationMapMetrics(same, model{:});
+            testCase.verifyEqual([metricsSame.klBetween, metricsSame.klWhole, metricsSame.fillDistanceMm], [0, 0, 0], ...
+                'AbsTol', 1e-12);
+            testCase.verifyEqual(metricsSame.criterionI, repmat(6, 1, 3), 'RelTol', 1e-9);
+            testCase.verifyEqual(metricsSame.criterionD, ones(1, 3), 'RelTol', 1e-9);
+            testCase.verifyGreaterThan(metricsP.klBetween, 0);
+            % 比べる：6 つの振り分けを同じ条件で（同じ種なら、それぞれで作ったマップと同じ指標）
+            comparison = alignest.compareRotationAssignments(v, "sigma3X", 0.8, 3, model{:}, seed=1);
+            testCase.verifyEqual(comparison.table.("振り分け").', ["I 最適", "D 最適", "Sobol 列", "ポアソンディスク", ...
+                "ランダム", "表の順"]);
+            testCase.verifyEqual(comparison.table.("I 基準（平均）")(1), metricsI.meanI, 'RelTol', 1e-9);
+            testCase.verifyEqual(comparison.table.("マップ間の KL")(4), metricsP.klBetween, 'RelTol', 1e-9);
+            testCase.verifyEmpty(comparison.messages);
+            % 点が基準モデルの項の数より少ないと I 最適・D 最適は作れない（理由を残し、ほかの振り分けは比べる）
+            small = v;
+            small.table = table([0; 10; 20; 30], [0; 0; 10; 10], [0.1; 0.2; 0.9; 0.3], 'VariableNames', ["x", "y", "sigma3X"]);
+            fewer = alignest.compareRotationAssignments(small, "sigma3X", 0.8, 2, model{:}, seed=1);
+            testCase.verifyEqual(numel(fewer.messages), 2);
+            testCase.verifyTrue(all(isnan(fewer.table.("マップ間の KL")(1:2))));
+            testCase.verifyTrue(all(isfinite(fewer.table.("マップ間の KL")(3:6))));
+        end
+
+        function assignmentComparisonOnScreen(testCase)
+            % 画面：振り分けの選択肢（I 最適・D 最適・Sobol 列・ポアソンディスク・ランダム・表の順）と「振り分けの比較」の
+            % タブ（すべての振り分けの指標の表と、選んだ指標の棒。最も良い棒は橙。計測マップのタブのマップは変えない）
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
+            app.applyMapping();
+            c = app.Controls;
+            app.TabGroup.SelectedTab = app.Tabs.rotation;
+            app.TabGroup.SelectionChangedFcn(app.TabGroup, struct("NewValue", app.Tabs.rotation));
+            testCase.verifyEqual(string(c.rotationAssignment.ItemsData), alignest.rotationAssignments());
+            testCase.verifyEqual(string(c.rotationCompareAssignButton.Enable), "off", "ばらつきを求めるまで押せない");
+            app.computeRotationVariability("shot", "max", "");
+            testCase.verifyEqual(string(c.rotationCompareAssignButton.Enable), "on");
+            maps = app.makeRotationMaps(assignment="sobol");
+            testCase.verifyEqual(maps.assignment, "sobol");
+            testCase.verifyTrue(contains(string(c.rotationMapInfo.Text), "振り分けは Sobol 列"));
+            comparison = app.compareRotationAssignments();
+            testCase.verifyEqual(height(c.rotationAssignTable.Data), 6);
+            testCase.verifyEqual(c.rotationOutputs.SelectedTab, c.rotationAssignTab);
+            testCase.verifyEqual(app.RotationMaps.assignment, "sobol", "計測マップのタブのマップは変えない");
+            bars = findobj(c.rotationAssignAxes, 'Type', 'bar');
+            values = comparison.table.("マップ間の KL");
+            testCase.verifyEqual(bars.YData(:), values);
+            [~, best] = min(values);
+            testCase.verifyEqual(bars.CData(best, :), [0.93, 0.49, 0.13], "最も小さい棒は橙");
+            c.rotationAssignMetric.Value = 'I 基準（平均）';
+            c.rotationAssignMetric.ValueChangedFcn(c.rotationAssignMetric, []);
+            bars = findobj(c.rotationAssignAxes, 'Type', 'bar');
+            testCase.verifyEqual(bars.YData(:), comparison.table.("I 基準（平均）"));
+            app.computeRotationVariability("shot", "max", "");
+            testCase.verifyEmpty(c.rotationAssignTable.Data, "ばらつきを求め直すと比較は消す");
+        end
+
+        function priorityShotsFromFieldAndClick(testCase)
+            % 画面：「優先度 1 の Shot」の欄と図のクリックで指定した Shot は、3σ によらず優先度 1（Mark ごとはその Shot の
+            % すべての Mark）。計測マップを作ってあれば作り直し（見ている結果のタブはそのまま）、図に枠を描く。書き出しの
+            % 「説明」にも出す
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
+            app.applyMapping();
+            c = app.Controls;
+            app.TabGroup.SelectedTab = app.Tabs.rotation;
+            app.TabGroup.SelectionChangedFcn(app.TabGroup, struct("NewValue", app.Tabs.rotation));
+            variability = app.computeRotationVariability("mark", "max", "");
+            testCase.verifyEqual(c.rotationMapCount.Value, 2, "計測マップの数の初期値は 2");
+            testCase.verifyEqual(string(c.rotationAssignment.Value), "poisson", "振り分けの初期値はポアソンディスク");
+            before = app.makeRotationMaps("sigma3Vector", str2double(c.rotationThresholds.Value), 3);
+            rows = before.table;
+            shotNos = unique(rows.shotNo(rows.rank == 2));
+            lowShots = shotNos(arrayfun(@(no) all(rows.rank(rows.shotNo == no) == 2), shotNos));   % 3σ では優先度 2 の Shot
+            first = lowShots(1);
+            second = lowShots(2);
+            testCase.verifyEmpty(c.rotationMapAxes(1).Legend, "マップには凡例を付けない（どのマップも同じ大きさ）");
+            legendNames = string(c.rotationMapLegendAxes.Legend.String);
+            testCase.verifyTrue(all(ismember(["計測しない", "優先度 1", "優先度 2"], legendNames)), ...
+                "凡例はマップの右に1つ（数は名前に入れない）");
+            % 欄で指定する（表に無い shotNo は知らせる）
+            c.rotationOutputs.SelectedTab = c.rotationVariabilityTab;
+            c.rotationPriorityShots.Value = char(sprintf("%d 9999", first));
+            c.rotationPriorityShots.ValueChangedFcn([], []);
+            maps = app.RotationMaps;
+            testCase.verifyTrue(all(maps.table.rank(maps.table.shotNo == first) == 1), "指定した Shot の Mark はすべて優先度 1");
+            testCase.verifyEqual(maps.missingShotNos, 9999);
+            testCase.verifyTrue(contains(string(c.rotationMapInfo.Text), "9999"));
+            testCase.verifyEqual(c.rotationOutputs.SelectedTab, c.rotationVariabilityTab, "見ている結果のタブはそのまま");
+            testCase.verifyNotEmpty(findobj(c.rotationSpreadAxes(1), 'DisplayName', "優先度 1 に指定（1）"));
+            testCase.verifyNotEmpty(findobj(c.rotationMapAxes(1), 'DisplayName', "優先度 1 に指定（1）"));
+            % 図のクリックで足す・外す（オンの間は図の点や線がクリックを図に渡す）
+            c.rotationPriorityClick.Value = true;
+            c.rotationPriorityClick.ValueChangedFcn([], []);
+            ax = c.rotationSpreadAxes(1);
+            testCase.verifyTrue(all(string(get(ax.Children, 'HitTest')) == "off"));
+            center = [rows.Xc(find(rows.shotNo == second, 1)), rows.Yc(find(rows.shotNo == second, 1))];
+            ax.ButtonDownFcn(ax, struct("IntersectionPoint", [center, 0]));
+            testCase.verifyEqual(string(c.rotationPriorityShots.Value), sprintf("%d 9999 %d", first, second));
+            testCase.verifyTrue(all(app.RotationMaps.table.rank(app.RotationMaps.table.shotNo == second) == 1));
+            mapAxes = c.rotationMapAxes(1);
+            mapAxes.ButtonDownFcn(mapAxes, struct("IntersectionPoint", [center, 0]));
+            testCase.verifyEqual(string(c.rotationPriorityShots.Value), sprintf("%d 9999", first), "もう一度で外す");
+            testCase.verifyTrue(all(app.RotationMaps.table.rank(app.RotationMaps.table.shotNo == second) == 2));
+            ax = c.rotationSpreadAxes(1);
+            ax.ButtonDownFcn(ax, struct("IntersectionPoint", [500, 500, 0]));
+            testCase.verifyEqual(string(c.rotationPriorityShots.Value), sprintf("%d 9999", first), "Shot の外は何もしない");
+            % 整数でない指定は知らせ、計測マップは変えない
+            c.rotationPriorityShots.Value = 'abc';
+            c.rotationPriorityShots.ValueChangedFcn([], []);
+            testCase.verifyTrue(startsWith(string(c.rotationError.Text), "優先度 1 の Shot は shotNo（整数）"));
+            testCase.verifyEqual(app.RotationMaps.priorityShotNos, [first, 9999]);
+            % 書き出しの「説明」
+            maps = app.makeRotationMaps(priorityShotNos=first);
+            testCase.verifyEmpty(c.rotationError.Text);
+            exported = [tempname, '.xlsx'];
+            cleanupExport = onCleanup(@() delete(exported));
+            app.exportRotationMapsTo(exported);
+            notes = readtable(exported, 'Sheet', '説明', 'VariableNamingRule', 'preserve', 'TextType', 'string');
+            testCase.verifyEqual(notes.("内容")(notes.("項目") == "優先度 1 に指定した shotNo"), string(first));
+            testCase.verifyEqual(maps.priorityShotNos, first);
+            % Shot ごと：指定した Shot は優先度 1
+            app.computeRotationVariability("shot", "max", "");
+            testCase.verifyNotEmpty(findobj(c.rotationSpreadAxes(1), 'DisplayName', "優先度 1 に指定（1）"), ...
+                "ばらつきを求め直しても指定は残る");
+            shotMaps = app.makeRotationMaps("sigma3Vector", max(variability.table.sigma3Vector) * 10, 2);
+            testCase.verifyEqual(shotMaps.table.rank(shotMaps.table.shotNo == first), 1);
+            testCase.verifyTrue(all(shotMaps.table.rank(shotMaps.table.shotNo ~= first) == 2));
         end
 
         function excelInputInThisTab(testCase)
@@ -145,7 +346,7 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             expected = alignest.stats.percentile(variability.table.sigma3Vector, 75);
             testCase.verifyEqual(str2double(c.rotationThresholds.Value), round(expected, 2, 'significant'));
             c.rotationCircles.Value = '120 140';
-            maps = app.makeRotationMaps("sigma3Vector", 80, [1, 2], thresholdKind="percent", outerRadiusMm=135, ...
+            maps = app.makeRotationMaps("sigma3Vector", 80, 2, thresholdKind="percent", outerRadiusMm=135, ...
                 assignment="random");
             testCase.verifyEqual(maps.thresholdKind, "percent");
             testCase.verifyEqual(maps.outerRadiusMm, 135);
@@ -153,7 +354,7 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             testCase.verifyTrue(all(maps.table.rank(hypot(maps.table.x, maps.table.y) >= 135) == 1));
             testCase.verifyNotEmpty(findobj(c.rotationMapAxes(1), 'Type', 'line', 'DisplayName', '半径 120 mm'));
             testCase.verifyNotEmpty(findobj(c.rotationSpreadAxes(1), 'Type', 'line', 'DisplayName', '半径 140 mm'));
-            testCase.verifyTrue(contains(string(c.rotationMapInfo.Text), "乱数"));
+            testCase.verifyTrue(contains(string(c.rotationMapInfo.Text), "振り分けはランダム"));
             result = app.runRotationFeedback(splitKind="count", splitValue=3, compareFull=false);
             testCase.verifyEqual(nnz(result.assignment.role == "検証"), nUnits - 3);
             testCase.verifyTrue(contains(app.RotationHistory(end).description, "累積 80%"));
@@ -224,7 +425,7 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             end
             variability = alignest.markVariability(wafers);
             variability.table.sigma3Vector = (1:height(variability.table)).';   % 優先度を分けるための値
-            maps = alignest.rotationMaps(variability, "sigma3Vector", height(variability.table) - 10, [1, 2]);
+            maps = alignest.rotationMaps(variability, "sigma3Vector", height(variability.table) - 10, 2);
             full = alignest.feedbackSimulation(wafers, [], settings, splitKind="count", splitValue=4, fullMeasurement=true);
             rotated = alignest.feedbackSimulation(wafers, maps, settings, splitKind="count", splitValue=4, rotationLots=1);
             testCase.verifyEqual(rotated.assignment.wafer(1:4).', ["W6", "W5", "W4", "W3"], "日時の古い順");
@@ -281,8 +482,10 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             testCase.verifyTrue(all(isfinite(variability.table.sigma3Target)));
             testCase.verifyNotEmpty(c.rotationThresholds.Value, "しきい値の初期値");
             testCase.verifyEqual(height(c.rotationSpreadTable.Data), height(variability.table));
-            maps = app.makeRotationMaps("sigma3Vector", str2double(c.rotationThresholds.Value), [1, 3]);
+            maps = app.makeRotationMaps("sigma3Vector", str2double(c.rotationThresholds.Value), 3);
             testCase.verifyEqual(maps.nMaps, 3);
+            testCase.verifyEqual(c.rotationMapCount.Value, 3, "計測マップの数の欄");
+            testCase.verifyError(@() app.makeRotationMaps("sigma3Vector", [], 25), 'alignest:rotationMaps');
             testCase.verifyEqual(numel(c.rotationMapList.Value), 3);
             testCase.verifyNotEmpty(c.rotationMapAxes(1).Children);
             testCase.verifyEqual(height(c.rotationMapTable.Data), 3);
@@ -330,6 +533,18 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             testCase.verifyTrue(contains(targets.description, "未知の座標"));
         end
     end
+end
+
+function value = meanNearest(rows, membership)
+% マップごとに、同じマップの点の中で最も近い点までの距離を求め、すべての点で平均する
+distances = zeros(0, 1);
+for m = 1:size(membership, 2)
+    p = [rows.x(membership(:, m)), rows.y(membership(:, m))];
+    gap = hypot(p(:, 1) - p(:, 1).', p(:, 2) - p(:, 2).');
+    gap(1:size(gap, 1) + 1:end) = Inf;
+    distances = [distances; min(gap, [], 2)]; %#ok<AGROW>
+end
+value = mean(distances);
 end
 
 function points = handPoints(values, target)

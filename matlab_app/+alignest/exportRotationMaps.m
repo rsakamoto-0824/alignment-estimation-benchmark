@@ -8,8 +8,8 @@ function exportRotationMaps(filePath, maps, selection, description)
 %     Shot 内の座標 x・y と、計測マップごとの列（1 = 計測する・0 = 計測しない）。「2. 面内推定の設定」の「Excel ファイルで
 %     指定」でそのまま読める（alignest.readLayoutPlans。マップの列がパターンになる）。markNo の分からない点（未知の座標）は、
 %     Shot の中の位置の順に番号を付ける
-%   - 「ばらつき」：行ごとの優先度・計測の間隔・3σ（X・Y・ベクトル・長さ |v|・目的変数）・値のある Wafer の数
-%   - 「説明」：優先度の分け方（指標・しきい値・間隔）、マップの数・計測数・計測率、description
+%   - 「ばらつき」：行ごとの優先度・計測の頻度（n 枚に1回）・3σ（X・Y・ベクトル・長さ |v|・目的変数）・値のある Wafer の数
+%   - 「説明」：優先度の分け方（指標・しきい値・頻度・優先度 1 に指定した shotNo）、マップの数・計測数・計測率、description
 arguments
     filePath (1, 1) string
     maps struct
@@ -59,16 +59,20 @@ end
 writetable(layout, filePath, 'Sheet', sheetName);
 spread = table(rows.shotNo, markNo, rows.rank, rows.interval, round(rows.sigma3X, 4), round(rows.sigma3Y, 4), ...
     round(rows.sigma3Vector, 4), round(rows.sigma3Length, 4), round(rows.sigma3Target, 4), rows.nWafers, ...
-    'VariableNames', ["shotNo", "markNo", "優先度", "計測の間隔（Lot）", "X の 3σ", "Y の 3σ", "ベクトルの 3σ", ...
+    'VariableNames', ["shotNo", "markNo", "優先度", "何枚に1回", "X の 3σ", "Y の 3σ", "ベクトルの 3σ", ...
     "長さ |v| の 3σ", "目的変数の 3σ", "値のある Wafer の数"]);
 if ~markLevel
     spread.markNo = [];
 end
 writetable(spread, filePath, 'Sheet', 'ばらつき');
-items = ["単位"; "優先度を分ける指標"; "しきい値"; "計測の間隔（優先度ごと、n Lot に1回）"; "優先度"; "計測マップの数"; ...
-    "マップごとの計測数"; "平均の計測率"; "書き出したマップ"; "入力と条件"];
+priorityShots = "（なし）";
+if isfield(maps, "priorityShotNos") && ~isempty(maps.priorityShotNos)
+    priorityShots = strjoin(string(maps.priorityShotNos), " ");
+end
+items = ["単位"; "優先度を分ける指標"; "しきい値"; "計測の頻度（優先度ごと、n 枚に1回）"; "優先度"; ...
+    "優先度 1 に指定した shotNo"; "計測マップの数"; "マップごとの計測数"; "平均の計測率"; "書き出したマップ"; "入力と条件"];
 values = [ternaryText(markLevel, "Mark ごと", "Shot ごと"); maps.metricLabel; strjoin(string(maps.thresholds), "・"); ...
-    strjoin(string(maps.intervals), "・"); strjoin(maps.rankNames, "、"); string(maps.nMaps); ...
+    strjoin(string(maps.intervals), "・"); strjoin(maps.rankNames, "、"); priorityShots; string(maps.nMaps); ...
     strjoin(maps.mapNames + "：" + string(maps.counts), "、"); sprintf("%.1f%%", 100 * maps.averageRate); ...
     strjoin(maps.mapNames(selection), "・"); description];
 writetable(table(items, values, 'VariableNames', ["項目", "内容"]), filePath, 'Sheet', '説明');
