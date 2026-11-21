@@ -184,7 +184,7 @@ classdef TestPlanSelectionAndScreens < matlab.unittest.TestCase
             c.countBy.Value = 'perShot';
             c.countBy.ValueChangedFcn([], []);
             testCase.verifyEqual(app.Settings.sampling.markCountBy, "perShot");
-            c.measurePlan.Value = c.measurePlan.Items(1);
+            c.measurePlan.Value = c.measurePlan.Items{1};
             app.drawMeasurementMap(1);
             testCase.verifyEqual(size(c.measureStatistics.Data, 2), 8);
             testCase.verifyEqual(string(c.measureStatistics.Data(:, 2)).', ["平均", "中央値", "分散", "最大", "最小"]);
@@ -196,7 +196,7 @@ classdef TestPlanSelectionAndScreens < matlab.unittest.TestCase
             app.setMeasurementSelection("shot", 10, "required");
             testCase.verifyEqual(app.Settings.sampling.requiredShots, [10, 50], "計測しないから必ず計測へ移す");
             testCase.verifyEmpty(app.Settings.sampling.excludedShots);
-            c.measurePlan.Value = c.measurePlan.Items(end);
+            c.measurePlan.Value = c.measurePlan.Items{end};
             app.drawMeasurementMap(1);
             c.measureClickMode.Value = 'excluded';
             marks = app.Data.units(1).marks;

@@ -100,7 +100,7 @@ classdef TestMeasurementCandidates < matlab.unittest.TestCase
             added = app.addMeasurementCandidates();
             testCase.verifyEqual(sort(added), sort(top.shotNo.'));
             testCase.verifyTrue(all(ismember(top.shotNo, app.Settings.sampling.requiredShots)), "必ず計測する shotNo に入る");
-            testCase.verifyTrue(contains(string(c.requiredShots.Value), string(top.shotNo(1))), "2. 評価の設定と実行の欄にも出る");
+            testCase.verifyTrue(contains(string(c.requiredShots.Value), string(top.shotNo(1))), "2. 面内推定の設定の欄にも出る");
             testCase.verifyTrue(contains(string(c.candidateInfo.Text), "5 個を足しました"));
             % 足した場所は次の候補に出ない
             next = app.findMeasurementCandidates();

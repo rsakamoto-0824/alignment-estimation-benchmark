@@ -2,7 +2,7 @@ function difference = planComponentDifference(unit, plan, settings)
 %PLANCOMPONENTDIFFERENCE 計測配置（学習パターン）の点だけで求めた補正の成分が、全計測で求めた成分とどれだけ違うか。
 %   difference = alignest.planComponentDifference(unit, plan, settings)
 %   unit：評価の単位（Wafer）、plan：学習パターン（alignest.planTrainingShots の結果）、settings：設定。
-%   補正モデルは「2. 評価の設定と実行」の Overlay 補正の Wafer 成分と Shot 共通成分（alignest.overlayChoice・
+%   補正モデルは「2. 面内推定の設定」の Overlay 補正の Wafer 成分と Shot 共通成分（alignest.overlayChoice・
 %   alignest.overlayDesign）。Shot ごとの成分は使わない（計測配置の点が Shot に数点だと決まらず、Wafer 成分の分まで
 %   吸い込むため）。X・Y 別に最小二乗で、全計測（その軸が有効なすべての Mark）と、計測配置の点（alignest.trainingMarks の
 %   Mark のうち有効な Mark）で当てはめる。成分どうしで重なる項（Wafer 成分の定数と Shot 共通成分の k1 など）と、点の
@@ -38,7 +38,7 @@ nPoints = zeros(2, 2);
 messages = strings(0, 1);
 description = "Wafer 成分：" + waferText(choice) + "、Shot 共通成分：" + commonText(choice) + "（Shot ごとの成分は使わない）";
 if ~hasWafer && ~hasCommon
-    messages(end + 1, 1) = "「2. 評価の設定と実行」の Overlay 補正に Wafer 成分・Shot 共通成分が無いので、成分の差は出しません。";
+    messages(end + 1, 1) = "「2. 面内推定の設定」の Overlay 補正に Wafer 成分・Shot 共通成分が無いので、成分の差は出しません。";
 else
     marks = unit.marks;
     used = alignest.trainingMarks(unit, plan) & plan.ok;

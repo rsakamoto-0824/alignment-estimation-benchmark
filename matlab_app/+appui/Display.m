@@ -112,7 +112,7 @@ classdef (Abstract) Display < appui.Core
 
         function saveFigureImage(app, figureName, filePath)
             %SAVEFIGUREIMAGE 画面の図を PNG に保存する（「図を画像で保存…」のボタンと同じ）。figureName：
-            %   "measure"（2. 評価の設定と実行の計測マップ）・"chart"（3. 結果一覧のグラフ）・"map"（4. Waferごとのマップ）・
+            %   "measure"（2. 面内推定の設定の計測マップ）・"chart"（3. 結果一覧のグラフ）・"map"（4. Waferごとのマップ）・
             %   "target"（5. 未知の座標の図）・"targetResidual"（6. の補正残差の図）・"highOrder"（6. Shot高次補正の
             %   マップ）。凡例・色の目盛りも入れる。
             %   図が2つ以上（グラフの I 基準・D 基準、マップの計測値・推定値・残差）なら横に並べて1枚にする。

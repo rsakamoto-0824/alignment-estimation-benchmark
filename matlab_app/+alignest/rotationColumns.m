@@ -1,5 +1,5 @@
 function columns = rotationColumns()
-%ROTATIONCOLUMNS 「8. 計測マップのローテーション」で読み込む Excel・CSV の項目（「Excel・CSV の列」で、ファイルの列を選ぶ）。
+%ROTATIONCOLUMNS 「8. 計測Mapローテ」で読み込む Excel・CSV の項目（「Excel・CSV の列」で、ファイルの列を選ぶ）。
 %   columns：構造体の配列（alignest.highOrderColumns と同じ形：name・meaning・required・aliases）。Shot 高次補正の項目
 %   （Shot 中心・Shot 内の座標・X・Y の値は必須）に、Wafer を分ける・並べるための Operation・EqpId・LotID・DateTime と、
 %   Mark 番号を足したもの。座標は mm、値は nm のまま（変換しない）。選ばなかったファイルの数値の列は、目的変数に選べる。
