@@ -13,6 +13,7 @@ classdef (Abstract) RotationTab < appui.Core
         ROTATION_LEGEND_WIDTH = 170      % 並べた計測マップの右に1つだけ出す凡例の欄の幅 [px]（どのマップも同じ大きさにする）
         ROTATION_ASSIGN_METRICS = {'マップ間の KL', '全体との KL', '最大の空白 [mm]', 'I 基準（平均）', 'I 基準（最大）', ...
             'D 基準（平均）', 'D 基準（最大）'}   % 振り分けの比較の指標（alignest.compareRotationAssignments の表の列）
+        ROTATION_NUMBER_OFFSET = 0.3   % shotNo の文字を Shot 中心から上へずらす割合（Shot の高さに対して。Shot ごとの点と重ならないように）
         ROTATION_ASSIGN_HEADROOM = 1.15   % 振り分けの比較の棒の図の縦の範囲（最大の棒 × この倍。棒の上に数を書く余白）
         ROTATION_DEFAULT_PERCENT = 75   % しきい値が空のとき、3σ の累積 75% の値を初期値にする（上位 25% を毎回計測）
         ROTATION_METRICS = {'sigma3Vector', 'sigma3Length', 'sigma3X', 'sigma3Y', 'sigma3Target'}
@@ -144,6 +145,8 @@ classdef (Abstract) RotationTab < appui.Core
             layoutUnit = rotationUnits(app);   % 図に描く Shot の枠（入力の1枚目の Wafer の Shot の配置）
             variability.shotCenters = unique([layoutUnit(1).shots.Xmm, layoutUnit(1).shots.Ymm], 'rows');
             variability.shotSizeMm = layoutUnit(1).shotSizeMm;
+            variability.numberCenters = [layoutUnit(1).shots.Xmm, layoutUnit(1).shots.Ymm];   % 図に重ねる shotNo の位置
+            variability.shotNos = layoutUnit(1).shots.shotNo;
             app.RotationWafers = wafers;
             app.RotationVariability = variability;
             app.RotationMaps = [];
@@ -444,7 +447,7 @@ classdef (Abstract) RotationTab < appui.Core
             place(c.rotationComputeVariability, 1, 2);
 
             mapHeader = sectionHeader('③ 計測の優先度と計測マップ', 7);
-            mapGrid = uigridlayout(left, [9, 2], 'ColumnWidth', {'fit', '1x'}, 'RowHeight', repmat({'fit'}, 1, 9), ...
+            mapGrid = uigridlayout(left, [10, 2], 'ColumnWidth', {'fit', '1x'}, 'RowHeight', repmat({'fit'}, 1, 10), ...
                 'Padding', 0);
             place(mapGrid, 8, 1);
             label(mapGrid, '指標', 1, 1);
@@ -497,6 +500,11 @@ classdef (Abstract) RotationTab < appui.Core
                 @(~, ~) app.onRotationCirclesChanged(), 'Tooltip', ['「ばらつき」と「計測マップ」の図に、Wafer 中心から' ...
                 'この半径の円を重ねます（空白で区切っていくつでも。例：120 140）。空欄なら描きません。']);
             place(c.rotationCircles, 9, 2);
+            c.rotationShotNumbers = uicheckbox(mapGrid, 'Text', 'shotNo を重ねる', 'Value', false, 'Enable', 'off', ...
+                'ValueChangedFcn', @(~, ~) app.onRotationShotNumbersChanged(), 'Tooltip', ['「ばらつき」と「計測マップ」の' ...
+                '図の Shot に shotNo を重ねます。取り込んだデータに shotNo の列があるときだけ選べます（列が無く、座標から' ...
+                '番号を付けたときは選べません）。']);
+            place(c.rotationShotNumbers, 10, [1, 2]);
             c.rotationMakeMaps = uibutton(mapHeader, 'Text', '計測マップを作る', 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~, ~) app.onMakeRotationMaps());
             place(c.rotationMakeMaps, 1, 2);
@@ -772,6 +780,7 @@ classdef (Abstract) RotationTab < appui.Core
             c.rotationComputeVariability.Enable = onOff(ready);
             c.rotationMakeMaps.Enable = onOff(~isempty(app.RotationVariability));
             c.rotationCompareAssignButton.Enable = onOff(~isempty(app.RotationVariability));
+            c.rotationShotNumbers.Enable = onOff(rotationHasShotNumbers(app));
             hasMaps = ~isempty(app.RotationMaps);
             set([c.rotationRunButton, c.rotationExport], 'Enable', onOff(hasMaps));
             c.rotationTransferMethod.Enable = onOff(string(c.rotationModel.Value) == "highOrder");
@@ -965,10 +974,11 @@ classdef (Abstract) RotationTab < appui.Core
             values = rows.(metric);
             upper = max([values(isfinite(values)); eps]);
             markerSize = ternary(variability.level == "shot", 90, 30);
+            [labelCenters, labelNumbers] = rotationShotLabels(app, variability);
             alignest.plot.waferMap(c.rotationSpreadAxes(1), [rows.x, rows.y], [values, nan(size(values))], mode="X", ...
                 colorRange=[0, upper], colorTitle="3σ", waferRadiusMm=app.Settings.data.waferRadiusMm, ...
                 shotCenters=variability.shotCenters, shotSizeMm=variability.shotSizeMm, showLegend=false, ...
-                markerSize=markerSize, titleText=metricLabel);
+                markerSize=markerSize, titleText=metricLabel, numberCenters=labelCenters, shotNumbers=labelNumbers);
             circles = alignest.plot.radiusCircles(c.rotationSpreadAxes(1), rotationCircleRadii(app));
             [priorityShotNos, ok] = parseNumbers(c.rotationPriorityShots.Value);   % 作る前の指定も枠で見せる
             frames = gobjects(0);
@@ -1106,12 +1116,14 @@ classdef (Abstract) RotationTab < appui.Core
             variability = app.RotationVariability;
             markerSize = ternary(maps.level == "shot", 60, 16);
             radii = rotationCircleRadii(app);
+            [labelCenters, labelNumbers] = rotationShotLabels(app, variability);
             for k = 1:nShown
                 ax = c.rotationMapAxes(k);
                 ax.Visible = 'on';
                 alignest.plot.rotationMap(ax, maps, chosen(k), waferRadiusMm=app.Settings.data.waferRadiusMm, ...
                     shotCenters=variability.shotCenters, shotSizeMm=variability.shotSizeMm, showLegend=false, ...
                     markerSize=markerSize, circleRadiiMm=radii);
+                alignest.plot.shotNumbers(ax, labelCenters, labelNumbers);
             end
             drawRotationMapLegend(app, c.rotationMapAxes(1:nShown));
             styleAxes(app, [c.rotationMapAxes(1:nShown), c.rotationMapLegendAxes], app.SMALL_AXES_FONT_SIZE);
@@ -1504,6 +1516,44 @@ classdef (Abstract) RotationTab < appui.Core
             c.rotationAssignTable.Data = data;
             c.rotationAssignInfo.Text = char(sprintf("計測マップ %d 枚で比べました。どの指標も小さいほど良い値です。", ...
                 comparison.mapCount) + strjoin(comparison.messages, " "));
+        end
+
+        function yes = rotationHasShotNumbers(app)
+            % 取り込んだデータに shotNo の列があるか（列が無ければ座標から付けた番号なので、図には重ねない）
+            if string(app.Controls.rotationSource.Value) == "file"
+                mapping = struct();
+                if hasRotationFileData(app)
+                    mapping = app.RotationFile.mapping;
+                end
+            else
+                mapping = app.AppliedMapping;
+                if isempty(app.Data)
+                    mapping = struct();
+                end
+            end
+            yes = isfield(mapping, "shotNo") && any(strlength(string(mapping.shotNo)) > 0);
+        end
+
+        function [centers, numbers] = rotationShotLabels(app, variability)
+            % 図に重ねる shotNo の位置と番号（「shotNo を重ねる」がオフ・データに shotNo の列が無いときは空）。Shot ごとの
+            % 図は Shot 中心に点があるので、文字は Shot の中で上へずらす
+            centers = zeros(0, 2);
+            numbers = zeros(0, 1);
+            if ~app.Controls.rotationShotNumbers.Value || ~rotationHasShotNumbers(app) || isempty(variability) || ...
+                    ~isfield(variability, "shotNos")
+                return
+            end
+            centers = variability.numberCenters;
+            numbers = variability.shotNos;
+            if variability.level == "shot" && all(isfinite(variability.shotSizeMm))
+                centers(:, 2) = centers(:, 2) + app.ROTATION_NUMBER_OFFSET * variability.shotSizeMm(2);
+            end
+        end
+
+        function onRotationShotNumbersChanged(app)
+            % 「shotNo を重ねる」を変えたら「ばらつき」と「計測マップ」の図を描き直す
+            drawRotationVariability(app);
+            drawRotationMaps(app);
         end
 
         function shotNos = rotationPriorityShotNos(app)

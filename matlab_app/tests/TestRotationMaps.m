@@ -233,6 +233,45 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             testCase.verifyEmpty(c.rotationAssignTable.Data, "ばらつきを求め直すと比較は消す");
         end
 
+        function shotNumbersOverlay(testCase)
+            % 「shotNo を重ねる」：取り込んだデータに shotNo の列があれば選べて、「ばらつき」と「計測マップ」の図の Shot に
+            % shotNo を重ねる（Shot ごとの図は点と重ならないよう Shot の中で上へずらす）。列が無ければ選べない
+            % （shotNo の文字は凡例に出さないので HandleVisibility = off。findall で探す）
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
+            app.applyMapping();
+            c = app.Controls;
+            app.TabGroup.SelectedTab = app.Tabs.rotation;
+            app.TabGroup.SelectionChangedFcn(app.TabGroup, struct("NewValue", app.Tabs.rotation));
+            variability = app.computeRotationVariability("shot", "max", "");
+            app.makeRotationMaps();
+            testCase.verifyEqual(string(c.rotationShotNumbers.Enable), "on", "データに shotNo の列がある");
+            testCase.verifyEmpty(findall(c.rotationMapAxes(1), 'Type', 'text', 'Tag', 'keepColor'), "初めは重ねない");
+            c.rotationShotNumbers.Value = true;
+            c.rotationShotNumbers.ValueChangedFcn(c.rotationShotNumbers, []);
+            shots = app.Data.units(1).shots;
+            for ax = [c.rotationSpreadAxes(1), c.rotationMapAxes(1)]
+                labels = findall(ax, 'Type', 'text', 'Tag', 'keepColor');
+                testCase.verifyEqual(sort(str2double(string(get(labels, 'String')))), sort(shots.shotNo(:)));
+            end
+            labels = findall(c.rotationMapAxes(1), 'Type', 'text', 'Tag', 'keepColor');
+            first = labels(str2double(string(get(labels, 'String'))) == shots.shotNo(1));
+            testCase.verifyEqual(first.Position(1:2), [shots.Xmm(1), shots.Ymm(1) + 0.3 * variability.shotSizeMm(2)], ...
+                'AbsTol', 1e-9, "Shot ごとの図は Shot の中で上へずらす");
+            % shotNo の列が無い Excel・CSV（座標から番号を付ける）では選べず、重ねない
+            raw = readtable(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'), 'TextType', 'string');
+            raw.shotNo = [];
+            file = [tempname, '.csv'];
+            writetable(raw, file);
+            cleanupFile = onCleanup(@() delete(file));
+            app.loadRotationFile(file);
+            app.applyRotationMapping();
+            testCase.verifyEqual(string(c.rotationShotNumbers.Enable), "off");
+            app.computeRotationVariability("shot", "max", "");
+            testCase.verifyEmpty(findall(c.rotationSpreadAxes(1), 'Type', 'text', 'Tag', 'keepColor'));
+        end
+
         function priorityShotsFromFieldAndClick(testCase)
             % 画面：「優先度 1 の Shot」の欄と図のクリックで指定した Shot は、3σ によらず優先度 1（Mark ごとはその Shot の
             % すべての Mark）。計測マップを作ってあれば作り直し（見ている結果のタブはそのまま）、図に枠を描く。書き出しの
