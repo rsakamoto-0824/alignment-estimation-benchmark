@@ -430,6 +430,7 @@ classdef (Abstract) Core < handle
                 c.compareLayoutMethod, c.compareLayoutXAxis, c.compareLayoutErrorBar, ...
                 c.rankingMethod, c.rankingGroup, c.rankingOverallMetrics, ...
                 c.degradationXAxis, c.degradationYAxis, c.degradationErrorBar, c.degradationWafers, c.degradationMethods, ...
+                c.degradationTypes, ...
                 c.candidateMethod, c.candidateGroup, c.candidateWafer, c.candidateCriterion, c.candidateAxis, ...
                 c.candidateStatistic, c.candidateLevel, c.candidateMode, c.candidateCount, c.candidateThreshold, ...
                 c.findCandidatesButton, c.addCandidatesButton, c.selectAllCandidatesButton, c.clearCandidatesButton, ...
@@ -655,7 +656,7 @@ classdef (Abstract) Core < handle
 
 
         function showVarianceDecomposition(app, result, target)
-            % ばらつき分解の図（上：段ごとの 3σ（全体の 3σ を ◆）か分散の積み上げ（「縦軸」の選択）、下：分散の割合。左が X、右が Y）と表を出す。
+            % ばらつき分解の図（上：3σ の配分（全体の 3σ を ◆）か分散の積み上げ（「縦軸」の選択）、下：分散の割合。左が X、右が Y）と表を出す。
             % target："data"（「1. データ読込」の「ばらつき分解」）・"correction"（「3. 結果一覧」の「補正残差のばらつき分解」）。
             % result が空なら消す
             c = app.Controls;
@@ -695,7 +696,9 @@ classdef (Abstract) Core < handle
             totalPercent = repmat(100, height(totals), 1);
             totalPercent(~(totals.variance > 0)) = NaN;   % ばらつきが無い（点が無い）ときは割合を出さない
             totalRows = table(totals.category, totals.axis, repmat("全体", height(totals), 1), totals.variance, ...
-                totals.sigma3, totalPercent, totals.n, 'VariableNames', t.Properties.VariableNames);
+                totals.sigma3, totals.sigma3, totalPercent, totals.n, 'VariableNames', ["category", "axis", "component", ...
+                "variance", "sigma3", "sigma3Share", "percent", "n"]);
+            t = t(:, ["category", "axis", "component", "variance", "sigma3", "sigma3Share", "percent", "n"]);
             rows = [t; totalRows];
             [~, categoryOrder] = ismember(rows.category, result.categories);
             [~, axisOrder] = ismember(rows.axis, result.axes);
@@ -704,13 +707,17 @@ classdef (Abstract) Core < handle
             rows = rows(order, :);
             [~, nameIndex] = ismember(rows.category, result.categories);
             unitText = result.unitLabel;
+            front = table(reshape(names(nameIndex), [], 1), rows.axis, rows.component, 'VariableNames', ["棒", "軸", "ばらつき"]);
             if quantity == "sigma3"
-                [shown, shownName] = deal(round(rows.sigma3, 4), "3σ [" + unitText + "]");
+                % 3σ の配分（全体の 3σ × 分散の割合。足すと全体の 3σ）と、その段・成分だけの 3σ（3√分散）
+                share = rows.sigma3;   % 全体の行は全体の 3σ
+                share(rows.component ~= "全体") = rows.sigma3Share(rows.component ~= "全体");
+                values = table(round(share, 4), round(rows.sigma3, 4), 'VariableNames', ...
+                    ["3σ の配分 [" + unitText + "]", "単独の 3σ [" + unitText + "]"]);
             else
-                [shown, shownName] = deal(round(rows.variance, 4), "分散 [" + unitText + "²]");
+                values = table(round(rows.variance, 4), 'VariableNames', "分散 [" + unitText + "²]");
             end
-            table_.Data = table(reshape(names(nameIndex), [], 1), rows.axis, rows.component, shown, ...
-                round(rows.percent, 1), rows.n, 'VariableNames', ["棒", "軸", "ばらつき", shownName, "分散の割合 [%]", "点の数"]);
+            table_.Data = [front, values, table(round(rows.percent, 1), rows.n, 'VariableNames', ["分散の割合 [%]", "点の数"])];
             removeStyle(table_);
             totalIndex = find(rows.component == "全体");
             if ~isempty(totalIndex)

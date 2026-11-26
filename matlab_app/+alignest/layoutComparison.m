@@ -16,13 +16,7 @@ function comparison = layoutComparison(results, methodIndex, metric, statistic, 
 %   nWafers・sd（Wafer 間の標準偏差）・se（平均の標準誤差 = sd / √nWafers）・minValue・maxValue（Wafer の最小・最大）。
 %   エラーバーは sd・se・minValue・maxValue から描く（alignest.layoutErrorBars）。
 %   comparison.Properties.UserData に指標の名前・小さいほど良いか・選び方の数。
-%   選び方は行の planType（評価した結果）から、無ければ列の名前の先頭（"I最適 20 Shot" など）から決める。
-TYPES = ["ioptimal", "doptimal", "random", "sobol", "poisson", "file", "manual", "mark", "markd", "markrandom", ...
-    "marksobol", "markpoisson"];
-LABELS = ["I 最適", "D 最適", "ランダム", "Sobol 列", "ポアソンディスク", "Excel の優先順", "Excel のパターン", ...
-    "Mark 単位の I 最適", "Mark 単位の D 最適", "Mark 単位のランダム", "Mark 単位の Sobol 列", "Mark 単位のポアソンディスク"];
-PREFIXES = ["I最適", "D最適", "ランダム", "Sobol", "ポアソン", "優先順", "", "Mark最適", "MarkD最適", "Markランダム", ...
-    "MarkSobol", "Markポアソン"];
+%   選び方は alignest.groupSelectionTypes（行の planType、無ければ列の名前の先頭）。
 summary = alignest.summarizeResults(results, metric, statistic);
 table_ = results.table(results.table.methodIndex == methodIndex, :);
 groups = reshape(string(summary.groups), [], 1);
@@ -39,13 +33,13 @@ plans = results.plans;
 if nargin < 5
     data = [];
 end
+[groupTypes, groupLabels] = alignest.groupSelectionTypes(results);   % 列ごとの選び方
+[~, groupIndex] = ismember(groups, reshape(string(results.groups), [], 1));
+typeLabel = repmat("（不明）", n, 1);
+types(groupIndex > 0) = groupTypes(groupIndex(groupIndex > 0));
+typeLabel(groupIndex > 0) = groupLabels(groupIndex(groupIndex > 0));
 for g = 1:n
     rows = table_(table_.group == groups(g), :);
-    if ~isempty(rows) && any(string(rows.Properties.VariableNames) == "planType") && rows.planType(1) ~= ""
-        types(g) = rows.planType(1);
-    else
-        types(g) = typeFromName(groups(g), results, PREFIXES, TYPES);
-    end
     if ~isempty(rows)
         nShots(g) = mean(rows.nShots, 'omitnan');
         criterionI(g) = mean(rows.criterionI, 'omitnan');
@@ -64,10 +58,6 @@ for g = 1:n
     end
     rate(g) = groupRate(plans(inGroup), data, results);
 end
-[~, position] = ismember(types, TYPES);
-typeLabel = strings(n, 1);
-typeLabel(position > 0) = LABELS(position(position > 0));
-typeLabel(position == 0) = "（不明）";
 values = summary.values(summary.methodIds == results.methods(methodIndex).id, :);
 if isempty(values)
     values = nan(1, n);
@@ -127,24 +117,4 @@ for k = 1:numel(plans)
     values(k) = 100 * plan.nMarks / max(nnz(candidates), 1);
 end
 value = mean(values, 'omitnan');
-end
-
-function type = typeFromName(name, results, prefixes, types)
-% 列の名前の先頭（選び方を比べたときの名前）から選び方を決める。無ければ設定の選び方（1つのとき）
-type = "";
-for k = 1:numel(prefixes)
-    if prefixes(k) ~= "" && startsWith(name, prefixes(k) + " ")
-        type = types(k);
-        return
-    end
-end
-methods = string(results.settings.sampling.method);
-sweep = contains(name, " Shot") || contains(name, "計測率") || contains(name, "点/Shot");
-if isscalar(methods) && methods ~= "excel"
-    type = methods;
-elseif any(methods == "excel") && sweep && ~contains(name, "（")
-    type = "file";      % Excel の優先順（学習 Shot 数ごと）
-elseif ~sweep || contains(name, "（")
-    type = "manual";    % Excel のパターン（名前（12 Shot））
-end
 end

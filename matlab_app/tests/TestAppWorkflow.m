@@ -160,7 +160,8 @@ classdef TestAppWorkflow < matlab.unittest.TestCase
             testCase.verifyEqual(numel(app.Controls.previewWafer.Items), 5 + 1, ...
                 "はじめは全 Wafer の平均（ほかの単位は「平均・楕円の単位」で選ぶ）");
             settings = app.Settings;
-            settings.methods = alignest.recommendedMethods("recommended");   % 推奨の組み合わせ（8 手法。初期設定は GPR だけ）
+            settings.methods = alignest.recommendedMethods("recommended");   % 以前の推奨の組み合わせ（8 手法）で確かめる
+            [settings.methods.kriging.ordinary, settings.methods.gam.enabled, settings.methods.rt.enabled] = deal(true);
             settings.sampling.nShots = [10, 20];   % 並びだけを変えた設定も、開始・終了・刻みに直して表示する
             app.setSettings(settings);
             testCase.verifyEqual([app.Controls.nShotsStart.Value, app.Controls.nShotsEnd.Value, ...

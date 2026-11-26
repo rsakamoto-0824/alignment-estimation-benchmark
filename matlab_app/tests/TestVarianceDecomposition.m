@@ -1,5 +1,6 @@
 classdef TestVarianceDecomposition < matlab.unittest.TestCase
-    %TESTVARIANCEDECOMPOSITION ばらつき分解（Lot 間・Wafer 間・Shot 間・その他）：手で決めた値での分け方と合計・3σ、
+    %TESTVARIANCEDECOMPOSITION ばらつき分解（Lot 間・Wafer 間・Shot 間・その他の分散成分と、全体 Shift・倍率・回転・その他の
+    %   成分）：手で決めた値での分け方と合計・3σ、点の数がそろわないときの分散成分、
     %   「1. データ読込」の「ばらつき分解」（Operation ごとの棒・装置の切り替え）、「3. 結果一覧」の「補正残差のばらつき分解」
     %   （補正で Wafer 間のばらつきが変わること）を確かめる。
 
@@ -16,8 +17,9 @@ classdef TestVarianceDecomposition < matlab.unittest.TestCase
 
     methods (Test)
         function nestedPartsAddUpToTheVariance(testCase)
-            % 釣り合った入れ子（Lot 2 × Wafer 2 × Shot 2 × 点 2）で、段ごとに ± の差を足した値は、段の分散が差の2乗になり、
-            % 足すと値の分散（点の数で割る）になる。3σ = 3√（分散）
+            % 釣り合った入れ子（Lot 2 × Wafer 2 × Shot 2 × 点 2）：分散成分は入れ子の分散分析のモーメント法の式
+            % （その他 = MS_E、Shot 間 = (MS_C − MS_E)/n、Wafer 間 = (MS_B − MS_C)/(c n)、Lot 間 = (MS_A − MS_B)/(b c n)）。
+            % 全体の分散 = 分散成分の和、段の 3σ = 3√分散、3σ の配分は足すと全体の 3σ
             effects = [4, 3, 1, 0.5];   % Lot・Wafer・Shot・点の差（上の段の中で ±）
             [lotIndex, waferIndex, shotIndex, pointIndex] = ndgrid(1:2, 1:2, 1:2, 1:2);
             signOf = @(index) 2 * index(:) - 3;   % 1 → −1、2 → +1
@@ -27,23 +29,31 @@ classdef TestVarianceDecomposition < matlab.unittest.TestCase
                 shotIndex(:), values, -2 * values, 'VariableNames', ["category", "lot", "wafer", "shot", "valueX", "valueY"]);
             result = alignest.varianceDecomposition(points);
             testCase.verifyEqual(result.components, ["Lot 間", "Wafer 間", "Shot 間", "その他"], "Scan 方向では分けない");
+            testCase.verifyEqual(result.kind, "nested");
+            N = numel(values);
+            meanSquares = N * effects .^ 2 ./ [1, 2, 4, 8];   % 平方和 / 自由度（Lot 1・Wafer 2・Shot 4・その他 8）
+            expected = [(meanSquares(1) - meanSquares(2)) / 8, (meanSquares(2) - meanSquares(3)) / 4, ...
+                (meanSquares(3) - meanSquares(4)) / 2, meanSquares(4)];
             x = result.table(result.table.axis == "X", :);
-            testCase.verifyEqual(x.variance.', effects .^ 2, 'AbsTol', 1e-12);
-            testCase.verifyEqual(x.sigma3.', 3 * effects, 'AbsTol', 1e-12, "段の 3σ = 3√（段の分散）");
+            testCase.verifyEqual(x.variance.', expected, 'AbsTol', 1e-9);
+            testCase.verifyEqual(x.variance.', [23, 17, 1.75, 0.5], 'AbsTol', 1e-9, "手で計算した値");
+            testCase.verifyEqual(x.sigma3.', 3 * sqrt(expected), 'AbsTol', 1e-9, "段の 3σ = 3√（段の分散）");
             testCase.verifyEqual(sum(x.percent), 100, 'AbsTol', 1e-9);
-            testCase.verifyEqual(result.totals.variance, [var(values, 1); var(-2 * values, 1)], 'AbsTol', 1e-9);
+            testCase.verifyEqual(result.totals.variance(1), sum(expected), 'AbsTol', 1e-9, "全体の分散 = 分散成分の和");
             testCase.verifyEqual(result.totals.sigma3, 3 * sqrt(result.totals.variance), 'AbsTol', 1e-12);
-            testCase.verifyGreaterThan(sum(x.sigma3), result.totals.sigma3(1), "3σ は足しても全体の 3σ にならない");
+            testCase.verifyEqual(sum(x.sigma3Share), result.totals.sigma3(1), 'AbsTol', 1e-9, "3σ の配分は足すと全体の 3σ");
+            testCase.verifyGreaterThan(sum(x.sigma3), result.totals.sigma3(1), "段の 3σ は足しても全体の 3σ にならない");
             y = result.table(result.table.axis == "Y", :);
-            testCase.verifyEqual(y.variance.', 4 * effects .^ 2, 'AbsTol', 1e-9, "値を2倍すると分散は4倍");
+            testCase.verifyEqual(y.variance.', 4 * expected, 'AbsTol', 1e-9, "値を2倍すると分散は4倍");
             % Lot が1つなら Lot 間は分けない（その分は Wafer 間に入る）
             points.lot(:) = "L1";
             merged = alignest.varianceDecomposition(points);
             testCase.verifyEqual(merged.components, ["Wafer 間", "Shot 間", "その他"]);
             testCase.verifyFalse(merged.useLot);
             xm = merged.table(merged.table.axis == "X", :);
-            testCase.verifyEqual(xm.variance.', [effects(1) ^ 2 + effects(2) ^ 2, effects(3) ^ 2, effects(4) ^ 2], ...
-                'AbsTol', 1e-12, "Lot の分は Wafer 間に入る");
+            waferMeanSquare = N * (effects(1) ^ 2 + effects(2) ^ 2) / 3;   % Wafer 4 枚：自由度 3
+            testCase.verifyEqual(xm.variance.', [(waferMeanSquare - meanSquares(3)) / 4, expected(3:4)], 'AbsTol', 1e-9, ...
+                "Lot の分は Wafer 間に入る");
             % 値の無い点は使わず、棒（category）ごとに分ける。点の無い棒は NaN
             points.valueX(1:4) = NaN;
             points.category(9:end) = "B";
@@ -52,6 +62,80 @@ classdef TestVarianceDecomposition < matlab.unittest.TestCase
             testCase.verifyTrue(all(isnan(split.table.variance(split.table.category == "C"))));
             testCase.verifyError(@() alignest.varianceDecomposition(points, valueColumns="valueX", axisNames=["X", "Y"]), ...
                 'alignest:varianceDecomposition');
+        end
+
+        function unbalancedComponentsAreUnbiased(testCase)
+            % 点の数がそろわない入れ子（Lot 60 × Wafer 4 × Shot 6 × 点 1〜4）で、分かっている分散成分（Lot 4・Wafer 2・Shot 1・
+            % その他 0.5）を、平方和を点の数で割っただけの値よりよく求める（上の段に下の段のばらつきが入らない）
+            stream = RandStream('mt19937ar', 'Seed', 11);
+            truth = [4, 2, 1, 0.5];
+            parts = {};
+            for lot = 1:60
+                lotEffect = sqrt(truth(1)) * randn(stream);
+                for waferNo = 1:4
+                    waferEffect = sqrt(truth(2)) * randn(stream);
+                    for shotNo = 1:6
+                        shotEffect = sqrt(truth(3)) * randn(stream);
+                        nPoints = randi(stream, 4);
+                        value = lotEffect + waferEffect + shotEffect + sqrt(truth(4)) * randn(stream, nPoints, 1);
+                        parts{end + 1} = table(repmat("A", nPoints, 1), repmat("L" + lot, nPoints, 1), ...
+                            repmat("W" + lot + "-" + waferNo, nPoints, 1), repmat(shotNo, nPoints, 1), value, value, ...
+                            'VariableNames', ["category", "lot", "wafer", "shot", "valueX", "valueY"]); %#ok<AGROW>
+                    end
+                end
+            end
+            points = vertcat(parts{:});
+            result = alignest.varianceDecomposition(points);
+            x = result.table(result.table.axis == "X", :);
+            testCase.verifyEqual(x.variance.', truth, 'RelTol', 0.35, "分散成分は分かっている値に近い");
+            testCase.verifyEqual(x.variance(end), truth(end), 'RelTol', 0.15);
+            testCase.verifyEqual(result.totals.variance(1), sum(x.variance), 'AbsTol', 1e-9);
+        end
+
+        function componentsSplitShiftMagnificationRotation(testCase)
+            % 成分の分け方：全体 Shift・Wafer 倍率・回転・その他（Shot ごとの点の平均で求める）・Shot 倍率・回転・その他。
+            % 成分だけを持つ値はその成分に 100%、どんな値でも成分の分散を足すと値の分散（点の数で割る）になる
+            [shotX, shotY] = meshgrid(-40:20:40);
+            [localX, localY] = meshgrid([-5, 5]);
+            nShots = numel(shotX);
+            nMarks = numel(localX);
+            wafers = 3;
+            [markIndex, shotIndex, waferIndex] = ndgrid(1:nMarks, 1:nShots, 1:wafers);
+            base = table(repmat("A", numel(markIndex), 1), "W" + waferIndex(:), shotIndex(:), shotX(shotIndex(:)), ...
+                shotY(shotIndex(:)), localX(markIndex(:)), localY(markIndex(:)), 'VariableNames', ["category", "wafer", ...
+                "shot", "shotX", "shotY", "localX", "localY"]);
+            share = @(points, axisName) componentShare(points, axisName);
+            % X の Wafer 倍率（Shot 中心 X の項）と、Y の Wafer 回転（Shot 中心 X の項）
+            points = base;
+            points.valueX = 0.01 * points.shotX;
+            points.valueY = 0.02 * points.shotX;
+            testCase.verifyEqual(share(points, "X"), [0, 100, 0, 0, 0, 0, 0], 'AbsTol', 1e-9);
+            testCase.verifyEqual(share(points, "Y"), [0, 0, 100, 0, 0, 0, 0], 'AbsTol', 1e-9);
+            % Wafer ごとの Shift と、X の Shot 回転（Shot 内 Y の項）
+            points.valueX = double(waferIndex(:));
+            points.valueY = 0.1 * points.localY;
+            testCase.verifyEqual(share(points, "X"), [100, 0, 0, 0, 0, 0, 0], 'AbsTol', 1e-9);
+            testCase.verifyEqual(share(points, "Y"), [0, 0, 0, 0, 100, 0, 0], 'AbsTol', 1e-9, "Y の Shot 倍率は Shot 内 Y");
+            % どんな値でも、成分の分散を足すと値の分散
+            stream = RandStream('mt19937ar', 'Seed', 3);
+            points.valueX = randn(stream, height(points), 1) + 0.03 * points.shotY + double(waferIndex(:)) + ...
+                0.2 * points.localX;
+            points.valueY = randn(stream, height(points), 1);
+            points.valueX(5) = NaN;   % 値の無い点は使わない
+            result = alignest.componentVarianceDecomposition(points);
+            testCase.verifyEqual(result.components, ["全体 Shift", "Wafer 倍率", "Wafer 回転", "Wafer その他", "Shot 倍率", ...
+                "Shot 回転", "Shot その他"]);
+            testCase.verifyEqual(result.kind, "components");
+            for axisName = ["X", "Y"]
+                values = points.("value" + axisName);
+                values = values(isfinite(values));
+                parts = result.table(result.table.axis == axisName, :);
+                testCase.verifyEqual(sum(parts.variance), var(values, 1), 'RelTol', 1e-10, "足すと値の分散");
+            end
+            testCase.verifyEqual(result.means.mean(1), mean(points.valueX, 'omitnan'), 'AbsTol', 1e-12);
+            parts = result.table(result.table.axis == "X", :);
+            testCase.verifyGreaterThan(parts.percent(parts.component == "Wafer 回転"), ...
+                10 * parts.percent(parts.component == "Wafer 倍率"), "X の Shot 中心 Y の項は回転（倍率ではない）");
         end
 
         function importedDataIsSplitByOperationAndEqp(testCase)
@@ -81,21 +165,26 @@ classdef TestVarianceDecomposition < matlab.unittest.TestCase
             values = vertcat(marks.measX);
             valid = logical(vertcat(marks.validX));
             parts = result.table(result.table.category == "OP-M1-ALIGN" & result.table.axis == "X", :);
-            testCase.verifyEqual(sum(parts.variance), var(values(valid), 1), 'RelTol', 1e-10, "足すと分散");
+            totalX = result.totals.variance(result.totals.category == "OP-M1-ALIGN" & result.totals.axis == "X");
+            testCase.verifyEqual(sum(parts.variance), totalX, 'RelTol', 1e-12, "全体の分散 = 分散成分の和");
+            testCase.verifyEqual(totalX, var(values(valid), 1), 'RelTol', 0.3, "全体の分散は値の分散に近い");
             testCase.verifyGreaterThan(parts.variance(parts.component == "Lot 間"), 0);
             testCase.verifyNotEmpty(c.varianceAxes(1).Children);
             testCase.verifyEqual(height(c.varianceTable.Data), 2 * 2 * 5, "棒 × 軸 × （4つの段と全体）");
             testCase.verifyEqual(string(c.varianceQuantity.Value), "sigma3", "はじめは 3σ");
             names = string(c.varianceTable.Data.Properties.VariableNames);
-            testCase.verifyTrue(any(names == "3σ [nm]") && ~any(contains(names, "分散 [")));
+            testCase.verifyTrue(all(ismember(["3σ の配分 [nm]", "単独の 3σ [nm]"], names)) && ~any(contains(names, "分散 [")));
             first = c.varianceTable.Data(1, :);
-            expected = result.table.sigma3(result.table.category == "OP-M1-ALIGN" & result.table.axis == "X" & ...
-                result.table.component == string(first.("ばらつき")));
-            testCase.verifyEqual(first.("3σ [nm]"), round(expected, 4), 'AbsTol', 1e-9);
+            row = result.table(result.table.category == "OP-M1-ALIGN" & result.table.axis == "X" & ...
+                result.table.component == string(first.("ばらつき")), :);
+            testCase.verifyEqual(first.("単独の 3σ [nm]"), round(row.sigma3, 4), 'AbsTol', 1e-9);
+            testCase.verifyEqual(first.("3σ の配分 [nm]"), round(row.sigma3Share, 4), 'AbsTol', 1e-9);
             bars = c.varianceAxes(1).Children(arrayfun(@(item) isa(item, 'matlab.graphics.chart.primitive.Bar'), ...
                 c.varianceAxes(1).Children));
             testCase.verifyEqual(numel(bars), 4, "3σ：4つの段の棒");
-            testCase.verifyEqual(string(bars(1).BarLayout), "stacked", "3σ も段をそのまま積み上げる");
+            testCase.verifyEqual(string(bars(1).BarLayout), "stacked", "3σ の配分を積み上げる");
+            barTop = sum(cell2mat(arrayfun(@(item) item.YData(1), bars, 'UniformOutput', false)));
+            testCase.verifyEqual(barTop, result.totals.sigma3(1), 'RelTol', 1e-9, "積み上げの上端は全体の 3σ（分散は足せる）");
             total = findobj(c.varianceAxes(1), 'Type', 'line', 'DisplayName', '全体の 3σ');
             testCase.verifyNotEmpty(total, "全体の 3σ を ◆ で重ねる");
             testCase.verifyEqual(string(total(1).Marker), "diamond");
@@ -112,6 +201,15 @@ classdef TestVarianceDecomposition < matlab.unittest.TestCase
             testCase.verifyFalse(one.useLot, "その装置の計測の Lot は1つ");
             testCase.verifyTrue(contains(string(c.varianceInfo.Text), "装置 EXP02"));
             testCase.verifyError(@() app.decomposeDataVariance("NONE"), 'alignest:varianceDecomposition');
+            % 分け方「成分」：全体 Shift・Wafer 倍率・回転・その他・Shot 倍率・回転・その他。分散を足すと値の分散
+            components = app.decomposeDataVariance("", "components");
+            testCase.verifyEqual(components.components, ["全体 Shift", "Wafer 倍率", "Wafer 回転", "Wafer その他", ...
+                "Shot 倍率", "Shot 回転", "Shot その他"]);
+            parts = components.table(components.table.category == "OP-M1-ALIGN" & components.table.axis == "X", :);
+            testCase.verifyEqual(sum(parts.variance), var(values(valid), 1), 'RelTol', 1e-10);
+            testCase.verifyEqual(height(c.varianceTable.Data), 2 * 2 * 8, "棒 × 軸 × （7つの成分と全体）");
+            testCase.verifyTrue(contains(string(c.varianceInfo.Text), "全体 Shift"));
+            app.decomposeDataVariance("", "nested");
             % 1変数の推定：値の名前の1列だけ
             spec = struct("scalar", true, "name", "Thickness_nm", "unit", "nm");
             scalar = alignest.dataVarianceDecomposition(units, "", spec);
@@ -164,4 +262,10 @@ classdef TestVarianceDecomposition < matlab.unittest.TestCase
             testCase.verifyTrue(contains(string(c.correctionVarianceInfo.Text), "Wafer が1枚"));
         end
     end
+end
+
+function percents = componentShare(points, axisName)
+% 成分の分け方での、軸 axisName の成分ごとの分散の割合 [%]
+result = alignest.componentVarianceDecomposition(points);
+percents = reshape(result.table.percent(result.table.axis == axisName), 1, []);
 end

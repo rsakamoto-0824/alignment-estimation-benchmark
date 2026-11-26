@@ -1,8 +1,8 @@
 function methods = recommendedMethods(selection)
 %RECOMMENDEDMETHODS 比べる手法の選び方。selection = "recommended"（既定）・"default"・"all"・"none"。
 %   recommended：前回の模擬データ1000枚の評価で各系統の代表になった設定と、GPR の質的変数の主な扱い方
-%     GPR matern52（X,Y,半径）× 質的変数（使わない・同時推定・加法カーネル）、TPS、Kriging exponential、
-%     GAM、XY5次多項式、RT モデル K=5。説明変数は X,Y,半径。
+%     GPR matern52（X,Y,半径）× 質的変数（使わない・同時推定・加法カーネル）、TPS、XY5次多項式。説明変数は X,Y,半径。
+%     RT モデル・GAM・Kriging は入れない（選ぶときは個別にチェックする。「すべて選ぶ」には入る）。
 %   default：アプリの初期設定（alignest.defaultSettings）。GPR だけ（カーネルは recommended と同じ。質的変数の扱いは
 %     加法カーネルだけ。ほかの手法は外す）。
 if nargin < 1
@@ -52,6 +52,9 @@ methods.options.gamGpKnots = 10;      % GAM のガウス過程の節点の数（
 methods.options.gamGpGridKnots = 7;   % GAM のガウス過程の節点の格子（X・Y、各軸）
 switch selection
     case "recommended"
+        methods.kriging.ordinary = false;
+        methods.gam.enabled = false;
+        methods.rt.enabled = false;
     case "default"
         methods.gpr.factorModes = "additive";
         methods.tps.enabled = false;

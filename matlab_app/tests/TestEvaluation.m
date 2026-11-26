@@ -221,7 +221,8 @@ classdef TestEvaluation < matlab.unittest.TestCase
 
         function summaryExportAndSettingsRoundTrip(testCase)
             settings = alignest.defaultSettings();
-            settings.methods = alignest.recommendedMethods("recommended");   % 推奨の組み合わせ（8 手法）で確かめる
+            settings.methods = alignest.recommendedMethods("recommended");   % 以前の推奨の組み合わせ（8 手法）で確かめる
+            [settings.methods.kriging.ordinary, settings.methods.gam.enabled, settings.methods.rt.enabled] = deal(true);
             settings.sampling.nShots = [10, 20];
             data = testCase.Data;
             data.units = data.units(1:3);

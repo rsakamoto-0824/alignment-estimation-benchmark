@@ -88,6 +88,25 @@ classdef TestComparisonPlansDisplay < matlab.unittest.TestCase
             app.setSettings(settings);
             app.runEvaluationNow(false);
             c = app.Controls;
+            % グラフ・補正の悪化：手法だけでなく計測点の選び方（I 最適・D 最適）でも比べる（手法 × 選び方ごとの線）
+            testCase.verifyEqual(string(c.chartTypes.Items), ["I 最適", "D 最適"]);
+            c.chartMethods.Value = c.chartMethods.ItemsData(1:2);
+            c.chartMethods.ValueChangedFcn(c.chartMethods, []);
+            curves = findobj(c.chartAxes, '-regexp', 'DisplayName', '｜');
+            testCase.verifyEqual(numel(curves), 4, "手法 2 × 選び方 2");
+            testCase.verifyEqual(curves(1).XData, [10, 20], "横軸は学習 Shot 数（選び方の名前の付いた列でも）");
+            c.chartTypes.Value = {'D 最適'};
+            c.chartTypes.ValueChangedFcn(c.chartTypes, []);
+            curves = findobj(c.chartAxes, '-regexp', 'DisplayName', '｜');
+            testCase.verifyEqual(numel(curves), 2);
+            testCase.verifyTrue(all(endsWith(string(get(curves, 'DisplayName')), "｜D 最適")));
+            if app.Results.overlayEvaluated
+                c.degradationMethods.Value = c.degradationMethods.ItemsData(1:2);
+                c.degradationTypes.Value = c.degradationTypes.ItemsData;
+                c.degradationTypes.ValueChangedFcn(c.degradationTypes, []);
+                testCase.verifyEqual(numel(findobj(c.degradationAxes(1), '-regexp', 'DisplayName', '｜')), 4, ...
+                    "補正の悪化も手法 × 選び方");
+            end
             app.drawLayoutComparison(1, "efficiencyD", "sd");
             testCase.verifyTrue(startsWith(string(c.compareLayoutAxes.XLabel.String), "D 効率"));
             testCase.verifyEqual(numel(findobj(c.compareLayoutAxes, 'Type', 'errorbar')), 2);

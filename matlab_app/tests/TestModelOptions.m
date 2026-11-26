@@ -125,6 +125,10 @@ classdef TestModelOptions < matlab.unittest.TestCase
             testCase.verifyTrue(all(string({methods.family}) == "GPR"));
             recommended = alignest.buildMethodList(alignest.recommendedMethods("recommended"));
             testCase.verifyTrue(numel(unique(string({recommended.family}))) > 1);
+            recommendedIds = string({recommended.id});
+            testCase.verifyFalse(any(startsWith(recommendedIds, ["RT", "GAM", "OK_", "UK_"])), ...
+                "推奨の組み合わせに RT モデル・GAM・Kriging は入れない");
+            testCase.verifyTrue(any(startsWith(recommendedIds, "TPS")) && any(recommendedIds == "XY5"));
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
             c = app.Controls;

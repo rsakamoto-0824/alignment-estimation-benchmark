@@ -7,6 +7,11 @@ classdef (Abstract) ResultsTab < appui.Core
         CORRECTION_MODEL_NOTE = ['補正のモデルは「2. 面内推定の設定」の Overlay 補正の評価です（Wafer 成分・Shot 共通成分・Shot ごとの' ...
             '成分）。実測値で補正：全 Mark の計測値で求めた補正。推定値で補正：学習に使った Mark の計測値とほかの Mark の推定値で' ...
             '求めた補正。どちらも計測値に当てた残差で、すべての点と推定対象の点（学習に使わなかった Mark）で比べます。']
+        SELECTION_LIST_HEIGHT = 110   % グラフ・補正の悪化の「計測点の選び方」の一覧の高さ [px]
+        SELECTION_LINE_STYLES = {'-', '--', ':', '-.'}   % 計測点の選び方ごとの線の種類（手法は色で分ける）
+        SERIES_MARKERS = {'o', 's', 'd', '^', 'v', '>', '<', 'p', 'h', 'x'}   % 線の印（手法ごと、選び方で分けるときは選び方ごと）
+        SELECTION_TOOLTIP = ['描く計測点の選び方（I 最適・D 最適・ランダムなど。Ctrl・Shift で複数）。手法 × 選び方ごとに' ...
+            '線を分けます（手法は色、選び方は線の種類と印）。選び方が1つだけの結果では、線は手法ごとです。']
     end
 
     methods
@@ -886,8 +891,15 @@ classdef (Abstract) ResultsTab < appui.Core
             c.chartAxes = uiaxes(c.chartAxesGrid);
             c.chartAxes2 = uiaxes(c.chartAxesGrid, 'Visible', 'off');
             label(chartGrid, 'グラフに描く手法', 1, 2);
-            c.chartMethods = uilistbox(chartGrid, 'Items', {}, 'Multiselect', 'on', 'ValueChangedFcn', @(~, ~) app.drawChart());
-            place(c.chartMethods, 2, 2);
+            chartListGrid = uigridlayout(chartGrid, [3, 1], 'RowHeight', {'1x', 'fit', app.SELECTION_LIST_HEIGHT}, ...
+                'Padding', 0, 'RowSpacing', 4);
+            place(chartListGrid, 2, 2);
+            c.chartMethods = uilistbox(chartListGrid, 'Items', {}, 'Multiselect', 'on', 'ValueChangedFcn', @(~, ~) app.drawChart());
+            place(c.chartMethods, 1, 1);
+            label(chartListGrid, '計測点の選び方', 2, 1);
+            c.chartTypes = uilistbox(chartListGrid, 'Items', {}, 'Multiselect', 'on', 'ValueChangedFcn', ...
+                @(~, ~) app.drawChart(), 'Tooltip', app.SELECTION_TOOLTIP);
+            place(c.chartTypes, 3, 1);
             compareTab = uitab(groups(1), 'Title', '基準の手法との比較');
             compareGrid = uigridlayout(compareTab, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 8);
             c.comparisonNote = uilabel(compareGrid, 'WordWrap', 'on', 'Text', '');
@@ -1073,9 +1085,16 @@ classdef (Abstract) ResultsTab < appui.Core
             place(degradationAxesGrid, 2, 1);
             c.degradationAxes = [uiaxes(degradationAxesGrid), uiaxes(degradationAxesGrid)];
             label(degradationGrid, '描く手法', 1, 2);
-            c.degradationMethods = uilistbox(degradationGrid, 'Items', {}, 'Multiselect', 'on', 'Enable', 'off', ...
+            degradationListGrid = uigridlayout(degradationGrid, [3, 1], 'RowHeight', {'1x', 'fit', app.SELECTION_LIST_HEIGHT}, ...
+                'Padding', 0, 'RowSpacing', 4);
+            place(degradationListGrid, 2, 2);
+            c.degradationMethods = uilistbox(degradationListGrid, 'Items', {}, 'Multiselect', 'on', 'Enable', 'off', ...
                 'ValueChangedFcn', onDegradation);
-            place(c.degradationMethods, 2, 2);
+            place(c.degradationMethods, 1, 1);
+            label(degradationListGrid, '計測点の選び方', 2, 1);
+            c.degradationTypes = uilistbox(degradationListGrid, 'Items', {}, 'Multiselect', 'on', 'Enable', 'off', ...
+                'ValueChangedFcn', onDegradation, 'Tooltip', app.SELECTION_TOOLTIP);
+            place(c.degradationTypes, 3, 1);
             c.degradationInfo = uilabel(degradationGrid, 'WordWrap', 'on', 'Text', '');
             place(c.degradationInfo, 3, [1, 2]);
 
@@ -1796,8 +1815,16 @@ classdef (Abstract) ResultsTab < appui.Core
             c.degradationMethods.Items = cellstr(labels);
             c.degradationMethods.ItemsData = num2cell(1:numel(labels));
             c.degradationMethods.Value = c.chartMethods.Value;
+            % 計測点の選び方（初めはすべて。手法 × 選び方ごとに線を分ける）
+            [~, typeLabels] = alignest.groupSelectionTypes(results);
+            typeItems = cellstr(unique(typeLabels, 'stable'));
+            for list = [c.chartTypes, c.degradationTypes]
+                list.Items = typeItems;
+                list.ItemsData = typeItems;
+                list.Value = typeItems;
+            end
             set([c.degradationXAxis, c.degradationYAxis, c.degradationErrorBar, c.degradationWafers, ...
-                c.degradationMethods], 'Enable', ...
+                c.degradationMethods, c.degradationTypes], 'Enable', ...
                 onOff(isfield(results, "overlayEvaluated") && results.overlayEvaluated));
             set([c.export, c.saveChart, c.copyChart], 'Enable', 'on');
             imported = isImportedResults(results);
@@ -2037,24 +2064,28 @@ classdef (Abstract) ResultsTab < appui.Core
             cla(ax, 'reset');
             hold(ax, 'on');
             positions = groupPositions(summary.groups);
-            markers = {'o', 's', 'd', '^', 'v', '>', '<', 'p', 'h', 'x'};
             halfWidth = errorBarHalfWidth(app.Results, metric, string(c.chartErrorBars.Value));
+            [series, seriesNames, split] = selectionSeries(app, c.chartTypes, summary.groups);   % 計測点の選び方ごとの列
+            colors = ax.ColorOrder;
             for k = 1:numel(selected)
                 m = selected(k);
-                style = ['-', markers{mod(k - 1, numel(markers)) + 1}];
-                if isempty(halfWidth)
-                    plot(ax, positions, summary.values(m, :), style, 'LineWidth', 1.5, 'MarkerSize', 7, ...
-                        'DisplayName', summary.methodLabels(m));
-                else
-                    errorbar(ax, positions, summary.values(m, :), halfWidth(m, :), style, 'LineWidth', 1.5, ...
-                        'MarkerSize', 7, 'CapSize', 6, 'DisplayName', summary.methodLabels(m));
+                for j = 1:numel(series)
+                    [xs, order] = sort(positions(series{j}));
+                    columns = series{j}(order);
+                    look = seriesLook(app, k, j, split, summary.methodLabels(m), seriesNames(j), colors);
+                    if isempty(halfWidth)
+                        plot(ax, xs, summary.values(m, columns), look{:}, 'LineWidth', 1.5, 'MarkerSize', 7);
+                    else
+                        errorbar(ax, xs, summary.values(m, columns), halfWidth(m, columns), look{:}, 'LineWidth', 1.5, ...
+                            'MarkerSize', 7, 'CapSize', 6);
+                    end
                 end
             end
             hold(ax, 'off');
-            ax.XTick = positions;
             [numbers, axisLabel] = groupNumbers(summary.groups);
+            ax.XTick = unique(positions);
             if all(isfinite(numbers))
-                ax.XTickLabel = cellstr(string(numbers));
+                ax.XTickLabel = cellstr(string(unique(numbers)));
                 xlabel(ax, axisLabel);
             else
                 ax.XTickLabel = cellstr(summary.groups);
@@ -2074,7 +2105,6 @@ classdef (Abstract) ResultsTab < appui.Core
             % 「補正の悪化」：推定誤差（または計測する Mark の数・学習 Shot 数）に対する、推定による重ね合わせ補正の悪化
             % （X・Y の2つの図）。点は手法 × 学習パターンの列（上の「集計」で Wafer をまとめた値）、線は手法ごと。
             % 「Wafer ごとの点」で Wafer の点も薄く重ねる。degradation は alignest.overlayDegradation の結果（描けなければ []）
-            MARKERS = {'o', 's', 'd', '^', 'v', '>', '<', 'p', 'h', 'x'};
             c = app.Controls;
             axesList = c.degradationAxes;
             for ax = axesList
@@ -2098,6 +2128,9 @@ classdef (Abstract) ResultsTab < appui.Core
             statistic = string(c.statistic.Value);
             degradation = alignest.overlayDegradation(results, xKind, yKind, statistic);
             selected = cell2mat(c.degradationMethods.Value);
+            groups = reshape(string(results.groups), [], 1);
+            [series, seriesNames, split] = selectionSeries(app, c.degradationTypes, groups);   % 計測点の選び方ごとの列
+            chosenGroups = groups([series{:}]);
             xLabels = struct("error", "推定誤差 RMSE（X・Y 合計） [nm]", "marks", "計測する Mark の数", "shots", "学習 Shot 数");
             yLabels = struct("overlayIncrease", "推定による増加 [nm]", "overlayChange", "推定による変化 |m|+3σ [nm]");
             axisNames = ["X", "Y"];
@@ -2109,26 +2142,29 @@ classdef (Abstract) ResultsTab < appui.Core
                     m = selected(k);
                     color = colors(mod(k - 1, size(colors, 1)) + 1, :);
                     if c.degradationWafers.Value
-                        mine = degradation.wafers(degradation.wafers.methodIndex == m, :);
+                        mine = degradation.wafers(degradation.wafers.methodIndex == m & ...
+                            ismember(degradation.wafers.group, chosenGroups), :);
                         scatter(ax, mine.x, mine.("value" + axisNames(a)), 18, color, 'filled', 'MarkerFaceAlpha', 0.3, ...
                             'HandleVisibility', 'off');
                     end
-                    rows = degradation.points(degradation.points.methodIndex == m, :);
-                    [~, order] = sort(rows.x);
-                    rows = rows(order, :);
-                    style = ['-', MARKERS{mod(k - 1, numel(MARKERS)) + 1}];
-                    value = rows.("value" + axisNames(a));
-                    if errorKind == "none"
-                        plot(ax, rows.x, value, style, 'Color', color, 'LineWidth', 1.5, 'MarkerSize', 7, ...
-                            'DisplayName', results.methods(m).label);
-                    else
-                        % エラーバー：Wafer ごとの値のばらつき（alignest.layoutErrorBars と同じ求め方）
-                        spread = table(value, rows.("sd" + axisNames(a)), rows.("se" + axisNames(a)), ...
-                            rows.("min" + axisNames(a)), rows.("max" + axisNames(a)), 'VariableNames', ...
-                            ["value", "sd", "se", "minValue", "maxValue"]);
-                        [lower, upper] = alignest.layoutErrorBars(spread, errorKind);
-                        errorbar(ax, rows.x, value, lower, upper, style, 'Color', color, 'LineWidth', 1.5, ...
-                            'MarkerSize', 7, 'CapSize', 6, 'DisplayName', results.methods(m).label);
+                    for j = 1:numel(series)
+                        rows = degradation.points(degradation.points.methodIndex == m & ...
+                            ismember(degradation.points.group, groups(series{j})), :);
+                        [~, order] = sort(rows.x);
+                        rows = rows(order, :);
+                        look = seriesLook(app, k, j, split, results.methods(m).label, seriesNames(j), colors);
+                        value = rows.("value" + axisNames(a));
+                        if errorKind == "none"
+                            plot(ax, rows.x, value, look{:}, 'LineWidth', 1.5, 'MarkerSize', 7);
+                        else
+                            % エラーバー：Wafer ごとの値のばらつき（alignest.layoutErrorBars と同じ求め方）
+                            spread = table(value, rows.("sd" + axisNames(a)), rows.("se" + axisNames(a)), ...
+                                rows.("min" + axisNames(a)), rows.("max" + axisNames(a)), 'VariableNames', ...
+                                ["value", "sd", "se", "minValue", "maxValue"]);
+                            [lower, upper] = alignest.layoutErrorBars(spread, errorKind);
+                            errorbar(ax, rows.x, value, lower, upper, look{:}, 'LineWidth', 1.5, 'MarkerSize', 7, ...
+                                'CapSize', 6);
+                        end
                     end
                 end
                 yline(ax, 0, ':', 'HandleVisibility', 'off');
@@ -2145,10 +2181,44 @@ classdef (Abstract) ResultsTab < appui.Core
             if isempty(selected)
                 c.degradationInfo.Text = '右の一覧で描く手法を選んでください。';
             else
-                c.degradationInfo.Text = char(sprintf(['点は手法 × 学習パターンの列（%d 点）、線は手法ごと。縦軸が 0 なら推定値で' ...
+                c.degradationInfo.Text = char(sprintf(['点は手法 × 学習パターンの列（%d 点）、線は手法%s。縦軸が 0 なら推定値で' ...
                     '補正しても実測値で補正したのと同じ、大きいほど推定で重ね合わせ補正が悪くなります。'], ...
-                    nnz(ismember(degradation.points.methodIndex, selected))));
+                    nnz(ismember(degradation.points.methodIndex, selected) & ismember(degradation.points.group, chosenGroups)), ...
+                    ternary(split, " × 計測点の選び方ごと", "ごと")));
             end
+        end
+
+        function [series, names, split] = selectionSeries(app, list, groups)
+            % 一覧（list）で選んだ計測点の選び方ごとの、学習パターンの列の番号（groups の何番目か。groups は描く列の名前）。
+            % names：選び方の名前、split：結果に選び方が2つ以上あるか（あれば手法 × 選び方ごとに線を分ける）
+            [~, allLabels] = alignest.groupSelectionTypes(app.Results);
+            [~, position] = ismember(reshape(string(groups), 1, []), reshape(string(app.Results.groups), 1, []));
+            labels = repmat("（不明）", 1, numel(position));
+            labels(position > 0) = allLabels(position(position > 0));
+            names = reshape(string(list.Value), 1, []);
+            if isempty(list.Items)
+                names = unique(labels, 'stable').';   % 一覧をまだそろえていない結果（読み込んだ結果など）
+            end
+            names = names(ismember(names, labels));
+            series = arrayfun(@(name) reshape(find(labels == name), 1, []), names, 'UniformOutput', false);
+            split = numel(unique(labels)) > 1;
+        end
+
+        function look = seriesLook(app, k, j, split, methodLabel, typeName, colors)
+            % 線の見た目（plot・errorbar の名前と値の組）：手法（k 番目）は色、選び方（j 番目）は線の種類と印。選び方が1つ
+            % だけなら、これまでどおり手法ごとの印と実線。Excel のパターン（列ごとに違う配置）は線でつながない
+            color = colors(mod(k - 1, size(colors, 1)) + 1, :);
+            if ~split
+                look = {'LineStyle', '-', 'Marker', app.SERIES_MARKERS{mod(k - 1, numel(app.SERIES_MARKERS)) + 1}, ...
+                    'Color', color, 'DisplayName', methodLabel};
+                return
+            end
+            lineStyle = app.SELECTION_LINE_STYLES{mod(j - 1, numel(app.SELECTION_LINE_STYLES)) + 1};
+            if typeName == "Excel のパターン"
+                lineStyle = 'none';
+            end
+            look = {'LineStyle', lineStyle, 'Marker', app.SERIES_MARKERS{mod(j - 1, numel(app.SERIES_MARKERS)) + 1}, ...
+                'Color', color, 'DisplayName', methodLabel + "｜" + typeName};
         end
 
         function drawCriteriaChart(app, kind)
@@ -2173,7 +2243,8 @@ classdef (Abstract) ResultsTab < appui.Core
                 criteriaNames = ["I 効率", "D 効率"];
                 scale = 100;
             end
-            markers = {'o', 's', 'd', '^', 'v', '>', '<', 'p', 'h', 'x'};
+            [series, seriesNames, split] = selectionSeries(app, c.chartTypes, summary.groups);   % 計測点の選び方ごとの列
+            colors = c.chartAxes.ColorOrder;
             groupNames = string(summary.groups);
             shortNames = extractBefore(groupNames, " Shot");
             shortNames(ismissing(shortNames)) = groupNames(ismissing(shortNames));
@@ -2193,21 +2264,21 @@ classdef (Abstract) ResultsTab < appui.Core
                     m = selected(k);
                     x = scale * cellfun(@(values) mean(values, 'omitnan'), perUnit(m, :));
                     y = summary.values(m, :);
-                    valid = find(isfinite(x) & isfinite(y) & x > 0);
-                    [xs, order] = sort(x(valid));
-                    ys = y(valid(order));
-                    style = ['-', markers{mod(k - 1, numel(markers)) + 1}];
-                    if isempty(halfWidth)
-                        curve = plot(ax, xs, ys, style, 'LineWidth', 1.5, 'MarkerSize', 7, ...
-                            'DisplayName', summary.methodLabels(m));
-                    else
-                        bars = halfWidth(m, valid(order));
-                        curve = errorbar(ax, xs, ys, bars, style, 'LineWidth', 1.5, 'MarkerSize', 7, 'CapSize', 6, ...
-                            'DisplayName', summary.methodLabels(m));
-                    end
-                    if k == 1
-                        text(ax, xs, ys, "  " + shortNames(valid(order)), 'FontSize', 10, 'Color', curve.Color, ...
-                            'VerticalAlignment', 'bottom', 'HandleVisibility', 'off');
+                    for j = 1:numel(series)
+                        valid = series{j}(isfinite(x(series{j})) & isfinite(y(series{j})) & x(series{j}) > 0);
+                        [xs, order] = sort(x(valid));
+                        ys = y(valid(order));
+                        look = seriesLook(app, k, j, split, summary.methodLabels(m), seriesNames(j), colors);
+                        if isempty(halfWidth)
+                            curve = plot(ax, xs, ys, look{:}, 'LineWidth', 1.5, 'MarkerSize', 7);
+                        else
+                            bars = halfWidth(m, valid(order));
+                            curve = errorbar(ax, xs, ys, bars, look{:}, 'LineWidth', 1.5, 'MarkerSize', 7, 'CapSize', 6);
+                        end
+                        if k == 1
+                            text(ax, xs, ys, "  " + shortNames(valid(order)), 'FontSize', 10, 'Color', curve.Color, ...
+                                'VerticalAlignment', 'bottom', 'HandleVisibility', 'off');
+                        end
                     end
                     if c.chartPoints.Value
                         rows = app.Results.table(app.Results.table.methodIndex == m, :);
@@ -2525,16 +2596,27 @@ end
 end
 
 function [numbers, axisLabel] = groupNumbers(groups)
-% 学習パターンの列の名前から、横軸の数（Shot 数または計測率 [%]）と軸の名前を読む
-groups = string(groups);
-if all(startsWith(groups, "計測率 ") & endsWith(groups, "%"))
-    numbers = str2double(extractBetween(groups, "計測率 ", "%"));
+% 学習パターンの列の名前から、横軸の数（Shot 数または計測率 [%]）と軸の名前を読む。選び方を比べたときの名前
+% （"I最適 20 Shot"・"D最適 計測率 20%"）も、最後の数を読む
+groups = reshape(string(groups), 1, []);
+rates = arrayfun(@(name) lastNumber(name, '計測率 (\d+(\.\d+)?)%$'), groups);
+if all(isfinite(rates))
+    numbers = rates;
     axisLabel = "計測率 [%]";
 else
-    numbers = str2double(extractBefore(groups, " Shot"));
+    numbers = arrayfun(@(name) lastNumber(name, '(?:^|\s)(\d+) Shot$'), groups);
     axisLabel = "学習 Shot 数";
 end
 numbers = reshape(numbers, 1, []);
+end
+
+function number = lastNumber(name, pattern)
+% 列の名前から pattern の最初の（ ）の数を読む（無ければ NaN）
+token = regexp(char(name), pattern, 'tokens', 'once');
+number = NaN;
+if ~isempty(token)
+    number = str2double(token{1});
+end
 end
 
 function [keys, labels] = scatterColorChoices(source, settings)

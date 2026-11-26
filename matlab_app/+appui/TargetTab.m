@@ -430,9 +430,9 @@ classdef (Abstract) TargetTab < appui.Core
         function onTabChanged(app, event)
             % 「5. 未知の座標の推定」を開いたら、選択肢（Wafer・学習データ・手法）を今のデータ・結果・設定に合わせる。
             % 「6. Shot高次補正」を開いたら、入力のデータの一覧を今のデータ・推定値に合わせる。
-            % 「2. 面内推定の設定」を開いたら、計測マップをまだ描いていなければ描く
+            % 「2. 面内推定の設定」を開いたら、計測マップの選択肢をそろえる（描くのは「計測マップを作る」を押したとき）
             if event.NewValue == app.Tabs.settings
-                autoDrawMeasurementMap(app);
+                prepareMeasurementChoices(app);
             elseif event.NewValue == app.Tabs.target
                 refreshTargetChoices(app);
             elseif event.NewValue == app.Tabs.highOrder

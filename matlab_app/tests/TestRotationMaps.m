@@ -149,8 +149,7 @@ classdef TestRotationMaps < matlab.unittest.TestCase
         end
 
         function assignmentMethodsAndComparison(testCase)
-            % Sobol 列（乱数を使わない）・I 最適・D 最適（ポアソンディスクから始めて、マップごとの基準の和を小さくする）の
-            % 振り分けと、振り分けの比較の指標（マップ間・全体との KL、最大の空白、I 基準・D 基準）
+            % I 最適・D 最適（ポアソンディスクから始めて、マップごとの基準の和を小さくする）の振り分けと、振り分けの比較の指標（マップ間・全体との KL、最大の空白、I 基準・D 基準）
             stream = RandStream('mt19937ar', 'Seed', 5);
             nPoints = 120;
             radius = 100 * sqrt(rand(stream, nPoints, 1));
@@ -159,13 +158,10 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             v.table = table(radius .* cos(angle), radius .* sin(angle), rand(stream, nPoints, 1), ...
                 'VariableNames', ["x", "y", "sigma3X"]);
             model = {"waferRadiusMm", 100, "designOrder", 2, "designFeatures", "XY"};   % 6 項（1・x・y・x²・xy・y²）
-            sobol1 = alignest.rotationMaps(v, "sigma3X", 0.8, 3, model{:}, assignment="sobol", seed=1);
-            sobol2 = alignest.rotationMaps(v, "sigma3X", 0.8, 3, model{:}, assignment="sobol", seed=2);
-            testCase.verifyEqual(sobol1.membership, sobol2.membership, "Sobol 列は乱数を使わない");
-            low = sobol1.table.rank == 2;
-            testCase.verifyEqual(sum(sobol1.membership(low, :), 2), ones(nnz(low), 1), "優先度 2 はどれか1枚");
-            testCase.verifyLessThanOrEqual(range(sum(sobol1.membership(low, :), 1)), 1, "各マップの数はそろう");
             poisson = alignest.rotationMaps(v, "sigma3X", 0.8, 3, model{:}, assignment="poisson", seed=1);
+            low = poisson.table.rank == 2;
+            testCase.verifyError(@() alignest.rotationMaps(v, "sigma3X", 0.8, 3, assignment="sobol"), ...
+                'MATLAB:validators:mustBeMember', "Sobol 列の振り分けは無い");
             ioptimal = alignest.rotationMaps(v, "sigma3X", 0.8, 3, model{:}, assignment="ioptimal", seed=1);
             doptimal = alignest.rotationMaps(v, "sigma3X", 0.8, 3, model{:}, assignment="doptimal", seed=1);
             metricsP = alignest.rotationMapMetrics(poisson, model{:});
@@ -185,10 +181,9 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             testCase.verifyGreaterThan(metricsP.klBetween, 0);
             % 比べる：6 つの振り分けを同じ条件で（同じ種なら、それぞれで作ったマップと同じ指標）
             comparison = alignest.compareRotationAssignments(v, "sigma3X", 0.8, 3, model{:}, seed=1);
-            testCase.verifyEqual(comparison.table.("振り分け").', ["I 最適", "D 最適", "Sobol 列", "ポアソンディスク", ...
-                "ランダム", "表の順"]);
+            testCase.verifyEqual(comparison.table.("振り分け").', ["I 最適", "D 最適", "ポアソンディスク", "ランダム", "表の順"]);
             testCase.verifyEqual(comparison.table.("I 基準（平均）")(1), metricsI.meanI, 'RelTol', 1e-9);
-            testCase.verifyEqual(comparison.table.("マップ間の KL")(4), metricsP.klBetween, 'RelTol', 1e-9);
+            testCase.verifyEqual(comparison.table.("マップ間の KL")(3), metricsP.klBetween, 'RelTol', 1e-9);
             testCase.verifyEmpty(comparison.messages);
             % 点が基準モデルの項の数より少ないと I 最適・D 最適は作れない（理由を残し、ほかの振り分けは比べる）
             small = v;
@@ -196,11 +191,11 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             fewer = alignest.compareRotationAssignments(small, "sigma3X", 0.8, 2, model{:}, seed=1);
             testCase.verifyEqual(numel(fewer.messages), 2);
             testCase.verifyTrue(all(isnan(fewer.table.("マップ間の KL")(1:2))));
-            testCase.verifyTrue(all(isfinite(fewer.table.("マップ間の KL")(3:6))));
+            testCase.verifyTrue(all(isfinite(fewer.table.("マップ間の KL")(3:5))));
         end
 
         function assignmentComparisonOnScreen(testCase)
-            % 画面：振り分けの選択肢（I 最適・D 最適・Sobol 列・ポアソンディスク・ランダム・表の順）と「振り分けの比較」の
+            % 画面：振り分けの選択肢（I 最適・D 最適・ポアソンディスク・ランダム・表の順）と「振り分けの比較」の
             % タブ（すべての振り分けの指標の表と、選んだ指標の棒。最も良い棒は橙。計測マップのタブのマップは変えない）
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
@@ -213,13 +208,13 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             testCase.verifyEqual(string(c.rotationCompareAssignButton.Enable), "off", "ばらつきを求めるまで押せない");
             app.computeRotationVariability("shot", "max", "");
             testCase.verifyEqual(string(c.rotationCompareAssignButton.Enable), "on");
-            maps = app.makeRotationMaps(assignment="sobol");
-            testCase.verifyEqual(maps.assignment, "sobol");
-            testCase.verifyTrue(contains(string(c.rotationMapInfo.Text), "振り分けは Sobol 列"));
+            maps = app.makeRotationMaps(assignment="doptimal");
+            testCase.verifyEqual(maps.assignment, "doptimal");
+            testCase.verifyTrue(contains(string(c.rotationMapInfo.Text), "振り分けは D 最適"));
             comparison = app.compareRotationAssignments();
-            testCase.verifyEqual(height(c.rotationAssignTable.Data), 6);
+            testCase.verifyEqual(height(c.rotationAssignTable.Data), 5);
             testCase.verifyEqual(c.rotationOutputs.SelectedTab, c.rotationAssignTab);
-            testCase.verifyEqual(app.RotationMaps.assignment, "sobol", "計測マップのタブのマップは変えない");
+            testCase.verifyEqual(app.RotationMaps.assignment, "doptimal", "計測マップのタブのマップは変えない");
             bars = findobj(c.rotationAssignAxes, 'Type', 'bar');
             values = comparison.table.("マップ間の KL");
             testCase.verifyEqual(bars.YData(:), values);
@@ -286,7 +281,7 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             variability = app.computeRotationVariability("mark", "max", "");
             testCase.verifyEqual(c.rotationMapCount.Value, 2, "計測マップの数の初期値は 2");
             testCase.verifyEqual(string(c.rotationAssignment.Value), "poisson", "振り分けの初期値はポアソンディスク");
-            before = app.makeRotationMaps("sigma3Vector", str2double(c.rotationThresholds.Value), 3);
+            before = app.makeRotationMaps("sigma3Length", str2double(c.rotationThresholds.Value), 3);
             rows = before.table;
             shotNos = unique(rows.shotNo(rows.rank == 2));
             lowShots = shotNos(arrayfun(@(no) all(rows.rank(rows.shotNo == no) == 2), shotNos));   % 3σ では優先度 2 の Shot
@@ -341,7 +336,7 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             app.computeRotationVariability("shot", "max", "");
             testCase.verifyNotEmpty(findobj(c.rotationSpreadAxes(1), 'DisplayName', "優先度 1 に指定（1）"), ...
                 "ばらつきを求め直しても指定は残る");
-            shotMaps = app.makeRotationMaps("sigma3Vector", max(variability.table.sigma3Vector) * 10, 2);
+            shotMaps = app.makeRotationMaps("sigma3Length", max(variability.table.sigma3Length) * 10, 2);
             testCase.verifyEqual(shotMaps.table.rank(shotMaps.table.shotNo == first), 1);
             testCase.verifyTrue(all(shotMaps.table.rank(shotMaps.table.shotNo ~= first) == 2));
         end
@@ -382,10 +377,10 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             testCase.verifyEqual(string(c.rotationThresholds.Value), "75");
             c.rotationThresholdKind.Value = 'value';
             c.rotationThresholdKind.ValueChangedFcn(c.rotationThresholdKind, []);
-            expected = alignest.stats.percentile(variability.table.sigma3Vector, 75);
+            expected = alignest.stats.percentile(variability.table.sigma3Length, 75);   % 指標の初期値は長さ |v| の 3σ
             testCase.verifyEqual(str2double(c.rotationThresholds.Value), round(expected, 2, 'significant'));
-            c.rotationCircles.Value = '120 140';
-            maps = app.makeRotationMaps("sigma3Vector", 80, 2, thresholdKind="percent", outerRadiusMm=135, ...
+            [c.rotationSpreadCircles.Value, c.rotationMapCircles.Value] = deal('120 140');   % 円は右のタブごとに指定
+            maps = app.makeRotationMaps("sigma3Length", 80, 2, thresholdKind="percent", outerRadiusMm=135, ...
                 assignment="random");
             testCase.verifyEqual(maps.thresholdKind, "percent");
             testCase.verifyEqual(maps.outerRadiusMm, 135);
@@ -426,7 +421,7 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             testCase.verifyEqual(numel(ax.YAxis), 2, "左に 3σ、右に累積 [%]");
             testCase.verifyEqual(string(ax.XLabel.String), "Wafer 中心からの半径 [mm]");
             radius = hypot(variability.table.x, variability.table.y);
-            expected = alignest.radialCumulative(radius, variability.table.sigma3Vector, [50, 80]);
+            expected = alignest.radialCumulative(radius, variability.table.sigma3Length, [50, 80]);
             testCase.verifyEqual(shown.rateRadiiMm, expected.rateRadiiMm, 'AbsTol', 1e-9);
             testCase.verifyTrue(all(shown.rateRadiiMm > 0 & shown.rateRadiiMm < 150));
             testCase.verifyLessThan(shown.rateRadiiMm(1), shown.rateRadiiMm(2));
@@ -521,10 +516,12 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             testCase.verifyTrue(all(isfinite(variability.table.sigma3Target)));
             testCase.verifyNotEmpty(c.rotationThresholds.Value, "しきい値の初期値");
             testCase.verifyEqual(height(c.rotationSpreadTable.Data), height(variability.table));
-            maps = app.makeRotationMaps("sigma3Vector", str2double(c.rotationThresholds.Value), 3);
+            testCase.verifyEqual(string(c.rotationMetric.ItemsData), ["sigma3X", "sigma3Y", "sigma3Length"], ...
+                "優先度の指標は X・Y・長さ |v| の 3σ");
+            maps = app.makeRotationMaps("sigma3Length", str2double(c.rotationThresholds.Value), 3);
             testCase.verifyEqual(maps.nMaps, 3);
             testCase.verifyEqual(c.rotationMapCount.Value, 3, "計測マップの数の欄");
-            testCase.verifyError(@() app.makeRotationMaps("sigma3Vector", [], 25), 'alignest:rotationMaps');
+            testCase.verifyError(@() app.makeRotationMaps("sigma3Length", [], 25), 'alignest:rotationMaps');
             testCase.verifyEqual(numel(c.rotationMapList.Value), 3);
             testCase.verifyNotEmpty(c.rotationMapAxes(1).Children);
             testCase.verifyEqual(height(c.rotationMapTable.Data), 3);
