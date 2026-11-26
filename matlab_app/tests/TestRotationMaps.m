@@ -1,7 +1,7 @@
 classdef TestRotationMaps < matlab.unittest.TestCase
     %TESTROTATIONMAPS 計測マップのローテーション（「8. 計測Mapローテ」）：Shot・Mark ごとのばらつき（3σ）、しきい値で
     %   分けた優先度とローテーションする計測マップ、FB 側・検証側に分けた補正残差（2. の Overlay 補正・6. の Shot 高次補正）、
-    %   画面の流れ（入力・対象・目的変数・条件の比較・書き出しと読み直し）、しきい値の累積 %・外周を優先度 1・指定した
+    %   画面の流れ（入力・対象・条件の比較・書き出しと読み直し）、しきい値の累積 %・外周を優先度 1・指定した
     %   Shot を優先度 1（欄と図のクリック）・ランダムな振り分け・円の重ね描き、このタブで読み込む Excel・CSV（列を選ぶ）を
     %   確かめる。
 
@@ -18,13 +18,12 @@ classdef TestRotationMaps < matlab.unittest.TestCase
 
     methods (Test)
         function variabilityAndMapsFollowTheDefinitions(testCase)
-            % 3σ = 3 × Wafer 間の不偏標準偏差。ベクトルは 3√(σX²+σY²)、長さは Wafer ごとの |v| の 3σ。Shot ごとは Mark の
+            % 3σ = 3 × Wafer 間の不偏標準偏差（X・Y と、Wafer ごとの長さ |v| の 3σ だけ）。Shot ごとは Mark の
             % 最大・平均。優先度はしきい値以上ほど高く、間隔 n の点は n 枚のマップに順に振り分ける
             values = {[1, 0; 2, 1; 0, 0; 5, 5], [3, 0; 2, 3; 0, 1; 5, 5], [5, 0; 2, 5; 0, 2; 5, 5]};   % 4 点 × 3 Wafer
-            target = [10; 20; 30; 40];
             wafers = struct("label", {}, "points", {});
             for w = 1:3
-                wafers(w) = struct("label", "W" + w, "points", handPoints(values{w}, target + w));
+                wafers(w) = struct("label", "W" + w, "points", handPoints(values{w}));
             end
             v = alignest.markVariability(wafers);
             rows = v.table;
@@ -34,12 +33,12 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             sy = std([y{:}], 0, 2);
             [~, order] = ismember(rows.key, wafers(1).points.key);
             testCase.verifyEqual(rows.sigma3X, 3 * sx(order), 'AbsTol', 1e-12);
-            testCase.verifyEqual(rows.sigma3Vector, 3 * sqrt(sx(order) .^ 2 + sy(order) .^ 2), 'AbsTol', 1e-12);
+            testCase.verifyEqual(rows.sigma3Y, 3 * sy(order), 'AbsTol', 1e-12);
             lengths = hypot([x{:}], [y{:}]);
             testCase.verifyEqual(rows.sigma3Length, 3 * std(lengths(order, :), 0, 2), 'AbsTol', 1e-12);
-            testCase.verifyEqual(rows.sigma3Target, repmat(3, 4, 1), 'AbsTol', 1e-12, "目的変数は Wafer ごとに 1 ずつ違う");
             testCase.verifyEqual(rows.nWafers, repmat(3, 4, 1));
-            testCase.verifyTrue(v.hasTarget);
+            testCase.verifyEqual(v.metrics, ["sigma3X", "sigma3Y", "sigma3Length"], "ベクトルの 3σ・目的変数の 3σ は求めない");
+            testCase.verifyFalse(any(ismember(["sigma3Vector", "sigma3Target"], string(rows.Properties.VariableNames))));
             shots = alignest.markVariability(wafers, level="shot", shotStatistic="max");
             testCase.verifyEqual(height(shots.table), 2);
             perShot = arrayfun(@(s) max(rows.sigma3X(rows.shotNo == s)), shots.table.shotNo);
@@ -90,7 +89,7 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             values = {[1, 0; 2, 1; 0, 0; 5, 5], [3, 0; 2, 3; 0, 1; 5, 5], [5, 0; 2, 5; 0, 2; 5, 5]};   % 4 点 × 3 Wafer
             wafers = struct("label", {}, "points", {});
             for w = 1:3
-                wafers(w) = struct("label", "W" + w, "points", handPoints(values{w}, nan(4, 1)));
+                wafers(w) = struct("label", "W" + w, "points", handPoints(values{w}));
             end
             v = alignest.markVariability(wafers);   % X の 3σ：6・0・0・0、点の x：−30・−10・10・30 mm
             percent = alignest.rotationMaps(v, "sigma3X", 75, 2, thresholdKind="percent");
@@ -206,7 +205,7 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             app.TabGroup.SelectionChangedFcn(app.TabGroup, struct("NewValue", app.Tabs.rotation));
             testCase.verifyEqual(string(c.rotationAssignment.ItemsData), alignest.rotationAssignments());
             testCase.verifyEqual(string(c.rotationCompareAssignButton.Enable), "off", "ばらつきを求めるまで押せない");
-            app.computeRotationVariability("shot", "max", "");
+            app.computeRotationVariability("shot", "max");
             testCase.verifyEqual(string(c.rotationCompareAssignButton.Enable), "on");
             maps = app.makeRotationMaps(assignment="doptimal");
             testCase.verifyEqual(maps.assignment, "doptimal");
@@ -224,7 +223,7 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             c.rotationAssignMetric.ValueChangedFcn(c.rotationAssignMetric, []);
             bars = findobj(c.rotationAssignAxes, 'Type', 'bar');
             testCase.verifyEqual(bars.YData(:), comparison.table.("I 基準（平均）"));
-            app.computeRotationVariability("shot", "max", "");
+            app.computeRotationVariability("shot", "max");
             testCase.verifyEmpty(c.rotationAssignTable.Data, "ばらつきを求め直すと比較は消す");
         end
 
@@ -239,7 +238,7 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             c = app.Controls;
             app.TabGroup.SelectedTab = app.Tabs.rotation;
             app.TabGroup.SelectionChangedFcn(app.TabGroup, struct("NewValue", app.Tabs.rotation));
-            variability = app.computeRotationVariability("shot", "max", "");
+            variability = app.computeRotationVariability("shot", "max");
             app.makeRotationMaps();
             testCase.verifyEqual(string(c.rotationShotNumbers.Enable), "on", "データに shotNo の列がある");
             testCase.verifyEmpty(findall(c.rotationMapAxes(1), 'Type', 'text', 'Tag', 'keepColor'), "初めは重ねない");
@@ -263,7 +262,7 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             app.loadRotationFile(file);
             app.applyRotationMapping();
             testCase.verifyEqual(string(c.rotationShotNumbers.Enable), "off");
-            app.computeRotationVariability("shot", "max", "");
+            app.computeRotationVariability("shot", "max");
             testCase.verifyEmpty(findall(c.rotationSpreadAxes(1), 'Type', 'text', 'Tag', 'keepColor'));
         end
 
@@ -278,7 +277,7 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             c = app.Controls;
             app.TabGroup.SelectedTab = app.Tabs.rotation;
             app.TabGroup.SelectionChangedFcn(app.TabGroup, struct("NewValue", app.Tabs.rotation));
-            variability = app.computeRotationVariability("mark", "max", "");
+            variability = app.computeRotationVariability("mark", "max");
             testCase.verifyEqual(c.rotationMapCount.Value, 2, "計測マップの数の初期値は 2");
             testCase.verifyEqual(string(c.rotationAssignment.Value), "poisson", "振り分けの初期値はポアソンディスク");
             before = app.makeRotationMaps("sigma3Length", str2double(c.rotationThresholds.Value), 3);
@@ -333,7 +332,7 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             testCase.verifyEqual(notes.("内容")(notes.("項目") == "優先度 1 に指定した shotNo"), string(first));
             testCase.verifyEqual(maps.priorityShotNos, first);
             % Shot ごと：指定した Shot は優先度 1
-            app.computeRotationVariability("shot", "max", "");
+            app.computeRotationVariability("shot", "max");
             testCase.verifyNotEmpty(findobj(c.rotationSpreadAxes(1), 'DisplayName', "優先度 1 に指定（1）"), ...
                 "ばらつきを求め直しても指定は残る");
             shotMaps = app.makeRotationMaps("sigma3Length", max(variability.table.sigma3Length) * 10, 2);
@@ -365,10 +364,9 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             testCase.verifyEqual(numel(data.units), nUnits, "計測（Operation × EqpId × LotID × Wafer × DateTime）ごと");
             testCase.verifyEmpty(app.Data, "「1. データ読込」のデータは変えない");
             testCase.verifyEqual(string(c.rotationComputeVariability.Enable), "on");
-            testCase.verifyTrue(any(string(c.rotationTarget.Items) == "Thickness"), "選ばなかった数値の列は目的変数");
             testCase.verifyTrue(any(string(c.rotationGroup.Items) == "装置：EXP02"));
             testCase.verifyTrue(contains(string(c.rotationInputInfo.Text), nUnits + " Wafer"));
-            variability = app.computeRotationVariability("mark", "max", "Thickness");
+            variability = app.computeRotationVariability("mark", "max");
             testCase.verifyEqual(variability.nWafers, nUnits);
             testCase.verifyTrue(contains(variability.description, "Excel・CSV"));
             % しきい値の決め方を変えると初期値も変わる（累積 % は 75、3σ の値は累積 75% の値）
@@ -414,7 +412,7 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'));
             app.applyMapping();
             c = app.Controls;
-            variability = app.computeRotationVariability("mark", "max", "");
+            variability = app.computeRotationVariability("mark", "max");
             testCase.verifyEqual(string(c.rotationCumulative.Enable), "off", "はじめは分布の図");
             shown = app.setRotationSpreadView("radius", true, [50, 80]);
             ax = c.rotationSpreadAxes(2);
@@ -458,8 +456,8 @@ classdef TestRotationMaps < matlab.unittest.TestCase
                     "dateTime", sprintf("2026/11/%02d 09:00:00", nWafers + 1 - w), "operation", "", "eqpId", "");
             end
             variability = alignest.markVariability(wafers);
-            variability.table.sigma3Vector = (1:height(variability.table)).';   % 優先度を分けるための値
-            maps = alignest.rotationMaps(variability, "sigma3Vector", height(variability.table) - 10, 2);
+            variability.table.sigma3Length = (1:height(variability.table)).';   % 優先度を分けるための値
+            maps = alignest.rotationMaps(variability, "sigma3Length", height(variability.table) - 10, 2);
             full = alignest.feedbackSimulation(wafers, [], settings, splitKind="count", splitValue=4, fullMeasurement=true);
             rotated = alignest.feedbackSimulation(wafers, maps, settings, splitKind="count", splitValue=4, rotationLots=1);
             testCase.verifyEqual(rotated.assignment.wafer(1:4).', ["W6", "W5", "W4", "W3"], "日時の古い順");
@@ -494,10 +492,10 @@ classdef TestRotationMaps < matlab.unittest.TestCase
         end
 
         function screenFlowFromInputToExport(testCase)
-            % 画面：計測データ（目的変数・対象の装置）→ ばらつき → 計測マップ → 検証（全計測とも）→ 条件の比較 → 書き出し
+            % 画面：計測データ（対象の装置）→ ばらつき → 計測マップ → 検証（全計測とも）→ 条件の比較 → 書き出し
             % （Excel 取込として読み直せる）。評価の推定値・未知の座標の推定値も入力にできる
             raw = readtable(fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv'), 'TextType', 'string');
-            raw.Thickness = 100 + 0.01 * raw.measX;   % 目的変数にする数値の列
+            raw.Thickness = 100 + 0.01 * raw.measX;   % 数値の列があっても、ばらつきは X・Y・長さ |v| だけ
             file = [tempname, '.csv'];
             writetable(raw, file);
             cleanupFile = onCleanup(@() delete(file));
@@ -508,12 +506,12 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             c = app.Controls;
             app.TabGroup.SelectedTab = app.Tabs.rotation;
             app.TabGroup.SelectionChangedFcn(app.TabGroup, struct("NewValue", app.Tabs.rotation));
-            testCase.verifyTrue(any(string(c.rotationTarget.Items) == "Thickness"), "数値の列を目的変数に選べる");
+            testCase.verifyFalse(isfield(c, 'rotationTarget'), "目的変数の欄は無い");
             testCase.verifyTrue(all(ismember(["装置：EXP01", "装置：EXP02", "Operation：OP-M1-ALIGN"], ...
                 string(c.rotationGroup.Items))));
-            variability = app.computeRotationVariability("mark", "max", "Thickness");
-            testCase.verifyTrue(variability.hasTarget);
-            testCase.verifyTrue(all(isfinite(variability.table.sigma3Target)));
+            variability = app.computeRotationVariability("mark", "max");
+            testCase.verifyEqual(string(c.rotationSpreadTable.Data.Properties.VariableNames), ["shotNo", "markNo", "優先度", ...
+                "X の 3σ", "Y の 3σ", "長さ｜v｜の 3σ", "Wafer の数"], "表は X・Y・長さ |v| の 3σ");
             testCase.verifyNotEmpty(c.rotationThresholds.Value, "しきい値の初期値");
             testCase.verifyEqual(height(c.rotationSpreadTable.Data), height(variability.table));
             testCase.verifyEqual(string(c.rotationMetric.ItemsData), ["sigma3X", "sigma3Y", "sigma3Length"], ...
@@ -543,7 +541,7 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             % 対象を装置で分ける・Shot ごと
             app.setRotationInput("data", [], "", "eqp:EXP01");
             testCase.verifyEmpty(app.RotationVariability, "入力を変えると前のばらつきは消す");
-            byTool = app.computeRotationVariability("shot", "mean", "");
+            byTool = app.computeRotationVariability("shot", "mean");
             testCase.verifyEqual(byTool.nWafers, nnz(string({app.Data.units.eqpId}) == "EXP01"));
             testCase.verifyEqual(byTool.level, "shot");
             app.removeRotationConditions(1);
@@ -558,13 +556,13 @@ classdef TestRotationMaps < matlab.unittest.TestCase
             app.runEvaluationNow(false);
             plan = app.Results.plans(1).label;
             app.setRotationInput("estimate", 1, plan, "all");
-            estimated = app.computeRotationVariability("mark", "max", "");
+            estimated = app.computeRotationVariability("mark", "max");
             testCase.verifyEqual(estimated.nWafers, numel(app.Data.units));
             testCase.verifyTrue(contains(estimated.description, "評価の推定値"));
             app.setTargetPoints(alignest.targetGrid(50, 140));
             app.estimateTargets([1, 2], "all", 1);
             app.setRotationInput("target", [], "", "all");
-            targets = app.computeRotationVariability("mark", "max", "");
+            targets = app.computeRotationVariability("mark", "max");
             testCase.verifyEqual(targets.nWafers, 2);
             testCase.verifyTrue(contains(targets.description, "未知の座標"));
         end
@@ -583,7 +581,7 @@ end
 value = mean(distances);
 end
 
-function points = handPoints(values, target)
+function points = handPoints(values)
 % 手で決めた値の点の表：Shot 2 つ × Mark 2 つ（Shot 内の座標 ±10 mm）
 shotNo = [1; 1; 2; 2];
 localX = [-10; 10; -10; 10];
@@ -591,5 +589,5 @@ Xc = [-20; -20; 20; 20];
 points = table(repmat("計測値", 4, 1), strings(4, 1), shotNo, Xc, zeros(4, 1), localX, zeros(4, 1), Xc + localX, ...
     zeros(4, 1), values(:, 1), values(:, 2), nan(4, 1), ones(4, 1), 'VariableNames', ["source", "name", "shotNo", ...
     "Xc", "Yc", "localX", "localY", "x", "y", "valueX", "valueY", "direction", "rowParity"]);
-points = alignest.rotationPoints(points, [1; 2; 1; 2], target);
+points = alignest.rotationPoints(points, [1; 2; 1; 2]);
 end

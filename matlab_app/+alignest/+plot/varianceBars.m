@@ -1,13 +1,12 @@
 function varianceBars(valueAx, percentAx, result, axisName, options)
-%VARIANCEBARS ばらつき分解（alignest.varianceDecomposition・componentVarianceDecomposition の結果）の棒：上は 3σ の配分
+%VARIANCEBARS ばらつき分解（alignest.varianceDecomposition の結果）の棒：上は 3σ の配分
 %   [単位]（または分散 [単位²]）の積み上げ、下は分散の割合 [%] の積み上げ。
 %   alignest.plot.varianceBars(valueAx, percentAx, result, axisName)
 %   alignest.plot.varianceBars(..., quantity="sigma3", unitLabel="nm", showLegend=true, categoryLabels=棒の名前)
 %   quantity："sigma3"（全体の 3σ を段の分散の割合で分けた「3σ の配分」の積み上げ。分散は足せるので、棒の高さは全体の
 %   3σ（◆）と同じ）・"variance"（段の分散の積み上げ。足すと全体の分散）。
-%   棒は result.categories（横に並べる）、色は段・成分（result.components。Lot 間・Wafer 間・Shot 間・その他、または全体
-%   Shift・Wafer 倍率・回転・その他・Shot 倍率・回転・その他。色は図をまたいで同じ）。割合の図には、5% 以上の段に割合の
-%   数字を書く。axisName：描く軸（result.axes の1つ）。
+%   棒は result.categories（横に並べる）、色は段（result.components。Lot 間・Wafer 間・Shot 間・その他。段の色は図を
+%   またいで同じ）。割合の図には、5% 以上の段に割合の数字を書く。axisName：描く軸（result.axes の1つ）。
 arguments
     valueAx
     percentAx
@@ -18,12 +17,9 @@ arguments
     options.showLegend (1, 1) logical = true
     options.categoryLabels (1, :) string = strings(1, 0)
 end
-COMPONENT_NAMES = ["Lot 間", "Wafer 間", "Shot 間", "その他", "全体 Shift", "Wafer 倍率", "Wafer 回転", "Wafer その他", ...
-    "Shot 倍率", "Shot 回転", "Shot その他"];
-COMPONENT_COLORS = [0.49, 0.33, 0.66; 0.00, 0.45, 0.74; 0.40, 0.65, 0.20; 0.62, 0.62, 0.62; ...
-    0.35, 0.25, 0.55; 0.00, 0.36, 0.66; 0.30, 0.58, 0.85; 0.66, 0.81, 0.93; ...
-    0.26, 0.52, 0.16; 0.55, 0.76, 0.35; 0.70, 0.70, 0.70];
-TEXT_COLORS = [1, 1, 1; 1, 1, 1; 1, 1, 1; 0, 0, 0; 1, 1, 1; 1, 1, 1; 1, 1, 1; 0, 0, 0; 1, 1, 1; 0, 0, 0; 0, 0, 0];   % 色の上で読める文字の色
+COMPONENT_NAMES = ["Lot 間", "Wafer 間", "Shot 間", "その他"];
+COMPONENT_COLORS = [0.49, 0.33, 0.66; 0.00, 0.45, 0.74; 0.40, 0.65, 0.20; 0.62, 0.62, 0.62];
+TEXT_COLORS = [1, 1, 1; 1, 1, 1; 1, 1, 1; 0, 0, 0];   % 段の色の上で読める文字の色
 TOTAL_NAME = "全体の 3σ";
 TOTAL_COLOR = [0.10, 0.10, 0.10];
 LABEL_MIN_PERCENT = 5;     % これより小さい段には割合の数字を書かない（重なって読めないため）

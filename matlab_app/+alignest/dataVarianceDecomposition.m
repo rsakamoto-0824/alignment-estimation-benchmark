@@ -5,12 +5,12 @@ function result = dataVarianceDecomposition(units, eqpId, spec, kind)
 %   result = alignest.dataVarianceDecomposition(units, eqpId, spec, kind)
 %   units：計測データの Wafer（alignest.prepareData の data.units）。eqpId：使う装置（EqpId の値。"" ならすべての装置）。
 %   spec：値の種類（alignest.valueSpec。1変数なら X の列だけを、値の名前で分ける）。kind：分け方。"nested"（既定。Lot 間・
-%   Wafer 間・Shot 間・その他。alignest.varianceDecomposition）・"components"（全体 Shift・Wafer 倍率・回転・その他・Shot 倍率・
-%   回転・その他。Shot 中心は Xmm・Ymm、Shot 内の座標は markXmm・markYmm。alignest.componentVarianceDecomposition）。
+%   Wafer 間・Shot 間・その他。alignest.varianceDecomposition）・"components"（Wafer ごとの全体 Shift・Wafer 倍率・回転・
+%   Shot 倍率・回転の回帰係数。Shot 中心は Xmm・Ymm、Shot 内の座標は markXmm・markYmm。alignest.componentCoefficients）。
 %   棒は Operation ごと（Operation の列に値が無ければ「すべて」の1本）。値は有効な計測値（measX・measY。除いた点・Sts が
 %   無効な点は使わない）。Lot は LotID、Wafer は計測（Operation × EqpId × LotID × Wafer × DateTime。同じ Wafer の別の計測は
 %   別の Wafer として数える）、Shot は Shot（alignest.varianceDecomposition）。Lot 間は選んだ計測に Lot が2つ以上あるときだけ分ける。
-%   result：alignest.varianceDecomposition の結果に、eqpIds（データの装置の一覧）・eqpId（使った装置）・nUnits（使った計測の数）・
+%   result：alignest.varianceDecomposition（成分は alignest.componentCoefficients）の結果に、eqpIds（データの装置の一覧）・eqpId（使った装置）・nUnits（使った計測の数）・
 %   hasOperation（Operation ごとに分けたか）・unitLabel（値の単位）を足したもの
 arguments
     units struct
@@ -43,15 +43,16 @@ for u = 1:numel(chosen)
         categoryName = string(chosen(u).operation);
     end
     parts{u} = table(repmat(categoryName, n, 1), repmat(string(chosen(u).lotId), n, 1), ...
-        repmat(string(u), n, 1), double(marks.shotIndex(:)), valueX(:), valueY(:), double(marks.Xmm(:)), ...
-        double(marks.Ymm(:)), double(marks.markXmm(:)), double(marks.markYmm(:)), ...
-        'VariableNames', ["category", "lot", "wafer", "shot", "valueX", "valueY", "shotX", "shotY", "localX", "localY"]);
+        repmat(string(u), n, 1), repmat(string(chosen(u).label), n, 1), double(marks.shotIndex(:)), valueX(:), ...
+        valueY(:), double(marks.Xmm(:)), double(marks.Ymm(:)), double(marks.markXmm(:)), double(marks.markYmm(:)), ...
+        'VariableNames', ["category", "lot", "wafer", "waferLabel", "shot", "valueX", "valueY", "shotX", "shotY", ...
+        "localX", "localY"]);
 end
 points = vertcat(parts{:});
 categories = unique(points.category, 'stable');
 decompose = @alignest.varianceDecomposition;
 if kind == "components"
-    decompose = @alignest.componentVarianceDecomposition;
+    decompose = @alignest.componentCoefficients;
 end
 if spec.scalar
     result = decompose(points, valueColumns="valueX", axisNames=spec.name, categories=reshape(categories, 1, []));

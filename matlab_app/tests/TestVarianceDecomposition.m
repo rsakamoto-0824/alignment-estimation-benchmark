@@ -92,50 +92,52 @@ classdef TestVarianceDecomposition < matlab.unittest.TestCase
             testCase.verifyEqual(result.totals.variance(1), sum(x.variance), 'AbsTol', 1e-9);
         end
 
-        function componentsSplitShiftMagnificationRotation(testCase)
-            % 成分の分け方：全体 Shift・Wafer 倍率・回転・その他（Shot ごとの点の平均で求める）・Shot 倍率・回転・その他。
-            % 成分だけを持つ値はその成分に 100%、どんな値でも成分の分散を足すと値の分散（点の数で割る）になる
+        function componentCoefficientsRecoverKnownTerms(testCase)
+            % 分け方「成分」：Wafer ごとの回帰係数。Wafer の成分（全体 Shift・Wafer 倍率・回転）は Shot ごとの点の平均を
+            % Shot 中心の座標に当てはめ、Shot 倍率・回転はそれを除いた値を Shot 内の座標に当てはめる（X は倍率 = X の項・
+            % 回転 = Y の項、Y は逆）。分かっている係数で作った値から、その係数が戻る
             [shotX, shotY] = meshgrid(-40:20:40);
             [localX, localY] = meshgrid([-5, 5]);
             nShots = numel(shotX);
             nMarks = numel(localX);
             wafers = 3;
             [markIndex, shotIndex, waferIndex] = ndgrid(1:nMarks, 1:nShots, 1:wafers);
-            base = table(repmat("A", numel(markIndex), 1), "W" + waferIndex(:), shotIndex(:), shotX(shotIndex(:)), ...
+            points = table(repmat("A", numel(markIndex), 1), "W" + waferIndex(:), shotIndex(:), shotX(shotIndex(:)), ...
                 shotY(shotIndex(:)), localX(markIndex(:)), localY(markIndex(:)), 'VariableNames', ["category", "wafer", ...
                 "shot", "shotX", "shotY", "localX", "localY"]);
-            share = @(points, axisName) componentShare(points, axisName);
-            % X の Wafer 倍率（Shot 中心 X の項）と、Y の Wafer 回転（Shot 中心 X の項）
-            points = base;
-            points.valueX = 0.01 * points.shotX;
-            points.valueY = 0.02 * points.shotX;
-            testCase.verifyEqual(share(points, "X"), [0, 100, 0, 0, 0, 0, 0], 'AbsTol', 1e-9);
-            testCase.verifyEqual(share(points, "Y"), [0, 0, 100, 0, 0, 0, 0], 'AbsTol', 1e-9);
-            % Wafer ごとの Shift と、X の Shot 回転（Shot 内 Y の項）
-            points.valueX = double(waferIndex(:));
-            points.valueY = 0.1 * points.localY;
-            testCase.verifyEqual(share(points, "X"), [100, 0, 0, 0, 0, 0, 0], 'AbsTol', 1e-9);
-            testCase.verifyEqual(share(points, "Y"), [0, 0, 0, 0, 100, 0, 0], 'AbsTol', 1e-9, "Y の Shot 倍率は Shot 内 Y");
-            % どんな値でも、成分の分散を足すと値の分散
-            stream = RandStream('mt19937ar', 'Seed', 3);
-            points.valueX = randn(stream, height(points), 1) + 0.03 * points.shotY + double(waferIndex(:)) + ...
-                0.2 * points.localX;
-            points.valueY = randn(stream, height(points), 1);
-            points.valueX(5) = NaN;   % 値の無い点は使わない
-            result = alignest.componentVarianceDecomposition(points);
-            testCase.verifyEqual(result.components, ["全体 Shift", "Wafer 倍率", "Wafer 回転", "Wafer その他", "Shot 倍率", ...
-                "Shot 回転", "Shot その他"]);
+            w = double(waferIndex(:));
+            % X：Shift = Wafer の番号、Wafer 倍率 0.01·番号、Wafer 回転 −0.02、Shot 倍率 0.3、Shot 回転 0.1·番号
+            points.valueX = w + 0.01 * w .* points.shotX - 0.02 * points.shotY + 0.3 * points.localX + 0.1 * w .* points.localY;
+            % Y：Shift 5、Wafer 倍率 0.04（Shot 中心 Y の項）、Wafer 回転 0.03（Shot 中心 X の項）、Shot 倍率 −0.2（Shot 内 Y）、
+            % Shot 回転 0.5（Shot 内 X）
+            points.valueY = 5 + 0.04 * points.shotY + 0.03 * points.shotX - 0.2 * points.localY + 0.5 * points.localX;
+            result = alignest.componentCoefficients(points);
+            testCase.verifyEqual(result.components, ["全体 Shift", "Wafer 倍率", "Wafer 回転", "Shot 倍率", "Shot 回転"]);
             testCase.verifyEqual(result.kind, "components");
-            for axisName = ["X", "Y"]
-                values = points.("value" + axisName);
-                values = values(isfinite(values));
-                parts = result.table(result.table.axis == axisName, :);
-                testCase.verifyEqual(sum(parts.variance), var(values, 1), 'RelTol', 1e-10, "足すと値の分散");
+            testCase.verifyEqual(result.wafers, ["W1", "W2", "W3"]);
+            coefficient = @(table_, axisName, k) table_.coefficient(table_.axis == axisName & table_.waferIndex == k).';
+            for k = 1:wafers
+                testCase.verifyEqual(coefficient(result.table, "X", k), [k, 0.01 * k, -0.02, 0.3, 0.1 * k], 'AbsTol', 1e-10);
+                testCase.verifyEqual(coefficient(result.table, "Y", k), [5, 0.04, 0.03, -0.2, 0.5], 'AbsTol', 1e-10);
             end
-            testCase.verifyEqual(result.means.mean(1), mean(points.valueX, 'omitnan'), 'AbsTol', 1e-12);
-            parts = result.table(result.table.axis == "X", :);
-            testCase.verifyGreaterThan(parts.percent(parts.component == "Wafer 回転"), ...
-                10 * parts.percent(parts.component == "Wafer 倍率"), "X の Shot 中心 Y の項は回転（倍率ではない）");
+            testCase.verifyEqual(unique(result.table.n), nMarks * nShots);
+            % 値の無い点は使わない（Shot の平均と Shot 内の座標の平均は残りの点で求めるので、Shot の係数は変わらない）
+            points.valueX(5) = NaN;
+            missing = alignest.componentCoefficients(points);
+            rows = missing.table(missing.table.axis == "X" & missing.table.waferIndex == 1, :);
+            testCase.verifyEqual(rows.n(1), nMarks * nShots - 1);
+            testCase.verifyEqual(rows.coefficient(4:5).', [0.3, 0.1], 'AbsTol', 1e-10);
+            % Shot が足りず決まらない係数は NaN（Shot が2つでは Wafer の倍率・回転は決まらない）
+            few = alignest.componentCoefficients(points(points.wafer == "W1" & points.shot <= 2, :));
+            testCase.verifyTrue(all(isnan(few.table.coefficient(few.table.component == "Wafer 倍率"))));
+            testCase.verifyTrue(all(isfinite(few.table.coefficient(few.table.component == "Shot 倍率"))));
+            % Wafer の並びは categories の順
+            points.category(points.wafer == "W1") = "B";
+            ordered = alignest.componentCoefficients(points, categories=["B", "A"]);
+            testCase.verifyEqual(ordered.wafers, ["W1", "W2", "W3"]);
+            testCase.verifyEqual(ordered.waferCategories, ["B", "A", "A"]);
+            reversed = alignest.componentCoefficients(points, categories=["A", "B"]);
+            testCase.verifyEqual(reversed.wafers, ["W2", "W3", "W1"]);
         end
 
         function importedDataIsSplitByOperationAndEqp(testCase)
@@ -201,19 +203,30 @@ classdef TestVarianceDecomposition < matlab.unittest.TestCase
             testCase.verifyFalse(one.useLot, "その装置の計測の Lot は1つ");
             testCase.verifyTrue(contains(string(c.varianceInfo.Text), "装置 EXP02"));
             testCase.verifyError(@() app.decomposeDataVariance("NONE"), 'alignest:varianceDecomposition');
-            % 分け方「成分」：全体 Shift・Wafer 倍率・回転・その他・Shot 倍率・回転・その他。分散を足すと値の分散
+            % 分け方「成分」：Wafer ごとの回帰係数の図（成分ごと）と表（Wafer × 軸 の行）。3σ・分散は出さず「縦軸」も使わない
             components = app.decomposeDataVariance("", "components");
-            testCase.verifyEqual(components.components, ["全体 Shift", "Wafer 倍率", "Wafer 回転", "Wafer その他", ...
-                "Shot 倍率", "Shot 回転", "Shot その他"]);
-            parts = components.table(components.table.category == "OP-M1-ALIGN" & components.table.axis == "X", :);
-            testCase.verifyEqual(sum(parts.variance), var(values(valid), 1), 'RelTol', 1e-10);
-            testCase.verifyEqual(height(c.varianceTable.Data), 2 * 2 * 8, "棒 × 軸 × （7つの成分と全体）");
-            testCase.verifyTrue(contains(string(c.varianceInfo.Text), "全体 Shift"));
+            testCase.verifyEqual(components.components, ["全体 Shift", "Wafer 倍率", "Wafer 回転", "Shot 倍率", "Shot 回転"]);
+            testCase.verifyEqual(sort(components.wafers), sort(string({units.label})));
+            testCase.verifyEqual(height(c.varianceTable.Data), 2 * numel(units), "Wafer × 軸（X・Y）の行");
+            names = string(c.varianceTable.Data.Properties.VariableNames);
+            testCase.verifyEqual(names, ["No.", "Operation", "Wafer", "軸", "全体 Shift [nm]", "Wafer 倍率 [nm/mm]", ...
+                "Wafer 回転 [nm/mm]", "Shot 倍率 [nm/mm]", "Shot 回転 [nm/mm]", "点の数"]);
+            testCase.verifyFalse(any(contains(names, ["3σ", "分散"])), "3σ・分散は出さない");
+            testCase.verifyEqual(string(c.varianceQuantity.Enable), "off");
+            expected = components.table.coefficient(components.table.axis == "X" & components.table.component == "Wafer 倍率");
+            xLine = findobj(c.coefficientAxes(2), 'Type', 'line', 'DisplayName', 'X');
+            testCase.verifyEqual(xLine.YData(:), expected, 'AbsTol', 1e-12, "図は Wafer ごとの係数");
+            testCase.verifyEqual(c.varianceTable.Data{1, "Wafer 倍率 [nm/mm]"}, round(expected(1), 4, 'significant'), ...
+                'AbsTol', 1e-12, "表は係数（有効数字 4 桁）");
+            testCase.verifyTrue(contains(string(c.varianceInfo.Text), "回帰係数"));
             app.decomposeDataVariance("", "nested");
+            testCase.verifyEqual(string(c.varianceQuantity.Enable), "on", "Lot・Wafer・Shot 間では「縦軸」を使う");
             % 1変数の推定：値の名前の1列だけ
             spec = struct("scalar", true, "name", "Thickness_nm", "unit", "nm");
             scalar = alignest.dataVarianceDecomposition(units, "", spec);
             testCase.verifyEqual(scalar.axes, "Thickness_nm");
+            scalarComponents = alignest.dataVarianceDecomposition(units, "", spec, "components");
+            testCase.verifyEqual(unique(scalarComponents.table.axis), "Thickness_nm");
         end
 
         function correctionChangesWaferToWaferVariation(testCase)
@@ -262,10 +275,4 @@ classdef TestVarianceDecomposition < matlab.unittest.TestCase
             testCase.verifyTrue(contains(string(c.correctionVarianceInfo.Text), "Wafer が1枚"));
         end
     end
-end
-
-function percents = componentShare(points, axisName)
-% 成分の分け方での、軸 axisName の成分ごとの分散の割合 [%]
-result = alignest.componentVarianceDecomposition(points);
-percents = reshape(result.table.percent(result.table.axis == axisName), 1, []);
 end

@@ -120,23 +120,16 @@ classdef (Abstract) RotationTab < appui.Core
             onRotationSourceChanged(app);
         end
 
-        function variability = computeRotationVariability(app, level, shotStatistic, targetColumn)
+        function variability = computeRotationVariability(app, level, shotStatistic)
             %COMPUTEROTATIONVARIABILITY 「ばらつきを求める」：選んだ入力・対象の Wafer で、Shot・Mark ごとの Wafer 間の 3σ
-            %   （X・Y・ベクトル 3√(σX²+σY²)・長さ |v|・目的変数）を求め、図と表に出す（alignest.markVariability）。
-            %   level："mark"・"shot"、shotStatistic："max"・"mean"（Shot ごとの代表値）、targetColumn：目的変数の列の名前
-            %   （"" = なし。1. データ読込の計測データのときだけ）。省略すると画面の選択。
+            %   （X・Y・長さ |v|）を求め、図と表に出す（alignest.markVariability）。
+            %   level："mark"・"shot"、shotStatistic："max"・"mean"（Shot ごとの代表値）。省略すると画面の選択。
             c = app.Controls;
             if nargin >= 2
                 c.rotationLevel.Value = char(level);
             end
             if nargin >= 3
                 c.rotationShotStatistic.Value = char(shotStatistic);
-            end
-            if nargin >= 4
-                if ~any(strcmp(c.rotationTarget.ItemsData, char(targetColumn)))
-                    error('alignest:rotationInput', '目的変数の列「%s」がありません（数値の列を選んでください）。', targetColumn);
-                end
-                c.rotationTarget.Value = char(targetColumn);
             end
             updateRotationEnabled(app);
             [wafers, description] = rotationWafers(app);
@@ -169,7 +162,7 @@ classdef (Abstract) RotationTab < appui.Core
         function maps = makeRotationMaps(app, metric, thresholds, mapCount, options)
             %MAKEROTATIONMAPS 「計測マップを作る」：指標の 3σ をしきい値（いくつでも）で優先度に分け、mapCount 枚の
             %   ローテーションする計測マップを作る（alignest.rotationMaps。優先度 1 は毎回、最も低い優先度は mapCount 枚に
-            %   1回）。metric：指標の列の名前（"sigma3Vector" など）、thresholds：しきい値（数の並び）、mapCount：計測マップの
+            %   1回）。metric：指標の列の名前（"sigma3Length" など）、thresholds：しきい値（数の並び）、mapCount：計測マップの
             %   数。名前と値の組：
             %   thresholdKind（"value"：3σ の値・"percent"：指標の分布の累積 n%）・outerRadiusMm（この半径 [mm] 以上の点を
             %   優先度 1 にする。[] = 使わない）・assignment（"order"：表の順・"random"：乱数で振り分ける。乱数の種はメニュー
@@ -426,7 +419,7 @@ classdef (Abstract) RotationTab < appui.Core
             place(c.rotationInputInfo, 3, 1);
 
             spreadHeader = sectionHeader('② ばらつき', 4);   % Shot・Mark ごとの Wafer 間の 3σ（1行に収める）
-            spreadGrid = uigridlayout(left, [3, 2], 'ColumnWidth', {'fit', '1x'}, 'RowHeight', repmat({'fit'}, 1, 3), ...
+            spreadGrid = uigridlayout(left, [2, 2], 'ColumnWidth', {'fit', '1x'}, 'RowHeight', repmat({'fit'}, 1, 2), ...
                 'Padding', 0);
             place(spreadGrid, 5, 1);
             label(spreadGrid, '単位', 1, 1);
@@ -438,11 +431,6 @@ classdef (Abstract) RotationTab < appui.Core
             c.rotationShotStatistic = uidropdown(spreadGrid, 'Items', {'最大の Mark', '平均'}, 'ItemsData', {'max', 'mean'}, ...
                 'Enable', 'off', 'Tooltip', 'Shot ごとのとき、Shot の中の Mark の 3σ のうち、最も大きい値か平均を Shot の値にします。');
             place(c.rotationShotStatistic, 2, 2);
-            label(spreadGrid, '目的変数', 3, 1);
-            c.rotationTarget = uidropdown(spreadGrid, 'Items', {'（なし）'}, 'ItemsData', {''}, 'Tooltip', ['ファイルの' ...
-                '数値の列（列の対応で標準の項目にしなかった列）。選ぶと、その列の Shot・Mark ごとの 3σ も求めます' ...
-                '（1. データ読込の計測データのとき）。']);
-            place(c.rotationTarget, 3, 2);
             c.rotationComputeVariability = uibutton(spreadHeader, 'Text', 'ばらつきを求める', 'Enable', 'off', ...
                 'ButtonPushedFcn', @(~, ~) app.onComputeRotationVariability());
             place(c.rotationComputeVariability, 1, 2);
@@ -705,7 +693,7 @@ classdef (Abstract) RotationTab < appui.Core
         end
 
         function refreshRotationChoices(app)
-            % 入力の選択肢（評価の手法・学習パターン、対象の Wafer、目的変数の列）を、今のデータ・結果・推定に合わせる
+            % 入力の選択肢（評価の手法・学習パターン、対象の Wafer）を、今のデータ・結果・推定に合わせる
             c = app.Controls;
             if ~isfield(c, 'rotationSource')
                 return
@@ -721,12 +709,6 @@ classdef (Abstract) RotationTab < appui.Core
                 setChoices(c.rotationMethod, "—", {0});
                 setChoices(c.rotationPlan, "—", {''});
             end
-            % 目的変数：ファイルの数値の列（1. データ読込の計測データ・このタブの Excel・CSV のとき）
-            names = strings(1, 0);
-            if any(string(c.rotationSource.Value) == ["data", "file"])
-                names = alignest.numericColumns(rotationUnits(app));
-            end
-            setChoices(c.rotationTarget, ["（なし）", names], [{''}, reshape(cellstr(names), 1, [])]);
             refreshRotationGroups(app);
             updateRotationEnabled(app);
         end
@@ -754,7 +736,7 @@ classdef (Abstract) RotationTab < appui.Core
         end
 
         function units = rotationUnits(app)
-            % 選んだ入力の Wafer の計測データ（対象の選択肢・目的変数の列・図の Shot の枠に使う。推定値の入力も元の Wafer の
+            % 選んだ入力の Wafer の計測データ（対象の選択肢・図の Shot の枠に使う。推定値の入力も元の Wafer の
             % Operation・装置を使う）。Excel・CSV ファイルなら、このタブで読み込んだ表のデータ
             units = struct("operation", {}, "eqpId", {});
             if string(app.Controls.rotationSource.Value) == "file"
@@ -777,7 +759,6 @@ classdef (Abstract) RotationTab < appui.Core
             hasData = ~isempty(app.Data);
             hasResults = ~isempty(app.Results) && ~isImportedResults(app.Results) && hasData;
             set([c.rotationMethod, c.rotationPlan], 'Enable', onOff(source == "estimate" && hasResults));
-            c.rotationTarget.Enable = onOff(any(source == ["data", "file"]) && numel(c.rotationTarget.Items) > 1);
             c.rotationShotStatistic.Enable = onOff(string(c.rotationLevel.Value) == "shot");
             radiusView = string(c.rotationSpreadView.Value) == "radius";
             c.rotationCumulative.Enable = onOff(radiusView);
@@ -825,7 +806,6 @@ classdef (Abstract) RotationTab < appui.Core
             c = app.Controls;
             source = string(c.rotationSource.Value);
             group = string(c.rotationGroup.Value);
-            targetColumn = string(c.rotationTarget.Value);
             wafers = struct("label", {}, "points", {}, "lot", {}, "dateTime", {}, "operation", {}, "eqpId", {});
             if source == "file"
                 if ~hasRotationFileData(app)
@@ -840,11 +820,7 @@ classdef (Abstract) RotationTab < appui.Core
                     units = rotationUnits(app);
                     for k = 1:numel(units)
                         unit = units(k);
-                        target = [];
-                        if targetColumn ~= ""
-                            target = str2double(unit.marks.attributes(:, string(unit.attributeNames) == targetColumn));
-                        end
-                        points = alignest.rotationPoints(alignest.highOrderUnitPoints(unit), unit.marks.markNo, target);
+                        points = alignest.rotationPoints(alignest.highOrderUnitPoints(unit), unit.marks.markNo);
                         wafers(end + 1) = waferEntry(unit, unit.label, points); %#ok<AGROW>
                     end
                     description = ternary(source == "data", "1. データ読込の計測データ", ...
@@ -1023,9 +999,8 @@ classdef (Abstract) RotationTab < appui.Core
                 rank(position > 0) = app.RotationMaps.table.rank(position(position > 0));
             end
             data = table(shown.shotNo, shown.markNo, rank, round(shown.sigma3X, 3), round(shown.sigma3Y, 3), ...
-                round(shown.sigma3Vector, 3), round(shown.sigma3Length, 3), round(shown.sigma3Target, 3), shown.nWafers, ...
-                'VariableNames', ["shotNo", "markNo", "優先度", "X の 3σ", "Y の 3σ", "ベクトルの 3σ", "長さ｜v｜の 3σ", ...
-                "目的変数の 3σ", "Wafer の数"]);
+                round(shown.sigma3Length, 3), shown.nWafers, 'VariableNames', ["shotNo", "markNo", "優先度", "X の 3σ", ...
+                "Y の 3σ", "長さ｜v｜の 3σ", "Wafer の数"]);
             if variability.level == "shot"
                 data.markNo = [];
                 data = renamevars(data, "Wafer の数", "Wafer の数（最大）");
