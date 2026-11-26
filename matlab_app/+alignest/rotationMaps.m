@@ -24,9 +24,7 @@ function maps = rotationMaps(variability, metric, thresholds, nMaps, options)
 %   振る：乱数で並べた順に組を 1, 2, …, n と順に回り、その組の点から最も離れた（組の点までの最短距離が最も大きい）
 %   まだ振っていない点を、その組に入れ、続けて近くの点どうしの組の入れ替えで、同じ組の近い点を減らす（同じ組の近くの
 %   点ほど大きくなる値 exp(−d²/2s²) の和を小さくする。s = 点の最短距離の中央値 × √n）。組の点の数の差は 1 以内。
-%   同じ種なら同じ振り分け。画面の初期値）・"sobol"（Sobol 列の点に近い点を選ぶ alignest.sobolSelect で、1 組目を全点から、
-%   2 組目を残りから…と選び、最後の組は残り。どの組も Sobol 列の点の近くの点なので Wafer 全体に散らばる。乱数は使わない）・
-%   "ioptimal"・"doptimal"（ポアソンディスクの振り分けから始め、同じ頻度の違う組の2点を入れ替えて、すべての計測マップの
+%   同じ種なら同じ振り分け。画面の初期値）・"ioptimal"・"doptimal"（ポアソンディスクの振り分けから始め、同じ頻度の違う組の2点を入れ替えて、すべての計測マップの
 %   I 基準 tr(M⁻¹)・D 基準 det(M)^(−1/p) の和を小さくする。alignest.rotationCriterionExchange。M は計測マップで計測する
 %   点の情報行列。基準モデルは designOrder 次の多項式（designFeatures："XYR"・"XY"。座標は waferRadiusMm で割る）を
 %   全点で正規直交化したもの（alignest.designCriteria と同じ。Shot ごとのときは Shot 中心の点で求める））。
@@ -46,7 +44,7 @@ arguments
     options.thresholdKind (1, 1) string {mustBeMember(options.thresholdKind, ["value", "percent"])} = "value"
     options.outerRadiusMm (1, 1) double = NaN
     options.assignment (1, 1) string {mustBeMember(options.assignment, ...
-        ["order", "random", "poisson", "sobol", "ioptimal", "doptimal"])} = "order"
+        ["order", "random", "poisson", "ioptimal", "doptimal"])} = "order"
     options.seed (1, 1) double = 0
     options.priorityShotNos double = zeros(1, 0)
     options.waferRadiusMm (1, 1) double {mustBePositive} = 150
@@ -117,8 +115,6 @@ for r = 1:numel(intervals)
     switch options.assignment
         case {"poisson", "ioptimal", "doptimal"}
             groups = poissonGroups(points(members, :), n, stream);   % I・D 最適は、ここから入れ替えで良くする
-        case "sobol"
-            groups = sobolGroups(points(members, :), n, options.waferRadiusMm);
         case "random"
             groups = zeros(1, numel(members));
             groups(randperm(stream, numel(members))) = mod(0:numel(members) - 1, n);   % 振り分ける順を乱数で決める
@@ -189,22 +185,6 @@ for r = 2:nRanks - 1
     distance = abs(log(allowed) - log(target));
     intervals(r) = allowed(find(distance <= min(distance) + TIE_TOLERANCE, 1));   % 同じ近さなら小さい方（多く計測する）
 end
-end
-
-function groupOf = sobolGroups(points, nGroups, waferRadiusMm)
-% 点を nGroups 組（0 始まりの組の番号）に分ける：Sobol 列の点に近い点を選ぶ（alignest.sobolSelect）。1 組目を全点から、
-% 2 組目を残りから…と選び、最後の組は残り。どの組も Sobol 列の点の近くの点なので Wafer 全体に散らばる（乱数は使わない）。
-% 各組の点の数の差は 1 以内
-nPoints = size(points, 1);
-sizes = floor(nPoints / nGroups) + ((1:nGroups) <= mod(nPoints, nGroups));
-groupOf = zeros(1, nPoints);
-remaining = (1:nPoints).';
-for group = 1:nGroups - 1
-    chosen = alignest.sobolSelect(points(remaining, :), sizes(group), false(numel(remaining), 1), waferRadiusMm);
-    groupOf(remaining(chosen)) = group - 1;
-    remaining(chosen) = [];
-end
-groupOf(remaining) = nGroups - 1;
 end
 
 function groupOf = poissonGroups(points, nGroups, stream)

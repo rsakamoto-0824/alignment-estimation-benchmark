@@ -5,6 +5,11 @@ classdef (Abstract) SettingsTab < appui.Core
     %   ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
 
     properties (Constant, Access = {?appui.Core})
+        METHOD_COLUMN_SPACING = 16    % 「比べる手法」の3列の間隔 [px]
+        METHOD_LIST_HEIGHT = 64       % 「比べる手法」の連続値の列・その他の列の一覧の高さ [px]
+        METHOD_KERNEL_HEIGHT = 170    % 「比べる手法」の GPR のカーネルの一覧の高さ [px]（質的変数の扱いの6行と同じくらい）
+        METHOD_NUMBER_WIDTH = 70      % 「比べる手法」の次数・ν・λ の入力欄の幅 [px]
+        SAMPLING_SPINNER_WIDTH = 80   % 繰り返し回数・初期配置の数の入力欄の幅 [px]（文字の右隣に置く）
         SAMPLING_PANEL_WIDTH = 560   % 「計測設定」の左の欄（学習に使う計測点）の幅 [px]（標準の文字の大きさのとき。右の計測マップを広く取る）
     end
 
@@ -171,9 +176,15 @@ classdef (Abstract) SettingsTab < appui.Core
             c.nShotsList = uilabel(s, 'WordWrap', 'on', 'Text', '');
             place(c.nShotsList, 7, [1, 2]);
             c.nShotsError = errorLabel(app, s, 8, [1, 2]);
-            label(s, 'ランダム・ポアソンディスクの繰り返し回数', 9, [1, 2]);
-            c.randomRepeats = uispinner(s, 'Limits', [1, 1000], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
-            place(c.randomRepeats, 10, 1);
+            % 繰り返し回数の欄は文字の右隣（小さな格子に入れる。10 行目は使わない）
+            repeatGrid = uigridlayout(s, [1, 2], 'ColumnWidth', {'fit', app.SAMPLING_SPINNER_WIDTH}, 'Padding', 0);
+            place(repeatGrid, 9, [1, 2]);
+            % 折り返すと 'fit' の列の高さが 1 行分のままで下の行が切れるので、折り返さない
+            set(label(repeatGrid, 'ランダム・ポアソンディスクの繰り返し回数', 1, 1), 'WordWrap', 'off');
+            c.randomRepeats = uispinner(repeatGrid, 'Limits', [1, 1000], 'RoundFractionalValues', 'on', ...
+                'ValueChangedFcn', onChange);
+            place(c.randomRepeats, 1, 2);
+            s.RowHeight{10} = 0;
             label(s, 'Excel 取込', 11, 1);
             c.loadLayouts = uibutton(s, 'Text', 'Excel ファイルを読み込む…', 'ButtonPushedFcn', @(~, ~) app.onLoadLayouts(), ...
                 'Tooltip', ['1行目が見出しの表。shotNo の列（Mark 単位なら markNo の列も）と、名前を見出しにした列を並べます。' ...
@@ -225,18 +236,19 @@ classdef (Abstract) SettingsTab < appui.Core
                 'ValueChangedFcn', onChange, 'Tooltip', ['基準モデルの説明変数。X, Y, 半径：X・Y・半径 r の多項式' ...
                 '（r の偶数乗は X・Y の多項式と同じなので、X・Y の多項式と r × X・Y の多項式。5次で 36 項）。X, Y：X・Y の' ...
                 '多項式（5次で 21 項）。']);
-            label(s, '交換法の初期配置の数', 23, [1, 2]);
-            % 入力欄と時間の目安（目安の文が長くても入力欄が縦に伸びないように、小さな格子に入れる）と、Mark 単位の計画
-            exchangeGrid = uigridlayout(s, [2, 2], 'ColumnWidth', {'1x', '1x'}, 'RowHeight', repmat({'fit'}, 1, 2), ...
-                'Padding', 0, 'RowSpacing', 2);
+            % 初期配置の数の欄は文字の右隣。時間の目安は下の行（目安の文が長くても入力欄が縦に伸びないように格子に入れる）
+            startsGrid = uigridlayout(s, [1, 2], 'ColumnWidth', {'fit', app.SAMPLING_SPINNER_WIDTH}, 'Padding', 0);
+            place(startsGrid, 23, [1, 2]);
+            set(label(startsGrid, '交換法の初期配置の数', 1, 1), 'WordWrap', 'off');
+            exchangeGrid = uigridlayout(s, [1, 1], 'RowHeight', {'fit'}, 'Padding', 0);
             place(exchangeGrid, 24, [1, 2]);
-            c.exchangeStarts = uispinner(exchangeGrid, 'Limits', [1, 100], 'RoundFractionalValues', 'on', ...
+            c.exchangeStarts = uispinner(startsGrid, 'Limits', [1, 100], 'RoundFractionalValues', 'on', ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['初期配置 1 つあたりの時間の目安は 約 0.01 秒 × 学習 Shot 数' ...
                 '（候補 99 Shot の模擬データで測った値）。10 → 20 にすると学習パターンを作る時間は約 2 倍。模擬データでは' ...
                 ' 10〜20 を超えると I 基準はほとんど良くならなかった。']);
-            place(c.exchangeStarts, 1, 1);
+            place(c.exchangeStarts, 1, 2);
             c.exchangeInfo = uilabel(exchangeGrid, 'WordWrap', 'on', 'Text', '');
-            place(c.exchangeInfo, 2, [1, 2]);
+            place(c.exchangeInfo, 1, 1);
             % Mark 単位の I 最適・D 最適・ランダムだけの制約（Mark 番号ごとの計測数・各 Shot の点数）
             heading(s, 'Mark 単位の I 最適・D 最適・ランダム', 25);
             markGrid = uigridlayout(s, [3, 2], 'ColumnWidth', {'1x', '1x'}, 'RowHeight', repmat({'fit'}, 1, 3), ...
@@ -355,26 +367,37 @@ classdef (Abstract) SettingsTab < appui.Core
             c.overlayHelp.UserData = "muted";
             c.overlayFormulaError = errorLabel(app, e, 14, [1, 2]);
 
+            % 比べる手法：説明変数・質的変数（左）、基底関数系・平滑化系（中）、確率過程系（右）の3列に並べる
+            % （標準の窓の大きさでスクロールしなくても見える。列ごとに縦にスクロールできるのは窓が小さいときだけ）
             methodPanel = uipanel(uigridlayout(c.methodsTab, [1, 1], 'Padding', 6), 'Title', '比べる手法');
-            m = uigridlayout(methodPanel, [29, 4], 'RowHeight', repmat({'fit'}, 1, 29), 'ColumnWidth', {'1x', '1x', '1x', '1x'}, ...
-                'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
-            presetGrid = uigridlayout(m, [1, 4], 'Padding', 0, 'ColumnWidth', {'fit', 'fit', 'fit', 'fit'});
-            place(presetGrid, 1, [1, 4]);
+            outer = uigridlayout(methodPanel, [2, 3], 'RowHeight', {'fit', '1x'}, 'ColumnWidth', {'1x', '1x', '1x'}, ...
+                'Padding', 8, 'RowSpacing', 6, 'ColumnSpacing', app.METHOD_COLUMN_SPACING);
+            presetGrid = uigridlayout(outer, [1, 4], 'Padding', 0, 'ColumnWidth', {'fit', 'fit', 'fit', 'fit'});
+            place(presetGrid, 1, [1, 3]);
             uibutton(presetGrid, 'Text', '初期設定', 'ButtonPushedFcn', @(~, ~) app.onPreset("default"), ...
                 'Tooltip', 'アプリの初期設定の手法（ガウス過程回帰だけ）に戻します。');
             uibutton(presetGrid, 'Text', '推奨の組み合わせ', 'ButtonPushedFcn', @(~, ~) app.onPreset("recommended"), ...
-                'Tooltip', ['前回の模擬データの評価で各系統の代表になった手法（GPR・TPS・Kriging・GAM・XY 5次多項式・' ...
-                'RT モデル）を選びます。']);
+                'Tooltip', ['前回の模擬データの評価で代表になった手法（GPR・TPS・XY 5次多項式）を選びます' ...
+                '（RT モデル・GAM・Kriging は入れません）。']);
             uibutton(presetGrid, 'Text', 'すべて選ぶ', 'ButtonPushedFcn', @(~, ~) app.onPreset("all"));
             uibutton(presetGrid, 'Text', 'すべて外す', 'ButtonPushedFcn', @(~, ~) app.onPreset("none"));
-            label(m, '説明変数', 2, [1, 4]);
-            c.featureXY = uicheckbox(m, 'Text', 'X, Y', 'ValueChangedFcn', onChange);
-            place(c.featureXY, 3, 1);
-            c.featureXYR = uicheckbox(m, 'Text', 'X, Y, 半径', 'ValueChangedFcn', onChange);
-            place(c.featureXYR, 3, 2);
+            columnGrid = @(nRows) uigridlayout(outer, [nRows, 1], 'RowHeight', repmat({'fit'}, 1, nRows), ...
+                'Padding', 0, 'RowSpacing', 6, 'Scrollable', 'on');
+            boldLabel = @(parent, text, row) set(label(parent, text, row, 1), 'FontWeight', 'bold');
+
+            % ---- 左：説明変数・質的変数
+            left = columnGrid(8);
+            place(left, 2, 1);
+            boldLabel(left, '説明変数', 1);
+            featureGrid = uigridlayout(left, [1, 2], 'ColumnWidth', {'fit', 'fit'}, 'Padding', 0, 'ColumnSpacing', 16);
+            place(featureGrid, 2, 1);
+            c.featureXY = uicheckbox(featureGrid, 'Text', 'X, Y', 'ValueChangedFcn', onChange);
+            place(c.featureXY, 1, 1);
+            c.featureXYR = uicheckbox(featureGrid, 'Text', 'X, Y, 半径', 'ValueChangedFcn', onChange);
+            place(c.featureXYR, 1, 2);
             % 説明変数に足す連続値の列（読み込んだデータの数値の「その他の列」。alignest.numericColumns）
-            continuousGrid = uigridlayout(m, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
-            place(continuousGrid, 3, [3, 4]);
+            continuousGrid = uigridlayout(left, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
+            place(continuousGrid, 3, 1);
             label(continuousGrid, '連続値の列', 1, 1);
             c.continuousColumns = uilistbox(continuousGrid, 'Items', {}, 'Multiselect', 'on', 'Value', {}, ...
                 'ValueChangedFcn', onChange, 'Tooltip', ['読み込んだデータの数値の列（列の対応で標準の項目にしなかった列）を、' ...
@@ -382,138 +405,131 @@ classdef (Abstract) SettingsTab < appui.Core
                 'Kriging では説明変数の列に、GAM では線形の項に足します。多項式・Fringe Zernike・RT は座標だけの式なので' ...
                 '使いません。値はその Wafer の点で平均 0・座標と同じ大きさのばらつきにそろえ、値の無い点は平均にします。']);
             place(c.continuousColumns, 1, 2);
-            m.RowHeight{3} = 60;
-            factorGrid = uigridlayout(m, [6, 5], 'Padding', 0, 'RowSpacing', 4, ...
-                'RowHeight', {'fit', 'fit', 'fit', 'fit', 72, 'fit'}, 'ColumnWidth', {'fit', 'fit', 'fit', 'fit', '1x'});
-            place(factorGrid, 4, [1, 4]);
-            label(factorGrid, '質的変数', 1, [1, 5]);
-            label(factorGrid, 'X 成分', 2, 1);
+            left.RowHeight{3} = app.METHOD_LIST_HEIGHT;
+            boldLabel(left, '質的変数', 4);
+            factorGrid = uigridlayout(left, [3, 4], 'Padding', 0, 'RowSpacing', 4, 'ColumnSpacing', 4, ...
+                'RowHeight', {'fit', 'fit', 'fit'}, 'ColumnWidth', {'fit', 'fit', 'fit', 'fit'});
+            place(factorGrid, 5, 1);
+            label(factorGrid, 'X 成分', 1, 1);
             c.factorScan = uicheckbox(factorGrid, 'Text', 'Scan 方向', 'ValueChangedFcn', onChange, ...
                 'Tooltip', 'Direction の列、または「Scan 方向が無い行に付ける値」で付けた値。値が無い Wafer では使いません。');
-            place(c.factorScan, 2, 2);
+            place(c.factorScan, 1, 2);
             c.factorMark = uicheckbox(factorGrid, 'Text', 'Mark 番号', 'ValueChangedFcn', onChange);
-            place(c.factorMark, 2, 3);
-            rowTooltip = '各 Wafer・測定日時で、入力の Shot 中心 Y 座標を上から1行目として数えます。半径除外前に判定。入力にない行は数えません。';
-            c.shotRowParity = uicheckbox(factorGrid, 'Text', 'Shot 行の奇数・偶数', 'Tooltip', rowTooltip, ...
+            place(c.factorMark, 1, 3);
+            rowTooltip = ['Shot 行の奇数・偶数。各 Wafer・測定日時で、入力の Shot 中心 Y 座標を上から1行目として数えます。' ...
+                '半径除外前に判定。入力にない行は数えません。'];
+            c.shotRowParity = uicheckbox(factorGrid, 'Text', 'Shot 行の奇偶', 'Tooltip', rowTooltip, ...
                 'ValueChangedFcn', onChange);
-            place(c.shotRowParity, 2, 4);
-            c.factorSeparate = uicheckbox(factorGrid, 'Text', 'Y 成分は別に選ぶ', 'ValueChangedFcn', onChange, ...
-                'Tooltip', 'オフなら Y 成分も X 成分と同じ質的変数を使います。オンにすると下の行で Y 成分の質的変数を選べます。');
-            place(c.factorSeparate, 2, 5);
-            label(factorGrid, 'Y 成分', 3, 1);
+            place(c.shotRowParity, 1, 4);
+            label(factorGrid, 'Y 成分', 2, 1);
             c.factorScanY = uicheckbox(factorGrid, 'Text', 'Scan 方向', 'ValueChangedFcn', onChange);
-            place(c.factorScanY, 3, 2);
+            place(c.factorScanY, 2, 2);
             c.factorMarkY = uicheckbox(factorGrid, 'Text', 'Mark 番号', 'ValueChangedFcn', onChange);
-            place(c.factorMarkY, 3, 3);
-            c.shotRowParityY = uicheckbox(factorGrid, 'Text', 'Shot 行の奇数・偶数', 'Tooltip', rowTooltip, ...
+            place(c.factorMarkY, 2, 3);
+            c.shotRowParityY = uicheckbox(factorGrid, 'Text', 'Shot 行の奇偶', 'Tooltip', rowTooltip, ...
                 'ValueChangedFcn', onChange);
-            place(c.shotRowParityY, 3, 4);
+            place(c.shotRowParityY, 2, 4);
+            c.factorSeparate = uicheckbox(factorGrid, 'Text', 'Y 成分は別に選ぶ', 'ValueChangedFcn', onChange, ...
+                'Tooltip', 'オフなら Y 成分も X 成分と同じ質的変数を使います。オンにすると上の Y 成分の行で Y 成分の質的変数を選べます。');
+            place(c.factorSeparate, 3, [1, 4]);
             columnsTooltip = ['選んだ列の値（文字・数字）を水準とする質的変数。値が空の Mark がある Wafer では、その列を使いません。' ...
                 '一覧はデータを読み込むと出ます。'];
-            c.factorColumnsLabel = label(factorGrid, 'その他の列：X 成分', ...
-                4, [1, 4]);
-            label(factorGrid, 'その他の列：Y 成分', 4, 5);
-            c.factorColumns = uilistbox(factorGrid, 'Items', {}, 'Multiselect', 'on', 'ValueChangedFcn', onChange, ...
+            otherGrid = uigridlayout(left, [2, 2], 'RowHeight', {'fit', app.METHOD_LIST_HEIGHT}, 'ColumnWidth', {'1x', '1x'}, ...
+                'Padding', 0, 'RowSpacing', 2);
+            place(otherGrid, 6, 1);
+            c.factorColumnsLabel = label(otherGrid, 'その他の列：X 成分', 1, 1);
+            label(otherGrid, 'その他の列：Y 成分', 1, 2);
+            c.factorColumns = uilistbox(otherGrid, 'Items', {}, 'Multiselect', 'on', 'ValueChangedFcn', onChange, ...
                 'Tooltip', columnsTooltip);
-            place(c.factorColumns, 5, [1, 4]);
-            c.factorColumnsY = uilistbox(factorGrid, 'Items', {}, 'Multiselect', 'on', 'ValueChangedFcn', onChange, ...
+            place(c.factorColumns, 2, 1);
+            c.factorColumnsY = uilistbox(otherGrid, 'Items', {}, 'Multiselect', 'on', 'ValueChangedFcn', onChange, ...
                 'Tooltip', columnsTooltip);
-            place(c.factorColumnsY, 5, 5);
-            c.factorSingles = uicheckbox(factorGrid, 'Text', 'チェックした質的変数を1つだけ使う手法も比べる', ...
+            place(c.factorColumnsY, 2, 2);
+            c.factorSingles = uicheckbox(left, 'Text', 'チェックした質的変数を1つだけ使う手法も比べる', ...
                 'ValueChangedFcn', onChange, 'Tooltip', ...
                 ['オンにすると、質的変数を使う手法（GPR の質的変数あり・Backfitting・GAM など）ごとに、チェックした変数を' ...
                 '1つだけ使う手法を足して評価します（手法の名前の最後に「質的変数：○○だけ」）。チェックした変数が2つ以上の' ...
                 'ときだけ足します。手法の数が増えるので、評価の時間も増えます。']);
-            place(c.factorSingles, 6, [1, 5]);
-            c.factorColumnsError = errorLabel(app, m, 5, [1, 4]);
-            % 手法は 基底関数系（XY 多項式・Fringe Zernike・RBF・RT モデル）・平滑化系・確率過程系 に分けて並べる
-            methodHeadings = ["基底関数系", "平滑化系", "確率過程系"];
-            methodHeadingRows = [6, 11, 16];
-            for k = 1:numel(methodHeadings)
-                groupHeading = label(m, methodHeadings(k), methodHeadingRows(k), [1, 4]);
-                groupHeading.FontWeight = 'bold';
-            end
-            c.gpr = uicheckbox(m, 'Text', 'GPR', 'ValueChangedFcn', onChange);
-            place(c.gpr, 17, [1, 4]);
-            label(m, 'カーネル', 18, [1, 2]);
-            label(m, '質的変数の扱い', 18, [3, 4]);
-            [kernelNames, kernelLabels] = alignest.models.gprKernelChoices();
-            c.kernels = uilistbox(m, 'Items', cellstr(kernelLabels), 'ItemsData', cellstr(kernelNames), 'Multiselect', 'on', ...
-                'ValueChangedFcn', onChange, 'Tooltip', ['periodic（周期）：説明変数ごとに、周期 p で同じ形をくり返す' ...
-                'カーネル（p も長さスケールと一緒に推定する）。ardperiodic は長さスケールが説明変数ごと。式は「ヘルプ」。']);
-            place(c.kernels, 19, [1, 2]);
-            [modeNames, modeLabels] = alignest.models.gprFactorModes();
-            modeLabels = plainLabels(modeLabels);
-            modeGrid = uigridlayout(m, [numel(modeNames), 1], 'Padding', 0, 'RowSpacing', 2, ...
-                'RowHeight', repmat({'fit'}, 1, numel(modeNames)));
-            place(modeGrid, 19, [3, 4]);
-            c.factorModes = gobjects(1, numel(modeNames));
-            for k = 1:numel(modeNames)
-                c.factorModes(k) = uicheckbox(modeGrid, 'Text', modeLabels(k), 'UserData', modeNames(k), ...
-                    'ValueChangedFcn', onChange);
-            end
-            m.RowHeight{19} = 300;
-            label(m, 'Matérn の ν', 20, [1, 2]);
-            c.maternNu = uieditfield(m, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['Matérn カーネルの次数 ν' ...
-                '（0 より大きく 50 以下）。大きいほど滑らか。0.5・1.5・2.5 は exponential・matern32・matern52 と同じ。' ...
-                '複数入れると ν ごとに比べます（例：0.75 1 2 3.5）。']);
-            place(c.maternNu, 20, [3, 4]);
-            c.maternNuError = errorLabel(app, m, 21, [1, 4]);
-            c.tps = uicheckbox(m, 'Text', 'TPS', 'ValueChangedFcn', onChange);
-            place(c.tps, 12, [1, 2]);
-            c.tpsFactors = spatialFactorDropdown(m, onChange);
-            place(c.tpsFactors, 12, [3, 4]);
-            smoothingGrid = uigridlayout(m, [1, 6], 'ColumnWidth', {'fit', 'fit', 'fit', 'fit', 70, '1x'}, 'Padding', 0);
-            place(smoothingGrid, 13, [1, 4]);
+            place(c.factorSingles, 7, 1);
+            c.factorColumnsError = errorLabel(app, left, 8, 1);
+
+            % ---- 中：基底関数系・平滑化系
+            middle = columnGrid(13);
+            place(middle, 2, 2);
+            boldLabel(middle, '基底関数系', 1);
+            polynomialGrid = uigridlayout(middle, [1, 2], 'ColumnWidth', {'fit', app.METHOD_NUMBER_WIDTH}, 'Padding', 0);
+            place(polynomialGrid, 2, 1);
+            c.polynomial = uicheckbox(polynomialGrid, 'Text', 'XY 多項式　次数：', 'ValueChangedFcn', onChange);
+            place(c.polynomial, 1, 1);
+            c.polynomialOrder = uispinner(polynomialGrid, 'Limits', [1, 8], 'RoundFractionalValues', 'on', ...
+                'ValueChangedFcn', onChange);
+            place(c.polynomialOrder, 1, 2);
+            zernikeGrid = uigridlayout(middle, [1, 3], 'ColumnWidth', {'fit', app.METHOD_NUMBER_WIDTH, '1x'}, 'Padding', 0);
+            place(zernikeGrid, 3, 1);
+            c.zernike = uicheckbox(zernikeGrid, 'Text', 'Fringe Zernike', 'ValueChangedFcn', onChange, ...
+                'Tooltip', ['Fringe Zernike 多項式（Z1〜Z(k+1)²）の最小二乗。k = 3：Z1〜Z16、4：Z1〜Z25、5：Z1〜Z36、' ...
+                '6：Z1〜Z49、7：Z1〜Z64（次数は 1〜7）。' ...
+                '空白で区切ると次数ごとに比べます。式は「ヘルプ」。']);
+            place(c.zernike, 1, 1);
+            c.zernikeOrders = uieditfield(zernikeGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ...
+                '次数 k（空白区切りで複数）。Z1〜Z(k+1)² を使う（k = 4 で Z25 まで）。');
+            place(c.zernikeOrders, 1, 2);
+            c.zernikeFactors = spatialFactorDropdown(zernikeGrid, onChange);
+            c.zernikeFactors.Tooltip = ['質的変数（上で選んだ Scan 方向・Mark 番号など）を Backfitting で足すか。' ...
+                'Backfitting：Zernike の当てはめと質的変数の効果を交互に推定します（TPS などと同じ）。'];
+            place(c.zernikeFactors, 1, 3);
+            rbfGrid = uigridlayout(middle, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
+            place(rbfGrid, 4, 1);
+            c.rbf = uicheckbox(rbfGrid, 'Text', 'RBF', 'ValueChangedFcn', onChange);
+            place(c.rbf, 1, 1);
+            c.rbfFactors = spatialFactorDropdown(rbfGrid, onChange);
+            place(c.rbfFactors, 1, 2);
+            rtGrid = uigridlayout(middle, [1, 2], 'ColumnWidth', {'fit', app.METHOD_NUMBER_WIDTH}, 'Padding', 0);
+            place(rtGrid, 5, 1);
+            c.rt = uicheckbox(rtGrid, 'Text', 'RT モデル　次数 K：', 'ValueChangedFcn', onChange);
+            place(c.rt, 1, 1);
+            c.rtOrders = uieditfield(rtGrid, 'text', 'ValueChangedFcn', onChange);
+            place(c.rtOrders, 1, 2);
+            c.rtError = errorLabel(app, middle, 6, 1);
+            c.zernikeError = errorLabel(app, middle, 7, 1);
+            boldLabel(middle, '平滑化系', 8);
+            tpsGrid = uigridlayout(middle, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
+            place(tpsGrid, 9, 1);
+            c.tps = uicheckbox(tpsGrid, 'Text', 'TPS', 'ValueChangedFcn', onChange);
+            place(c.tps, 1, 1);
+            c.tpsFactors = spatialFactorDropdown(tpsGrid, onChange);
+            place(c.tpsFactors, 1, 2);
+            smoothingGrid = uigridlayout(middle, [2, 3], 'ColumnWidth', {'fit', 'fit', app.METHOD_NUMBER_WIDTH}, ...
+                'RowHeight', {'fit', 'fit'}, 'Padding', 0, 'RowSpacing', 2);
+            place(smoothingGrid, 10, 1);
             label(smoothingGrid, '平滑化', 1, 1);
             c.tpsSmoothing = [ ...
                 uicheckbox(smoothingGrid, 'Text', 'GCV で選ぶ', 'UserData', "gcv", 'ValueChangedFcn', onChange), ...
                 uicheckbox(smoothingGrid, 'Text', 'なし', 'UserData', "none", 'ValueChangedFcn', onChange, ...
                 'Tooltip', '学習点を通る曲面（補間）にします。'), ...
                 uicheckbox(smoothingGrid, 'Text', 'log10 λ を指定', 'UserData', "fixed", 'ValueChangedFcn', onChange)];
-            for k = 1:numel(c.tpsSmoothing)
-                place(c.tpsSmoothing(k), 1, 1 + k);
-            end
+            place(c.tpsSmoothing(1), 1, 2);
+            place(c.tpsSmoothing(2), 1, 3);
+            place(c.tpsSmoothing(3), 2, 2);
             c.tpsLog10Lambda = uieditfield(smoothingGrid, 'numeric', 'ValueChangedFcn', onChange, 'Tooltip', ...
                 'λ の常用対数。大きいほど滑らかです。');
-            place(c.tpsLog10Lambda, 1, 5);
-            c.rbf = uicheckbox(m, 'Text', 'RBF', 'ValueChangedFcn', onChange);
-            place(c.rbf, 9, [1, 2]);
-            c.rbfFactors = spatialFactorDropdown(m, onChange);
-            place(c.rbfFactors, 9, [3, 4]);
-            c.ordinaryKriging = uicheckbox(m, 'Text', 'Kriging', 'ValueChangedFcn', onChange);
-            place(c.ordinaryKriging, 22, [1, 2]);
-            c.ordinaryFactors = spatialFactorDropdown(m, onChange);
-            place(c.ordinaryFactors, 22, [3, 4]);
-            c.universalKriging = uicheckbox(m, 'Text', 'Universal Kriging', 'ValueChangedFcn', onChange);
-            place(c.universalKriging, 23, [1, 2]);
-            c.universalFactors = spatialFactorDropdown(m, onChange);
-            place(c.universalFactors, 23, [3, 4]);
-            label(m, 'バリオグラム', 24, [1, 4]);
-            variograms = ["linear", "gaussian", "power", "exponential", "spherical"];
-            variogramGrid = uigridlayout(m, [1, numel(variograms)], 'Padding', 0, ...
-                'ColumnWidth', repmat({'1x'}, 1, numel(variograms)));
-            place(variogramGrid, 25, [1, 4]);
-            c.variograms = gobjects(1, numel(variograms));
-            for k = 1:numel(variograms)
-                c.variograms(k) = uicheckbox(variogramGrid, 'Text', variograms(k), 'UserData', variograms(k), ...
-                    'ValueChangedFcn', onChange);
-            end
-            c.variograms(end).Tooltip = '球形モデル（range より遠い点の相関は 0）。説明変数（X,Y・X,Y,半径）は3次元までなので正定値が保証されます。';
-            c.gam = uicheckbox(m, 'Text', 'GAM', 'ValueChangedFcn', onChange);
-            place(c.gam, 14, [1, 2]);
-            c.gamFactors = uidropdown(m, 'Items', {'質的変数あり', '質的変数なし', 'あり・なしを比較'}, ...
+            place(c.tpsLog10Lambda, 2, 3);
+            gamGrid = uigridlayout(middle, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
+            place(gamGrid, 11, 1);
+            c.gam = uicheckbox(gamGrid, 'Text', 'GAM', 'ValueChangedFcn', onChange);
+            place(c.gam, 1, 1);
+            c.gamFactors = uidropdown(gamGrid, 'Items', {'質的変数あり', '質的変数なし', 'あり・なしを比較'}, ...
                 'ItemsData', {'factor', 'none', 'both'}, 'ValueChangedFcn', onChange, 'Tooltip', ['上で選んだ質的変数を、' ...
                 'GAM の項（効果コード。罰則なし）として一緒に推定するか。']);
-            place(c.gamFactors, 14, [3, 4]);
-            % 形状関数は項（X・Y、半径）ごとに1行、カーネルは2行に並べる（画面の幅が狭くても切れないように）
+            place(c.gamFactors, 1, 2);
+            % 形状関数は項（X・Y、半径）ごとに1行、カーネルは2列に並べる
             [termNames, termLabels] = alignest.models.gamTerms("XYR");
             [gamKernelNames, gamKernelLabels] = alignest.models.gamKernelChoices();
             kernelColumns = 2;   % カーネルの名前が長いので2列（rationalquadratic が切れないように）
             nShapeRows = numel(termNames) + ceil(numel(gamKernelNames) / kernelColumns) + 1;
-            shapeGrid = uigridlayout(m, [nShapeRows, kernelColumns + 1], 'Padding', 0, 'RowSpacing', 2, ...
+            shapeGrid = uigridlayout(middle, [nShapeRows, kernelColumns + 1], 'Padding', 0, 'RowSpacing', 2, ...
                 'ColumnWidth', [{'fit'}, repmat({'1x'}, 1, kernelColumns)], 'RowHeight', repmat({'fit'}, 1, nShapeRows));
-            place(shapeGrid, 15, [1, 4]);
+            place(shapeGrid, 12, 1);
             shapeNames = ["spline", "gp"];
             shapeLabels = ["スプライン", "ガウス過程回帰"];
             c.gamShapeChecks = gobjects(numel(termNames), numel(shapeNames));
@@ -531,7 +547,7 @@ classdef (Abstract) SettingsTab < appui.Core
             end
             % ガウス過程回帰の形状関数のカーネル（チェックしたカーネルごとに比べる）
             kernelRow = numel(termNames) + 1;
-            label(shapeGrid, 'ガウス過程回帰のカーネル：', kernelRow, 1);
+            label(shapeGrid, 'GP のカーネル：', kernelRow, 1);
             c.gamKernelChecks = gobjects(1, numel(gamKernelNames));
             for k = 1:numel(gamKernelNames)
                 c.gamKernelChecks(k) = uicheckbox(shapeGrid, 'Text', gamKernelLabels(k), 'UserData', gamKernelNames(k), ...
@@ -539,36 +555,78 @@ classdef (Abstract) SettingsTab < appui.Core
                     '式は GPR と同じ）。チェックしたカーネルごとに評価します。rationalquadratic の α は 1 に固定します。']);
                 place(c.gamKernelChecks(k), kernelRow + floor((k - 1) / kernelColumns), 2 + mod(k - 1, kernelColumns));
             end
-            nuGrid = uigridlayout(shapeGrid, [1, 2], 'ColumnWidth', {'fit', 120}, 'Padding', 0);
+            nuGrid = uigridlayout(shapeGrid, [1, 2], 'ColumnWidth', {'fit', app.METHOD_NUMBER_WIDTH}, 'Padding', 0);
             kernelRows = ceil(numel(gamKernelNames) / kernelColumns);
             place(nuGrid, kernelRow + kernelRows, [1, kernelColumns + 1]);
             label(nuGrid, 'matern の ν =', 1, 1);
             c.gamMaternNu = uieditfield(nuGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['matern' ...
                 'の ν。空白で区切ると ν ごとに比べます（例：1 2.5）。']);
             place(c.gamMaternNu, 1, 2);
-            c.polynomial = uicheckbox(m, 'Text', 'XY 多項式　次数：', 'ValueChangedFcn', onChange);
-            place(c.polynomial, 7, 1);
-            c.polynomialOrder = uispinner(m, 'Limits', [1, 8], 'RoundFractionalValues', 'on', 'ValueChangedFcn', onChange);
-            place(c.polynomialOrder, 7, 2);
-            c.rt = uicheckbox(m, 'Text', 'RT モデル　次数 K：', 'ValueChangedFcn', onChange);
-            place(c.rt, 10, 1);
-            c.rtOrders = uieditfield(m, 'text', 'ValueChangedFcn', onChange);
-            place(c.rtOrders, 10, 2);
-            c.zernike = uicheckbox(m, 'Text', 'Fringe Zernike', 'ValueChangedFcn', onChange, ...
-                'Tooltip', ['Fringe Zernike 多項式（Z1〜Z(k+1)²）の最小二乗。k = 3：Z1〜Z16、4：Z1〜Z25、5：Z1〜Z36、' ...
-                '6：Z1〜Z49、7：Z1〜Z64（次数は 1〜7）。' ...
-                '空白で区切ると次数ごとに比べます。式は「ヘルプ」。']);
-            place(c.zernike, 8, 1);
-            c.zernikeOrders = uieditfield(m, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ...
-                '次数 k（空白区切りで複数）。Z1〜Z(k+1)² を使う（k = 4 で Z25 まで）。');
-            place(c.zernikeOrders, 8, 2);
-            c.zernikeFactors = spatialFactorDropdown(m, onChange);
-            c.zernikeFactors.Tooltip = ['質的変数（上で選んだ Scan 方向・Mark 番号など）を Backfitting で足すか。' ...
-                'Backfitting：Zernike の当てはめと質的変数の効果を交互に推定します（TPS などと同じ）。'];
-            place(c.zernikeFactors, 8, [3, 4]);
-            c.rtError = errorLabel(app, m, 27, [1, 4]);
-            c.zernikeError = errorLabel(app, m, 28, [1, 4]);
-            c.gamShapeError = errorLabel(app, m, 29, [1, 4]);
+            c.gamShapeError = errorLabel(app, middle, 13, 1);
+
+            % ---- 右：確率過程系
+            right = columnGrid(9);
+            place(right, 2, 3);
+            boldLabel(right, '確率過程系', 1);
+            c.gpr = uicheckbox(right, 'Text', 'GPR', 'ValueChangedFcn', onChange);
+            place(c.gpr, 2, 1);
+            gprGrid = uigridlayout(right, [2, 2], 'RowHeight', {'fit', app.METHOD_KERNEL_HEIGHT}, 'ColumnWidth', {'1x', 'fit'}, ...
+                'Padding', 0, 'RowSpacing', 2);
+            place(gprGrid, 3, 1);
+            label(gprGrid, 'カーネル', 1, 1);
+            label(gprGrid, '質的変数の扱い', 1, 2);
+            [kernelNames, kernelLabels] = alignest.models.gprKernelChoices();
+            c.kernels = uilistbox(gprGrid, 'Items', cellstr(kernelLabels), 'ItemsData', cellstr(kernelNames), ...
+                'Multiselect', 'on', 'ValueChangedFcn', onChange, 'Tooltip', ['periodic（周期）：説明変数ごとに、周期 p で' ...
+                '同じ形をくり返すカーネル（p も長さスケールと一緒に推定する）。ardperiodic は長さスケールが説明変数ごと。' ...
+                '式は「ヘルプ」。']);
+            place(c.kernels, 2, 1);
+            [modeNames, modeLabels] = alignest.models.gprFactorModes();
+            modeLabels = plainLabels(modeLabels);
+            modeGrid = uigridlayout(gprGrid, [numel(modeNames), 1], 'Padding', 0, 'RowSpacing', 2, ...
+                'RowHeight', repmat({'fit'}, 1, numel(modeNames)));
+            place(modeGrid, 2, 2);
+            c.factorModes = gobjects(1, numel(modeNames));
+            for k = 1:numel(modeNames)
+                c.factorModes(k) = uicheckbox(modeGrid, 'Text', modeLabels(k), 'UserData', modeNames(k), ...
+                    'ValueChangedFcn', onChange);
+            end
+            nuRow = uigridlayout(right, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
+            place(nuRow, 4, 1);
+            label(nuRow, 'Matérn の ν', 1, 1);
+            c.maternNu = uieditfield(nuRow, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['Matérn カーネルの次数 ν' ...
+                '（0 より大きく 50 以下）。大きいほど滑らか。0.5・1.5・2.5 は exponential・matern32・matern52 と同じ。' ...
+                '複数入れると ν ごとに比べます（例：0.75 1 2 3.5）。']);
+            place(c.maternNu, 1, 2);
+            c.maternNuError = errorLabel(app, right, 5, 1);
+            krigingGrid = uigridlayout(right, [2, 2], 'ColumnWidth', {'fit', '1x'}, 'RowHeight', {'fit', 'fit'}, ...
+                'Padding', 0, 'RowSpacing', 4);
+            place(krigingGrid, 6, 1);
+            c.ordinaryKriging = uicheckbox(krigingGrid, 'Text', 'Kriging', 'ValueChangedFcn', onChange);
+            place(c.ordinaryKriging, 1, 1);
+            c.ordinaryFactors = spatialFactorDropdown(krigingGrid, onChange);
+            place(c.ordinaryFactors, 1, 2);
+            c.universalKriging = uicheckbox(krigingGrid, 'Text', 'Universal Kriging', 'ValueChangedFcn', onChange);
+            place(c.universalKriging, 2, 1);
+            c.universalFactors = spatialFactorDropdown(krigingGrid, onChange);
+            place(c.universalFactors, 2, 2);
+            label(right, 'バリオグラム', 7, 1);
+            variograms = ["linear", "gaussian", "power", "exponential", "spherical"];
+            variogramColumns = 3;   % 列の幅に収まるように3列（2行）に並べる
+            variogramGrid = uigridlayout(right, [ceil(numel(variograms) / variogramColumns), variogramColumns], ...
+                'Padding', 0, 'RowSpacing', 2, 'ColumnWidth', repmat({'1x'}, 1, variogramColumns), ...
+                'RowHeight', repmat({'fit'}, 1, ceil(numel(variograms) / variogramColumns)));
+            place(variogramGrid, 8, 1);
+            c.variograms = gobjects(1, numel(variograms));
+            for k = 1:numel(variograms)
+                c.variograms(k) = uicheckbox(variogramGrid, 'Text', variograms(k), 'UserData', variograms(k), ...
+                    'ValueChangedFcn', onChange);
+                place(c.variograms(k), ceil(k / variogramColumns), mod(k - 1, variogramColumns) + 1);
+            end
+            c.variograms(end).Tooltip = '球形モデル（range より遠い点の相関は 0）。説明変数（X,Y・X,Y,半径）は3次元までなので正定値が保証されます。';
+            for item = [c.factorColumnsError, c.maternNuError, c.rtError, c.zernikeError, c.gamShapeError]
+                showErrorRow(item);   % 理由が出るまで行をしまう
+            end
 
             app.Controls = mergeStruct(app.Controls, c);
         end
@@ -1054,6 +1112,9 @@ classdef (Abstract) SettingsTab < appui.Core
             end
             c.gamShapeError.Text = text;
             messages = [messages; text(text ~= "")];
+            for item = [c.factorColumnsError, c.maternNuError, c.rtError, c.zernikeError, c.gamShapeError]
+                showErrorRow(item);   % 理由があるときだけ「比べる手法」の欄の行を取る
+            end
             % Overlay 補正の式（選んだ成分だけ確かめる）
             texts = strings(0, 1);
             formulas = {c.overlayWafer.Value == app.FORMULA_CHOICE, "Wafer 成分", c.overlayWaferDx, c.overlayWaferDy; ...
@@ -1120,7 +1181,7 @@ classdef (Abstract) SettingsTab < appui.Core
             showRows(c.countSweep, 3, usesCounts && countMode == "rate");
             showRows(c.countSweep, 4, markUnit && countMode == "perShot");
             showRows(c.countSweep, 1, usesCounts && countMode ~= "perShot");   % 開始・終了・刻みの見出し
-            showRows(c.samplingGrid, [9, 10], any(ismember(method, ["random", "markrandom", "poisson", "markpoisson"])));
+            showRows(c.samplingGrid, 9, any(ismember(method, ["random", "markrandom", "poisson", "markpoisson"])));
             showRows(c.samplingGrid, [11, 13], any(method == "excel"));
             showRows(c.samplingGrid, 12, any(method == "excel"), {90});
             showRows(c.samplingGrid, 20:24, optimal);
@@ -1430,4 +1491,11 @@ end
 function spinner = shotCountSpinner(parent, callback)
 MAX_SHOT_COUNT = 10000;
 spinner = uispinner(parent, 'Limits', [1, MAX_SHOT_COUNT], 'RoundFractionalValues', 'on', 'ValueChangedFcn', callback);
+end
+
+function showErrorRow(item)
+% 欄の下の理由（errorLabel）：理由があるときだけ行の高さを取り、無いときは行をしまう（「比べる手法」の3列を
+% スクロールしなくても見えるように）
+grid = item.Parent;
+grid.RowHeight{item.Layout.Row} = ternary(strlength(string(item.Text)) > 0, 'fit', 0);
 end

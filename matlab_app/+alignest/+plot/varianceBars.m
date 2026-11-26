@@ -1,12 +1,13 @@
 function varianceBars(valueAx, percentAx, result, axisName, options)
-%VARIANCEBARS ばらつき分解（alignest.varianceDecomposition の結果）の棒：上は段ごとの 3σ [単位]（または分散 [単位²]）の
-%   積み上げ、下は分散の割合 [%] の積み上げ。
+%VARIANCEBARS ばらつき分解（alignest.varianceDecomposition・componentVarianceDecomposition の結果）の棒：上は 3σ の配分
+%   [単位]（または分散 [単位²]）の積み上げ、下は分散の割合 [%] の積み上げ。
 %   alignest.plot.varianceBars(valueAx, percentAx, result, axisName)
 %   alignest.plot.varianceBars(..., quantity="sigma3", unitLabel="nm", showLegend=true, categoryLabels=棒の名前)
-%   quantity："sigma3"（段の 3σ をそのまま積み上げ、全体の 3σ を ◆ で重ねる。3σ は足しても全体の 3σ にならないので、
-%   棒の高さ（段の 3σ の和）は全体の 3σ より高い）・"variance"（段の分散の積み上げ。足すと全体の分散）。
-%   棒は result.categories（横に並べる）、色は段（result.components。Lot 間・Wafer 間・Shot 間・その他。段の色は図を
-%   またいで同じ）。割合の図には、5% 以上の段に割合の数字を書く。axisName：描く軸（result.axes の1つ）。
+%   quantity："sigma3"（全体の 3σ を段の分散の割合で分けた「3σ の配分」の積み上げ。分散は足せるので、棒の高さは全体の
+%   3σ（◆）と同じ）・"variance"（段の分散の積み上げ。足すと全体の分散）。
+%   棒は result.categories（横に並べる）、色は段・成分（result.components。Lot 間・Wafer 間・Shot 間・その他、または全体
+%   Shift・Wafer 倍率・回転・その他・Shot 倍率・回転・その他。色は図をまたいで同じ）。割合の図には、5% 以上の段に割合の
+%   数字を書く。axisName：描く軸（result.axes の1つ）。
 arguments
     valueAx
     percentAx
@@ -17,9 +18,12 @@ arguments
     options.showLegend (1, 1) logical = true
     options.categoryLabels (1, :) string = strings(1, 0)
 end
-COMPONENT_NAMES = ["Lot 間", "Wafer 間", "Shot 間", "その他"];
-COMPONENT_COLORS = [0.49, 0.33, 0.66; 0.00, 0.45, 0.74; 0.40, 0.65, 0.20; 0.62, 0.62, 0.62];
-TEXT_COLORS = [1, 1, 1; 1, 1, 1; 1, 1, 1; 0, 0, 0];   % 段の色の上で読める文字の色
+COMPONENT_NAMES = ["Lot 間", "Wafer 間", "Shot 間", "その他", "全体 Shift", "Wafer 倍率", "Wafer 回転", "Wafer その他", ...
+    "Shot 倍率", "Shot 回転", "Shot その他"];
+COMPONENT_COLORS = [0.49, 0.33, 0.66; 0.00, 0.45, 0.74; 0.40, 0.65, 0.20; 0.62, 0.62, 0.62; ...
+    0.35, 0.25, 0.55; 0.00, 0.36, 0.66; 0.30, 0.58, 0.85; 0.66, 0.81, 0.93; ...
+    0.26, 0.52, 0.16; 0.55, 0.76, 0.35; 0.70, 0.70, 0.70];
+TEXT_COLORS = [1, 1, 1; 1, 1, 1; 1, 1, 1; 0, 0, 0; 1, 1, 1; 1, 1, 1; 1, 1, 1; 0, 0, 0; 1, 1, 1; 0, 0, 0; 0, 0, 0];   % 色の上で読める文字の色
 TOTAL_NAME = "全体の 3σ";
 TOTAL_COLOR = [0.10, 0.10, 0.10];
 LABEL_MIN_PERCENT = 5;     % これより小さい段には割合の数字を書かない（重なって読めないため）
@@ -52,7 +56,7 @@ for c = 1:nCategories
         row = mine(mine.category == categories(c) & mine.component == components(k), :);
         if ~isempty(row)
             variances(c, k) = row.variance(1);
-            sigmas(c, k) = row.sigma3(1);
+            sigmas(c, k) = row.sigma3Share(1);   % 3σ の配分（全体の 3σ × 分散の割合。足すと全体の 3σ）
             percents(c, k) = row.percent(1);
         end
     end
@@ -68,7 +72,7 @@ totalSigma(~isfinite(totalSigma)) = 0;
 if options.quantity == "sigma3"
     values = sigmas;
     valueLabel = "3σ [" + options.unitLabel + "]";
-    valueTitle = "段ごとの 3σ の積み上げ（" + axisName + "）";
+    valueTitle = "3σ の配分の積み上げ（" + axisName + "。全体の 3σ を分散の割合で分ける）";
 else
     values = variances;
     valueLabel = "分散 [" + options.unitLabel + "²]";
@@ -144,7 +148,8 @@ end
 end
 
 function drawSigmaLabels(ax, sigmaValues, totals, textColors, style)
-% 3σ：全体の 3σ を ◆ で重ね、段の 3σ（段の真ん中）と全体の 3σ（◆ の右）の値を書く。style：印・文字の大きさと色
+% 3σ：全体の 3σ を ◆ で重ね（積み上げの上端と同じ）、段の 3σ の配分（段の真ん中）と全体の 3σ（◆ の右）の値を書く。
+% style：印・文字の大きさと色
 [nCategories, nComponents] = size(sigmaValues);
 hold(ax, 'on');
 plot(ax, 1:nCategories, totals, 'd', 'MarkerSize', style.markerSize, 'MarkerFaceColor', style.totalColor, ...

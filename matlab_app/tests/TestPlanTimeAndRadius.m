@@ -35,6 +35,15 @@ classdef TestPlanTimeAndRadius < matlab.unittest.TestCase
             c.measureRings.Value = false;
             c.measureRings.ValueChangedFcn([], []);
             testCase.verifyEmpty(app.Controls.measureAxes, "ボタンを押すまで計測マップは作らない");
+            % 画面を出していても、「2. 面内推定の設定」の「計測設定」を開いただけでは計測マップを作らない
+            app.Figure.Visible = 'on';
+            app.TabGroup.SelectedTab = app.Tabs.settings;
+            app.TabGroup.SelectionChangedFcn(app.TabGroup, struct("NewValue", app.Tabs.settings));
+            c.settingsTabs.SelectedTab = c.pointsTab;
+            c.settingsTabs.SelectionChangedFcn(c.settingsTabs, struct("NewValue", c.pointsTab));
+            testCase.verifyEmpty(app.Controls.measureAxes, "タブを開いただけでは計測マップを作らない");
+            testCase.verifyEqual(string(c.measurePlan.Value), "I最適 20 Shot", "学習パターンのプルダウンはそろえる");
+            app.Figure.Visible = 'off';
             testCase.verifyTrue(isempty(app.MeasurementCache) || app.MeasurementCache.Count == 0, "学習パターンも作らない");
             app.drawMeasurementMap(1);
             ax = app.Controls.measureAxes(1);

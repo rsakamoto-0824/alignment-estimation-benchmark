@@ -906,23 +906,22 @@ classdef (Abstract) RunTab < appui.Core
         end
 
         function onSettingsTabChanged(app)
-            % 「2. 面内推定の設定」の中のタブを変えたとき：計測マップの欄を開いたら、まだ描いていなければ描く
-            autoDrawMeasurementMap(app);
+            % 「2. 面内推定の設定」の中のタブを変えたとき：計測マップの Wafer・学習パターンの選択肢をそろえる（計測マップは
+            % 「計測マップを作る」を押すまで描かない）
+            prepareMeasurementChoices(app);
         end
 
-        function autoDrawMeasurementMap(app)
-            % 「計測設定」が見えていて、データがあり、計測マップをまだ描いていなければ、選んである Wafer・
-            % 学習パターン（はじめは最初の1つずつ）で描く。描けないときは図の下の欄に理由を出すだけにする
+        function prepareMeasurementChoices(app)
+            % 「計測設定」が見えていてデータがあれば、計測マップの Wafer・学習パターンのプルダウンを今のデータ・設定に
+            % 合わせる（描くのは「計測マップを作る」を押したとき。設定が正しくないときは欄の下に理由が出るので、ここでは何もしない）
             c = app.Controls;
-            if app.TabGroup.SelectedTab ~= app.Tabs.settings || c.settingsTabs.SelectedTab ~= c.pointsTab || ...
-                    isempty(app.Data) || hasMeasurementMap(app) || app.Figure.Visible ~= "on"
+            if app.TabGroup.SelectedTab ~= app.Tabs.settings || c.settingsTabs.SelectedTab ~= c.pointsTab || isempty(app.Data)
                 return
             end
             try
                 refreshMeasurementChoices(app);
-                drawMeasurementMap(app);
-            catch err
-                c.measureInfo.Value = {['⚠ 計測マップを描けませんでした：' err.message]};
+            catch
+                % 学習パターンを作れない設定（欄の下に理由が出る）
             end
         end
 

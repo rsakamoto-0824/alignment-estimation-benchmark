@@ -1,5 +1,5 @@
 function comparison = compareRotationAssignments(variability, metric, thresholds, nMaps, options)
-%COMPAREROTATIONASSIGNMENTS 計測マップの振り分け方（I 最適・D 最適・Sobol 列・ポアソンディスク・ランダム・表の順）を、
+%COMPAREROTATIONASSIGNMENTS 計測マップの振り分け方（I 最適・D 最適・ポアソンディスク・ランダム・表の順）を、
 %   同じ優先度・マップの数で作って比べる（「8. 計測Mapローテ」の振り分けの比較）。
 %   comparison = alignest.compareRotationAssignments(variability, metric, thresholds, nMaps)
 %   comparison = alignest.compareRotationAssignments(..., 名前と値の組)
