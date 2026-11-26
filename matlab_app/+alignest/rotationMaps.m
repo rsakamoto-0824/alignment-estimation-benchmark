@@ -3,7 +3,7 @@ function maps = rotationMaps(variability, metric, thresholds, nMaps, options)
 %   maps = alignest.rotationMaps(variability, metric, thresholds, nMaps)
 %   maps = alignest.rotationMaps(..., thresholdKind="percent", outerRadiusMm=135, assignment="random", seed=0, ...
 %       priorityShotNos=[12, 40], waferRadiusMm=150, designOrder=5, designFeatures="XYR")
-%   variability：alignest.markVariability の結果。metric：優先度を分ける指標（variability.metrics の1つ。例 "sigma3Vector"）。
+%   variability：alignest.markVariability の結果。metric：優先度を分ける指標（variability.metrics の1つ。例 "sigma3Length"）。
 %   thresholds：しきい値（いくつでも。大きい順に並べ直す）。thresholdKind："value"（既定。3σ の値）・"percent"（指標の分布の
 %   累積 n% の値をしきい値にする。n は 0 より大きく 100 より小さい。値は Excel の PERCENTILE.INC と同じ
 %   alignest.stats.percentile。例：75 なら 3σ の大きい上位 25% がしきい値以上）。しきい値が k 個なら優先度は k + 1 段：

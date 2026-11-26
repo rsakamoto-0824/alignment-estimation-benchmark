@@ -1,17 +1,17 @@
 classdef (Abstract) DataTab < appui.Core
     %DATATAB 「1. データ読込」タブ：ファイルの読み込み、列の対応・座標の単位、Wafer マップ・Shot レイアウト・Shot 重ね合わせ、
-    %   質的変数の交互作用、ばらつき分解（Lot 間・Wafer 間・Shot 間・その他）。
+    %   質的変数の交互作用、ばらつき分解（Lot 間・Wafer 間・Shot 間・その他、または成分の回帰係数）。
     %   AlignmentEstimationApp（画面の本体）の一部。画面の部品は Controls、データ・結果は Core のプロパティに持つ。
     %   ほかのタブの関数も同じように呼べる（どれも AlignmentEstimationApp の関数になる）。
 
     methods
         % ---- 画面の操作と同じことをするメソッド（ボタンからも自動テストからも呼ぶ）
         function result = decomposeDataVariance(app, eqpId, kind)
-            %DECOMPOSEDATAVARIANCE 「ばらつき分解」：読み込んだ計測値のばらつき（分散）を、Lot 間・Wafer 間・Shot 間・その他
-            %   （分け方 kind = "nested"）か、全体 Shift・Wafer 倍率・回転・その他・Shot 倍率・回転・その他（kind = "components"）
-            %   に分け、3σ の配分の積み上げ（「縦軸」で分散の積み上げにも切り替える）と分散の割合の棒、表に出す
-            %   （alignest.dataVarianceDecomposition）。Operation の列があれば Operation ごとに棒を並べる。eqpId：使う装置
-            %   （EqpId の値。"" = すべての装置）。省略すると画面の選択。result は分けた結果。
+            %DECOMPOSEDATAVARIANCE 「ばらつき分解」：読み込んだ計測値を、分け方 kind = "nested" なら、ばらつき（分散）を Lot 間・
+            %   Wafer 間・Shot 間・その他に分け、3σ の配分の積み上げ（「縦軸」で分散の積み上げにも切り替える）と分散の割合の棒、
+            %   表に出す（Operation の列があれば Operation ごとに棒を並べる）。kind = "components" なら、Wafer ごとの全体 Shift・
+            %   Wafer 倍率・回転・Shot 倍率・回転の回帰係数を、成分ごとの図と表に出す（alignest.dataVarianceDecomposition）。
+            %   eqpId：使う装置（EqpId の値。"" = すべての装置）。省略すると画面の選択。result は分けた結果。
             c = app.Controls;
             if isempty(app.Data)
                 error('alignest:noData', '先に計測データを読み込んでください。');
@@ -33,17 +33,18 @@ classdef (Abstract) DataTab < appui.Core
             if result.eqpId ~= ""
                 parts = "装置 " + result.eqpId + "：" + parts;
             end
-            if result.hasOperation
-                parts = parts + "、Operation ごとの棒";
-            end
             notes = strings(1, 0);
             if result.kind == "components"
-                averages = result.means(result.means.axis == result.axes(1), :);
-                text = parts + "。全体 Shift（Wafer の平均の Wafer 間のばらつき）・Wafer 倍率・回転・その他（Shot ごとの n 点の" + ...
-                    "平均で求める）と、それを除いた値の Shot 倍率・回転・その他に分けた分散（足すと全体の分散）。棒は全体の 3σ を" + ...
-                    "分散の割合で分けたもの。" + result.axes(1) + " の平均（Shift の平均）：" + ...
-                    strjoin(compose("%.3g", averages.mean), "・") + " " + result.unitLabel + "。";
+                if result.hasOperation
+                    parts = parts + "、Operation の区切りは縦の点線";
+                end
+                text = parts + "。Wafer ごとの回帰係数：全体 Shift・Wafer 倍率・Wafer 回転（Shot ごとの n 点の平均を Shot 中心の" + ...
+                    "座標に当てはめる）と、Shot 倍率・Shot 回転（それを除いた値を Shot 内の座標に当てはめる）。倍率・回転の単位は " + ...
+                    result.unitLabel + "/mm。式はヘルプ。";
             else
+                if result.hasOperation
+                    parts = parts + "、Operation ごとの棒";
+                end
                 if ~result.useLot
                     notes(end + 1) = "Lot が1つなので Lot 間は分けていません";
                 end
@@ -714,21 +715,29 @@ classdef (Abstract) DataTab < appui.Core
             label(varianceControls, '分け方', 1, 3);
             c.varianceKind = uidropdown(varianceControls, 'Items', {'Lot・Wafer・Shot 間', '成分（Shift・倍率・回転）'}, ...
                 'ItemsData', {'nested', 'components'}, 'Value', 'nested', 'ValueChangedFcn', @(~, ~) app.decomposeDataVariance(), ...
-                'Tooltip', ['Lot・Wafer・Shot 間：Lot 間・Wafer 間・Shot 間・その他（Shot 内）の分散成分（入れ子の分散分析）。' ...
-                '成分：全体 Shift・Wafer 倍率・Wafer 回転・Wafer その他（Shot ごとの n 点の平均で求める）と、それを除いた値で' ...
-                '求める Shot 倍率・Shot 回転・Shot その他（X・Y それぞれ）。どちらも分散は足すと全体の分散。式はヘルプ。']);
+                'Tooltip', ['Lot・Wafer・Shot 間：Lot 間・Wafer 間・Shot 間・その他（Shot 内）の分散成分（入れ子の分散分析。' ...
+                '足すと全体の分散）。成分：Wafer ごとの全体 Shift・Wafer 倍率・Wafer 回転（Shot ごとの n 点の平均で求める）と、' ...
+                'それを除いた値で求める Shot 倍率・Shot 回転の回帰係数（X・Y それぞれ）。式はヘルプ。']);
             place(c.varianceKind, 1, 4);
             label(varianceControls, '縦軸', 1, 5);
             c.varianceQuantity = varianceQuantityDropdown(varianceControls, @(~, ~) app.setVarianceQuantity("data"));
             place(c.varianceQuantity, 1, 6);
-            % 図と表は中のタブで切り替える（上：3σ の配分か分散、下：割合。左：X、右：Y）
+            % 図と表は中のタブで切り替える。Lot・Wafer・Shot 間は上の格子（上：3σ の配分か分散、下：割合。左：X、右：Y）、
+            % 成分は下の格子（全体 Shift・Wafer 倍率・回転・Shot 倍率・回転の回帰係数）だけを見せる
             varianceViews = uitabgroup(varianceGrid);
             varianceChartTab = uitab(varianceViews, 'Title', '図');
             varianceTableTab = uitab(varianceViews, 'Title', '表');
-            c.varianceAxesGrid = uigridlayout(varianceChartTab, [2, 2], 'Padding', 4, 'RowSpacing', 6, 'ColumnSpacing', 8);
+            c.varianceChartGrid = uigridlayout(varianceChartTab, [2, 1], 'RowHeight', {'1x', 0}, 'Padding', 0, 'RowSpacing', 0);
+            c.varianceAxesGrid = uigridlayout(c.varianceChartGrid, [2, 2], 'Padding', 4, 'RowSpacing', 6, 'ColumnSpacing', 8);
             c.varianceAxes = [uiaxes(c.varianceAxesGrid), uiaxes(c.varianceAxesGrid), uiaxes(c.varianceAxesGrid), ...
                 uiaxes(c.varianceAxesGrid)];
             set(c.varianceAxes, 'Visible', 'off');
+            coefficientGrid = uigridlayout(c.varianceChartGrid, [1, 5], 'Padding', 4, 'ColumnSpacing', 8);
+            c.coefficientAxes = gobjects(1, 5);
+            for k = 1:5
+                c.coefficientAxes(k) = uiaxes(coefficientGrid);
+            end
+            set(c.coefficientAxes, 'Visible', 'off');
             c.varianceTable = uitable(uigridlayout(varianceTableTab, [1, 1], 'Padding', 4), 'RowName', {}, 'Data', table());
             c.varianceInfo = uilabel(varianceGrid, 'WordWrap', 'on', 'Text', ...
                 'データを読み込むと、計測値のばらつきを Lot 間・Wafer 間・Shot 間・その他に分けて描きます。');

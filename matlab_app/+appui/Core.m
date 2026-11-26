@@ -672,6 +672,22 @@ classdef (Abstract) Core < handle
                 cla(ax, 'reset');
                 legend(ax, 'off');
             end
+            if target == "data"
+                % 分け方「成分」は回帰係数の図（3σ・分散の「縦軸」は使わない）。図はどちらかの格子だけを見せる
+                coefficients = ~isempty(result) && result.kind == "components";
+                for ax = c.coefficientAxes
+                    cla(ax, 'reset');
+                    legend(ax, 'off');
+                end
+                set(c.coefficientAxes, 'Visible', 'off');
+                c.varianceChartGrid.RowHeight = ternary(coefficients, {0, '1x'}, {'1x', 0});
+                quantityControl.Enable = onOff(~coefficients);
+                if coefficients
+                    set(axesList, 'Visible', 'off');
+                    showComponentCoefficients(app, result);
+                    return
+                end
+            end
             if isempty(result)
                 set(axesList, 'Visible', 'off');
                 table_.Data = table();
@@ -724,6 +740,54 @@ classdef (Abstract) Core < handle
                 addStyle(table_, uistyle('FontWeight', 'bold'), 'row', totalIndex);
             end
         end
+
+        function showComponentCoefficients(app, result)
+            % 「1. データ読込」の「ばらつき分解」の分け方「成分」：成分ごとの図（Wafer ごとの回帰係数。横軸は表の No.、軸ごとの
+            % 線）と、Wafer × 軸 の行に成分の回帰係数を並べた表（alignest.componentCoefficients）
+            COEFFICIENT_DIGITS = 4;   % 表の係数の有効数字
+            c = app.Controls;
+            t = result.table;
+            nWafers = numel(result.wafers);
+            nAxes = numel(result.axes);
+            nComponents = numel(result.components);
+            % 単位：全体 Shift は値の単位、倍率・回転は 値の単位/mm（座標は mm）
+            units = repmat(result.unitLabel + "/mm", 1, nComponents);
+            units(result.components == "全体 Shift") = result.unitLabel;
+            values = nan(nWafers, nComponents, nAxes);
+            counts = zeros(nWafers, nAxes);
+            for a = 1:nAxes
+                for k = 1:nComponents
+                    rows = t(t.axis == result.axes(a) & t.component == result.components(k), :);
+                    values(rows.waferIndex, k, a) = rows.coefficient;
+                    counts(rows.waferIndex, a) = rows.n;
+                end
+            end
+            for k = 1:nComponents
+                alignest.plot.coefficientSeries(c.coefficientAxes(k), reshape(values(:, k, :), nWafers, nAxes), result.axes, ...
+                    result.components(k) + " [" + units(k) + "]", categories=result.waferCategories, ...
+                    showLegend=k == nComponents);
+            end
+            set(c.coefficientAxes(1:nComponents), 'Visible', 'on');
+            styleAxes(app, c.coefficientAxes(1:nComponents), app.AXES_FONT_SIZE);
+            % 表：Wafer ごとに軸の行を並べ、列に成分の回帰係数
+            [axisIndex, waferIndex] = ndgrid(1:nAxes, 1:nWafers);
+            front = table(waferIndex(:), reshape(result.wafers(waferIndex(:)), [], 1), ...
+                reshape(result.axes(axisIndex(:)), [], 1), 'VariableNames', ["No.", "Wafer", "軸"]);
+            if isfield(result, "hasOperation") && result.hasOperation
+                front = addvars(front, reshape(result.waferCategories(waferIndex(:)), [], 1), 'Before', "Wafer", ...
+                    'NewVariableNames', "Operation");
+            end
+            columns = cell(1, nComponents);
+            for k = 1:nComponents
+                picked = values(sub2ind(size(values), waferIndex(:), repmat(k, numel(waferIndex), 1), axisIndex(:)));
+                columns{k} = round(reshape(picked, [], 1), COEFFICIENT_DIGITS, 'significant');   % Wafer が1枚でも列にする
+            end
+            coefficients = table(columns{:}, 'VariableNames', result.components + " [" + units + "]");
+            c.varianceTable.Data = [front, coefficients, ...
+                table(reshape(counts(sub2ind(size(counts), waferIndex(:), axisIndex(:))), [], 1), 'VariableNames', "点の数")];
+            removeStyle(c.varianceTable);
+        end
+
         function position = figurePosition(app)
             % 画面の中央に、画面からはみ出さない大きさで置く
             screen = get(groot, 'ScreenSize');

@@ -8,7 +8,7 @@ function exportRotationMaps(filePath, maps, selection, description)
 %     Shot 内の座標 x・y と、計測マップごとの列（1 = 計測する・0 = 計測しない）。「2. 面内推定の設定」の「Excel ファイルで
 %     指定」でそのまま読める（alignest.readLayoutPlans。マップの列がパターンになる）。markNo の分からない点（未知の座標）は、
 %     Shot の中の位置の順に番号を付ける
-%   - 「ばらつき」：行ごとの優先度・計測の頻度（n 枚に1回）・3σ（X・Y・ベクトル・長さ |v|・目的変数）・値のある Wafer の数
+%   - 「ばらつき」：行ごとの優先度・計測の頻度（n 枚に1回）・3σ（X・Y・長さ |v|）・値のある Wafer の数
 %   - 「説明」：優先度の分け方（指標・しきい値・頻度・優先度 1 に指定した shotNo）、マップの数・計測数・計測率、description
 arguments
     filePath (1, 1) string
@@ -58,9 +58,8 @@ if markLevel
 end
 writetable(layout, filePath, 'Sheet', sheetName);
 spread = table(rows.shotNo, markNo, rows.rank, rows.interval, round(rows.sigma3X, 4), round(rows.sigma3Y, 4), ...
-    round(rows.sigma3Vector, 4), round(rows.sigma3Length, 4), round(rows.sigma3Target, 4), rows.nWafers, ...
-    'VariableNames', ["shotNo", "markNo", "優先度", "何枚に1回", "X の 3σ", "Y の 3σ", "ベクトルの 3σ", ...
-    "長さ |v| の 3σ", "目的変数の 3σ", "値のある Wafer の数"]);
+    round(rows.sigma3Length, 4), rows.nWafers, 'VariableNames', ["shotNo", "markNo", "優先度", "何枚に1回", ...
+    "X の 3σ", "Y の 3σ", "長さ |v| の 3σ", "値のある Wafer の数"]);
 if ~markLevel
     spread.markNo = [];
 end

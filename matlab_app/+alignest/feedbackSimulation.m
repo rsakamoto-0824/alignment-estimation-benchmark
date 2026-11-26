@@ -76,7 +76,6 @@ for j = 1:nFb
         inMap = ismember(pointKeys(points, maps.level), maps.table.key(maps.membership(:, mapOfFb(j))));
         points.valueX(~inMap) = NaN;
         points.valueY(~inMap) = NaN;
-        points.target(~inMap) = NaN;
         fbWafers(j).points = points;
     end
     measured(fbIndex(j)) = nnz(isfinite(points.valueX) | isfinite(points.valueY));
