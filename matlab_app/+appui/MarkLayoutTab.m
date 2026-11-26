@@ -22,6 +22,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
         function setMarkLayoutSource(app, source)
             %SETMARKLAYOUTSOURCE 入力を選ぶ："manual"（画面で入力する座標）・"data"（「1. データ読込」の計測データ）・
             %   "highOrder"（「6. Shot高次補正」で選んでいる入力のデータと Wafer）・"file"（このタブで読み込んだ Excel・CSV）。
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             app.Controls.markOptSource.Value = char(source);
             onMarkLayoutSourceChanged(app);
         end
@@ -56,6 +57,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
                 options.outlierPercent (1, 1) double
                 options.outlierNm (1, 1) double
             end
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if isfield(options, "termSet")
                 value = char(app.MARK_SET_PREFIX + options.termSet);
@@ -97,6 +99,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             %SETMARKLAYOUTCOORDINATES 画面で入力する候補の Mark の座標（点の数 × 2 [mm]。Shot 中心から）を決め、入力を「画面で
             %   入力する座標」にする。required（省略可）：必ず計測する Mark（点の数 × 1 の logical。これまでの指定と置き換える）。
             %   candidates は候補の Mark の表（同じ位置はまとめ、上の行・左から番号を付ける）。
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if size(coordinates, 2) ~= 2 || any(~isfinite(coordinates(:)))
                 error('alignest:markLayout', '座標は X・Y の2列の数にしてください。');
             end
@@ -115,6 +118,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
         function candidates = makeMarkLayoutGrid(app, spanMm, counts)
             %MAKEMARKLAYOUTGRID 「格子で置く」：候補の Mark を、Shot 中心を真ん中にした格子に置く（画面で入力する座標にする）。
             %   spanMm：[幅, 高さ]（端の Mark どうしの間 [mm]）、counts：[列の数, 行の数]（省略すると画面の欄）。
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if nargin >= 2
                 c.markOptGridWidth.Value = spanMm(1);
@@ -141,6 +145,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
         function candidates = setMarkLayoutRequired(app, markNumbers, required)
             %SETMARKLAYOUTREQUIRED 候補の Mark の番号（「候補の Mark」の表の No）を、必ず計測する（required = true）・しない
             %   （false）にする。どの数の配置にも必ず入る。candidates は候補の Mark の表。
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             input = app.MarkLayoutInput;
             if isempty(input)
                 error('alignest:markLayout', '先に入力を選んでください（候補の Mark がありません）。');
@@ -156,6 +161,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
         function candidates = setMarkLayoutExcluded(app, markNumbers, excluded)
             %SETMARKLAYOUTEXCLUDED 候補の Mark の番号を、計測しない（excluded = true）・戻す（false）にする。計測しない Mark は
             %   配置に選ばないが、残差の評価には使う（必ず計測する指定は外れる）。candidates は候補の Mark の表。
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             input = app.MarkLayoutInput;
             if isempty(input)
                 error('alignest:markLayout', '先に入力を選んでください（候補の Mark がありません）。');
@@ -171,6 +177,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
         function shapes = generateMarkLayoutShapes(app)
             %GENERATEMARKLAYOUTSHAPES 「乱数で Shot を生成する」：今の候補の Mark と項の大きさ・ばらつき・飛び値で乱数の Shot の形を
             %   作り（alignest.randomShotShapes）、代表の形を図に出す。評価に使う値が乱数の形のときは、この形で評価する。
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             readMarkLayoutControls(app);
             options = alignest.markLayoutOptions(app.Settings);
@@ -193,6 +200,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             %LOADMARKLAYOUTFILE 入力にする Excel・CSV を読み（列の名前は自由）、項目に合う列を見出しから推定して「Excel・CSV の
             %   列」の表に出す（alignest.readHighOrderFile）。Shot 内の座標の列が見つかれば、その列で入力にする
             %   （applyMarkLayoutMapping）。X・Y の値の列が無い表は、候補の Mark の座標だけとして読む。
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if nargin < 3
                 sheetName = "";
             end
@@ -227,6 +235,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             %APPLYMARKLAYOUTMAPPING 「この列で使う」：「Excel・CSV の列」の表で選んだ列で、読み込んだ表を入力にする
             %   （alignest.markLayoutFileData。すべての Wafer を選ぶ）。columns（省略可）：表の選択を変える項目と列の名前の
             %   構造体（例：struct("measX", "OVL_X")。"" は列なし）。data は Wafer ごとの点（値が無い表は座標）。
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if isempty(app.MarkLayoutFile)
                 error('alignest:markLayoutFile', '先に「Excel・CSV を読み込む…」で表を読み込んでください。');
             end
@@ -260,6 +269,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
         function excluded = selectMarkLayoutTermsByVif(app, threshold)
             %SELECTMARKLAYOUTTERMSBYVIF 「VIF で選ぶ」：式のすべての項から始めて、候補の Mark の位置で求めた VIF がしきい値以上の
             %   高次項を外す（alignest.highOrderVif。k1〜k6 は外さない）。threshold を省略すると画面のしきい値。外した k の番号。
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if nargin >= 2
                 c.markOptVifThreshold.Value = threshold;
@@ -281,6 +291,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
 
         function useAllMarkLayoutTerms(app)
             %USEALLMARKLAYOUTTERMS 「すべての項を使う」：外した項を戻す
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             app.Settings.markLayout.excludedTerms = zeros(1, 0);
             refreshMarkLayoutTerms(app);
             showMarkLayoutMessages(app);
@@ -289,6 +300,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
         function setMarkLayoutTermUsed(app, k, used)
             %SETMARKLAYOUTTERMUSED k の番号の項を使う（used = true）・使わない（false）にする（表のチェックと同じ）。
             %   k1〜k6（定数・1次）は外せない。
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if k <= 6 && ~used
                 error('alignest:markLayout', 'k1〜k6（並進・倍率・回転）は補正の土台なので外せません。');
             end
@@ -306,6 +318,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
         function copyHighOrderFormula(app)
             %COPYHIGHORDERFORMULA 「7. の式を写す」：「6. Shot高次補正」の補正の式（内周の式）・使う項・VIF のしきい値・回帰の
             %   設定を、このタブの設定にする（くくりが Wafer 内・選択 Wafer で共通なら、Shot 共通補正の式・項）。
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             readHighOrderControls(app);
             source = alignest.highOrderSharedFormula(alignest.highOrderOptions(app.Settings));
             for name = ["maker", "excludedTerms", "vifThreshold", "loss", "huberTuning", "regularization", ...
@@ -321,6 +334,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             %OPTIMIZEMARKLAYOUT 「配置を最適化する」：今の入力・補正の式・回帰・配置の選び方で、Mark の数ごとに I 最適計画の配置を
             %   選び、制御残差を求めて、図・配置・表に出す（alignest.markLayoutStudy）。study は結果。progressFcn（省略可）：
             %   progressFcn(割合 0〜1, 説明) が false なら止める（進み具合の窓を出さずに動かすとき）。
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             hasProgressFcn = nargin >= 2;
             readMarkLayoutControls(app);
             alignest.markLayoutOptions(app.Settings);   % 設定の誤りを先に知らせる
@@ -381,6 +395,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             %   （計測しなかった Mark だけ）、xAxis："efficiency"（I 効率）・"criterionI"（I 基準）・"count"（Mark の数）・
             %   "efficiencyD"（D 効率）・"criterionD"（D 基準）。省略すると画面の選択。data は図の値（Mark の数・I 効率・横軸の値
             %   xValue・X・Y）。
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if nargin >= 2 && strlength(string(statistic)) > 0
                 c.markOptChartStatistic.Value = char(statistic);
@@ -475,6 +490,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             %   Mark（×）を Shot 内の座標で描き、右にその配置の制御残差の Shot スタックマップ（平均の矢印と共分散楕円）を描く。
             %   count：Mark の数（省略すると画面の選択。計算の前は候補の Mark だけ）。図の Mark をクリックすると、必ず計測 → 計測
             %   しない → 候補 が切り替わる。
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             study = app.MarkLayoutStudy;
             if nargin >= 2 && ~isempty(study)
@@ -528,6 +544,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
 
         function drawMarkCandidates(app)
             %DRAWMARKCANDIDATES 「候補の Mark」の右の図：候補の Mark が Shot のどこにあるかと、必ず計測・計測しない Mark を描く。
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             input = app.MarkLayoutInput;
             c = app.Controls;
             ax = c.markOptCandidateAxes;
@@ -547,6 +564,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
             %DRAWMARKLAYOUTSHAPE 乱数の Shot の形の図：生成した形のうち index 番目（省略すると画面の欄）の、ベクトル場（計測した値 =
             %   形 + 計測のばらつき + 飛び値。飛び値の点は赤）と、X 成分・Y 成分のヒートマップ（形）を並べる。shapes は生成した形
             %   （alignest.randomShotShapes）。生成していなければ [] で、図は空。
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             HEAT_POINTS = 61;   % ヒートマップの縦・横の点の数
             c = app.Controls;
             if nargin >= 2
@@ -638,6 +656,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
         function exportMarkSelectionTo(app, filePath, count)
             %EXPORTMARKSELECTIONTO 選んだ配置（Mark の数 count。省略すると画面の選択）を Excel（.xlsx）に書き出す
             %   （alignest.exportMarkSelection）。
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             study = app.MarkLayoutStudy;
             if isempty(study)
                 error('alignest:markLayout', '先に「配置を最適化する」を押してください。');
@@ -651,6 +670,7 @@ classdef (Abstract) MarkLayoutTab < appui.Core
         function exportMarkLayoutTo(app, filePath)
             %EXPORTMARKLAYOUTTO 結果を Excel（.xlsx）に書き出す（alignest.exportMarkLayouts。説明・制御残差・配置・候補の Mark・
             %   項と VIF のシート）。
+            ensureTab(app, "markLayout");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             study = app.MarkLayoutStudy;
             if isempty(study)
                 error('alignest:markLayout', '先に「配置を最適化する」を押してください。');

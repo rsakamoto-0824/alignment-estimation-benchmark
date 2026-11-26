@@ -19,16 +19,9 @@ information = zeros(nParams, nParams, nCandidates);
 for s = 1:nCandidates
     information(:, :, s) = blocks{s}.' * blocks{s};
 end
-stacked = vertcat(blocks{:});
-rowsOfShot = cell(nCandidates, 1);
-offset = 0;
-for s = 1:nCandidates
-    rowsOfShot{s} = offset + (1:size(blocks{s}, 1));
-    offset = offset + size(blocks{s}, 1);
-end
 bounds = alignest.shotGroupBounds(labels, nSelect, slack);
 identity = eye(nParams);
-context = struct("information", information, "stacked", stacked, "rowsOfShot", {rowsOfShot}, ...
+context = struct("information", information, "slots", {alignest.blockSlots(blocks)}, ...
     "labels", labels, "bounds", bounds, "regularization", REGULARIZATION, "fixed", fixed);
 
 bestSelected = [];
@@ -68,46 +61,35 @@ bestSwapValue = currentValue;
 bestSwapViolation = currentViolation;
 selectedShots = find(current & ~context.fixed);   % 必ず計測する Shot は外さない
 others = find(~current);
+counts = groupCounts(context.labels, context.bounds, current);
 for outShot = selectedShots.'
     reduced = totalInformation - context.information(:, :, outShot) + context.regularization * eye(size(totalInformation));
     [upperFactor, failed] = chol(reduced);
-    violations = swapViolations(context.labels, context.bounds, current, outShot, others);
+    violations = swapViolations(context.labels, context.bounds, counts, outShot, others);
     allowed = violations <= currentViolation;
     if ~any(allowed)
         continue
     end
+    candidates = others(allowed);
+    candidateViolations = violations(allowed);
     if failed
         % 外すと情報行列が特異になる Shot は、入れる Shot ごとに直接計算する
-        for inShot = others(allowed).'
-            value = iCriterion(reduced + context.information(:, :, inShot));
-            [bestOut, bestIn, bestSwapValue, bestSwapViolation] = keepBetter(value, outShot, inShot, ...
-                violations(others == inShot), bestOut, bestIn, bestSwapValue, bestSwapViolation);
+        values = arrayfun(@(inShot) iCriterion(reduced + context.information(:, :, inShot)), candidates);
+    else
+        % Woodbury の式：tr((M_o + BᵀB)⁻¹) = tr(M_o⁻¹) − tr((I + B M_o⁻¹ Bᵀ)⁻¹ B M_o⁻² Bᵀ)（入れる Shot をまとめて）
+        inverseFactor = upperFactor \ eye(size(totalInformation));
+        values = alignest.blockSwapValues(context.slots, candidates, inverseFactor * inverseFactor.', "I");
+    end
+    % 入れる Shot の順に見て、違反が少ないか、同じ違反で基準が小さい交換を残す（同じ値なら先の交換）
+    for k = 1:numel(candidates)
+        if candidateViolations(k) < bestSwapViolation || (candidateViolations(k) == bestSwapViolation && ...
+                values(k) < bestSwapValue - 1e-12 * abs(bestSwapValue))
+            bestOut = outShot;
+            bestIn = candidates(k);
+            bestSwapValue = values(k);
+            bestSwapViolation = candidateViolations(k);
         end
-        continue
     end
-    inverseFactor = upperFactor \ eye(size(totalInformation));
-    inverse = inverseFactor * inverseFactor.';
-    traceInverse = trace(inverse);
-    projected = context.stacked * inverse;
-    % Woodbury の式：tr((M_o + BᵀB)⁻¹) = tr(M_o⁻¹) − tr((I + B M_o⁻¹ Bᵀ)⁻¹ B M_o⁻² Bᵀ)
-    for position = find(allowed).'
-        inShot = others(position);
-        rows = context.rowsOfShot{inShot};
-        blockProjected = projected(rows, :);
-        capacitance = eye(numel(rows)) + blockProjected * context.stacked(rows, :).';
-        value = traceInverse - trace(capacitance \ (blockProjected * blockProjected.'));
-        [bestOut, bestIn, bestSwapValue, bestSwapViolation] = keepBetter(value, outShot, inShot, ...
-            violations(position), bestOut, bestIn, bestSwapValue, bestSwapViolation);
-    end
-end
-end
-
-function [bestOut, bestIn, bestValue, bestViolation] = keepBetter(value, outShot, inShot, violation, bestOut, bestIn, bestValue, bestViolation)
-if violation < bestViolation || (violation == bestViolation && value < bestValue - 1e-12 * abs(bestValue))
-    bestOut = outShot;
-    bestIn = inShot;
-    bestValue = value;
-    bestViolation = violation;
 end
 end
 
@@ -121,11 +103,19 @@ inverseFactor = upperFactor \ eye(size(information));
 value = sum(inverseFactor .^ 2, 'all');
 end
 
-function violations = swapViolations(labels, bounds, current, outShot, others)
-% outShot を外して others の各 Shot を入れたときの違反量（ベクトル）
+function counts = groupCounts(labels, bounds, current)
+% 制約の種類ごとの、今選んでいる Shot の区分ごとの数（交換を探す間は変わらないので、一度だけ数える）
+counts = cell(1, numel(bounds));
+for p = 1:numel(bounds)
+    counts{p} = accumarray(labels(current, p), 1, [numel(bounds(p).lower), 1]);
+end
+end
+
+function violations = swapViolations(labels, bounds, currentCounts, outShot, others)
+% outShot を外して others の各 Shot を入れたときの違反量（ベクトル）。currentCounts：groupCounts
 violations = zeros(numel(others), 1);
 for p = 1:numel(bounds)
-    counts = accumarray(labels(current, p), 1, [numel(bounds(p).lower), 1]);
+    counts = currentCounts{p};
     counts(labels(outShot, p)) = counts(labels(outShot, p)) - 1;
     penalty = max(0, bounds(p).lower - counts) + max(0, counts - bounds(p).upper);
     penaltyPlus = max(0, bounds(p).lower - counts - 1) + max(0, counts + 1 - bounds(p).upper);

@@ -206,6 +206,7 @@ classdef (Abstract) Display < appui.Core
             %CAPTURETAB タブを表示して画面の画像を保存する（説明資料・動作確認用）。
             % 画面の配置が描き終わるまで少し待ってから保存する（すぐ保存すると古い配置の絵になることがある）
             RENDER_WAIT_SECONDS = 1.5;
+            ensureTab(app, tabName);
             app.TabGroup.SelectedTab = app.Tabs.(tabName);
             drawnow;
             pause(RENDER_WAIT_SECONDS);
@@ -234,65 +235,68 @@ classdef (Abstract) Display < appui.Core
                 'DefaultAxesZColor', new.axisLine, 'DefaultAxesGridColor', new.grid, 'DefaultAxesMinorGridColor', new.grid, ...
                 'DefaultTextColor', new.text, 'DefaultLegendTextColor', new.text, 'DefaultLegendColor', new.axes, ...
                 'DefaultLegendEdgeColor', new.grid, 'DefaultColorbarColor', new.axisLine);
-            for object = reshape(findall(fig), 1, [])
-                if ~isvalid(object) || ~isprop(object, 'Type')
-                    continue   % 色を持たない部品（図の中の空の置き場など）
-                end
-                switch object.Type
-                    case 'uigridlayout'
-                        object.BackgroundColor = new.background;
-                    case 'uipanel'
-                        object.BackgroundColor = new.background;
-                        object.ForegroundColor = new.text;
-                    case 'uitab'
-                        % タブの見出しの地はどちらのモードでも明るいので、見出しの文字は黒のまま（中の地だけ変える）
-                        object.BackgroundColor = new.background;
-                    case 'uilabel'
-                        object.FontColor = themeColor(object.FontColor, old, new);
-                    case 'uicheckbox'
-                        object.FontColor = new.text;
-                    case 'uibutton'
-                        if object.Tag ~= "primary"
-                            object.BackgroundColor = new.button;
-                            object.FontColor = new.text;
-                        end
-                    case 'uidropdown'
-                        object.BackgroundColor = new.button;
-                        object.FontColor = new.text;
-                    case {'uieditfield', 'uinumericeditfield', 'uispinner', 'uitextarea', 'uilistbox'}
-                        object.BackgroundColor = new.field;
-                        object.FontColor = new.text;
-                    case 'uitable'
-                        object.BackgroundColor = [new.field; new.fieldAlt];
-                        object.ForegroundColor = new.text;
-                    case 'axes'
-                        themeAxes(object, old, new);
-                end
-            end
+            themeObjects(findall(fig), old, new);
             updateHelpView(app);
             % 色に依存する表の印（座標の単位の警告・各列の最良）を付け直す
             fillUnitTable(app);
-            if ~isempty(app.Results)
+            % まだ作っていないタブ（ensureTab）は、作るときに今の色で作るので、ここでは描き直さない
+            if ~isempty(app.Results) && isTabBuilt(app, "results")
                 refreshResults(app);
                 showWaferRanking(app);   % Wafer のベスト・ワーストの色
             end
-            if ~isempty(app.TargetRun)
+            if ~isempty(app.TargetRun) && isTabBuilt(app, "target")
                 showTargetRun(app);   % 外挿の行の色・メッセージの色を新しい色の組にする
             end
-            refreshHighOrderTerms(app);   % VIF の大きい行・使わない行の色
-            if ~isempty(app.HighOrderRun)
-                showHighOrderRun(app);
+            if isTabBuilt(app, "highOrder")
+                refreshHighOrderTerms(app);   % VIF の大きい行・使わない行の色
+                if ~isempty(app.HighOrderRun)
+                    showHighOrderRun(app);
+                end
+                if ~isempty(app.HighOrderFile)
+                    showHighOrderMapping(app, currentHighOrderMapping(app));   % 列を選んでいない必須の項目の色
+                end
+                showHighOrderComparison(app);   % 設定を変えた後の知らせの色
             end
-            if ~isempty(app.HighOrderFile)
-                showHighOrderMapping(app, currentHighOrderMapping(app));   % 列を選んでいない必須の項目の色
+            if isTabBuilt(app, "markLayout")
+                refreshMarkLayoutInput(app);    % 「7. Mark配置最適化」の表の色・図
+                if ~isempty(app.MarkLayoutFile)
+                    showMarkLayoutMapping(app, currentMarkLayoutMapping(app));
+                end
+                if ~isempty(app.MarkLayoutStudy)
+                    showMarkLayoutStudy(app);
+                end
             end
-            showHighOrderComparison(app);   % 設定を変えた後の知らせの色
-            refreshMarkLayoutInput(app);    % 「7. Mark配置最適化」の表の色・図
-            if ~isempty(app.MarkLayoutFile)
-                showMarkLayoutMapping(app, currentMarkLayoutMapping(app));
+        end
+
+        function finishBuiltTab(app, root)
+            % 後から作ったタブ（ensureTab）の部品に、起動のときに画面全体にしたこと（文字の大きさ・決まった大きさの行と列・
+            % 入れ子のタブを開いたときの文字の付け直し）をし、今の文字の大きさ・画面の色に合わせる
+            fixedBefore = numel(app.FixedSizes);
+            prepareFonts(app, root);
+            if app.FontScale ~= 1
+                scaleFontsIn(app, root, 1, fixedBefore + 1:numel(app.FixedSizes));
+                styleAxes(app, findall(root, 'Type', 'axes'));
             end
-            if ~isempty(app.MarkLayoutStudy)
-                showMarkLayoutStudy(app);
+            % 作ったときの文字の大きさは今の大きさなので、入れ子のタブを開いても付け直さなくてよい（refreshTabFonts）
+            for tab = reshape(findall(root, 'Type', 'uitab'), 1, [])
+                setappdata(tab, 'AlignFontVersion', app.FontVersion);
+            end
+            if app.Theme ~= "light"
+                themeObjects(findall(root), themePalette("light"), app.Palette);
+            end
+        end
+
+        function prepareFonts(app, root)
+            % root（起動のときは画面全体、後から作るタブはそのタブ）の部品を標準の文字の大きさにし、決まった大きさの行・列を
+            % 覚え、見えていないタブの部品は文字の大きさを変えても表示が古いままのことがあるので、タブを開いたときに付け直す
+            % 図の中の文字（まだ描いていない図の案内など）は変えない（以前は画面の文字と同じ 16 pt になり、長い案内が
+            % 図の枠からはみ出していた。図を描き直すと元の大きさに戻るので、起動の直後だけ大きかった）
+            set(fontComponents(root), 'FontSize', app.FONT_SIZE);
+            set(findall(root, 'Type', 'axes'), 'FontSize', app.AXES_FONT_SIZE);
+            set(tablesIn(fontTables(app), root), 'FontSize', app.TABLE_FONT_SIZE);
+            collectFixedSizes(app, root);
+            for tabGroup = reshape(findall(root, 'Type', 'uitabgroup'), 1, [])
+                addlistener(tabGroup, 'SelectedTab', 'PostSet', @(~, event) app.refreshTabFonts(event.AffectedObject.SelectedTab));
             end
         end
 
@@ -378,7 +382,7 @@ classdef (Abstract) Display < appui.Core
                     all(isgraphics(app.Controls.measureAxes))
                 draws{end + 1} = @() drawMeasurementMap(app);
             end
-            if ~isempty(app.Results)
+            if ~isempty(app.Results) && isTabBuilt(app, "results")
                 draws{end + 1} = @() drawMap(app);
             end
             for k = 1:numel(draws)
@@ -417,13 +421,14 @@ classdef (Abstract) Display < appui.Core
         end
 
         function tables = fontTables(app)
-            % 列の多い表（TABLE_FONT_SIZE の文字で出す表）
-            tables = [app.Controls.unitTable, app.Controls.normalityTable, app.Controls.anovaTable, ...
-                app.Controls.targetTable, app.Controls.targetResultTable, app.Controls.highOrderTermTable, ...
-                app.Controls.highOrderSummaryTable, app.Controls.highOrderCoefficientTable, ...
-                app.Controls.highOrderMappingTable, app.Controls.highOrderCompareTable, app.Controls.highOrderTuneTable, ...
-                app.Controls.markOptMappingTable, app.Controls.markOptCandidateTable, app.Controls.markOptTermTable, ...
-                app.Controls.markOptResultTable];
+            % 列の多い表（TABLE_FONT_SIZE の文字で出す表。まだ作っていないタブの表は入れない）
+            names = ["unitTable", "normalityTable", "anovaTable", "targetTable", "targetResultTable", "highOrderTermTable", ...
+                "highOrderSummaryTable", "highOrderCoefficientTable", "highOrderMappingTable", "highOrderCompareTable", ...
+                "highOrderTuneTable", "markOptMappingTable", "markOptCandidateTable", "markOptTermTable", "markOptResultTable"];
+            tables = gobjects(1, 0);
+            for name = names(isfield(app.Controls, names))
+                tables(end + 1) = app.Controls.(name); %#ok<AGROW>
+            end
         end
 
         function pixels = scaledPixels(app, pixels)
@@ -433,16 +438,23 @@ classdef (Abstract) Display < appui.Core
 
         function applyFontSize(app, previousScale)
             % 画面の欄・表・図の文字と、決まった大きさの欄・表の列の幅を、今の文字の大きさ（FontScale）にする
-            set(fontComponents(app.Figure), 'FontSize', scaledPixels(app, app.FONT_SIZE));
-            % 文字の大きさを変えるときに、表が無くなっていても止まらないように、ある表だけに付ける
-            % （点検で一度だけ、無くなった表に付けようとして止まったことがある。原因は再現できていない）
-            tables = fontTables(app);
-            set(tables(isvalid(tables)), 'FontSize', scaledPixels(app, app.TABLE_FONT_SIZE));
+            scaleFontsIn(app, app.Figure, previousScale, 1:numel(app.FixedSizes));
             % 今見えているタブは付け直し済み。ほかのタブは開いたときに付け直す（refreshTabFonts）
             app.FontVersion = app.FontVersion + 1;
             markShownTabs(app, app.TabGroup.SelectedTab);
-            % 表の列の幅（描いたときに今の文字の大きさで決めた幅）は、前の大きさとの比で変える
-            for table_ = reshape(findall(app.Figure, 'Type', 'uitable'), 1, [])
+            applyResponsiveLayout(app);
+            styleAxes(app, findall(app.Figure, 'Type', 'axes'));
+            updateHelpView(app);
+        end
+
+        function scaleFontsIn(app, root, previousScale, fixedIndices)
+            % root の中の欄・表の文字を今の文字の大きさにし、表の列の幅（描いたときに今の文字の大きさで決めた幅）を前の大きさ
+            % との比で変え、決まった大きさの行・列（app.FixedSizes の fixedIndices 番目）を今の大きさにする（図の文字は styleAxes）
+            set(fontComponents(root), 'FontSize', scaledPixels(app, app.FONT_SIZE));
+            % 文字の大きさを変えるときに、表が無くなっていても止まらないように、ある表だけに付ける
+            % （点検で一度だけ、無くなった表に付けようとして止まったことがある。原因は再現できていない）
+            set(tablesIn(fontTables(app), root), 'FontSize', scaledPixels(app, app.TABLE_FONT_SIZE));
+            for table_ = reshape(findall(root, 'Type', 'uitable'), 1, [])
                 widths = table_.ColumnWidth;
                 if iscell(widths)
                     fixed = cellfun(@(width) isnumeric(width) && width > 0, widths);
@@ -451,7 +463,7 @@ classdef (Abstract) Display < appui.Core
                     table_.ColumnWidth = widths;
                 end
             end
-            for item = app.FixedSizes
+            for item = app.FixedSizes(fixedIndices)
                 if ~isvalid(item.grid)
                     continue
                 end
@@ -462,9 +474,6 @@ classdef (Abstract) Display < appui.Core
                     item.grid.(item.property) = sizes;
                 end
             end
-            applyResponsiveLayout(app);
-            styleAxes(app, findall(app.Figure, 'Type', 'axes'));
-            updateHelpView(app);
         end
 
         function refreshTabFonts(app, tab)
@@ -503,10 +512,11 @@ classdef (Abstract) Display < appui.Core
             end
         end
 
-        function collectFixedSizes(app)
+        function collectFixedSizes(app, root)
             % 決まった大きさ [px] の行・列（一覧の高さ・入力欄の幅など）を、標準の文字の大きさのときの大きさとして覚える
-            % （文字の大きさを変えたときに同じ比で変えるため。窓の幅に合わせる欄は applyResponsiveLayout が受け持つ）
-            for grid = reshape(findall(app.Figure, 'Type', 'uigridlayout'), 1, [])
+            % （文字の大きさを変えたときに同じ比で変えるため。窓の幅に合わせる欄は applyResponsiveLayout が受け持つ）。
+            % root：起動のときは画面全体、後から作るタブ（ensureTab）はそのタブ
+            for grid = reshape(findall(root, 'Type', 'uigridlayout'), 1, [])
                 if grid == app.RootGrid
                     continue
                 end
@@ -560,6 +570,11 @@ classdef (Abstract) Display < appui.Core
             % （描き直して大きさが付け直されたら、その大きさを基準にし直す。何度呼んでも同じ大きさになる）
             for object = objects
                 if ~isvalid(object)
+                    continue
+                end
+                if app.FontScale == 1 && ~isappdata(object, 'AlignFontBase')
+                    % 標準の大きさで描いたまま（変えるものが無い）。色の目盛りの大きさは読むだけで図の配置を計算し直して
+                    % 遅いので、読まない（文字の大きさを変えたときに、そのときの大きさを基準として読む）
                     continue
                 end
                 record = [object.FontSize, NaN];   % [基準, 付けた大きさ]
@@ -762,8 +777,17 @@ wide = any(place == ["northoutside", "southoutside", "tile:north", "tile:south"]
 end
 
 function color = themeColor(current, old, new)
-% 文字の色を、前の色の組での役割（エラー・注意・補足・強調・ふつう）のまま新しい色の組の色にする
+% 文字の色を、前の色の組での役割（エラー・注意・補足・強調・ふつう）のまま新しい色の組の色にする。すでに新しい色の組の
+% 役割の色なら、そのまま（後から作ったタブの部品は、作ったときの色の組の色で作ってあるため。2つの色の組の役割の色は
+% 離れているので、前の色の組の色と取り違えない）
 near = @(a, b) isnumeric(a) && numel(a) == 3 && all(abs(a(:).' - b) < 0.03);
+roles = ["text", "error", "caution", "muted", "accent"];
+for role = roles(isfield(new, roles))
+    if near(current, new.(role))
+        color = current;
+        return
+    end
+end
 if near(current, old.error)
     color = new.error;
 elseif isfield(old, "caution") && near(current, old.caution)
@@ -774,6 +798,61 @@ elseif near(current, old.accent)
     color = new.accent;
 else
     color = new.text;
+end
+end
+
+function themeObjects(objects, old, new)
+% 画面の部品と図の色を old から new の色の組に変える（種類ごとにまとめて入れる。1つずつ入れるより速い）
+objects = reshape(objects(isvalid(objects)), 1, []);
+objects = objects(arrayfun(@(object) isprop(object, 'Type'), objects));   % 色を持たない部品（図の中の空の置き場など）は除く
+if isempty(objects)
+    return
+end
+types = string(get(objects, {'Type'}));
+setColors(objects(ismember(types, ["uigridlayout", "uitab"])), 'BackgroundColor', new.background);
+% タブの見出しの地はどちらのモードでも明るいので、見出しの文字は黒のまま（中の地だけ変える）
+setColors(objects(types == "uipanel"), 'BackgroundColor', new.background, 'ForegroundColor', new.text);
+labels = objects(types == "uilabel");
+if ~isempty(labels)
+    colors = cellfun(@(color) themeColor(color, old, new), get(labels, {'FontColor'}), 'UniformOutput', false);
+    set(labels, {'FontColor'}, colors);
+end
+setColors(objects(types == "uicheckbox"), 'FontColor', new.text);
+buttons = objects(types == "uibutton");
+if ~isempty(buttons)
+    buttons = buttons(string(get(buttons, {'Tag'})) ~= "primary");
+end
+setColors(buttons, 'BackgroundColor', new.button, 'FontColor', new.text);
+setColors(objects(types == "uidropdown"), 'BackgroundColor', new.button, 'FontColor', new.text);
+setColors(objects(ismember(types, ["uieditfield", "uinumericeditfield", "uispinner", "uitextarea", "uilistbox"])), ...
+    'BackgroundColor', new.field, 'FontColor', new.text);
+setColors(objects(types == "uitable"), 'BackgroundColor', [new.field; new.fieldAlt], 'ForegroundColor', new.text);
+for ax = objects(types == "axes")
+    themeAxes(ax, old, new);
+end
+end
+
+function setColors(objects, varargin)
+% 部品があるときだけ色を入れる
+if ~isempty(objects)
+    set(objects, varargin{:});
+end
+end
+
+function inside = tablesIn(tables, root)
+% tables のうち、root（画面全体・タブ）の中にある表（無くなった表は除く）
+inside = gobjects(1, 0);
+for table_ = reshape(tables, 1, [])
+    if ~isvalid(table_)
+        continue
+    end
+    node = table_;
+    while ~isempty(node) && node ~= root && ~isa(node, 'matlab.ui.Root')
+        node = node.Parent;
+    end
+    if ~isempty(node) && node == root
+        inside(end + 1) = table_; %#ok<AGROW>
+    end
 end
 end
 

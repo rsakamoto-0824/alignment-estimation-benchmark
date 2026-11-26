@@ -95,6 +95,71 @@ classdef TestScreenFitAndOverlays < matlab.unittest.TestCase
             testCase.verifyNotEmpty(c.previewAxes(1).Children);
         end
 
+        function laterTabsAreBuiltWhenOpened(testCase)
+            % 「3. 結果一覧」から後のタブは、初めて開いたとき（またはそのタブの操作を呼んだとき）に作り、作る前のデータ・
+            % 結果・文字の大きさ・画面の色を、すべてを起動のときに作ったときと同じに出す
+            raw = fullfile(testCase.Root, 'sample_data', 'sample_alignment.csv');
+            lazy = AlignmentEstimationApp(false, true);
+            cleanupLazy = onCleanup(@() delete(lazy));
+            testCase.verifyEmpty(lazy.BuiltTabs);
+            testCase.verifyFalse(any(isfield(lazy.Controls, ["summaryTable", "mapAxes", "targetWafer", ...
+                "highOrderWafer", "markOptWafer", "rotationSource"])), "起動のときは作らない");
+            eager = AlignmentEstimationApp(false);
+            cleanupEager = onCleanup(@() delete(eager));
+            laterTabs = ["results", "target", "highOrder", "markLayout", "rotation"];
+            testCase.verifyEqual(eager.BuiltTabs, laterTabs, "画面を出さないときの既定は、すべて作る");
+            settings = lazy.Settings;
+            settings.methods = alignest.recommendedMethods("none");
+            settings.methods.polynomial.enabled = true;
+            settings.sampling.method = "random";
+            settings.sampling.nShots = 20;
+            [settings.sampling.nShotsStart, settings.sampling.nShotsEnd, settings.sampling.nShotsStep] = deal(20, 20, 5);
+            for app = [lazy, eager]
+                app.loadFile(raw);
+                app.applyMapping();
+                app.setSettings(settings);
+                app.setTheme("dark");
+                app.setFontSize(18);
+            end
+            testCase.verifyEmpty(lazy.BuiltTabs, "読み込み・設定・表示の設定では作らない");
+            lazy.runEvaluationNow(false);
+            eager.runEvaluationNow(false);
+            testCase.verifyEqual(lazy.BuiltTabs, "results", "評価すると結果一覧とマップを作る");
+            testCase.verifyEqual(lazy.Controls.summaryTable.Data, eager.Controls.summaryTable.Data);
+            testCase.verifyEqual(lazy.Controls.mapWafer.Items, eager.Controls.mapWafer.Items);
+            for name = ["target", "highOrder", "markLayout", "rotation"]
+                lazy.openTab(name);
+                eager.openTab(name);
+            end
+            testCase.verifyEqual(sort(lazy.BuiltTabs), sort(laterTabs));
+            l = lazy.Controls;
+            e = eager.Controls;
+            testCase.verifyEqual(l.targetWafer.Items, e.targetWafer.Items);
+            testCase.verifyEqual(l.highOrderWafer.Items, e.highOrderWafer.Items);
+            testCase.verifyEqual(l.highOrderMaker.Value, e.highOrderMaker.Value);
+            testCase.verifyEqual(l.markOptMaker.Items, e.markOptMaker.Items);
+            testCase.verifyEqual(l.rotationMethod.Items, e.rotationMethod.Items);
+            % 後から作ったタブも、今の文字の大きさ・画面の色（補足の文字の色を含む）
+            testCase.verifyEqual(l.targetRun.FontSize, e.targetRun.FontSize);
+            testCase.verifyEqual(l.highOrderTermTable.FontSize, e.highOrderTermTable.FontSize);
+            testCase.verifyEqual(l.targetInfo.FontColor, e.targetInfo.FontColor, 'AbsTol', 1e-9);
+            testCase.verifyEqual(l.targetInfo.FontColor, lazy.Palette.muted, 'AbsTol', 1e-9);
+            testCase.verifyEqual(l.rotationSource.BackgroundColor, e.rotationSource.BackgroundColor, 'AbsTol', 1e-9);
+            testCase.verifyEqual(sort(cellfun(@(size_) size_, {lazy.FixedSizes.size})), ...
+                sort(cellfun(@(size_) size_, {eager.FixedSizes.size})), "決まった大きさの行・列も同じだけ覚える");
+            % まだ作っていないタブの操作を呼ぶと、そのタブを作ってから動く
+            other = AlignmentEstimationApp(false, true);
+            cleanupOther = onCleanup(@() delete(other));
+            other.loadFile(raw);
+            other.applyMapping();
+            variability = other.computeRotationVariability("shot", "max");
+            testCase.verifyNotEmpty(variability.table);
+            testCase.verifyEqual(other.BuiltTabs, "rotation");
+            % 図を保存するときもタブを作る（画面を出していないので、保存はできないと知らせる）
+            testCase.verifyError(@() other.saveFigureImage("markLayoutShape", tempname + ".png"), 'alignest:hiddenFigure');
+            testCase.verifyEqual(other.BuiltTabs, ["rotation", "markLayout"]);
+        end
+
         function windowFitsTheScreen(testCase)
             % 画面に合わせる：窓は画面（モニター）の中に収まり、決まった幅の欄は中身の幅の比で狭める
             app = AlignmentEstimationApp(false);

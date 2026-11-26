@@ -18,6 +18,7 @@ classdef (Abstract) HighOrderTab < appui.Core
         function applyHighOrderCommonTermSet(app, name)
             %APPLYHIGHORDERCOMMONTERMSET 保存した項の組み合わせ name の k を、Shot 共通の k に使う項（表の「共通」の列。
             %   settings.highOrder.shotCommonTerms）にする。今の補正の式にある k の番号だけを使い、k1〜k6 は必ず使う。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             sets = termSetTable(fieldOr(app.Settings.highOrder, "termSets", strings(0, 1)));
             index = find(sets.name == string(name), 1);
             if isempty(index)
@@ -40,6 +41,7 @@ classdef (Abstract) HighOrderTab < appui.Core
         function setHighOrderSource(app, source)
             %SETHIGHORDERSOURCE 入力のデータを選ぶ："data"（「1. データ読込」の計測データ）・"target"（「5. 未知の座標の
             %   推定」の推定値）・"file"（「Excel・CSV を読み込む…」で読み込んだデータ）。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             app.Controls.highOrderSource.Value = char(source);
             onHighOrderSourceChanged(app);
         end
@@ -86,6 +88,7 @@ classdef (Abstract) HighOrderTab < appui.Core
                 options.lambda (1, :) double
                 options.measured (1, 1) logical
             end
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             controls = struct("maker", c.highOrderMaker, "unit", c.highOrderUnit, "waferOrder", c.highOrderWaferOrder, ...
                 "waferRtRange", c.highOrderRtRange, "waferRtOrder", c.highOrderRtOrder, "shotCommon", c.highOrderShotCommon, ...
@@ -127,6 +130,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             %COPYHIGHORDERCOMMONVALUES 直近の計算の Shot 共通の k（Wafer の平均）を、入力する Shot 共通の値（「使う項と VIF」の
             %   表の「共通の値」）に写す（画面の「計算した値を写す」）。補正の式（外周の式も）が今の設定と同じ計算だけ。
             %   values：{内周の式（外周の式を分けないときは式）の値, 外周の式の値}（n 番目が kn の値）
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             run = app.HighOrderRun;
             if isempty(run)
                 error('alignest:highOrderShotCommon', '先に「補正を計算する」で Shot 共通の k を求めてください。');
@@ -164,6 +168,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             %   「Excel・CSV の列」の表に出す（alignest.readHighOrderFile）。必須の項目の列がすべて見つかれば、その列で
             %   Wafer ごとのデータにして入力にする（applyHighOrderMapping）。見つからなければ、表で列を選んで「この列で使う」を
             %   押す。data は Wafer ごとのデータ（まだ列を選んでいなければ []）。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if nargin < 3
                 sheetName = "";
             end
@@ -202,6 +207,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             %   入力を「Excel・CSV のデータ」にする（すべての Wafer を選ぶ。alignest.prepareHighOrderData）。
             %   columns（省略可）：表の選択を変える項目と列の名前の構造体（例：struct("measX", "OVL_X", "Direction", "")。
             %   "" は列なし）。directionRule（省略可）：Direction が無い行に付ける規則（alignest.directionRules の名前）。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if isempty(app.HighOrderFile)
                 error('alignest:noHighOrderFile', '先に「Excel・CSV を読み込む…」で表を読み込んでください。');
@@ -233,6 +239,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             %SETHIGHORDERTERMVIEW 「使う項と VIF」の「表の式」：view："each"（Shot ごとの補正の式と使う項。既定）・"common"
             %   （Shot 共通補正の式と、Shot 共通の k に使う項。Shot 共通を「計算する」で、Shot 共通の補正の式を Shot ごとと
             %   別の式にしたときだけ）。表の「使う」・「VIF で選ぶ」の結果も、その式の項になる。省略すると画面の選択で表を作り直す。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if nargin >= 2
                 if string(view) == "common" && ~commonFormulaDiffers(alignest.highOrderOptions(app.Settings))
@@ -256,6 +263,7 @@ classdef (Abstract) HighOrderTab < appui.Core
                 threshold double = []
                 target (1, 1) string {mustBeMember(target, ["terms", "common"])} = "terms"
             end
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if ~isempty(threshold)
                 c.highOrderVifThreshold.Value = threshold;
@@ -307,6 +315,7 @@ classdef (Abstract) HighOrderTab < appui.Core
                 app
                 target (1, 1) string {mustBeMember(target, ["both", "terms", "common"])} = "both"
             end
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             options = alignest.highOrderOptions(app.Settings);
             if target == "terms"
                 keepCommonTerms(app, options);
@@ -336,6 +345,7 @@ classdef (Abstract) HighOrderTab < appui.Core
         function keepCommonTerms(app, options)
             % Shot 高次の使う項だけを変える前に、Shot 共通の項が「使う項と同じ」（空）なら、今の使う項を Shot 共通の項として
             % 残す（Shot 共通を計算するときだけ。Shot 共通の式が別なら使う項に依らないので何もしない）
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if ~(alignest.highOrderSequential(options) && options.shotCommon == "fit" && options.shotCommonMaker == "same")
                 return
             end
@@ -354,6 +364,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             %SETHIGHORDERTERMUSED k の番号の項を使う（used = true）・使わない（false）にする（表のチェックと同じ）。
             %   zone（省略可）："inner"（内周の式。外周の式を分けないときは、すべての Shot の式。既定）・"outer"（外周の式。
             %   外周の式を分けるときだけ。保存した組み合わせを外周の式にしていたら、その名前は外す）。k1〜k6（定数・1次）は外せない。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if nargin < 4
                 zone = "inner";
             end
@@ -388,6 +399,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             %   求め、補正の評価・補正値・Wafer の比較・マップに出す（alignest.shotHighOrder。設定は settings.highOrder）。
             %   点の数が最も少ない k の組で求められない項は、k の小さい順に絞って求め、表の「使う」からも外す（メッセージで知らせる）。
             %   waferChoice：一覧の番号（複数可。0 = すべて）。省略すると画面で選んでいるもの。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             refreshHighOrderChoices(app);
             if nargin >= 2
@@ -435,6 +447,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             % くくりが Wafer 内・選択 Wafer で共通で、k の組の項を Shot 共通の項（別の式・選んだ項）で決めているとき、点の数で
             % 絞った後の項（computed：計算に使った options。alignest.highOrderSharedFormula の後）を Shot 共通の項にする
             % （次の計算も同じ項になる）。そうしたら true（Shot ごとと同じ式・使う項のままなら false：表の「使う」を変える）
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             options = alignest.highOrderOptions(app.Settings);
             handled = isSharedUnit(options.unit) && (options.shotCommonMaker ~= "same" || ...
                 ~isempty(options.shotCommonTerms) || ~isempty(options.shotCommonOuterTerms));
@@ -462,6 +475,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             %   矢印の倍率と色の範囲をそろえる）、shotNo：1つの Shot の番号。省略すると画面の選択。グリッドの刻み・変位の倍率は画面の欄
             %   （highOrderGridStep・highOrderGridScale。0 = 自動）。summary は1つ目の図の点の数と |平均|+3σ
             %   （グリッドは Shot の数・倍率・刻み。結果が無ければ []）。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if nargin >= 6
                 c.highOrderMapGroup.Value = char(group);
@@ -662,6 +676,7 @@ classdef (Abstract) HighOrderTab < appui.Core
         function summary = setHighOrderMapOverlay(app, waferIndexes)
             %SETHIGHORDERMAPOVERLAY マップで、計算した Wafer のうち waferIndexes（番号）の値を重ねて描く（空なら重ねない）。
             %   描く値・図（Wafer 上・Shot を重ねる）・くくりは画面の選択。summary は Wafer ごとの表（label・n・meanPlus3SigmaX・Y）
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             c.highOrderMapOverlay.Value = ~isempty(waferIndexes);
             if ~isempty(waferIndexes)
@@ -673,6 +688,7 @@ classdef (Abstract) HighOrderTab < appui.Core
         function exportHighOrderTo(app, filePath)
             %EXPORTHIGHORDERTO Shot 高次補正の評価を Excel に書き出す（alignest.exportHighOrder）。計算した後に設定・入力を
             %   変えていれば、書き出す前に今の設定・入力で計算し直す（画面と同じ結果を書くため）。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if isempty(app.HighOrderRun)
                 error('alignest:noHighOrder', '書き出す結果がありません。先に「補正を計算する」を押してください。');
             end
@@ -702,6 +718,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             %SHOWHIGHORDERSUMMARY 「補正の評価」の表を出す。split（省略可）：true なら Wafer ごとに、すべての Shot・内周の
             %   Shot・外周の Shot の行を出す（「内周・外周に分けて出す」。外周は Shot 中心の半径が「外周の半径」以上の Shot）。
             %   data は表に出した値。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if nargin >= 2
                 c.highOrderSummaryZones.Value = logical(split);
@@ -1007,7 +1024,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             label(viewGrid, '表の式', 1, 1);
             c.highOrderTermView = uidropdown(viewGrid, 'Items', {'Shot ごとの補正', 'Shot 共通補正'}, ...
                 'ItemsData', {'each', 'common'}, 'Value', 'each', 'Enable', 'off', ...
-                'ValueChangedFcn', @(~, ~) app.setHighOrderTermView(), 'Tooltip', ['表で項を選ぶ補正の式。Shot 共通補正：' ...
+                'ValueChangedFcn', @(~, ~) app.onHighOrderTermViewChanged(), 'Tooltip', ['表で項を選ぶ補正の式。Shot 共通補正：' ...
                 'Shot 共通補正を「計算する」で、Shot 共通の補正の式を Shot ごとと別の式（カスタムなど）にしたとき、その式の' ...
                 '項（Shot 共通の k に使う項）と VIF を表に出し、「使う」で選べます。']);
             place(c.highOrderTermView, 1, 2);
@@ -1265,6 +1282,9 @@ classdef (Abstract) HighOrderTab < appui.Core
         function readHighOrderControls(app)
             % 画面の欄を設定（settings.highOrder）に移す（使う項 excludedTerms は表の操作で変える）
             c = app.Controls;
+            if ~isfield(c, 'highOrderMaker')
+                return   % タブをまだ作っていない（欄を変えていないので、設定がそのまま今の値）
+            end
             % くくりが Wafer 内・選択 Wafer で共通の間は、「Shot 共通補正」の欄に「計算する」を出しているだけなので読まない
             % （Shot ごとなどに戻したとき、前に選んでいた Shot 共通補正に戻す）
             wasShared = isSharedUnit(fieldOr(app.Settings.highOrder, "unit", "common"));
@@ -1401,6 +1421,12 @@ classdef (Abstract) HighOrderTab < appui.Core
         function onHighOrderSourceChanged(app)
             refreshHighOrderChoices(app);
             markHighOrderStale(app);
+        end
+
+        function onHighOrderTermViewChanged(app)
+            % 「表の式」を変えた（切り替えられないときは知らせる）
+            runWithAlert(app, @() app.setHighOrderTermView(), "表の式を切り替えられませんでした", ...
+                "Shot 共通補正を「計算する」にして、Shot 共通の補正の式を選んでから切り替えてください。");
         end
 
         function onHighOrderInputEdited(app)
@@ -1851,6 +1877,7 @@ classdef (Abstract) HighOrderTab < appui.Core
 
         function [wafers, notes] = highOrderWafers(app)
             % 選んだ入力のデータ・Wafer を、alignest.shotHighOrder の入力（label・points・unit）にする。notes は知らせ
+            ensureTab(app, "highOrder");   % 「7. Mark配置最適化」から「6. Shot高次補正」の入力を使うときも
             c = app.Controls;
             source = string(c.highOrderSource.Value);
             selection = cell2mat(c.highOrderWafer.Value);

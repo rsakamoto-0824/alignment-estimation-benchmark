@@ -6,6 +6,7 @@ classdef (Abstract) TargetTab < appui.Core
     methods
         function targets = setTargetPoints(app, targets)
             %SETTARGETPOINTS 「5. 未知の座標の推定」の表を targets（alignest.targetTemplate の形）にする。
+            ensureTab(app, "target");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             app.Controls.targetTable.Data = targetCells(targets);
             app.TargetSelection = zeros(0, 1);
             onTargetEdited(app);
@@ -13,6 +14,7 @@ classdef (Abstract) TargetTab < appui.Core
 
         function targets = loadTargetPoints(app, filePath, sheetName)
             %LOADTARGETPOINTS 未知の座標の表（Excel・CSV）を読み、推定する点の表を置き換える（alignest.readTargetPoints）。
+            ensureTab(app, "target");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if nargin < 3
                 sheetName = "";
             end
@@ -32,6 +34,7 @@ classdef (Abstract) TargetTab < appui.Core
             %                                                           % Wafer、複数なら最初の Wafer の並び）
             %   addTargetPoints(app, "grid", pitchMm, radiusMm)         % Wafer 上の格子
             %   addTargetPoints(app, "row")                             % 空の1行（画面で書き込む）
+            ensureTab(app, "target");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             existing = size(c.targetTable.Data, 1);
             switch string(kind)
@@ -64,6 +67,7 @@ classdef (Abstract) TargetTab < appui.Core
             %   評価の学習パターンの名前（複数可）、methodIndex：手法の番号（alignest.activeMethods(app.Settings) の何番目か）。
             %   省略すると画面で選んでいるもの。推定は alignest.predictTargets（評価と同じ推定、条件は今の設定）。
             %   300 mm Wafer の外の点は推定の対象外（推定値は X・Y とも 0。図には描かない）。
+            ensureTab(app, "target");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if isempty(app.Data)
                 error('alignest:noData', '先に「1. データ読込」で計測データを読み込んでください。');
             end
@@ -134,6 +138,7 @@ classdef (Abstract) TargetTab < appui.Core
             %   重ね合わせ（Overlay）補正値を求め、「重ね合わせ補正」のタブに出す（alignest.targetOverlayCorrection）。
             %   補正に使う点は、元の実測値（学習点）・学習しなかった Mark の推定値・未知の座標の推定値（Wafer の外の点を
             %   除く）。補正モデルは今の設定（「2. 面内推定の設定」の Overlay 補正）。overlay は組み合わせごとの結果の cell。
+            ensureTab(app, "target");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             run = app.TargetRun;
             if isempty(run)
                 error('alignest:noTargets', '先に「推定する」を押して、未知の座標を推定してください。');
@@ -161,6 +166,7 @@ classdef (Abstract) TargetTab < appui.Core
             %   補正前の値）を Wafer 上のベクトル・色で描く（alignest.plot.correctionMap）。
             %   value："residual"・"correction"・"value"、source："all"・"target"・"measured"・"estimated"、
             %   mode："vector"・"X"・"Y"。省略すると画面の選択。summary は描いた点の数と |平均| + 3σ（補正値が無ければ []）。
+            ensureTab(app, "target");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if nargin >= 2
                 c.targetResidualValue.Value = char(value);
@@ -205,6 +211,7 @@ classdef (Abstract) TargetTab < appui.Core
             %   重ね合わせ補正値（補正値（係数）・補正の残差・補正に使った点のシートと、「推定値」シートの点ごとの補正量・
             %   補正後の残差）も書く。まだ計算していない、または計算した後に補正モデルを変えたときは、書き出す前に今の
             %   補正モデルで計算する（補正モデルが「なし」・1変数・式の誤りのときは補正値を書かず、「説明」に理由を書く）。
+            ensureTab(app, "target");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if isempty(app.TargetRun)
                 error('alignest:noTargets', '書き出す推定値がありません。先に「推定する」を押してください。');
             end
@@ -431,6 +438,8 @@ classdef (Abstract) TargetTab < appui.Core
             % 「5. 未知の座標の推定」を開いたら、選択肢（Wafer・学習データ・手法）を今のデータ・結果・設定に合わせる。
             % 「6. Shot高次補正」を開いたら、入力のデータの一覧を今のデータ・推定値に合わせる。
             % 「2. 面内推定の設定」を開いたら、計測マップの選択肢をそろえる（描くのは「計測マップを作る」を押したとき）
+            % 「3. 結果一覧」から後のタブは、初めて開いたときに中身を作る（ensureTab）
+            ensureTab(app, tabName(app, event.NewValue));
             if event.NewValue == app.Tabs.settings
                 prepareMeasurementChoices(app);
             elseif event.NewValue == app.Tabs.target
@@ -450,6 +459,9 @@ classdef (Abstract) TargetTab < appui.Core
         function refreshTargetChoices(app)
             % 推定の条件の選択肢を作り直す（前に選んでいたものが残っていれば、そのまま選ぶ）
             c = app.Controls;
+            if ~isfield(c, 'targetWafer')
+                return   % タブをまだ作っていない（作るときに合わせる）
+            end
             hasData = ~isempty(app.Data);
             if hasData
                 labels = string({app.Data.units.label});

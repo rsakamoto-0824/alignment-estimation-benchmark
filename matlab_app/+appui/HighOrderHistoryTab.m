@@ -20,6 +20,7 @@ classdef (Abstract) HighOrderHistoryTab < appui.Core
             %   method："importance"（変数重要度 |t| がしきい値より小さい項を一括して外す）・"stepwise"（今の使う項から、指標が
             %   最も良くなる項を1つずつ足す）。threshold：|t| のしきい値（[] なら画面の値）。criterion：ステップワイズの指標
             %   "bic"・"aic"・"adjr2"（自由度調整済 R²）。省略すると画面の選択。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if nargin >= 2
                 c.highOrderSelectMethod.Value = char(method);
@@ -42,6 +43,7 @@ classdef (Abstract) HighOrderHistoryTab < appui.Core
         function applyHighOrderTermSelection(app)
             %APPLYHIGHORDERTERMSELECTION 「k の選定」の結果を、「使う項と VIF」の表の「使う」に写す（使わない項 = 選ばなかった項。
             %   くくりが Wafer 内・選択 Wafer で共通なら、Shot 共通補正の項 shotCommonTerms）
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             selection = app.HighOrderTermSelection;
             if isempty(selection)
                 error('alignest:highOrderSelection', '先に「計算する」で k パラメータを選んでください。');
@@ -67,6 +69,7 @@ classdef (Abstract) HighOrderHistoryTab < appui.Core
             %COMPAREHIGHORDERHISTORY 「結果の履歴」の図：選んだ結果（rows：履歴の行の番号。空ならすべて）の、すべての Wafer の
             %   値（metric："highOrder"・"highOrderP95"・"highOrderMedian"・"rSquared"・"waferStage"・"commonStage"）を X・Y の
             %   棒で並べる。省略すると画面の選択。data は図の値（number・X・Y）。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if nargin >= 2
                 app.HighOrderHistorySelection = reshape(rows, 1, []);
@@ -79,6 +82,7 @@ classdef (Abstract) HighOrderHistoryTab < appui.Core
 
         function removeHighOrderHistory(app, rows)
             %REMOVEHIGHORDERHISTORY 結果の履歴から行 rows を消す（空ならすべて消す）
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if nargin < 2 || isempty(rows)
                 app.HighOrderHistory = app.HighOrderHistory([]);
             else
@@ -91,6 +95,7 @@ classdef (Abstract) HighOrderHistoryTab < appui.Core
 
         function restoreHighOrderHistory(app, row)
             %RESTOREHIGHORDERHISTORY 結果の履歴の行 row の設定（settings.highOrder）を、左の設定に戻す（計算はし直さない）
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if row < 1 || row > numel(app.HighOrderHistory)
                 error('alignest:highOrderHistory', '結果の履歴に %d 番目の行はありません。', row);
             end
@@ -106,6 +111,7 @@ classdef (Abstract) HighOrderHistoryTab < appui.Core
             %   （targets）に当てて評価する（alignest.transferHighOrder）。sources・targets：計算した Wafer の番号か名前。
             %   method：補正元が複数のときの求め方。"coefficients"（それぞれで求めた補正値を平均する）・"values"（実測値を
             %   平均してから補正値を求める）。省略すると画面の選択。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             run = app.HighOrderRun;
             if isempty(run)

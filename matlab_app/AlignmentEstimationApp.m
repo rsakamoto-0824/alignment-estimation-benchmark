@@ -4,6 +4,11 @@ classdef AlignmentEstimationApp < appui.DataTab & appui.SettingsTab & appui.RunT
     %ALIGNMENTESTIMATIONAPP アライメント計測値の面内推定を、実データ（Excel）で比べる画面。
     %   app = AlignmentEstimationApp();       画面を開く
     %   app = AlignmentEstimationApp(false);  画面を出さずに作る（自動テスト用）
+    %   app = AlignmentEstimationApp(visible, lazyTabs)  lazyTabs = true なら「3. 結果一覧」から後のタブを初めて開いたときに
+    %         作る（起動が速い。画面を出すときの既定）。false なら起動のときにすべて作る（画面を出さないときの既定）
+    %   app = AlignmentEstimationApp(visible, lazyTabs, edition)  edition："pro"（Pro 版。既定）・"standard"（通常版。
+    %         比べる手法は GPR・TPS・XY 多項式、計測点の選び方は Shot 単位の I 最適・ランダム、Overlay 補正は組み込みの式だけ。
+    %         設定の欄が少ないので起動が速い。alignest.editionSettings）
     %   流れ：1. データ読込（列の対応・座標の単位・Wafer マップ・Shot レイアウト） → 2. 評価の設定 → 3. 実行
     %         （評価の後に条件を足して追加の評価もできる）→ 4. 結果一覧（表・グラフ・基準の手法との比較・推定値と誤差の
     %         分布・残差の箱ひげ図・散布図・分布の比較・処理時間の内訳。評価点を半径・Shot の条件で絞り込んで計算し直せる）
@@ -40,11 +45,21 @@ classdef AlignmentEstimationApp < appui.DataTab & appui.SettingsTab & appui.RunT
     %     private/       いくつかのタブで使う小さな関数（画面の部品を作る・値を文字にするなど）
 
     methods
-        function app = AlignmentEstimationApp(visible)
+        function app = AlignmentEstimationApp(visible, lazyTabs, edition)
             if nargin < 1
                 visible = true;
             end
-            startApp(app, visible);
+            if nargin < 2
+                lazyTabs = visible;
+            end
+            if nargin < 3
+                edition = "pro";
+            end
+            edition = string(edition);
+            if ~(isscalar(edition) && any(edition == ["pro", "standard"]))
+                error('alignest:edition', '版は "pro"（Pro 版）か "standard"（通常版）です: %s', join(edition, "・"));
+            end
+            startApp(app, logical(visible), logical(lazyTabs), edition);
         end
     end
 end

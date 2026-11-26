@@ -12,6 +12,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             %   変えた4つ）・"loss"（回帰を最小二乗・Huber・LAD に変えた3つ）・"lambda"（values の λ ごと。今の正則化の種類で。なしなら L2）・
             %   "termSet"（values の名前の保存した項の組み合わせ）。
             %   足した後の条件の一覧を返す。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if nargin < 3
                 values = [];
             end
@@ -93,6 +94,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
 
         function removeHighOrderConditions(app, indices)
             %REMOVEHIGHORDERCONDITIONS 「補正の比較」の条件を消す（indices を省くと、表で選んでいる条件。"all" ならすべて）。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if nargin < 2
                 indices = app.HighOrderConditionSelection;
             end
@@ -107,6 +109,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             %COMPAREHIGHORDERCONDITIONSNOW 「すべて計算して比べる」：「補正の比較」の条件をすべて、今の入力のデータ・Wafer で
             %   計算し、すべての Wafer をまとめた評価を並べる（alignest.compareHighOrderConditions）。
             %   waferChoice：一覧の番号（複数可。0 = すべて）。省略すると画面で選んでいるもの。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if isempty(app.HighOrderConditions)
                 error('alignest:highOrderCondition', '比べる条件がありません。「条件を足す」で条件を足してください。');
@@ -136,6 +139,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             %SAVEHIGHORDERTERMSET 今の補正の式と使う項（「使う項と VIF」の表）を、名前を付けて保存する（同じ名前は置き換える）。
             %   設定 settings.highOrder.termSets に入る（「設定を保存…」の JSON にも書く。画面を出しているときは、次に開いた
             %   ときも使えるようにする）。保存した組み合わせの名前の一覧を返す。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             name = strtrim(string(name));
             if name == "" || contains(name, "|")
                 error('alignest:highOrderTermSet', '組み合わせの名前を入れてください（「|」は使えません）。');
@@ -172,6 +176,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
         function applyHighOrderTermSet(app, name)
             %APPLYHIGHORDERTERMSET 保存した項の組み合わせを呼び出す（補正の式と使う項を、その組み合わせにする。くくりが Wafer 内・
             %   選択 Wafer で共通のとき、「使う項と VIF」の「表の式」が Shot 共通補正のときは、Shot 共通補正の式・項にする）。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             sets = termSetTable(app.Settings.highOrder.termSets);
             row = find(sets.name == string(name), 1);
             if isempty(row)
@@ -191,6 +196,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
 
         function deleteHighOrderTermSet(app, name)
             %DELETEHIGHORDERTERMSET 保存した項の組み合わせを消す。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             sets = termSetTable(app.Settings.highOrder.termSets);
             lines = string(app.Settings.highOrder.termSets(:));
             app.Settings.highOrder.termSets = lines(sets.name ~= string(name));
@@ -204,6 +210,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             %   Wafer 高次補正だけ・Wafer 高次補正＋Shot 共通補正・Shot ごとの1次・高次補正の残差の statistic を棒で並べる）を描く。
             %   axisName："dx"・"dy"（残差のときは使わない）。statistic："meanPlus3Sigma"・"p95"・"median"。
             %   省略すると画面の選択。data は描いた値の表（Wafer × 項、または Wafer・軸 × 補正）。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if nargin >= 2
                 c.highOrderWaferView.Value = char(view);
@@ -298,6 +305,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
         function setHighOrderPairSource(app, source)
             %SETHIGHORDERPAIRSOURCE 「2つの条件を並べる」で選ぶ元を変える："comparison"（補正の比較の条件）・"history"
             %   （結果の履歴）。選択肢を作り直して並べ直す（画面の「選ぶ元」と同じ）。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             app.Controls.highOrderPairSource.Value = char(source);
             onHighOrderPairSourceChanged(app);
         end
@@ -311,6 +319,7 @@ classdef (Abstract) HighOrderCompareTab < appui.Core
             %   reference・other：条件の番号（「補正の比較」の一覧の番号）、waferIndex：Wafer の番号、axisName："xy"（X・Y の
             %   大きさ）・"X"・"Y"、statistic："median"（|残差| の中央値）・"rms"・"max"、toleranceNm：同じとみなす差 [nm]。
             %   省略すると画面の選択。shots はすべての Wafer の Shot ごとの比較の表（比べられなければ空の表）。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             IMPROVED_COLOR = [0.0, 0.45, 0.74];
             WORSENED_COLOR = [0.85, 0.33, 0.10];
             FRAME_WIDTH = 2;

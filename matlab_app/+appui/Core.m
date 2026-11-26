@@ -26,6 +26,9 @@ classdef (Abstract) Core < handle
             '求め、ばらつきを Lot 間・Wafer 間・Shot 間・その他に分けて並べます（Wafer が複数のとき、補正で Wafer 間の' ...
             'ばらつきがどう変わるかが分かります）。']
         RESIZE_CHARTS = ["preview", "layout", "overlay", "variance", "map", "target", "highOrder"]   % 窓の大きさを変えたあと描き直す図
+        LAZY_TABS = ["results", "target", "highOrder", "markLayout", "rotation"]   % 初めて開いたときに中身を作るタブ（ensureTab。
+                                        % "results" は「3. 結果一覧」と「4. Waferごとのマップ」。部品が多いと起動・文字の大きさ・
+                                        % 画面の色の切り替えがどれも遅くなるので、開くまで作らない）
         MIN_CONTENT_SIZE = [1200, 700]     % 窓がこれより小さいときは、中身をこの大きさに保ってスクロールで見る（欄が詰まって崩れないように）
         PRIMARY_COLOR = [0.0, 0.36, 0.67]
         ARROW_COLORS = [0.0, 0.33, 0.62; 0.0, 0.33, 0.62; 0.75, 0.25, 0.10]  % 楕円と重ねるときの矢印（計測値・推定値・残差）
@@ -98,7 +101,11 @@ classdef (Abstract) Core < handle
         Interactions = []       % 「質的変数の交互作用」で最後に調べた結果（alignest.factorInteractions）
         ScreenTimer = []        % 窓が別の画面（モニター）に移ったかを調べるタイマー（画面を出すときだけ）
         ResizeTimer = []        % 窓の大きさを変え終えたかを待つタイマー（画面を出すときだけ。scheduleChartRefresh）
-        ResizedCharts = strings(1, 0)  % 窓の大きさを変えたあと、まだ描き直していない図（RESIZE_CHARTS の名前。開いたときに描き直す）
+        ResizedCharts = strings(1, 0)  % まだ描き直していない図（RESIZE_CHARTS の名前。開いたときに描き直す）：窓の大きさを変えたあとの図と、
+                                       % 画面を出しているときにデータを読み込んだ直後の、見えていない「1. データ読込」の図
+        BuiltTabs = strings(1, 0)      % 中身を作った LAZY_TABS のタブ（ensureTab）
+        Edition = "pro"                % 版："pro"（Pro 版。すべての設定）・"standard"（通常版。比べる手法・計測点の選び方・
+                                       % Overlay の式を絞る。alignest.editionSettings）
         CurrentMonitor = 0      % 窓の中心がある画面の番号（get(groot, 'MonitorPositions') の行）
         ResponsiveColumns = struct("grid", {}, "column", {}, "width", {})  % 窓の幅に合わせて狭める欄（registerResponsiveColumn）
         TargetSelection = zeros(0, 1)  % 推定する点の表で選んでいる行（「選んだ行を削除」で使う）
@@ -182,6 +189,14 @@ classdef (Abstract) Core < handle
             end
         end
 
+        function openTab(app, name)
+            %OPENTAB タブ name（app.Tabs の名前："data"・"settings"・"results"・"map"・"target"・"highOrder"・"markLayout"・
+            %   "rotation"）を開く（タブをクリックしたときと同じ。まだ作っていないタブは作る）。
+            tab = app.Tabs.(name);
+            app.TabGroup.SelectedTab = tab;
+            onTabChanged(app, struct("NewValue", tab));
+        end
+
         function refreshChartsAfterResize(app)
             %REFRESHCHARTSAFTERRESIZE 窓の大きさを変え終えたときの処理（タイマーから呼ぶ。動作確認でも呼べる）：
             %   欄の幅を最後の大きさに合わせ直し、Wafer マップなどの図（RESIZE_CHARTS）を描き直す。今見えている図は
@@ -193,11 +208,14 @@ classdef (Abstract) Core < handle
     end
 
     methods (Access = {?appui.Core})
-        function startApp(app, visible)
+        function startApp(app, visible, lazyTabs, edition)
             %STARTAPP 画面を作って開く（AlignmentEstimationApp のコンストラクターから呼ぶ）。visible = false なら
-            %   画面を出さずに作る（自動テスト用）。
+            %   画面を出さずに作る（自動テスト用）。lazyTabs = true なら、LAZY_TABS のタブは初めて開いたとき（またはその
+            %   タブの操作を呼んだとき）に作る（ensureTab）。false なら起動のときにすべて作る。edition："pro"・"standard"
+            %   （通常版。alignest.editionSettings）。
             % 初期設定：管理者が今のフォルダに既定の設定ファイルを置いていれば、それを重ねる（alignest.siteDefaults）。
             % 読めないときは初期設定で開き、画面を作った後に理由を出す（起動できなくならないように）
+            app.Edition = edition;
             defaultsError = "";
             try
                 [app.Settings, app.DefaultsSource] = alignest.siteDefaults();
@@ -205,9 +223,10 @@ classdef (Abstract) Core < handle
                 app.Settings = alignest.defaultSettings();
                 defaultsError = string(err.message);
             end
+            app.Settings = alignest.editionSettings(app.Settings, app.Edition);   % 通常版で使えない既定の設定は直す
             app.ResultFilter = alignest.defaultPointFilter();
             app.MapCache = containers.Map('KeyType', 'char', 'ValueType', 'any');
-            app.Figure = uifigure('Name', app.APP_TITLE, 'Position', figurePosition(app), ...
+            app.Figure = uifigure('Name', app.APP_TITLE + ternary(isPro(app), "", "（通常版）"), 'Position', figurePosition(app), ...
                 'Visible', matlab.lang.OnOffSwitchState(visible), 'CloseRequestFcn', @(~, ~) delete(app));
             root = uigridlayout(app.Figure, [1, 1], 'Padding', 8, 'Scrollable', 'on');
             app.RootGrid = root;
@@ -224,13 +243,7 @@ classdef (Abstract) Core < handle
             app.TabGroup.SelectionChangedFcn = @(~, event) app.onTabChanged(event);
             buildDataTab(app);
             buildSettingsTab(app);
-            buildRunTab(app);
-            buildResultsTab(app);
-            buildMapTab(app);
-            buildTargetTab(app);
-            buildHighOrderTab(app);
-            buildMarkLayoutTab(app);
-            buildRotationTab(app);
+            buildRunTab(app);   % 「3. 結果一覧」から後のタブは ensureTab で作る（下の lazyTabs）
             % 設定のメニュー：ライトモード・ダークモードの切り替え、文字の大きさ、凡例の位置、Scan 方向の向きと色、乱数の種
             viewMenu = uimenu(app.Figure, 'Text', '設定');
             app.Controls.settingsMenu = viewMenu;
@@ -279,14 +292,7 @@ classdef (Abstract) Core < handle
                 'MenuSelectedFcn', @(~, ~) app.onPickRandomSeed());
             % ヘルプは「設定」の右隣のメニューから別の窓で開く（機能編・技術編）
             app.Controls.helpMenu = uimenu(app.Figure, 'Text', 'ヘルプ', 'MenuSelectedFcn', @(~, ~) app.openHelp());
-            set(findall(app.Figure, '-property', 'FontSize'), 'FontSize', app.FONT_SIZE);
-            set(findall(app.Figure, 'Type', 'axes'), 'FontSize', app.AXES_FONT_SIZE);
-            set(fontTables(app), 'FontSize', app.TABLE_FONT_SIZE);
-            collectFixedSizes(app);
-            % 見えていないタブの部品は、文字の大きさを変えても表示が古いままのことがあるので、タブを開いたときに付け直す
-            for tabGroup = reshape(findall(app.Figure, 'Type', 'uitabgroup'), 1, [])
-                addlistener(tabGroup, 'SelectedTab', 'PostSet', @(~, event) app.refreshTabFonts(event.AffectedObject.SelectedTab));
-            end
+            prepareFonts(app, app.Figure);
             settingsToControls(app);
             refreshRunSummary(app);
             if app.DefaultsSource ~= ""
@@ -324,6 +330,11 @@ classdef (Abstract) Core < handle
                     refreshHighOrderTermSets(app);
                 end
             end
+            if ~lazyTabs
+                for name = app.LAZY_TABS
+                    ensureTab(app, name);
+                end
+            end
             % 画面（モニター）の大きさ・解像度に合わせる：窓の幅に合わせて決まった幅の欄を狭め、別の画面に移したら
             % 窓をその画面に収まる大きさにする（画面の大きさが違う画面の間で動かしても、つり合いが崩れないように）
             app.Figure.AutoResizeChildren = 'off';   % 中は uigridlayout が合わせる（on のままだと SizeChangedFcn が動かない）
@@ -334,6 +345,93 @@ classdef (Abstract) Core < handle
                 app.ScreenTimer = timer('ExecutionMode', 'fixedSpacing', 'Period', app.SCREEN_CHECK_SECONDS, ...
                     'BusyMode', 'drop', 'Name', 'AlignmentEstimationApp:screen', 'TimerFcn', @(~, ~) app.onScreenCheck());
                 start(app.ScreenTimer);
+            end
+        end
+
+        function built = ensureTab(app, name)
+            %ENSURETAB タブ name（app.Tabs の名前）の中身を、まだ作っていなければ作る（LAZY_TABS のタブ。開いたとき・
+            %   そのタブの操作を呼んだとき・ほかのタブからそのタブの欄を使うとき）。「4. Waferごとのマップ」は「3. 結果一覧」と
+            %   一緒に作る（結果の選択肢を両方のタブに出すため）。作ったタブには、今の文字の大きさ・画面の色を合わせ、今の
+            %   データ・結果を出す。built：いま作ったら true。
+            name = string(name);
+            if name == "map"
+                name = "results";
+            end
+            built = false;
+            if ~any(name == app.LAZY_TABS) || any(name == app.BuiltTabs) || isempty(app.Figure) || ~isvalid(app.Figure)
+                return
+            end
+            app.BuiltTabs(end + 1) = name;   % 先に印を付ける（作る途中でこのタブの関数を呼んでも、作り直さない）
+            dialog = [];
+            if app.Figure.Visible == "on"
+                dialog = uiprogressdlg(app.Figure, 'Title', '準備中', 'Indeterminate', 'on', ...
+                    'Message', 'タブを準備しています（初めて開くときだけ）…');
+            end
+            cleanup = onCleanup(@() closeDialog(dialog));
+            roots = app.Tabs.(name);
+            if name == "results"
+                roots = [roots, app.Tabs.map];
+            end
+            try
+                switch name
+                    case "results"
+                        buildResultsTab(app);
+                        buildMapTab(app);
+                    case "target"
+                        buildTargetTab(app);
+                    case "highOrder"
+                        buildHighOrderTab(app);
+                    case "markLayout"
+                        buildMarkLayoutTab(app);
+                    otherwise
+                        buildRotationTab(app);
+                end
+            catch err
+                % 作りかけの部品を消し、次に開いたときに作り直せるようにする
+                app.BuiltTabs(app.BuiltTabs == name) = [];
+                for root = roots
+                    delete(root.Children);
+                end
+                rethrow(err);
+            end
+            for root = roots
+                finishBuiltTab(app, root);
+            end
+            % 作る前にあったデータ・結果を出す（設定・入力の選択肢は、それぞれのタブを作る関数の最後で合わせている）
+            switch name
+                case "results"
+                    if ~isempty(app.Results)
+                        refreshResultControls(app);
+                    end
+                case "highOrder"
+                    refreshHighOrderTermSets(app);   % 前回保存した項の組み合わせ（起動のときに設定へ重ねたもの）
+            end
+            applyResponsiveLayout(app);
+            built = true;
+        end
+
+        function yes = isPro(app)
+            % Pro 版か（通常版は、比べる手法・計測点の選び方・Overlay の式を絞る。alignest.editionSettings）
+            yes = app.Edition == "pro";
+        end
+
+        function yes = isTabBuilt(app, name)
+            % タブ name の中身を作ってあるか（LAZY_TABS 以外のタブは起動のときに作るので、いつも true）
+            name = string(name);
+            if name == "map"
+                name = "results";
+            end
+            yes = ~any(name == app.LAZY_TABS) || any(name == app.BuiltTabs);
+        end
+
+        function name = tabName(app, tab)
+            % app.Tabs の部品から名前（"results" など）を引く（見つからなければ ""）
+            name = "";
+            for candidate = string(fieldnames(app.Tabs)).'
+                if app.Tabs.(candidate) == tab
+                    name = candidate;
+                    return
+                end
             end
         end
 
@@ -383,9 +481,17 @@ classdef (Abstract) Core < handle
             app.ResultFilter = alignest.defaultPointFilter();
             app.MapConditions = app.MapConditions([]);
             app.MapCache = containers.Map('KeyType', 'char', 'ValueType', 'any');
+            app.WaferRanking = [];
+            app.MeasurementCandidates = [];
+            app.Distribution = [];
+            app.EstimatedCorrection = [];
+            app.CorrectionVariance = [];
             c = app.Controls;
-            if ~isfield(c, 'summaryTable')
-                return
+            % 「2. 面内推定の設定」の評価の知らせとボタン（結果のタブを作る前でも消す）
+            c.runStatus.Text = "";
+            set([c.resumeRun, c.extendRun], 'Enable', 'off', 'Visible', 'off');   % 押せないときは出さない（showRunButtons）
+            if ~isTabBuilt(app, "results")
+                return   % 結果のタブをまだ作っていない（作るときは空の状態で作る）
             end
             c.summaryTable.Data = {};
             c.comparisonTable.Data = {};
@@ -421,7 +527,7 @@ classdef (Abstract) Core < handle
                 c.analysisWafer, c.analyze, ...
                 c.estimateScope, c.exportEstimates, c.scatterMethod, c.scatterGroup, c.scatterWafer, c.scatterColor, ...
                 c.drawScatterButton, c.distributionMethod, c.distributionGroup, c.distributionWafer, c.distributionAxis, ...
-                c.compareDistributionsButton, c.resumeRun, c.extendRun, c.mapScanFrames, c.mapRings, c.mapView, ...
+                c.compareDistributionsButton, c.mapScanFrames, c.mapRings, c.mapView, ...
                 c.mapCompareValue, c.mapConditions, c.mapAddCondition, c.mapRemoveCondition, c.mapClearConditions, ...
                 c.mapStackBy, c.mapStackAll, c.residualVariableMethod, c.residualVariableGroup, c.residualVariableWafer, ...
                 c.residualVariableName, c.drawResidualVariableButton, c.boxFactor, c.timingWafer, c.timingPlan, c.timingMethods, c.timingRepeats, c.measureTimingButton, ...
@@ -435,17 +541,11 @@ classdef (Abstract) Core < handle
                 c.candidateStatistic, c.candidateLevel, c.candidateMode, c.candidateCount, c.candidateThreshold, ...
                 c.findCandidatesButton, c.addCandidatesButton, c.selectAllCandidatesButton, c.clearCandidatesButton, ...
                 c.filterResults.apply, c.filterMap.apply], 'Enable', 'off');
-            set([c.resumeRun, c.extendRun], 'Visible', 'off');   % 押せないときは出さない（showRunButtons）
             showFilter(app);
-            app.WaferRanking = [];
             showWaferRanking(app);
             drawOverlayDegradation(app);
-            app.MeasurementCandidates = [];
             showMeasurementCandidates(app);
-            app.Distribution = [];
-            app.EstimatedCorrection = [];
             c.estimatedCorrectionTable.Data = table();
-            app.CorrectionVariance = [];
             showVarianceDecomposition(app, [], "correction");
             c.correctionVarianceInfo.Text = app.CORRECTION_VARIANCE_NOTE;
             c.distributionTable.Data = {};
@@ -456,7 +556,6 @@ classdef (Abstract) Core < handle
                 ax.Visible = 'off';
             end
             c.residualVariableTable.Data = {};
-            c.runStatus.Text = "";
             c.mapInfo.Text = "「2. 面内推定の設定」で評価すると、ここに Wafer ごとの図が出ます。";
             c.resultSource.Text = '';
             c.resultControls.RowHeight{3} = 0;
@@ -668,6 +767,8 @@ classdef (Abstract) Core < handle
                     c.correctionVarianceAxesGrid, c.correctionVarianceTable, c.correctionVarianceQuantity);
             end
             quantity = string(quantityControl.Value);
+            % 図・表の保存とコピーのボタンは、分けた結果があるときだけ押せる
+            set(c.(ternary(target == "data", "varianceOutputs", "correctionVarianceOutputs")), 'Enable', onOff(~isempty(result)));
             for ax = axesList
                 cla(ax, 'reset');
                 legend(ax, 'off');
@@ -829,6 +930,9 @@ classdef (Abstract) Core < handle
             end
             % Shot 高次補正のヒストグラム（3段 × X・Y）：画面と同じ3段に並べ、凡例（画面では上の行の文字）は下に足す
             histogramRows = string(figureName) == "highOrderHistogram" && numel(items) == 6;
+            % ばらつき分解（Lot・Wafer・Shot 間）：画面と同じ2段（上：3σ の配分か分散、下：分散の割合）に並べる
+            varianceRows = any(string(figureName) == ["variance", "correctionVariance"]) && ...
+                ~isVarianceComponents(app, figureName) && mod(numel(items), 2) == 0;
             images = cell(1, numel(items));
             for k = 1:numel(items)
                 file = [tempname, '.png'];
@@ -839,9 +943,13 @@ classdef (Abstract) Core < handle
             if histogramRows
                 rows = {joinImages(images(1:2), app.IMAGE_GAP_PIXELS), joinImages(images(3:4), app.IMAGE_GAP_PIXELS), ...
                     joinImages(images(5:6), app.IMAGE_GAP_PIXELS), legendImage(items(1), app.IMAGE_RESOLUTION)};
-                % 縦に並べる：行と列を入れ替えて横に並べ、元に戻す
-                turned = cellfun(@(image) permute(image, [2, 1, 3]), rows, 'UniformOutput', false);
-                pixels = permute(joinImages(turned, app.IMAGE_GAP_PIXELS), [2, 1, 3]);
+                pixels = stackImages(rows, app.IMAGE_GAP_PIXELS);
+                return
+            end
+            if varianceRows
+                half = numel(images) / 2;
+                pixels = stackImages({joinImages(images(1:half), app.IMAGE_GAP_PIXELS), ...
+                    joinImages(images(half + 1:end), app.IMAGE_GAP_PIXELS)}, app.IMAGE_GAP_PIXELS);
                 return
             end
             pixels = joinImages(images, app.IMAGE_GAP_PIXELS);
@@ -860,12 +968,27 @@ classdef (Abstract) Core < handle
 
         function items = figureItems(app, figureName)
             % 保存する図（saveFigureImage）：axes か、並べた図の tiledlayout
+            owners = struct("chart", "results", "map", "results", "correctionVariance", "results", "target", "target", ...
+                "targetResidual", "target", ...
+                "highOrder", "highOrder", "highOrderPair", "highOrder", "highOrderHistogram", "highOrder", ...
+                "markLayoutChart", "markLayout", "markLayoutMap", "markLayout", "markLayoutShape", "markLayout");
+            if isfield(owners, figureName)
+                ensureTab(app, owners.(figureName));   % まだ作っていないタブには描いた図が無い（下で知らせる）
+            end
             c = app.Controls;
             switch figureName
                 case "measure"
                     items = findobj(c.measurePanel.Children, 'flat', 'Type', 'tiledlayout');
                 case "chart"
                     items = [c.chartAxes, c.chartAxes2];
+                case "variance"
+                    % ばらつき分解（1. データ読込）：Lot・Wafer・Shot 間は 2 × 2 の図、成分は回帰係数の図。「表」のタブを
+                    % 見ていても書き出せるように、「図」のタブを開く（見えていない図は大きさが決まらない）
+                    c.varianceViews.SelectedTab = c.varianceChartTab;
+                    items = ternary(isVarianceComponents(app, figureName), c.coefficientAxes, c.varianceAxes);
+                case "correctionVariance"
+                    c.correctionVarianceViews.SelectedTab = c.correctionVarianceChartTab;   % 補正残差のばらつき分解（3. 結果一覧）
+                    items = c.correctionVarianceAxes;
                 case "map"
                     if string(c.mapView.Value) == "single"
                         items = c.mapAxes;
@@ -894,6 +1017,72 @@ classdef (Abstract) Core < handle
                 otherwise
                     error('alignest:figureName', '保存する図の名前が違います: %s', figureName);
             end
+        end
+
+        function [grid, buttons] = varianceOutputButtons(app, parent, target)
+            % ばらつき分解の図・表の保存とコピーのボタン（target："data"（1. データ読込）・"correction"（3. 結果一覧の
+            % 補正残差のばらつき分解））。分けた結果があるときだけ押せる（showVarianceDecomposition）
+            figureName = ternary(target == "data", "variance", "correctionVariance");
+            fileName = ternary(target == "data", "ばらつき分解", "補正残差のばらつき分解");
+            grid = uigridlayout(parent, [1, 4], 'ColumnWidth', {'fit', 'fit', 'fit', 'fit'}, 'Padding', 0, ...
+                'ColumnSpacing', 6);
+            buttons = [ ...
+                uibutton(grid, 'Text', '図を保存…', 'Tooltip', '図（凡例・色の目盛りも入れる）を PNG 画像で保存します。', ...
+                'ButtonPushedFcn', @(~, ~) app.saveFigureWithDialog(figureName, fileName + ".png")), ...
+                uibutton(grid, 'Text', '図をコピー', 'Tooltip', app.COPY_TOOLTIP, ...
+                'ButtonPushedFcn', @(source, ~) app.onCopyFigure(figureName, source)), ...
+                uibutton(grid, 'Text', '表を保存…', 'Tooltip', '表を Excel（.xlsx）か CSV（.csv）に保存します。', ...
+                'ButtonPushedFcn', @(~, ~) app.onSaveVarianceTable(target, fileName)), ...
+                uibutton(grid, 'Text', '表をコピー', 'Tooltip', ['Excel・PowerPoint の表に、そのまま貼り付けられる形で' ...
+                'コピーします（1行目が列名）。'], 'ButtonPushedFcn', @(source, ~) app.onCopyVarianceTable(target, source))];
+            set(buttons, 'Enable', 'off');
+        end
+
+        function onSaveVarianceTable(app, target, fileName)
+            % 「表を保存…」：保存先を選んで exportVarianceTable で書き出す
+            [chosen, folder] = uiputfile({'*.xlsx', 'Excel (*.xlsx)'; '*.csv', 'CSV（UTF-8） (*.csv)'}, '表を保存', ...
+                fileName + ".xlsx");
+            figure(app.Figure);
+            if isequal(chosen, 0)
+                return
+            end
+            target_ = fullfile(folder, chosen);
+            if runWithAlert(app, @() app.exportVarianceTable(target, target_), "表を保存できませんでした", ...
+                    "保存先のフォルダを変えるか、同じ名前のファイルを Excel で開いていれば閉じてください。")
+                uialert(app.Figure, sprintf('保存しました：%s', target_), '保存しました', 'Icon', 'success');
+            end
+        end
+
+        function onCopyVarianceTable(app, target, button)
+            % 「表をコピー」：表をクリップボードにコピーし、少しの間ボタンに「コピーしました」と出す
+            if runWithAlert(app, @() app.copyVarianceTable(target), "表をコピーできませんでした", ...
+                    "先にばらつきを分けてから、もう一度試してください。")
+                flashButtonText(button, "コピーしました", app.COPY_NOTICE_SECONDS);
+            end
+        end
+
+        function [data, info] = varianceTableData(app, target)
+            % ばらつき分解の表（画面の表と同じ）と、図の下の説明の文。表が無ければエラー
+            switch string(target)
+                case "data"
+                    [table_, infoLabel] = deal(app.Controls.varianceTable, app.Controls.varianceInfo);
+                case "correction"
+                    ensureTab(app, "results");
+                    [table_, infoLabel] = deal(app.Controls.correctionVarianceTable, app.Controls.correctionVarianceInfo);
+                otherwise
+                    error('alignest:varianceTarget', 'ばらつき分解の場所は "data" か "correction" です: %s', target);
+            end
+            data = table_.Data;
+            if ~istable(data) || height(data) == 0
+                error('alignest:noVarianceTable', '表がありません。先にばらつきを分けてください。');
+            end
+            info = string(infoLabel.Text);
+        end
+
+        function yes = isVarianceComponents(app, figureName)
+            % ばらつき分解の図が、分け方「成分」（回帰係数）で描いてあるか（補正残差のばらつき分解は、いつも Lot・Wafer・Shot 間）
+            yes = string(figureName) == "variance" && ~isempty(app.DataVariance) && isfield(app.DataVariance, "kind") && ...
+                app.DataVariance.kind == "components";
         end
 
         function saveFigureWithDialog(app, figureName, defaultName)
@@ -963,6 +1152,12 @@ file = [tempname, '.png'];
 exportgraphics(helper, file, 'Resolution', resolution);
 pixels = imread(file);
 delete(file);
+end
+
+function stacked = stackImages(rows, gap)
+% 画像を縦に並べて1枚にする（行と列を入れ替えて横に並べ、元に戻す）
+turned = cellfun(@(image) permute(image, [2, 1, 3]), rows, 'UniformOutput', false);
+stacked = permute(joinImages(turned, gap), [2, 1, 3]);
 end
 
 function joined = joinImages(images, gap)

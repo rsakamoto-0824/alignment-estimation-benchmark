@@ -512,6 +512,7 @@ classdef (Abstract) RunTab < appui.Core
                 rethrow(err);
             end
             closeDialog(dialog);
+            ensureTab(app, "results");   % 結果を出すタブ（初めての評価なら、ここで作る）
             app.BaseResults = results;
             app.Results = alignest.filterResults(results, app.Data, app.ResultFilter);
             app.MapCache = estimateCache(results);
