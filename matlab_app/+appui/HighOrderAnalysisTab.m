@@ -15,6 +15,7 @@ classdef (Abstract) HighOrderAnalysisTab < appui.Core
             %   比較」の条件ごとの高次補正の残差）、waferIndex：0 = すべての Wafer、series：重ねる値の番号（一覧の番号。複数）。
             %   省略すると画面の選択。data は範囲（region：すべて・内周・外周）・軸・重ねた値ごとの名前・点の数・平均・標準偏差・
             %   |平均|+3σ の表。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if nargin >= 2
                 c.highOrderHistogramSource.Value = char(source);
@@ -112,6 +113,7 @@ classdef (Abstract) HighOrderAnalysisTab < appui.Core
             %   （"residual"・"correction"・"linear"・"wafer"・"common"・"value"。shots では使わない）。filePath を省くか "" なら書かずに表だけ
             %   返す（画面の「書き出す表」に出す）。計算した後に設定・入力を変えていれば、書く前に計算し直す（「結果を Excel に
             %   書き出す…」と同じ）。補正の比較は、比べた後に条件・入力を変えていれば書かない（比べ直してください）。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if nargin >= 2
                 c.highOrderOutputKind.Value = char(kind);

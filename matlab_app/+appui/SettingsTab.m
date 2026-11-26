@@ -14,10 +14,12 @@ classdef (Abstract) SettingsTab < appui.Core
     end
 
     methods
-        function setSettings(app, settings)
+        function changes = setSettings(app, settings)
             %SETSETTINGS 設定を画面に反映する（設定ファイルの読み込みと同じ）。
             %   以前の設定に無い項目は初期値にする。学習 Shot 数は並び（nShots）と開始・終了・刻みをそろえる。
-            %   同心円の区切り・外周の半径が比（以前の設定）なら mm に直す。
+            %   同心円の区切り・外周の半径が比（以前の設定）なら mm に直す。通常版では、使えない設定（Pro 版だけの手法・
+            %   計測点の選び方・Overlay の式）を使える設定に直し、直した項目を changes に返して知らせる
+            %   （alignest.editionSettings）。
             settings = alignest.upgradeRadiusSettings(settings);
             settings.methods = alignest.completeMethodSettings(settings.methods);
             if isfield(settings, "sampling")
@@ -43,9 +45,14 @@ classdef (Abstract) SettingsTab < appui.Core
             end
             % 保存した項の組み合わせは、読んだ設定に無い名前のものも残す（画面で保存したものは設定ファイルを読んでも消さない）
             settings.highOrder.termSets = mergeTermSets(settings.highOrder.termSets, app.Settings.highOrder.termSets);
+            [settings, changes] = alignest.editionSettings(settings, app.Edition);
             app.Settings = settings;
             settingsToControls(app);
             refreshRunSummary(app);
+            if ~isempty(changes) && app.Figure.Visible == "on"
+                uialert(app.Figure, char(strjoin(["通常版では使えない設定を、使える設定に直しました（Pro 版では使えます）。"; ...
+                    "・" + changes], newline)), '通常版', 'Icon', 'info');
+            end
         end
 
         function layouts = loadLayoutPlans(app, filePath, sheetName)
@@ -55,6 +62,9 @@ classdef (Abstract) SettingsTab < appui.Core
             %   I 最適・D 最適などと比べられる）。前に読んだ指定は置き換える。
             if nargin < 3
                 sheetName = "";
+            end
+            if ~isPro(app)
+                error('alignest:edition', '「Excel 取込」は Pro 版の機能です（通常版は I 最適・ランダム）。');
             end
             layouts = alignest.readLayoutPlans(filePath, sheetName);
             controlsToSettings(app);
@@ -97,13 +107,14 @@ classdef (Abstract) SettingsTab < appui.Core
             s = uigridlayout(samplingPanel, [26, 2], 'RowHeight', repmat({'fit'}, 1, 26), 'ColumnWidth', {'1x', '1x'}, ...
                 'Padding', 10, 'RowSpacing', 6, 'Scrollable', 'on');
             label(s, '① データの粒度', 1, 1);
-            c.samplingUnit = uidropdown(s, 'Items', {'Shot 単位', 'Mark 単位'}, 'ItemsData', {'shot', 'mark'}, ...
+            unitItems = ternary(isPro(app), {{'Shot 単位', 'Mark 単位'}, {'shot', 'mark'}}, {{'Shot 単位'}, {'shot'}});   % 通常版は Shot 単位だけ
+            c.samplingUnit = uidropdown(s, 'Items', unitItems{1}, 'ItemsData', unitItems{2}, ...
                 'ValueChangedFcn', @(~, ~) app.onSamplingUnitChanged(), 'Tooltip', ['Shot 単位：計測する Shot を選び、' ...
                 'その Shot の Mark をすべて学習に使う。Mark 単位：計測する Mark を選ぶ。']);
             place(c.samplingUnit, 1, 2);
             label(s, '② アルゴリズム（複数選べる）', 2, 1);
             label(s, '③ 制約（区画ごとの数をそろえる）', 2, 2);
-            [methods, names] = alignest.samplingUnitMethods("shot");
+            [methods, names] = samplingChoices(app, "shot");
             c.samplingMethod = uilistbox(s, 'Items', cellstr(names), 'ItemsData', cellstr(methods), ...
                 'Multiselect', 'on', 'Value', {'ioptimal'}, 'ValueChangedFcn', onChange, ...
                 'Tooltip', ['Shot 単位・Mark 単位で同じアルゴリズムを選べます。I 最適：推定する面全体の予測のばらつきを小さく' ...
@@ -138,6 +149,9 @@ classdef (Abstract) SettingsTab < appui.Core
             place(c.slack, 1, 2);
             c.constraintNote = uilabel(constraintGrid, 'WordWrap', 'on', 'FontColor', app.Palette.muted, ...
                 'UserData', "muted", 'Text', 'Excel 取込のほかのアルゴリズムで使います。');
+            if ~isPro(app)
+                c.constraintNote.Text = 'I 最適・ランダムのどちらにも使います。';   % 通常版には Excel 取込が無い
+            end
             place(c.constraintNote, 6, 1);
             c.zoneError = errorLabel(app, s, 4, [1, 2]);
             label(s, '学習 Shot/Mark 数', 5, 1);
@@ -343,6 +357,7 @@ classdef (Abstract) SettingsTab < appui.Core
             label(e, 'Shot 共通成分', 8, 2);
             c.overlayWafer = uidropdown(e, 'Items', {'なし', '1次', '2次', '3次', '4次', '5次', ...
                 '式を入力'}, 'ItemsData', {0, 1, 2, 3, 4, 5, app.FORMULA_CHOICE}, 'ValueChangedFcn', onChange);
+            % 「式を入力」は Pro 版だけ（通常版は組み込みの式。alignest.editionSettings）
             place(c.overlayWafer, 9, 1);
             c.overlayShotCommon = uidropdown(e, 'Items', {'なし', '1次', '式を入力'}, ...
                 'ItemsData', {'none', 'linear', 'formula'}, 'ValueChangedFcn', onChange, ...
@@ -362,6 +377,12 @@ classdef (Abstract) SettingsTab < appui.Core
             place(c.overlayPerShot, 12, 1);
             [c.overlayPerShotDx, c.overlayPerShotDy] = formulaFields(e, 13, 1, onChange, ['x・y は Shot 内の座標' ...
                 '（markXmm・markYmm、Shot 中心から）。係数は Shot ごとに求めます。' formulaHelp]);
+            if ~isPro(app)
+                for item = [c.overlayWafer, c.overlayShotCommon, c.overlayPerShot]
+                    keep = ~strcmp(item.Items, '式を入力');
+                    set(item, 'Items', item.Items(keep), 'ItemsData', item.ItemsData(keep));
+                end
+            end
             c.overlayHelp = label(e, '', [11, 13], 2);
             c.overlayHelp.FontColor = app.Palette.muted;
             c.overlayHelp.UserData = "muted";
@@ -464,34 +485,36 @@ classdef (Abstract) SettingsTab < appui.Core
             c.polynomialOrder = uispinner(polynomialGrid, 'Limits', [1, 8], 'RoundFractionalValues', 'on', ...
                 'ValueChangedFcn', onChange);
             place(c.polynomialOrder, 1, 2);
-            zernikeGrid = uigridlayout(middle, [1, 3], 'ColumnWidth', {'fit', app.METHOD_NUMBER_WIDTH, '1x'}, 'Padding', 0);
-            place(zernikeGrid, 3, 1);
-            c.zernike = uicheckbox(zernikeGrid, 'Text', 'Fringe Zernike', 'ValueChangedFcn', onChange, ...
-                'Tooltip', ['Fringe Zernike 多項式（Z1〜Z(k+1)²）の最小二乗。k = 3：Z1〜Z16、4：Z1〜Z25、5：Z1〜Z36、' ...
-                '6：Z1〜Z49、7：Z1〜Z64（次数は 1〜7）。' ...
-                '空白で区切ると次数ごとに比べます。式は「ヘルプ」。']);
-            place(c.zernike, 1, 1);
-            c.zernikeOrders = uieditfield(zernikeGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ...
-                '次数 k（空白区切りで複数）。Z1〜Z(k+1)² を使う（k = 4 で Z25 まで）。');
-            place(c.zernikeOrders, 1, 2);
-            c.zernikeFactors = spatialFactorDropdown(zernikeGrid, onChange);
-            c.zernikeFactors.Tooltip = ['質的変数（上で選んだ Scan 方向・Mark 番号など）を Backfitting で足すか。' ...
-                'Backfitting：Zernike の当てはめと質的変数の効果を交互に推定します（TPS などと同じ）。'];
-            place(c.zernikeFactors, 1, 3);
-            rbfGrid = uigridlayout(middle, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
-            place(rbfGrid, 4, 1);
-            c.rbf = uicheckbox(rbfGrid, 'Text', 'RBF', 'ValueChangedFcn', onChange);
-            place(c.rbf, 1, 1);
-            c.rbfFactors = spatialFactorDropdown(rbfGrid, onChange);
-            place(c.rbfFactors, 1, 2);
-            rtGrid = uigridlayout(middle, [1, 2], 'ColumnWidth', {'fit', app.METHOD_NUMBER_WIDTH}, 'Padding', 0);
-            place(rtGrid, 5, 1);
-            c.rt = uicheckbox(rtGrid, 'Text', 'RT モデル　次数 K：', 'ValueChangedFcn', onChange);
-            place(c.rt, 1, 1);
-            c.rtOrders = uieditfield(rtGrid, 'text', 'ValueChangedFcn', onChange);
-            place(c.rtOrders, 1, 2);
-            c.rtError = errorLabel(app, middle, 6, 1);
-            c.zernikeError = errorLabel(app, middle, 7, 1);
+            if isPro(app)   % Fringe Zernike・RBF・RT モデルは Pro 版だけ（通常版は GPR・TPS・XY 多項式。alignest.editionSettings）
+                zernikeGrid = uigridlayout(middle, [1, 3], 'ColumnWidth', {'fit', app.METHOD_NUMBER_WIDTH, '1x'}, 'Padding', 0);
+                place(zernikeGrid, 3, 1);
+                c.zernike = uicheckbox(zernikeGrid, 'Text', 'Fringe Zernike', 'ValueChangedFcn', onChange, ...
+                    'Tooltip', ['Fringe Zernike 多項式（Z1〜Z(k+1)²）の最小二乗。k = 3：Z1〜Z16、4：Z1〜Z25、5：Z1〜Z36、' ...
+                    '6：Z1〜Z49、7：Z1〜Z64（次数は 1〜7）。' ...
+                    '空白で区切ると次数ごとに比べます。式は「ヘルプ」。']);
+                place(c.zernike, 1, 1);
+                c.zernikeOrders = uieditfield(zernikeGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ...
+                    '次数 k（空白区切りで複数）。Z1〜Z(k+1)² を使う（k = 4 で Z25 まで）。');
+                place(c.zernikeOrders, 1, 2);
+                c.zernikeFactors = spatialFactorDropdown(zernikeGrid, onChange);
+                c.zernikeFactors.Tooltip = ['質的変数（上で選んだ Scan 方向・Mark 番号など）を Backfitting で足すか。' ...
+                    'Backfitting：Zernike の当てはめと質的変数の効果を交互に推定します（TPS などと同じ）。'];
+                place(c.zernikeFactors, 1, 3);
+                rbfGrid = uigridlayout(middle, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
+                place(rbfGrid, 4, 1);
+                c.rbf = uicheckbox(rbfGrid, 'Text', 'RBF', 'ValueChangedFcn', onChange);
+                place(c.rbf, 1, 1);
+                c.rbfFactors = spatialFactorDropdown(rbfGrid, onChange);
+                place(c.rbfFactors, 1, 2);
+                rtGrid = uigridlayout(middle, [1, 2], 'ColumnWidth', {'fit', app.METHOD_NUMBER_WIDTH}, 'Padding', 0);
+                place(rtGrid, 5, 1);
+                c.rt = uicheckbox(rtGrid, 'Text', 'RT モデル　次数 K：', 'ValueChangedFcn', onChange);
+                place(c.rt, 1, 1);
+                c.rtOrders = uieditfield(rtGrid, 'text', 'ValueChangedFcn', onChange);
+                place(c.rtOrders, 1, 2);
+                c.rtError = errorLabel(app, middle, 6, 1);
+                c.zernikeError = errorLabel(app, middle, 7, 1);
+            end
             boldLabel(middle, '平滑化系', 8);
             tpsGrid = uigridlayout(middle, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
             place(tpsGrid, 9, 1);
@@ -514,54 +537,56 @@ classdef (Abstract) SettingsTab < appui.Core
             c.tpsLog10Lambda = uieditfield(smoothingGrid, 'numeric', 'ValueChangedFcn', onChange, 'Tooltip', ...
                 'λ の常用対数。大きいほど滑らかです。');
             place(c.tpsLog10Lambda, 2, 3);
-            gamGrid = uigridlayout(middle, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
-            place(gamGrid, 11, 1);
-            c.gam = uicheckbox(gamGrid, 'Text', 'GAM', 'ValueChangedFcn', onChange);
-            place(c.gam, 1, 1);
-            c.gamFactors = uidropdown(gamGrid, 'Items', {'質的変数あり', '質的変数なし', 'あり・なしを比較'}, ...
-                'ItemsData', {'factor', 'none', 'both'}, 'ValueChangedFcn', onChange, 'Tooltip', ['上で選んだ質的変数を、' ...
-                'GAM の項（効果コード。罰則なし）として一緒に推定するか。']);
-            place(c.gamFactors, 1, 2);
-            % 形状関数は項（X・Y、半径）ごとに1行、カーネルは2列に並べる
-            [termNames, termLabels] = alignest.models.gamTerms("XYR");
-            [gamKernelNames, gamKernelLabels] = alignest.models.gamKernelChoices();
-            kernelColumns = 2;   % カーネルの名前が長いので2列（rationalquadratic が切れないように）
-            nShapeRows = numel(termNames) + ceil(numel(gamKernelNames) / kernelColumns) + 1;
-            shapeGrid = uigridlayout(middle, [nShapeRows, kernelColumns + 1], 'Padding', 0, 'RowSpacing', 2, ...
-                'ColumnWidth', [{'fit'}, repmat({'1x'}, 1, kernelColumns)], 'RowHeight', repmat({'fit'}, 1, nShapeRows));
-            place(shapeGrid, 12, 1);
-            shapeNames = ["spline", "gp"];
-            shapeLabels = ["スプライン", "ガウス過程回帰"];
-            c.gamShapeChecks = gobjects(numel(termNames), numel(shapeNames));
-            for k = 1:numel(termNames)
-                label(shapeGrid, "形状関数（" + termLabels(k) + "）：", k, 1);
-                for j = 1:numel(shapeNames)
-                    c.gamShapeChecks(k, j) = uicheckbox(shapeGrid, 'Text', shapeLabels(j), 'ValueChangedFcn', onChange, ...
-                        'UserData', struct("term", termNames(k), "shape", shapeNames(j)), ...
-                        'Tooltip', ['チェックした形状関数の組み合わせをすべて評価します（例：X・Y でスプラインとガウス過程回帰の' ...
-                        '両方なら2通り）。スプライン：P-spline（B スプライン＋2階差分の罰則）。ガウス過程回帰：下で選んだカーネルの' ...
-                        'ガウス過程（節点で近似、線形部分は罰則なし）。長さスケールは候補から REML で選び、罰則の強さは' ...
-                        'どちらも REML で選びます。半径の項は説明変数が X,Y,半径 のときだけ使います。']);
-                    place(c.gamShapeChecks(k, j), k, 1 + j);
+            if isPro(app)   % GAM は Pro 版だけ
+                gamGrid = uigridlayout(middle, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
+                place(gamGrid, 11, 1);
+                c.gam = uicheckbox(gamGrid, 'Text', 'GAM', 'ValueChangedFcn', onChange);
+                place(c.gam, 1, 1);
+                c.gamFactors = uidropdown(gamGrid, 'Items', {'質的変数あり', '質的変数なし', 'あり・なしを比較'}, ...
+                    'ItemsData', {'factor', 'none', 'both'}, 'ValueChangedFcn', onChange, 'Tooltip', ['上で選んだ質的変数を、' ...
+                    'GAM の項（効果コード。罰則なし）として一緒に推定するか。']);
+                place(c.gamFactors, 1, 2);
+                % 形状関数は項（X・Y、半径）ごとに1行、カーネルは2列に並べる
+                [termNames, termLabels] = alignest.models.gamTerms("XYR");
+                [gamKernelNames, gamKernelLabels] = alignest.models.gamKernelChoices();
+                kernelColumns = 2;   % カーネルの名前が長いので2列（rationalquadratic が切れないように）
+                nShapeRows = numel(termNames) + ceil(numel(gamKernelNames) / kernelColumns) + 1;
+                shapeGrid = uigridlayout(middle, [nShapeRows, kernelColumns + 1], 'Padding', 0, 'RowSpacing', 2, ...
+                    'ColumnWidth', [{'fit'}, repmat({'1x'}, 1, kernelColumns)], 'RowHeight', repmat({'fit'}, 1, nShapeRows));
+                place(shapeGrid, 12, 1);
+                shapeNames = ["spline", "gp"];
+                shapeLabels = ["スプライン", "ガウス過程回帰"];
+                c.gamShapeChecks = gobjects(numel(termNames), numel(shapeNames));
+                for k = 1:numel(termNames)
+                    label(shapeGrid, "形状関数（" + termLabels(k) + "）：", k, 1);
+                    for j = 1:numel(shapeNames)
+                        c.gamShapeChecks(k, j) = uicheckbox(shapeGrid, 'Text', shapeLabels(j), 'ValueChangedFcn', onChange, ...
+                            'UserData', struct("term", termNames(k), "shape", shapeNames(j)), ...
+                            'Tooltip', ['チェックした形状関数の組み合わせをすべて評価します（例：X・Y でスプラインとガウス過程回帰の' ...
+                            '両方なら2通り）。スプライン：P-spline（B スプライン＋2階差分の罰則）。ガウス過程回帰：下で選んだカーネルの' ...
+                            'ガウス過程（節点で近似、線形部分は罰則なし）。長さスケールは候補から REML で選び、罰則の強さは' ...
+                            'どちらも REML で選びます。半径の項は説明変数が X,Y,半径 のときだけ使います。']);
+                        place(c.gamShapeChecks(k, j), k, 1 + j);
+                    end
                 end
+                % ガウス過程回帰の形状関数のカーネル（チェックしたカーネルごとに比べる）
+                kernelRow = numel(termNames) + 1;
+                label(shapeGrid, 'GP のカーネル：', kernelRow, 1);
+                c.gamKernelChecks = gobjects(1, numel(gamKernelNames));
+                for k = 1:numel(gamKernelNames)
+                    c.gamKernelChecks(k) = uicheckbox(shapeGrid, 'Text', gamKernelLabels(k), 'UserData', gamKernelNames(k), ...
+                        'ValueChangedFcn', onChange, 'Tooltip', ['形状関数をガウス過程回帰にした項で使うカーネル（等方。' ...
+                        '式は GPR と同じ）。チェックしたカーネルごとに評価します。rationalquadratic の α は 1 に固定します。']);
+                    place(c.gamKernelChecks(k), kernelRow + floor((k - 1) / kernelColumns), 2 + mod(k - 1, kernelColumns));
+                end
+                nuGrid = uigridlayout(shapeGrid, [1, 2], 'ColumnWidth', {'fit', app.METHOD_NUMBER_WIDTH}, 'Padding', 0);
+                kernelRows = ceil(numel(gamKernelNames) / kernelColumns);
+                place(nuGrid, kernelRow + kernelRows, [1, kernelColumns + 1]);
+                label(nuGrid, 'matern の ν =', 1, 1);
+                c.gamMaternNu = uieditfield(nuGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['matern' ...
+                    'の ν。空白で区切ると ν ごとに比べます（例：1 2.5）。']);
+                place(c.gamMaternNu, 1, 2);
             end
-            % ガウス過程回帰の形状関数のカーネル（チェックしたカーネルごとに比べる）
-            kernelRow = numel(termNames) + 1;
-            label(shapeGrid, 'GP のカーネル：', kernelRow, 1);
-            c.gamKernelChecks = gobjects(1, numel(gamKernelNames));
-            for k = 1:numel(gamKernelNames)
-                c.gamKernelChecks(k) = uicheckbox(shapeGrid, 'Text', gamKernelLabels(k), 'UserData', gamKernelNames(k), ...
-                    'ValueChangedFcn', onChange, 'Tooltip', ['形状関数をガウス過程回帰にした項で使うカーネル（等方。' ...
-                    '式は GPR と同じ）。チェックしたカーネルごとに評価します。rationalquadratic の α は 1 に固定します。']);
-                place(c.gamKernelChecks(k), kernelRow + floor((k - 1) / kernelColumns), 2 + mod(k - 1, kernelColumns));
-            end
-            nuGrid = uigridlayout(shapeGrid, [1, 2], 'ColumnWidth', {'fit', app.METHOD_NUMBER_WIDTH}, 'Padding', 0);
-            kernelRows = ceil(numel(gamKernelNames) / kernelColumns);
-            place(nuGrid, kernelRow + kernelRows, [1, kernelColumns + 1]);
-            label(nuGrid, 'matern の ν =', 1, 1);
-            c.gamMaternNu = uieditfield(nuGrid, 'text', 'ValueChangedFcn', onChange, 'Tooltip', ['matern' ...
-                'の ν。空白で区切ると ν ごとに比べます（例：1 2.5）。']);
-            place(c.gamMaternNu, 1, 2);
             c.gamShapeError = errorLabel(app, middle, 13, 1);
 
             % ---- 右：確率過程系
@@ -599,32 +624,39 @@ classdef (Abstract) SettingsTab < appui.Core
                 '複数入れると ν ごとに比べます（例：0.75 1 2 3.5）。']);
             place(c.maternNu, 1, 2);
             c.maternNuError = errorLabel(app, right, 5, 1);
-            krigingGrid = uigridlayout(right, [2, 2], 'ColumnWidth', {'fit', '1x'}, 'RowHeight', {'fit', 'fit'}, ...
-                'Padding', 0, 'RowSpacing', 4);
-            place(krigingGrid, 6, 1);
-            c.ordinaryKriging = uicheckbox(krigingGrid, 'Text', 'Kriging', 'ValueChangedFcn', onChange);
-            place(c.ordinaryKriging, 1, 1);
-            c.ordinaryFactors = spatialFactorDropdown(krigingGrid, onChange);
-            place(c.ordinaryFactors, 1, 2);
-            c.universalKriging = uicheckbox(krigingGrid, 'Text', 'Universal Kriging', 'ValueChangedFcn', onChange);
-            place(c.universalKriging, 2, 1);
-            c.universalFactors = spatialFactorDropdown(krigingGrid, onChange);
-            place(c.universalFactors, 2, 2);
-            label(right, 'バリオグラム', 7, 1);
-            variograms = ["linear", "gaussian", "power", "exponential", "spherical"];
-            variogramColumns = 3;   % 列の幅に収まるように3列（2行）に並べる
-            variogramGrid = uigridlayout(right, [ceil(numel(variograms) / variogramColumns), variogramColumns], ...
-                'Padding', 0, 'RowSpacing', 2, 'ColumnWidth', repmat({'1x'}, 1, variogramColumns), ...
-                'RowHeight', repmat({'fit'}, 1, ceil(numel(variograms) / variogramColumns)));
-            place(variogramGrid, 8, 1);
-            c.variograms = gobjects(1, numel(variograms));
-            for k = 1:numel(variograms)
-                c.variograms(k) = uicheckbox(variogramGrid, 'Text', variograms(k), 'UserData', variograms(k), ...
-                    'ValueChangedFcn', onChange);
-                place(c.variograms(k), ceil(k / variogramColumns), mod(k - 1, variogramColumns) + 1);
+            if isPro(app)   % Kriging・Universal Kriging とバリオグラムは Pro 版だけ
+                krigingGrid = uigridlayout(right, [2, 2], 'ColumnWidth', {'fit', '1x'}, 'RowHeight', {'fit', 'fit'}, ...
+                    'Padding', 0, 'RowSpacing', 4);
+                place(krigingGrid, 6, 1);
+                c.ordinaryKriging = uicheckbox(krigingGrid, 'Text', 'Kriging', 'ValueChangedFcn', onChange);
+                place(c.ordinaryKriging, 1, 1);
+                c.ordinaryFactors = spatialFactorDropdown(krigingGrid, onChange);
+                place(c.ordinaryFactors, 1, 2);
+                c.universalKriging = uicheckbox(krigingGrid, 'Text', 'Universal Kriging', 'ValueChangedFcn', onChange);
+                place(c.universalKriging, 2, 1);
+                c.universalFactors = spatialFactorDropdown(krigingGrid, onChange);
+                place(c.universalFactors, 2, 2);
+                label(right, 'バリオグラム', 7, 1);
+                variograms = ["linear", "gaussian", "power", "exponential", "spherical"];
+                variogramColumns = 3;   % 列の幅に収まるように3列（2行）に並べる
+                variogramGrid = uigridlayout(right, [ceil(numel(variograms) / variogramColumns), variogramColumns], ...
+                    'Padding', 0, 'RowSpacing', 2, 'ColumnWidth', repmat({'1x'}, 1, variogramColumns), ...
+                    'RowHeight', repmat({'fit'}, 1, ceil(numel(variograms) / variogramColumns)));
+                place(variogramGrid, 8, 1);
+                c.variograms = gobjects(1, numel(variograms));
+                for k = 1:numel(variograms)
+                    c.variograms(k) = uicheckbox(variogramGrid, 'Text', variograms(k), 'UserData', variograms(k), ...
+                        'ValueChangedFcn', onChange);
+                    place(c.variograms(k), ceil(k / variogramColumns), mod(k - 1, variogramColumns) + 1);
+                end
+                c.variograms(end).Tooltip = '球形モデル（range より遠い点の相関は 0）。説明変数（X,Y・X,Y,半径）は3次元までなので正定値が保証されます。';
             end
-            c.variograms(end).Tooltip = '球形モデル（range より遠い点の相関は 0）。説明変数（X,Y・X,Y,半径）は3次元までなので正定値が保証されます。';
-            for item = [c.factorColumnsError, c.maternNuError, c.rtError, c.zernikeError, c.gamShapeError]
+            if ~isPro(app)
+                % 通常版：作らなかった手法の行（Fringe Zernike・RBF・RT モデル・GAM・Kriging・バリオグラム）を詰める
+                middle.RowHeight([3:7, 11, 12]) = {0};
+                right.RowHeight(6:8) = {0};
+            end
+            for item = methodErrorLabels(c)
                 showErrorRow(item);   % 理由が出るまで行をしまう
             end
 
@@ -635,6 +667,7 @@ classdef (Abstract) SettingsTab < appui.Core
             c = app.Controls;
             % 画面では Shot 単位と Mark 単位の選び方を一緒に選べないので、画面に出す前に設定もそろえる
             app.Settings.sampling = alignest.normalizeSamplingUnit(app.Settings.sampling);
+            app.Settings = alignest.editionSettings(app.Settings, app.Edition);   % 通常版で使えない設定は使える設定に直す
             s = app.Settings;
             c.validRadius.Value = s.data.validRadiusMm;
             c.excludeZeroMeasurements.Value = s.data.excludeZeroMeasurements;
@@ -747,17 +780,6 @@ classdef (Abstract) SettingsTab < appui.Core
             c.gpr.Value = methods.gpr.enabled;
             c.kernels.Value = cellstr(methods.gpr.kernels);
             c.maternNu.Value = char(strjoin(string(methods.gpr.maternNu), " "));
-            for check = reshape(c.gamShapeChecks, 1, [])
-                chosen = "spline";
-                if isfield(methods.gam.shapes, check.UserData.term)
-                    chosen = string(methods.gam.shapes.(check.UserData.term));
-                end
-                check.Value = any(chosen == check.UserData.shape);
-            end
-            for check = c.gamKernelChecks
-                check.Value = any(string(methods.gam.gpKernels) == check.UserData);
-            end
-            c.gamMaternNu.Value = char(strjoin(string(methods.gam.gpMaternNu), " "));
             for k = 1:numel(c.factorModes)
                 c.factorModes(k).Value = any(methods.gpr.factorModes == c.factorModes(k).UserData);
             end
@@ -766,25 +788,38 @@ classdef (Abstract) SettingsTab < appui.Core
                 c.tpsSmoothing(k).Value = any(string(methods.tps.smoothing) == c.tpsSmoothing(k).UserData);
             end
             c.tpsLog10Lambda.Value = methods.tps.log10Lambda;
-            c.rbf.Value = methods.rbf.enabled;
-            c.rbfFactors.Value = modeSelection(methods.rbf.factorModes);
             c.tpsFactors.Value = modeSelection(methods.tps.factorModes);
-            c.ordinaryFactors.Value = modeSelection(methods.kriging.ordinaryFactorModes);
-            c.universalFactors.Value = modeSelection(methods.kriging.universalFactorModes);
-            c.ordinaryKriging.Value = methods.kriging.ordinary;
-            c.universalKriging.Value = methods.kriging.universal;
-            for k = 1:numel(c.variograms)
-                c.variograms(k).Value = any(methods.kriging.variograms == c.variograms(k).UserData);
-            end
-            c.gam.Value = methods.gam.enabled;
-            c.gamFactors.Value = gamFactorSelection(fieldOr(methods.gam, "factorModes", "factor"));
             c.polynomial.Value = methods.polynomial.enabled;
             c.polynomialOrder.Value = methods.polynomial.order;
-            c.rt.Value = methods.rt.enabled;
-            c.rtOrders.Value = char(strjoin(string(methods.rt.orders), " "));
-            c.zernike.Value = methods.zernike.enabled;
-            c.zernikeFactors.Value = modeSelection(methods.zernike.factorModes);
-            c.zernikeOrders.Value = char(strjoin(string(methods.zernike.orders), " "));
+            if isPro(app)   % Pro 版だけの手法の欄（通常版では作らない）
+                for check = reshape(c.gamShapeChecks, 1, [])
+                    chosen = "spline";
+                    if isfield(methods.gam.shapes, check.UserData.term)
+                        chosen = string(methods.gam.shapes.(check.UserData.term));
+                    end
+                    check.Value = any(chosen == check.UserData.shape);
+                end
+                for check = c.gamKernelChecks
+                    check.Value = any(string(methods.gam.gpKernels) == check.UserData);
+                end
+                c.gamMaternNu.Value = char(strjoin(string(methods.gam.gpMaternNu), " "));
+                c.rbf.Value = methods.rbf.enabled;
+                c.rbfFactors.Value = modeSelection(methods.rbf.factorModes);
+                c.ordinaryFactors.Value = modeSelection(methods.kriging.ordinaryFactorModes);
+                c.universalFactors.Value = modeSelection(methods.kriging.universalFactorModes);
+                c.ordinaryKriging.Value = methods.kriging.ordinary;
+                c.universalKriging.Value = methods.kriging.universal;
+                for k = 1:numel(c.variograms)
+                    c.variograms(k).Value = any(methods.kriging.variograms == c.variograms(k).UserData);
+                end
+                c.gam.Value = methods.gam.enabled;
+                c.gamFactors.Value = gamFactorSelection(fieldOr(methods.gam, "factorModes", "factor"));
+                c.rt.Value = methods.rt.enabled;
+                c.rtOrders.Value = char(strjoin(string(methods.rt.orders), " "));
+                c.zernike.Value = methods.zernike.enabled;
+                c.zernikeFactors.Value = modeSelection(methods.zernike.factorModes);
+                c.zernikeOrders.Value = char(strjoin(string(methods.zernike.orders), " "));
+            end
             validateSettings(app);
             updateEnabled(app);
             highOrderSettingsToControls(app);   % 「6. Shot高次補正」の欄（設定ファイルの highOrder）
@@ -918,46 +953,48 @@ classdef (Abstract) SettingsTab < appui.Core
             if ok && ~isempty(values) && all(values > 0 & values <= app.MAX_MATERN_NU)
                 s.methods.gpr.maternNu = unique(values, 'stable');
             end
-            for k = 1:size(c.gamShapeChecks, 1)
-                checks = c.gamShapeChecks(k, :);
-                chosen = strings(1, 0);
-                for check = checks([checks.Value])
-                    chosen(end + 1) = check.UserData.shape; %#ok<AGROW>
-                end
-                s.methods.gam.shapes.(checks(1).UserData.term) = chosen;
-            end
-            s.methods.gam.gpKernels = checkedValues(c.gamKernelChecks);
-            [values, ok] = parseNumbers(c.gamMaternNu.Value);
-            if ok && ~isempty(values) && all(values > 0 & values <= app.MAX_MATERN_NU)
-                s.methods.gam.gpMaternNu = unique(values, 'stable');
-            end
             s.methods.gpr.factorModes = checkedValues(c.factorModes);
             s.methods.tps.enabled = c.tps.Value;
             s.methods.tps.smoothing = checkedValues(c.tpsSmoothing);
             s.methods.tps.log10Lambda = c.tpsLog10Lambda.Value;
-            s.methods.rbf.enabled = c.rbf.Value;
-            s.methods.rbf.factorModes = selectedModes(c.rbfFactors.Value);
             s.methods.tps.factorModes = selectedModes(c.tpsFactors.Value);
-            s.methods.kriging.ordinaryFactorModes = selectedModes(c.ordinaryFactors.Value);
-            s.methods.kriging.universalFactorModes = selectedModes(c.universalFactors.Value);
-            s.methods.kriging.ordinary = c.ordinaryKriging.Value;
-            s.methods.kriging.universal = c.universalKriging.Value;
-            s.methods.kriging.variograms = checkedValues(c.variograms);
-            s.methods.gam.enabled = c.gam.Value;
-            s.methods.gam.factorModes = ternary(string(c.gamFactors.Value) == "both", ["factor", "none"], ...
-                string(c.gamFactors.Value));
             s.methods.polynomial.enabled = c.polynomial.Value;
             s.methods.polynomial.order = c.polynomialOrder.Value;
-            s.methods.rt.enabled = c.rt.Value;
-            [values, ok] = parseNumbers(c.rtOrders.Value);
-            if ok && ~isempty(values) && all(values >= 1 & values <= 10 & values == round(values))
-                s.methods.rt.orders = unique(values);
-            end
-            s.methods.zernike.enabled = c.zernike.Value;
-            s.methods.zernike.factorModes = selectedModes(c.zernikeFactors.Value);
-            [values, ok] = parseNumbers(c.zernikeOrders.Value);
-            if ok && ~isempty(values) && all(values >= 1 & values <= app.MAX_ZERNIKE_ORDER & values == round(values))
-                s.methods.zernike.orders = unique(values);
+            if isPro(app)   % Pro 版だけの手法（通常版は欄が無いので、設定のまま。alignest.editionSettings で使わない）
+                for k = 1:size(c.gamShapeChecks, 1)
+                    checks = c.gamShapeChecks(k, :);
+                    chosen = strings(1, 0);
+                    for check = checks([checks.Value])
+                        chosen(end + 1) = check.UserData.shape; %#ok<AGROW>
+                    end
+                    s.methods.gam.shapes.(checks(1).UserData.term) = chosen;
+                end
+                s.methods.gam.gpKernels = checkedValues(c.gamKernelChecks);
+                [values, ok] = parseNumbers(c.gamMaternNu.Value);
+                if ok && ~isempty(values) && all(values > 0 & values <= app.MAX_MATERN_NU)
+                    s.methods.gam.gpMaternNu = unique(values, 'stable');
+                end
+                s.methods.rbf.enabled = c.rbf.Value;
+                s.methods.rbf.factorModes = selectedModes(c.rbfFactors.Value);
+                s.methods.kriging.ordinaryFactorModes = selectedModes(c.ordinaryFactors.Value);
+                s.methods.kriging.universalFactorModes = selectedModes(c.universalFactors.Value);
+                s.methods.kriging.ordinary = c.ordinaryKriging.Value;
+                s.methods.kriging.universal = c.universalKriging.Value;
+                s.methods.kriging.variograms = checkedValues(c.variograms);
+                s.methods.gam.enabled = c.gam.Value;
+                s.methods.gam.factorModes = ternary(string(c.gamFactors.Value) == "both", ["factor", "none"], ...
+                    string(c.gamFactors.Value));
+                s.methods.rt.enabled = c.rt.Value;
+                [values, ok] = parseNumbers(c.rtOrders.Value);
+                if ok && ~isempty(values) && all(values >= 1 & values <= 10 & values == round(values))
+                    s.methods.rt.orders = unique(values);
+                end
+                s.methods.zernike.enabled = c.zernike.Value;
+                s.methods.zernike.factorModes = selectedModes(c.zernikeFactors.Value);
+                [values, ok] = parseNumbers(c.zernikeOrders.Value);
+                if ok && ~isempty(values) && all(values >= 1 & values <= app.MAX_ZERNIKE_ORDER & values == round(values))
+                    s.methods.zernike.orders = unique(values);
+                end
             end
             app.Settings = s;
         end
@@ -1063,22 +1100,24 @@ classdef (Abstract) SettingsTab < appui.Core
             end
             c.maternNuError.Text = text;
             messages = [messages; text(text ~= "")];
-            [values, ok] = parseNumbers(c.rtOrders.Value);
-            text = "";
-            if c.rt.Value && (~ok || isempty(values) || any(values < 1 | values > 10 | values ~= round(values)))
-                text = "⚠ RT モデルの次数は 1〜10 の整数を空白で区切って入れてください（例：4 5）。";
+            if isPro(app)   % RT モデル・Fringe Zernike は Pro 版だけ
+                [values, ok] = parseNumbers(c.rtOrders.Value);
+                text = "";
+                if c.rt.Value && (~ok || isempty(values) || any(values < 1 | values > 10 | values ~= round(values)))
+                    text = "⚠ RT モデルの次数は 1〜10 の整数を空白で区切って入れてください（例：4 5）。";
+                end
+                c.rtError.Text = text;
+                messages = [messages; text(text ~= "")];
+                [values, ok] = parseNumbers(c.zernikeOrders.Value);
+                text = "";
+                if c.zernike.Value && (~ok || isempty(values) || any(values < 1 | values > app.MAX_ZERNIKE_ORDER | ...
+                        values ~= round(values)))
+                    text = sprintf("⚠ Fringe Zernike の次数は 1〜%d の整数を空白で区切って入れてください（例：3 4）。", ...
+                        app.MAX_ZERNIKE_ORDER);
+                end
+                c.zernikeError.Text = text;
+                messages = [messages; text(text ~= "")];
             end
-            c.rtError.Text = text;
-            messages = [messages; text(text ~= "")];
-            [values, ok] = parseNumbers(c.zernikeOrders.Value);
-            text = "";
-            if c.zernike.Value && (~ok || isempty(values) || any(values < 1 | values > app.MAX_ZERNIKE_ORDER | ...
-                    values ~= round(values)))
-                text = sprintf("⚠ Fringe Zernike の次数は 1〜%d の整数を空白で区切って入れてください（例：3 4）。", ...
-                    app.MAX_ZERNIKE_ORDER);
-            end
-            c.zernikeError.Text = text;
-            messages = [messages; text(text ~= "")];
             [values, ok] = parseNumbers(c.markPerShot.Value);
             text = "";
             if any(ismember(method, alignest.markPlanTypes())) && string(c.countBy.Value) == "perShot" && ...
@@ -1090,7 +1129,7 @@ classdef (Abstract) SettingsTab < appui.Core
             end
             messages = [messages; text(text ~= "")];
             text = "";
-            if c.gam.Value
+            if isPro(app) && c.gam.Value   % GAM は Pro 版だけ
                 terms = string(arrayfun(@(k) c.gamShapeChecks(k, 1).UserData.term, 1:size(c.gamShapeChecks, 1), ...
                     'UniformOutput', false));
                 used = terms == "xy" | (terms == "r" & c.featureXYR.Value);
@@ -1112,7 +1151,7 @@ classdef (Abstract) SettingsTab < appui.Core
             end
             c.gamShapeError.Text = text;
             messages = [messages; text(text ~= "")];
-            for item = [c.factorColumnsError, c.maternNuError, c.rtError, c.zernikeError, c.gamShapeError]
+            for item = methodErrorLabels(c)
                 showErrorRow(item);   % 理由があるときだけ「比べる手法」の欄の行を取る
             end
             % Overlay 補正の式（選んだ成分だけ確かめる）
@@ -1189,7 +1228,6 @@ classdef (Abstract) SettingsTab < appui.Core
             c.layoutPlanInfo.Enable = onOff(any(method == "excel"));
             c.outlierMethod.Enable = onOff(c.excludeOutliers.Value);
             set([c.overlayPerShotDx, c.overlayPerShotDy], 'Enable', onOff(string(c.overlayPerShot.Value) == "formula"));
-            set([c.zernikeOrders, c.zernikeFactors], 'Enable', onOff(c.zernike.Value));
             c.outlierSigma.Enable = onOff(c.excludeOutliers.Value);
             waferSelection = string(c.waferSelection.Value);   % 評価に使う Wafer の欄は、決め方に合わせて使える
             c.waferCount.Enable = onOff(waferSelection == "count");
@@ -1199,18 +1237,21 @@ classdef (Abstract) SettingsTab < appui.Core
             set([c.overlayShotDx, c.overlayShotDy], 'Enable', onOff(string(c.overlayShotCommon.Value) == "formula"));
             set([c.kernels, c.factorModes], 'Enable', onOff(c.gpr.Value));
             c.maternNu.Enable = onOff(usesMaternNu(c));
-            set(c.gamShapeChecks, 'Enable', onOff(c.gam.Value));
-            c.gamFactors.Enable = onOff(c.gam.Value);
-            set(c.gamKernelChecks, 'Enable', onOff(usesGamKernels(c)));
-            c.gamMaternNu.Enable = onOff(usesGamKernels(c) && usesGamMaternNu(c));
-            set(c.variograms, 'Enable', onOff(c.ordinaryKriging.Value || c.universalKriging.Value));
             c.tpsFactors.Enable = onOff(c.tps.Value);
             set(c.tpsSmoothing, 'Enable', onOff(c.tps.Value));
             c.tpsLog10Lambda.Enable = onOff(c.tps.Value && c.tpsSmoothing(3).Value);
-            c.rbfFactors.Enable = onOff(c.rbf.Value);
-            c.ordinaryFactors.Enable = onOff(c.ordinaryKriging.Value);
-            c.universalFactors.Enable = onOff(c.universalKriging.Value);
             c.polynomialOrder.Enable = onOff(c.polynomial.Value);
+            if isPro(app)   % Pro 版だけの手法の欄
+                set([c.zernikeOrders, c.zernikeFactors], 'Enable', onOff(c.zernike.Value));
+                set(c.gamShapeChecks, 'Enable', onOff(c.gam.Value));
+                c.gamFactors.Enable = onOff(c.gam.Value);
+                set(c.gamKernelChecks, 'Enable', onOff(usesGamKernels(c)));
+                c.gamMaternNu.Enable = onOff(usesGamKernels(c) && usesGamMaternNu(c));
+                set(c.variograms, 'Enable', onOff(c.ordinaryKriging.Value || c.universalKriging.Value));
+                c.rbfFactors.Enable = onOff(c.rbf.Value);
+                c.ordinaryFactors.Enable = onOff(c.ordinaryKriging.Value);
+                c.universalFactors.Enable = onOff(c.universalKriging.Value);
+            end
             % 1変数の推定では、Overlay 補正の評価と RT モデル（どちらも X・Y の2成分が要る）を使わない
             scalar = alignest.valueSpec(app.Settings.data).scalar;
             set([c.overlayWafer, c.overlayShotCommon, c.overlayPerShot], 'Enable', onOff(~scalar));
@@ -1218,8 +1259,10 @@ classdef (Abstract) SettingsTab < appui.Core
                 set([c.overlayWaferDx, c.overlayWaferDy, c.overlayShotDx, c.overlayShotDy, c.overlayPerShotDx, ...
                     c.overlayPerShotDy], 'Enable', 'off');
             end
-            c.rt.Enable = onOff(~scalar);
-            c.rtOrders.Enable = onOff(c.rt.Value && ~scalar);
+            if isPro(app)
+                c.rt.Enable = onOff(~scalar);
+                c.rtOrders.Enable = onOff(c.rt.Value && ~scalar);
+            end
             c.overlayHelp.Text = char(ternary(scalar, "1変数の推定（「1. データ読込」の「推定する値」）では、" + ...
                 "Overlay 補正の評価と RT モデルは使いません（X・Y の2成分が要るため）。", ""));
             syncTargetOverlayControls(app);   % 「5. 未知の座標の推定」の「補正のモデル」も同じ値にする
@@ -1311,12 +1354,23 @@ classdef (Abstract) SettingsTab < appui.Core
         function showSamplingMethods(app, unit, selected)
             % アルゴリズムの一覧をデータの粒度 unit の選び方にし、selected と同じアルゴリズムを選ぶ（アルゴリズムは粒度に
             % よらず共通なので、粒度を変えても選んだアルゴリズムはそのまま。alignest.convertSamplingMethods）
-            [methods, names] = alignest.samplingUnitMethods(unit);
+            [methods, names] = samplingChoices(app, unit);
             chosen = alignest.convertSamplingMethods(string(selected), unit);
+            chosen = chosen(ismember(chosen, methods));   % 通常版で選べない選び方は外す
             c = app.Controls;
             c.samplingMethod.Items = cellstr(names);
             c.samplingMethod.ItemsData = cellstr(methods);
             c.samplingMethod.Value = cellstr(chosen);
+        end
+
+        function [methods, names] = samplingChoices(app, unit)
+            % アルゴリズムの一覧に出す選び方（alignest.samplingUnitMethods）。通常版は I 最適・ランダムだけ
+            % （alignest.editionSettings と同じ）
+            [methods, names] = alignest.samplingUnitMethods(unit);
+            if ~isPro(app)
+                keep = ismember(methods, ["ioptimal", "random"]);
+                [methods, names] = deal(methods(keep), names(keep));
+            end
         end
 
         function onSettingsChanged(app)
@@ -1380,6 +1434,14 @@ for box = boxes(:).'
     if box.Value
         values(end + 1) = string(box.UserData); %#ok<AGROW>
     end
+end
+end
+
+function labels = methodErrorLabels(c)
+% 「比べる手法」の欄の理由の行（通常版には RT モデル・Fringe Zernike の行が無い）
+labels = [c.factorColumnsError, c.maternNuError, c.gamShapeError];
+if isfield(c, 'rtError')
+    labels = [labels, c.rtError, c.zernikeError];
 end
 end
 

@@ -33,6 +33,7 @@ classdef (Abstract) RotationTab < appui.Core
             %   "file"（このタブで読み込んだ Excel・CSV。loadRotationFile）。
             %   methodIndex・plan：評価の推定値の手法の番号と学習パターン（"estimate" のとき）。group：対象の Wafer（"all"、
             %   "op:<Operation>"・"eqp:<EqpId>"・"both:<Operation>|<EqpId>"）。省略した値は今の選択のまま。
+            ensureTab(app, "rotation");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             c.rotationSource.Value = char(source);
             refreshRotationChoices(app);
@@ -57,6 +58,7 @@ classdef (Abstract) RotationTab < appui.Core
             %   alignest.rotationColumns）。必須の項目の列がすべて見つかれば、その列で Wafer ごとのデータにし、入力を
             %   「Excel・CSV ファイル」にする（applyRotationMapping）。見つからなければ、表で列を選んで「この列で使う」を押す。
             %   data は Wafer ごとのデータ（まだ列を選んでいなければ []）。
+            ensureTab(app, "rotation");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if nargin < 3
                 sheetName = "";
             end
@@ -94,6 +96,7 @@ classdef (Abstract) RotationTab < appui.Core
             %   入力を「Excel・CSV ファイル」にする（alignest.prepareHighOrderData。座標は mm、値は nm のまま）。
             %   columns（省略可）：表の選択を変える項目と列の名前の構造体（例：struct("measX", "OVL_X", "LotID", "")。"" は列なし）。
             %   directionRule（省略可）：Direction が無い行に付ける規則（alignest.directionRules の名前）。
+            ensureTab(app, "rotation");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if isempty(app.RotationFile)
                 error('alignest:noRotationFile', '先に「Excel・CSV を読み込む…」で表を読み込んでください。');
@@ -124,6 +127,7 @@ classdef (Abstract) RotationTab < appui.Core
             %COMPUTEROTATIONVARIABILITY 「ばらつきを求める」：選んだ入力・対象の Wafer で、Shot・Mark ごとの Wafer 間の 3σ
             %   （X・Y・長さ |v|）を求め、図と表に出す（alignest.markVariability）。
             %   level："mark"・"shot"、shotStatistic："max"・"mean"（Shot ごとの代表値）。省略すると画面の選択。
+            ensureTab(app, "rotation");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if nargin >= 2
                 c.rotationLevel.Value = char(level);
@@ -178,6 +182,7 @@ classdef (Abstract) RotationTab < appui.Core
                 options.assignment (1, 1) string
                 options.priorityShotNos double
             end
+            ensureTab(app, "rotation");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if isempty(app.RotationVariability)
                 error('alignest:rotationMaps', '先に「ばらつきを求める」を押してください。');
@@ -235,6 +240,7 @@ classdef (Abstract) RotationTab < appui.Core
             %   （I 最適・D 最適・ポアソンディスク・ランダム・表の順）で計測マップを作り、指標（マップ間の KL・
             %   全体との KL・最大の空白・I 基準・D 基準）で比べる（alignest.compareRotationAssignments）。「計測マップ」の
             %   タブのマップは変えない。
+            ensureTab(app, "rotation");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if isempty(app.RotationVariability)
                 error('alignest:rotationMaps', '先に「ばらつきを求める」を押してください。');
@@ -257,6 +263,7 @@ classdef (Abstract) RotationTab < appui.Core
         function shotNos = togglePriorityShot(app, shotNo)
             %TOGGLEPRIORITYSHOT 「優先度 1 の Shot」に shotNo を足す（指定済みなら外す）。計測マップを作ってあれば作り直す
             %   （図のクリックで指定するときと同じ）。shotNos：指定後の shotNo の並び。
+            ensureTab(app, "rotation");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             shotNos = rotationPriorityShotNos(app);
             if any(shotNos == shotNo)
@@ -273,6 +280,7 @@ classdef (Abstract) RotationTab < appui.Core
             %   Wafer 中心からの半径、縦軸に指標の 3σ）。showCumulative：半径と指標の図に、半径 0 を累積 0% として外へ指標を
             %   足した累積 [%] の線を重ねるか、ratesPercent：半径を示す累積率 [%]（例：[50, 80]）。省略すると画面の選択。
             %   cumulative：累積の線と累積率の半径（alignest.radialCumulative。累積を描かないときは []）。
+            ensureTab(app, "rotation");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if nargin >= 2
                 c.rotationSpreadView.Value = char(view);
@@ -303,6 +311,7 @@ classdef (Abstract) RotationTab < appui.Core
                 options.transferMethod (1, 1) string
                 options.compareFull (1, 1) logical
             end
+            ensureTab(app, "rotation");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             controls = struct("order", c.rotationOrder, "splitKind", c.rotationSplitKind, "splitValue", c.rotationSplitValue, ...
                 "rotationLots", c.rotationLots, "model", c.rotationModel, "transferMethod", c.rotationTransferMethod, ...
@@ -340,6 +349,7 @@ classdef (Abstract) RotationTab < appui.Core
         function data = compareRotationConditions(app, rows)
             %COMPAREROTATIONCONDITIONS 「条件の比較」：選んだ検証の結果（rows：履歴の番号。空ならすべて）の、検証側すべての
             %   Wafer の補正残差（|平均|+3σ、X・Y）と FB 側の計測率を並べて描く。data は図の値（number・計測率・X・Y の残差）。
+            ensureTab(app, "rotation");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if nargin >= 2
                 app.RotationHistorySelection = reshape(rows, 1, []);
@@ -350,6 +360,7 @@ classdef (Abstract) RotationTab < appui.Core
 
         function removeRotationConditions(app, rows)
             %REMOVEROTATIONCONDITIONS 検証の結果の履歴から rows（履歴の番号）を消す（空ならすべて消す）
+            ensureTab(app, "rotation");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if nargin < 2 || isempty(rows)
                 app.RotationHistory = app.RotationHistory([]);
             else
@@ -363,6 +374,7 @@ classdef (Abstract) RotationTab < appui.Core
             %EXPORTROTATIONMAPSTO 選んだ計測マップ（selection：マップの番号。省略すると「計測マップ」のタブで選んでいる
             %   マップ）を Excel（.xlsx）に書き出す（alignest.exportRotationMaps。「2. 面内推定の設定」の「Excel 取込」で
             %   そのまま読める形）。
+            ensureTab(app, "rotation");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             maps = app.RotationMaps;
             if isempty(maps)
                 error('alignest:rotationMaps', '先に「計測マップを作る」を押してください。');
@@ -1349,7 +1361,7 @@ classdef (Abstract) RotationTab < appui.Core
         end
 
         function onRotationHistorySelected(app, event)
-            if isempty(event.Indices)
+            if isempty(event.Indices) || isempty(app.RotationHistory)   % 履歴が無い（表が空）ときは選ぶものが無い
                 app.RotationHistorySelection = zeros(1, 0);
                 return
             end

@@ -28,6 +28,7 @@ classdef (Abstract) HighOrderSweepTab < appui.Core
                 options.tuningRange (1, 3) double
                 options.progressFcn = []
             end
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if parameter ~= ""
                 c.highOrderTuneParameter.Value = char(parameter);
@@ -53,6 +54,7 @@ classdef (Abstract) HighOrderSweepTab < appui.Core
         function sweep = resumeHighOrderSweep(app, progressFcn)
             %RESUMEHIGHORDERSWEEP 「続きから再開」：一時中断したスイープの残りの値を計算する（同じ入力・設定のときだけ）。
             %   progressFcn（省略可）：sweepHighOrderParameters と同じ。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if nargin < 2
                 progressFcn = [];
             end
@@ -74,6 +76,7 @@ classdef (Abstract) HighOrderSweepTab < appui.Core
             %   （省略すると画面の選択）。図は X（dx の式）と Y（dy の式）を左右に並べ、λ か c を変えたときは、当てはめた残差
             %   （実線）と 1点抜きの予測の誤差（破線）の推移と、1点抜きの誤差が最も小さい値（★）。λ と c の組み合わせのときは、
             %   1点抜きの誤差の色の図。data は表に出した値（値の組ごとの行）。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if nargin >= 2
                 c.highOrderTuneStatistic.Value = char(statistic);
@@ -138,6 +141,7 @@ classdef (Abstract) HighOrderSweepTab < appui.Core
             %APPLYHIGHORDERSWEEPBEST 「最もよい値を使う」：図の値の 1点抜きの予測の誤差が最も小さい λ・c を、X・Y それぞれ左の設定に
             %   する（λ を変えたとき、正則化がなしの軸は L2 に、c を変えたとき、損失関数を Huber に。c = 0 は LAD にする）。
             %   best は軸ごとの使った値（[X, Y] の構造体）。
+            ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             sweep = app.HighOrderSweep;
             if isempty(sweep)
                 error('alignest:highOrderSweep', '先に「スイープを実行する」を押してください。');

@@ -221,6 +221,26 @@ classdef TestVarianceDecomposition < matlab.unittest.TestCase
             testCase.verifyTrue(contains(string(c.varianceInfo.Text), "回帰係数"));
             app.decomposeDataVariance("", "nested");
             testCase.verifyEqual(string(c.varianceQuantity.Enable), "on", "Lot・Wafer・Shot 間では「縦軸」を使う");
+            % 図・表の保存とコピー：分けた後に押せる。表は画面と同じ列・行で、コピーは1行目が列名のタブ区切り
+            testCase.verifyEqual(unique(string({c.varianceOutputs.Enable})), "on");
+            text = app.copyVarianceTable("data");
+            lines = splitlines(string(text));
+            data = c.varianceTable.Data;
+            testCase.verifyEqual(numel(lines), height(data) + 1);
+            testCase.verifyEqual(split(lines(1), sprintf('\t')).', string(data.Properties.VariableNames));
+            folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+            app.exportVarianceTable("data", fullfile(folder, "variance.xlsx"));
+            back = readtable(fullfile(folder, "variance.xlsx"), 'Sheet', '値', 'VariableNamingRule', 'preserve', ...
+                'TextType', 'string');
+            testCase.verifyEqual(string(back.Properties.VariableNames), string(data.Properties.VariableNames));
+            testCase.verifyEqual(back{:, end}, data{:, end}, "点の数");
+            notes = readtable(fullfile(folder, "variance.xlsx"), 'Sheet', '説明', 'TextType', 'string', 'VariableNamingRule', 'preserve');
+            testCase.verifyEqual(notes{2, 2}, string(c.varianceInfo.Text), "説明シートに図の下の説明");
+            app.exportVarianceTable("data", fullfile(folder, "variance.csv"));
+            testCase.verifyEqual(height(readtable(fullfile(folder, "variance.csv"), 'VariableNamingRule', 'preserve')), ...
+                height(data));
+            testCase.verifyError(@() app.saveFigureImage("variance", fullfile(folder, "variance.png")), ...
+                'alignest:hiddenFigure', "図の画像は画面を出しているときだけ");
             % 1変数の推定：値の名前の1列だけ
             spec = struct("scalar", true, "name", "Thickness_nm", "unit", "nm");
             scalar = alignest.dataVarianceDecomposition(units, "", spec);
@@ -247,6 +267,8 @@ classdef TestVarianceDecomposition < matlab.unittest.TestCase
             testCase.verifyEqual(string(c.correctionVarianceButton.Enable), "on");
             testCase.verifyError(@() app.decomposeCorrectionVariance(), 'alignest:varianceDecomposition', ...
                 "比べる前は分けられない");
+            testCase.verifyEqual(unique(string({c.correctionVarianceOutputs.Enable})), "off", "分ける前は保存・コピーできない");
+            testCase.verifyError(@() app.copyVarianceTable("correction"), 'alignest:noVarianceTable');
             comparison = app.compareEstimatedCorrection(1, app.Results.groups(end), 0);
             testCase.verifyEqual(comparison.stageUsed, [true, false, true], "初期の補正モデル：Wafer 成分と Shot ごとの成分");
             testCase.verifyEqual(height(comparison.points), sum(arrayfun(@(unit) numel(unit.marks.x), app.Data.units)));
@@ -267,6 +289,9 @@ classdef TestVarianceDecomposition < matlab.unittest.TestCase
                 comparison.table.scope == "すべての点" & comparison.table.axis == "X"), 5, 1), "「実測値と推定値の補正」と同じ点");
             testCase.verifyNotEmpty(c.correctionVarianceAxes(3).Children);
             testCase.verifyTrue(contains(string(c.correctionVarianceInfo.Text), "Wafer 間"));
+            testCase.verifyEqual(unique(string({c.correctionVarianceOutputs.Enable})), "on");
+            copied = splitlines(string(app.copyVarianceTable("correction")));
+            testCase.verifyEqual(numel(copied), height(c.correctionVarianceTable.Data) + 1);
             target = app.decomposeCorrectionVariance(result.methodPlan, "推定対象の点");
             testCase.verifyLessThan(target.totals.n(1), result.totals.n(1));
             % 1枚だけなら Wafer 間は 0 と知らせる

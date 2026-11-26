@@ -6,6 +6,7 @@ classdef (Abstract) MapTab < appui.Core
     methods
         function showMap(app, unitIndex, planLabel, methodIndex, displayMode, content)
             %SHOWMAP 選んだ Wafer・学習パターン・手法の計測値・推定値・残差（content = "overlay" なら補正残差）を描く。
+            ensureTab(app, "map");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if nargin >= 6
                 c.mapContent.Value = char(content);
@@ -25,6 +26,7 @@ classdef (Abstract) MapTab < appui.Core
         function conditions = addMapCondition(app, optionIndex, planLabel, methodIndex)
             %ADDMAPCONDITION 「4. Waferごとのマップ」の並べて比べる一覧に、条件（Wafer・平均 × 学習パターン × 手法）を足して
             %   並べて描く（並べ方を「一覧の条件を並べて比べる」にする）。引数を省くと画面の選択。同じ条件は足さない。
+            ensureTab(app, "map");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if isempty(app.Results)
                 error('alignest:noResults', '先に「2. 面内推定の設定」で評価してください。');
@@ -54,6 +56,7 @@ classdef (Abstract) MapTab < appui.Core
 
         function removeMapConditions(app, indices)
             %REMOVEMAPCONDITIONS 並べて比べる一覧から条件（一覧の何番目か）を外して描き直す。
+            ensureTab(app, "map");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             app.MapConditions(indices) = [];
             refreshMapConditions(app);
             drawMap(app);

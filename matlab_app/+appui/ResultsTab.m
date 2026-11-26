@@ -20,6 +20,7 @@ classdef (Abstract) ResultsTab < appui.Core
             %   比べる（alignest.estimatedCorrectionComparison）。補正のモデルは「2. 面内推定の設定」の Overlay 補正の評価（Wafer 成分・
             %   Shot 共通成分・Shot ごとの成分）。すべての点と推定対象の点（学習に使わなかった Mark）で比べる。methodIndex：手法の
             %   番号（複数可）、group：学習パターンの列、unitIndex：Wafer の番号（0 = すべて）。省略すると画面の選択。
+            ensureTab(app, "results");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if nargin >= 2
                 c.estimatedCorrectionMethods.Value = num2cell(reshape(methodIndex, 1, []));
@@ -56,6 +57,7 @@ classdef (Abstract) ResultsTab < appui.Core
             %   Wafer 間のばらつきがどう変わるかが分かる。alignest.correctionVarianceDecomposition）。「実測値と推定値の補正」で
             %   比べた結果（手法・学習パターン・Wafer）を使う。methodPlan："手法｜学習パターン"、scope："すべての点"・
             %   "推定対象の点"。省略すると画面の選択。result は分けた結果。
+            ensureTab(app, "results");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if isempty(app.EstimatedCorrection)
                 error('alignest:varianceDecomposition', ['先に「計算する」（または「実測値と推定値の補正」の「比べる」）で、' ...
@@ -91,6 +93,7 @@ classdef (Abstract) ResultsTab < appui.Core
             %   filter（alignest.defaultPointFilter と同じ形）を省くと、絞り込みを解除する。推定値と誤差の分布・箱ひげ図・
             %   散布図・分布の比較・推定値の書き出しは、次に計算するときに同じ条件で評価点を絞り込む。
             %   Excel から読み込んだ結果では表・グラフは計算し直せない（読み込んだ推定値を使う図だけを絞り込む）。
+            ensureTab(app, "results");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if nargin < 2
                 filter = alignest.defaultPointFilter();
             end
@@ -134,6 +137,7 @@ classdef (Abstract) ResultsTab < appui.Core
                 options.count (1, 1) double
                 options.threshold (1, 1) double
             end
+            ensureTab(app, "results");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if isempty(app.Results)
                 error('alignest:noResults', '先に「2. 面内推定の設定」で評価してください。');
@@ -203,6 +207,7 @@ classdef (Abstract) ResultsTab < appui.Core
             %SELECTMEASUREMENTCANDIDATES 「計測を足す場所」の候補のうち、必ず計測に足す候補を選ぶ（表の「足す」のチェック）。
             %   selection：true・false（すべて選ぶ・すべて外す）、候補の行ごとの true・false、または選ぶ候補の key（shot は
             %   "12"、mark は "12-3"）。「必ず計測の欄に入れる」では、選んだ候補だけを足す。
+            ensureTab(app, "results");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             found = app.MeasurementCandidates;
             if isempty(found) || height(found.table) == 0
                 return
@@ -230,6 +235,7 @@ classdef (Abstract) ResultsTab < appui.Core
             %ADDMEASUREMENTCANDIDATES 「必ず計測の欄に入れる」：出した候補のうち「足す」にチェックを入れた候補を「2. 面内推定の設定」の
             %   必ず計測する shotNo（単位が Mark なら必ず計測する Mark）に足す（setMeasurementSelection と同じ。2. 面内推定の設定の計測の
             %   指定にも出る）。added は足した場所（shotNo の数、または "shotNo-markNo" の文字）。
+            ensureTab(app, "results");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             found = app.MeasurementCandidates;
             if isempty(found) || height(found.table) == 0
                 error('alignest:noCandidates', '先に「候補を出す」で、計測を足す場所を出してください。');
@@ -252,6 +258,7 @@ classdef (Abstract) ResultsTab < appui.Core
 
         function exportResultsTo(app, filePath)
             %EXPORTRESULTSTO 結果を Excel に書き出す。
+            ensureTab(app, "results");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if isempty(app.Results)
                 error('alignest:noResults', '先に「2. 面内推定の設定」で評価してください。');
             end
@@ -271,6 +278,7 @@ classdef (Abstract) ResultsTab < appui.Core
             %IMPORTRESULTSFROM 「結果を Excel に書き出す」で書き出したファイルを読み込み、結果の画面に出す。
             %   表・グラフ・基準の手法との比較を見られる。推定値は Excel に無いので、Wafer マップ・推定値と誤差の分布・
             %   散布図・分布の比較は使えない（計測ファイルを読み込んで「2. 面内推定の設定」で評価し直すと使える）。
+            ensureTab(app, "results");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             results = alignest.importResults(filePath);
             clearResults(app);
             app.Results = results;
@@ -283,6 +291,7 @@ classdef (Abstract) ResultsTab < appui.Core
             %IMPORTESTIMATESFROM 「推定値を Excel に書き出す」で書き出したファイルを読み込み、Excel から読み込んだ評価結果と
             %   組にする。Wafer マップ・推定値と誤差の分布・散布図・分布の比較を、推定値の Excel にある手法・学習パターン・
             %   Wafer の範囲で描ける（計測ファイルは要らない）。先に importResultsFrom で評価結果を読み込んでおく。
+            ensureTab(app, "results");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             if ~isImportedResults(app.Results)
                 error('alignest:importEstimates', ['先に「結果を読み込む…」で評価結果の Excel を読み込んでください' ...
                     '（推定値の Excel は、同じ評価から書き出した評価結果と組で使います）。']);
@@ -311,6 +320,7 @@ classdef (Abstract) ResultsTab < appui.Core
             %ANALYZERESIDUALS 選んだ手法（複数可）・学習パターンの列・Wafer（0 = すべて）の評価点の残差を、
             %   ヒストグラム・正規性検定・質的変数の ANOVA で調べて「推定値と誤差の分布」に出す。手法を複数選ぶと、
             %   手法ごとに並べて比べる（ヒストグラムを重ね、表は手法ごとの行、箱ひげ図は手法を色分け）。
+            ensureTab(app, "results");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             requireEstimates(app);
             c = app.Controls;
             if nargin >= 2
@@ -347,6 +357,7 @@ classdef (Abstract) ResultsTab < appui.Core
             %   箱ひげ図で X・Y 別に「残差の箱ひげ図（ANOVA）」に描く。題名に一元配置の ANOVA の F・p 値・η² を書く。
             %   factorName（省略時は画面の選択）は alignest.residualFactors の変数の名前（例："Scan 方向"・"Mark 番号"）。
             %   summary は X・Y の水準ごとの点数・平均・中央値（alignest.plot.residualBoxplot）。
+            ensureTab(app, "results");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if isempty(app.Analysis)
                 error('alignest:noAnalysis', '先に「推定値と誤差の分布」で「分析する」を押してください。');
@@ -407,6 +418,7 @@ classdef (Abstract) ResultsTab < appui.Core
         function breakdown = measureTiming(app, unitIndex, planLabel, methodIndex, nRepeats)
             %MEASURETIMING 選んだ Wafer・学習パターン・手法（複数可）の処理時間を段階ごとに測り、「処理時間の内訳」に
             %   積み上げ横棒（秒・割合）と表で出す（alignest.timingBreakdown。評価の結果は変えない）。引数を省くと画面の選択。
+            ensureTab(app, "results");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if isempty(app.BaseResults) || isImportedResults(app.BaseResults) || isempty(app.Data)
                 error('alignest:noResults', ['処理時間は、計測データを読み込んで評価した結果で測れます' ...
@@ -472,6 +484,7 @@ classdef (Abstract) ResultsTab < appui.Core
         function summary = drawScatter(app, methodIndex, group, unitIndex, colorBy)
             %DRAWSCATTER 選んだ手法・学習パターンの列・Wafer（0 = すべて）の評価点で、実測値と推定値の散布図を X・Y 別に描く。
             %   colorBy は色分けの項目（none・wafer・lot・eqp・operation・scan・mark・row・col:<列名>）。
+            ensureTab(app, "results");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             requireEstimates(app);
             c = app.Controls;
             if nargin >= 2
@@ -515,6 +528,7 @@ classdef (Abstract) ResultsTab < appui.Core
             %   説明変数（variable：x・y・r・theta・markX・markY・shotX・shotY。alignest.explanatoryValues）の散布図を X・Y 別に
             %   描き、すべての説明変数と残差の相関係数・p 値を表に出す。引数を省くと画面の選択。
             %   summary は X・Y の alignest.stats.correlationTest の結果（1変数は X だけ）と、表（table）。
+            ensureTab(app, "results");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             if isempty(app.Results)
                 error('alignest:noResults', '先に「2. 面内推定の設定」で評価してください。');
@@ -594,6 +608,7 @@ classdef (Abstract) ResultsTab < appui.Core
             %COMPAREDISTRIBUTIONS 選んだ手法・学習パターンの列・Wafer（0 = すべて）で、Wafer 全面・学習データ・予測対象の
             %   計測値の分布と、予測対象の実測値と推定値の分布を、ヒストグラム・代表統計値・JS ダイバージェンスで比べる
             %   （alignest.distributionComparison）。引数を省くと画面の選択を使う。
+            ensureTab(app, "results");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             requireEstimates(app);
             c = app.Controls;
             if nargin >= 2
@@ -647,6 +662,7 @@ classdef (Abstract) ResultsTab < appui.Core
             %   学習データの Mark も書き出し、その推定値・残差は空欄にする（「区分」の列で見分ける）。
             %   scope = "selected"：「推定値と誤差の分布」で選んだ手法・学習パターン・Wafer
             %           "all"     ：すべての手法・学習パターン・Wafer（評価で求めた推定値を使う。行が多いと書き出しに時間がかかる）
+            ensureTab(app, "results");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             requireEstimates(app);
             if isImportedResults(app.Results)
                 error('alignest:importedResults', ['Excel から読み込んだ推定値は書き出せません（読み込んだファイル「%s」を' ...
@@ -697,6 +713,7 @@ classdef (Abstract) ResultsTab < appui.Core
             %   Excel で指定したパターンは点で描く（alignest.layoutComparison。指標と Wafer の集計は結果一覧の上の選択）。
             %   errorBar（alignest.errorBarKinds）を選ぶと、評価点ごとに Wafer のばらつきのエラーバーを描く。
             %   引数を省くと画面の選択。
+            ensureTab(app, "results");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             c = app.Controls;
             comparison = table();
             if isempty(app.Results)
@@ -1301,8 +1318,8 @@ classdef (Abstract) ResultsTab < appui.Core
             c.correctionVarianceTab = uitab(groups(4), 'Title', '補正残差のばらつき分解');
             varianceGrid = uigridlayout(c.correctionVarianceTab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 8, ...
                 'RowSpacing', 6);
-            varianceControls = uigridlayout(varianceGrid, [1, 7], 'ColumnWidth', {'fit', 320, 'fit', 150, 'fit', 'fit', 110}, ...
-                'Padding', 0);
+            varianceControls = uigridlayout(varianceGrid, [1, 9], 'ColumnWidth', {'fit', 280, 'fit', 150, 'fit', 'fit', 110, ...
+                '1x', 'fit'}, 'Padding', 0);
             label(varianceControls, '手法｜学習パターン', 1, 1);
             c.correctionVarianceMethodPlan = uidropdown(varianceControls, 'Items', {'—'}, 'ItemsData', {''}, ...
                 'Enable', 'off', 'ValueChangedFcn', @(~, ~) app.onCorrectionVarianceChanged());
@@ -1322,10 +1339,12 @@ classdef (Abstract) ResultsTab < appui.Core
             c.correctionVarianceQuantity = varianceQuantityDropdown(varianceControls, ...
                 @(~, ~) app.setVarianceQuantity("correction"));
             place(c.correctionVarianceQuantity, 1, 7);
-            varianceViews = uitabgroup(varianceGrid);
-            varianceChartTab = uitab(varianceViews, 'Title', '図');
-            varianceTableTab = uitab(varianceViews, 'Title', '表');
-            c.correctionVarianceAxesGrid = uigridlayout(varianceChartTab, [2, 2], 'Padding', 4, 'RowSpacing', 6, ...
+            [outputGrid, c.correctionVarianceOutputs] = varianceOutputButtons(app, varianceControls, "correction");   % 右端
+            place(outputGrid, 1, 9);
+            c.correctionVarianceViews = uitabgroup(varianceGrid);
+            c.correctionVarianceChartTab = uitab(c.correctionVarianceViews, 'Title', '図');
+            varianceTableTab = uitab(c.correctionVarianceViews, 'Title', '表');
+            c.correctionVarianceAxesGrid = uigridlayout(c.correctionVarianceChartTab, [2, 2], 'Padding', 4, 'RowSpacing', 6, ...
                 'ColumnSpacing', 8);
             c.correctionVarianceAxes = [uiaxes(c.correctionVarianceAxesGrid), uiaxes(c.correctionVarianceAxesGrid), ...
                 uiaxes(c.correctionVarianceAxesGrid), uiaxes(c.correctionVarianceAxesGrid)];

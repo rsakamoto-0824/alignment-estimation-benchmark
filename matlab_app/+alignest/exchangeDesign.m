@@ -39,13 +39,7 @@ group = options.group(:);
 useGroups = ~isempty(group);
 nParams = size(blocks{1}, 2);
 singleRows = all(cellfun(@(block) size(block, 1) == 1, blocks));
-stacked = vertcat(blocks{:});
-rowsOf = cell(nCandidates, 1);
-offset = 0;
-for c = 1:nCandidates
-    rowsOf{c} = offset + (1:size(blocks{c}, 1));
-    offset = offset + size(blocks{c}, 1);
-end
+slots = alignest.blockSlots(blocks);   % 行の番号ごとの基底（入れ替えの候補をまとめて評価する。alignest.blockSwapValues）
 information = zeros(nParams, nParams, nCandidates);
 for c = 1:nCandidates
     information(:, :, c) = blocks{c}.' * blocks{c};
@@ -55,7 +49,7 @@ if isempty(equal)
     equal = false(1, size(labels, 2));
 end
 bounds = alignest.shotGroupBounds(labels, nSelect, slack, equal);
-context = struct("information", information, "stacked", stacked, "rowsOf", {rowsOf}, "labels", labels, ...
+context = struct("information", information, "slots", {slots}, "labels", labels, ...
     "bounds", bounds, "fixed", fixed, "group", group, "useGroups", useGroups, "minPerGroup", options.minPerGroup, ...
     "criterion", options.criterion, "singleRows", singleRows, "regularization", REGULARIZATION);
 bestSelected = [];
@@ -106,8 +100,9 @@ others = find(~current);
 if context.useGroups
     counts = accumarray(context.group(current), 1, [max(context.group), 1]);
 end
+labelCounts = groupCounts(context.labels, context.bounds, current);
 for outC = find(current & ~context.fixed).'
-    violations = swapViolations(context.labels, context.bounds, current, outC, others);
+    violations = swapViolations(context.labels, context.bounds, labelCounts, outC, others);
     allowed = violations <= currentViolation;
     if context.useGroups && counts(context.group(outC)) <= context.minPerGroup
         allowed = allowed & context.group(others) == context.group(outC);   % そのまとまりの別の候補とだけ入れ替える
@@ -143,29 +138,18 @@ function values = swapValues(context, candidates, inverse, upperFactor)
 %   I：tr((M_o + BᵀB)⁻¹) = tr(M_o⁻¹) − tr((I + B M_o⁻¹ Bᵀ)⁻¹ B M_o⁻² Bᵀ)
 %   D：−log det(M_o + BᵀB) = −log det(M_o) − log det(I + B M_o⁻¹ Bᵀ)
 logDetReduced = 2 * sum(log(diag(upperFactor)));
-traceInverse = trace(inverse);
 if context.singleRows
-    rows = context.stacked(cell2mat(context.rowsOf(candidates)), :);
+    rows = context.slots{1}(candidates, :);
     projected = rows * inverse;
     leverage = sum(projected .* rows, 2);
     if context.criterion == "I"
-        values = traceInverse - sum(projected .^ 2, 2) ./ (1 + leverage);
+        values = trace(inverse) - sum(projected .^ 2, 2) ./ (1 + leverage);
     else
         values = -logDetReduced - log1p(leverage);
     end
     return
 end
-values = zeros(numel(candidates), 1);
-for k = 1:numel(candidates)
-    rows = context.stacked(context.rowsOf{candidates(k)}, :);
-    projected = rows * inverse;
-    capacitance = eye(size(rows, 1)) + projected * rows.';
-    if context.criterion == "I"
-        values(k) = traceInverse - trace(capacitance \ (projected * projected.'));
-    else
-        values(k) = -logDetReduced - 2 * sum(log(diag(chol(capacitance))));
-    end
-end
+values = alignest.blockSwapValues(context.slots, candidates, inverse, context.criterion, logDetReduced);
 end
 
 function value = designValue(information, criterion)
@@ -183,11 +167,19 @@ else
 end
 end
 
-function violations = swapViolations(labels, bounds, current, outC, others)
-% outC を外して others の各候補を入れたときの違反量（alignest.constrainedIOptimal と同じ数え方）
+function counts = groupCounts(labels, bounds, current)
+% 制約の種類ごとの、今選んでいる候補の区分ごとの数（交換を探す間は変わらないので、一度だけ数える）
+counts = cell(1, numel(bounds));
+for p = 1:numel(bounds)
+    counts{p} = accumarray(labels(current, p), 1, [numel(bounds(p).lower), 1]);
+end
+end
+
+function violations = swapViolations(labels, bounds, currentCounts, outC, others)
+% outC を外して others の各候補を入れたときの違反量（alignest.constrainedIOptimal と同じ数え方）。currentCounts：groupCounts
 violations = zeros(numel(others), 1);
 for p = 1:numel(bounds)
-    counts = accumarray(labels(current, p), 1, [numel(bounds(p).lower), 1]);
+    counts = currentCounts{p};
     counts(labels(outC, p)) = counts(labels(outC, p)) - 1;
     penalty = max(0, bounds(p).lower - counts) + max(0, counts - bounds(p).upper);
     penaltyPlus = max(0, bounds(p).lower - counts - 1) + max(0, counts + 1 - bounds(p).upper);
