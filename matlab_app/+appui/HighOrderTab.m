@@ -39,8 +39,9 @@ classdef (Abstract) HighOrderTab < appui.Core
         end
 
         function setHighOrderSource(app, source)
-            %SETHIGHORDERSOURCE 入力のデータを選ぶ："data"（「1. データ読込」の計測データ）・"target"（「5. 未知の座標の
-            %   推定」の推定値）・"file"（「Excel・CSV を読み込む…」で読み込んだデータ）。
+            %SETHIGHORDERSOURCE 入力のデータを選ぶ："data"（「1. データ読込」の計測データ）・"estimate"（「3. 結果一覧」の
+            %   評価の推定値。手法・学習パターンは「手法・学習」の欄）・"target"（「5. 未知の座標の推定」の推定値）・
+            %   "file"（「Excel・CSV を読み込む…」で読み込んだデータ）。
             ensureTab(app, "highOrder");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             app.Controls.highOrderSource.Value = char(source);
             onHighOrderSourceChanged(app);
@@ -711,7 +712,7 @@ classdef (Abstract) HighOrderTab < appui.Core
                     notes(end + 1, :) = ["2つの条件の比べ方", pair.description];
                 end
             end
-            alignest.exportHighOrder(filePath, run.result, notes, comparison, pair);
+            alignest.exportHighOrder(filePath, run.result, notes, comparison, pair, app.Settings.highOrder.statOutlierN);
         end
 
         function data = showHighOrderSummary(app, split)
@@ -746,17 +747,26 @@ classdef (Abstract) HighOrderTab < appui.Core
             % 補正前は値そのもの、ほかは補正した後に残った残差であることを列の名前に書く。列の名前の「|」は表の見出しの
             % 改行になるので、絶対値の記号は全角の「｜」にする
             % 補正の段階（Wafer 高次補正だけ → ＋Shot 共通補正 → 高次補正（＋k の組ごと））を補正前の右に並べる
+            % 外れ値を除いた高次補正の残差の |平均|+3σ（中央値 ± n × MAD の外を除く。表示のたびに今の n で求める）
+            trimmed = alignest.highOrderTrimmedSummary(result.points, app.Settings.highOrder.statOutlierN);
+            [~, where] = ismember(s.wafer + "|" + s.axis + "|" + s.region, ...
+                trimmed.wafer + "|" + trimmed.axis + "|" + trimmed.region);
+            [trimmedValue, trimmedCount] = deal(nan(height(s), 1));
+            trimmedValue(where > 0) = trimmed.highOrderTrimmed(where(where > 0));
+            trimmedCount(where > 0) = trimmed.trimmedOutliers(where(where > 0));
             data = table(s.wafer, s.axis, round(s.before, 3), round(s.waferStage, 3), round(s.commonStage, 3), ...
-                round(s.highOrder, 3), round(s.linear, 3), ...
+                round(s.highOrder, 3), round(trimmedValue, 3), round(s.linear, 3), ...
                 round(s.improvement, 3), round(s.highOrderP95, 3), round(s.highOrderMedian, 3), round(s.rSquared, 4), ...
                 round(s.adjustedRSquared, 4), s.n, s.nCorrected, s.shots, s.kSets, s.skipped, s.outliers, ...
-                round(s.rmsHighOrder, 3), 'VariableNames', ...
+                round(s.rmsHighOrder, 3), trimmedCount, 'VariableNames', ...
                 ["Wafer", "軸", "補正前の値|｜平均｜+3σ [nm]", "Wafer 高次補正だけ|の残差|｜平均｜+3σ [nm]", ...
                 "＋Shot 共通補正|の残差|｜平均｜+3σ [nm]", "高次補正の残差|｜平均｜+3σ [nm]", ...
+                "高次補正の残差|｜平均｜+3σ [nm]|（外れ値を除く）", ...
                 "Shot ごとの1次の残差|｜平均｜+3σ [nm]", "改善 [nm]|1次の残差 −|高次補正の残差", "高次補正の|｜残差｜95% 点 [nm]", ...
                 "高次補正の|｜残差｜中央値 [nm]", "決定係数|R²", "自由度調整済|R²", "点の数", "比べた点", "Shot の数", "k の組の数", ...
-                skippedNames.(result.options.unit), "外れ値と|みなした点", "高次補正の|残差の RMS [nm]"]);
-            widths = [{170, 40}, {120, 130, 130, 130, 150, 130, 110, 110}, {76, 90}, repmat({76}, 1, 7)];
+                skippedNames.(result.options.unit), "外れ値と|みなした点", "高次補正の|残差の RMS [nm]", ...
+                "除いた外れ値|（中央値 ± n MAD）"]);
+            widths = [{170, 40}, {120, 130, 130, 130, 130, 150, 130, 110, 110}, {76, 90}, repmat({76}, 1, 7), {110}];
             if split
                 data = [data(:, 1:2), table(s.region, 'VariableNames', "範囲"), data(:, 3:end)];
                 widths = [widths(1:2), {50}, widths(3:end)];
@@ -796,25 +806,35 @@ classdef (Abstract) HighOrderTab < appui.Core
             left = uigridlayout(body, [10, 1], 'RowHeight', {'fit', 'fit', 'fit', app.HIGH_ORDER_WAFER_LIST_HEIGHT, 'fit', ...
                 'fit', 'fit', 'fit', 'fit', '1x'}, 'Padding', 0, 'RowSpacing', 6, 'Scrollable', 'on');
             place(uilabel(left, 'Text', '① 入力のデータ', 'FontWeight', 'bold'), 1, 1);
-            inputGrid = uigridlayout(left, [2, 3], 'ColumnWidth', {'fit', '1x', 'fit'}, 'RowHeight', {'fit', 'fit'}, ...
+            inputGrid = uigridlayout(left, [3, 3], 'ColumnWidth', {'fit', '1x', 'fit'}, 'RowHeight', {'fit', 'fit', 'fit'}, ...
                 'Padding', 0);
             place(inputGrid, 2, 1);
             label(inputGrid, '入力', 1, 1);
             c.highOrderSource = uidropdown(inputGrid, 'Items', {'1. データ読込の計測データ', ...
-                '5. 未知の座標の推定の推定値', 'Excel・CSV から読み込んだデータ'}, 'ItemsData', {'data', 'target', 'file'}, ...
+                '3. 結果一覧の評価の推定値', '5. 未知の座標の推定の推定値', 'Excel・CSV から読み込んだデータ'}, ...
+                'ItemsData', {'data', 'estimate', 'target', 'file'}, ...
                 'ValueChangedFcn', @(~, ~) app.onHighOrderSourceChanged(), 'Tooltip', ['計測データ：「1. データ読込」で' ...
-                '読み込んだ計測値（面内推定の入力と同じ）。推定値：「5. 未知の座標の推定」で推定した点の値（Wafer × 学習データの' ...
-                '組み合わせごと）。Excel・CSV：右のボタンで読み込んだ表（列は読んだ後で「Excel・CSV の列」で選ぶ）。']);
+                '読み込んだ計測値（面内推定の入力と同じ）。評価の推定値：選んだ手法・学習パターンで、学習した Mark は計測値、' ...
+                '学習しなかった Mark は推定値（一部計測＋面内推定）。推定値：「5. 未知の座標の推定」で推定した点の値（Wafer × ' ...
+                '学習データの組み合わせごと）。Excel・CSV：右のボタンで読み込んだ表（列は読んだ後で「Excel・CSV の列」で選ぶ）。']);
             place(c.highOrderSource, 1, 2);
             c.highOrderLoad = uibutton(inputGrid, 'Text', 'Excel・CSV を読み込む…', ...
                 'ButtonPushedFcn', @(~, ~) app.onLoadHighOrderFile(), 'Tooltip', ['1行目が見出しの表（列の名前は自由）。' ...
                 '読んだ後で、右の「Excel・CSV の列」で Shot 中心の座標 [mm]・Shot 内の座標 [mm]・X・Y の値 [nm]（必須）と、' ...
                 'Wafer・shotNo・Scan 方向など（任意）の列を選びます。このアプリが書き出した推定値の Excel も読めます。']);
             place(c.highOrderLoad, 1, 3);
+            % 評価の推定値の手法・学習パターン（入力が「3. 結果一覧の評価の推定値」のときに使う）
+            label(inputGrid, '手法・学習', 2, 1);
+            c.highOrderEstimateMethod = uidropdown(inputGrid, 'Items', {'—'}, 'ItemsData', {0}, 'Enable', 'off', ...
+                'ValueChangedFcn', @(~, ~) app.onHighOrderSourceChanged());
+            place(c.highOrderEstimateMethod, 2, 2);
+            c.highOrderEstimatePlan = uidropdown(inputGrid, 'Items', {'—'}, 'ItemsData', {''}, 'Enable', 'off', ...
+                'ValueChangedFcn', @(~, ~) app.onHighOrderSourceChanged());
+            place(c.highOrderEstimatePlan, 2, 3);
             c.highOrderMeasured = uicheckbox(inputGrid, 'Text', '実測値も使う', 'Value', false, ...
                 'ValueChangedFcn', @(~, ~) app.onHighOrderInputEdited(), 'Tooltip', ['「5. 未知の座標の推定」の推定値に、' ...
                 'その推定の学習に使った Mark の計測値を足して補正を求めます。']);
-            place(c.highOrderMeasured, 2, [2, 3]);
+            place(c.highOrderMeasured, 3, [2, 3]);
             c.highOrderInputInfo = uilabel(left, 'WordWrap', 'on', 'FontColor', app.Palette.muted, 'UserData', "muted", ...
                 'Text', '');
             place(c.highOrderInputInfo, 3, 1);
@@ -1044,11 +1064,18 @@ classdef (Abstract) HighOrderTab < appui.Core
             summaryTab = uitab(resultGroup, 'Title', '補正の評価');
             c.highOrderSummaryTab = summaryTab;
             summaryGrid = uigridlayout(summaryTab, [2, 1], 'RowHeight', {'fit', '1x'}, 'Padding', 6, 'RowSpacing', 4);
-            zoneGrid = uigridlayout(summaryGrid, [1, 2], 'ColumnWidth', {'fit', '1x'}, 'Padding', 0);
+            zoneGrid = uigridlayout(summaryGrid, [1, 4], 'ColumnWidth', {'fit', 'fit', 70, '1x'}, 'Padding', 0);
             c.highOrderSummaryZones = uicheckbox(zoneGrid, 'Text', '内周・外周に分けて出す', 'Value', false, ...
                 'ValueChangedFcn', @(~, ~) app.showHighOrderSummary(), 'Tooltip', ['Wafer ごとに、すべての Shot・内周の Shot・' ...
                 '外周の Shot の行を出します（外周は左の②の「外周の半径」以上の Shot）。']);
-            c.highOrderSummaryZoneInfo = label(zoneGrid, '', 1, 2);
+            % 外れ値を除いた |平均|+3σ の判定の幅 n（中央値 ± n × 1.4826 × MAD。alignest.highOrderTrimmedSummary）
+            outlierLabel = label(zoneGrid, '外れ値の判定 n', 1, 2);
+            outlierLabel.Tooltip = ['「外れ値を除く」|平均|+3σ：Wafer ごと・軸ごとに、高次補正の残差の中央値から' ...
+                ' n × 1.4826 × MAD より離れた点を除いて求めます（MAD は中央絶対偏差）。'];
+            c.highOrderStatOutlierN = uieditfield(zoneGrid, 'numeric', 'Limits', [0.1, 100], 'Value', ...
+                app.Settings.highOrder.statOutlierN, 'ValueChangedFcn', @(~, ~) app.onHighOrderStatOutlierChanged());
+            place(c.highOrderStatOutlierN, 1, 3);
+            c.highOrderSummaryZoneInfo = label(zoneGrid, '', 1, 4);
             c.highOrderSummaryZoneInfo.FontColor = app.Palette.muted;
             c.highOrderSummaryZoneInfo.UserData = "muted";
             c.highOrderSummaryTable = uitable(summaryGrid, 'RowName', {}, 'Data', table(), 'ColumnWidth', ...
@@ -1203,6 +1230,12 @@ classdef (Abstract) HighOrderTab < appui.Core
                 options = alignest.highOrderOptions(app.Settings);
             end
             source = app.Settings.highOrder;
+            % 外れ値を除いた |平均|+3σ の判定の幅（以前の設定に無ければ初期値）
+            if ~isfield(source, "statOutlierN") || ~(isnumeric(source.statOutlierN) && isscalar(source.statOutlierN) && ...
+                    source.statOutlierN > 0)
+                app.Settings.highOrder.statOutlierN = alignest.defaultSettings().highOrder.statOutlierN;
+            end
+            c.highOrderStatOutlierN.Value = min(max(app.Settings.highOrder.statOutlierN, 0.1), 100);
             c.highOrderMaker.Value = char(options.maker);
             c.highOrderUnit.Value = char(options.unit);
             c.highOrderWaferOrder.Value = double(fieldOr(source, "waferOrder", options.waferOrder));
@@ -1418,6 +1451,47 @@ classdef (Abstract) HighOrderTab < appui.Core
             drawHighOrderMap(app);
         end
 
+        function refreshHighOrderEstimateChoices(app)
+            % 評価の推定値の手法・学習パターンの選択肢（計測データを読み込んで評価した結果があるとき。前の選択は残す）
+            c = app.Controls;
+            results = app.Results;
+            ready = ~isempty(results) && ~isImportedResults(results) && ~isempty(app.Data);
+            if ready
+                methodLabels = string({results.methods.label});
+                previousMethod = c.highOrderEstimateMethod.Value;
+                setChoices(c.highOrderEstimateMethod, methodLabels, num2cell(1:numel(methodLabels)));
+                if isnumeric(previousMethod) && previousMethod >= 1 && previousMethod <= numel(methodLabels)
+                    c.highOrderEstimateMethod.Value = previousMethod;
+                end
+                planLabels = unique(string({results.plans.label}), 'stable');
+                previousPlan = string(c.highOrderEstimatePlan.Value);
+                setChoices(c.highOrderEstimatePlan, planLabels, reshape(cellstr(planLabels), 1, []));
+                if any(planLabels == previousPlan)
+                    c.highOrderEstimatePlan.Value = char(previousPlan);
+                end
+            else
+                setChoices(c.highOrderEstimateMethod, "—", {0});
+                setChoices(c.highOrderEstimatePlan, "—", {''});
+            end
+            set([c.highOrderEstimateMethod, c.highOrderEstimatePlan], 'Enable', ...
+                onOff(ready && string(c.highOrderSource.Value) == "estimate"));
+        end
+
+        function [plans, planIndex] = highOrderEstimatePlans(app)
+            % 選んだ学習パターンの、Wafer ごとの学習パターン（推定できたもの）と、results.plans の番号
+            [plans, planIndex] = deal([], zeros(1, 0));
+            results = app.Results;
+            if isempty(results) || isImportedResults(results) || isempty(app.Data)
+                return
+            end
+            planIndex = find(string({results.plans.label}) == string(app.Controls.highOrderEstimatePlan.Value) & ...
+                [results.plans.ok]);
+            plans = results.plans(planIndex);
+            if isempty(plans)
+                plans = [];
+            end
+        end
+
         function onHighOrderSourceChanged(app)
             refreshHighOrderChoices(app);
             markHighOrderStale(app);
@@ -1443,6 +1517,7 @@ classdef (Abstract) HighOrderTab < appui.Core
             source = string(c.highOrderSource.Value);
             labels = strings(1, 0);
             info = "";
+            refreshHighOrderEstimateChoices(app);
             switch source
                 case "data"
                     if ~isempty(app.Data)
@@ -1450,6 +1525,15 @@ classdef (Abstract) HighOrderTab < appui.Core
                         info = sprintf("「1. データ読込」の計測データ：%d Wafer。", numel(labels));
                     else
                         info = "「1. データ読込」で計測データを読み込んでください。";
+                    end
+                case "estimate"
+                    plans = highOrderEstimatePlans(app);
+                    if ~isempty(plans)
+                        labels = string({plans.unitLabel});
+                        info = sprintf("「3. 結果一覧」の評価の推定値：%d Wafer（学習した Mark は計測値、学習しなかった Mark は" + ...
+                            "推定値）。", numel(labels));
+                    else
+                        info = "「2. 面内推定の設定」で評価してください（計測データを読み込んで評価した結果の推定値を使います）。";
                     end
                 case "target"
                     if ~isempty(app.TargetRun)
@@ -1897,6 +1981,27 @@ classdef (Abstract) HighOrderTab < appui.Core
                         wafers(end + 1) = struct("label", unit.label, "points", alignest.highOrderUnitPoints(unit), ...
                             "unit", unit); %#ok<AGROW>
                     end
+                case "estimate"
+                    [plans, planIndex] = highOrderEstimatePlans(app);
+                    if isempty(plans)
+                        error('alignest:highOrderInput', '先に「2. 面内推定の設定」で評価してください。');
+                    end
+                    if alignest.valueSpec(app.Settings.data).scalar
+                        error('alignest:highOrderScalar', ['Shot 高次補正は X・Y の2成分（dx・dy）が要ります（1変数の推定の' ...
+                            'データでは計算できません）。']);
+                    end
+                    methodIndex = c.highOrderEstimateMethod.Value;
+                    for k = reshape(selection(selection <= numel(plans)), 1, [])
+                        unit = app.Data.units(plans(k).unitIndex);
+                        out = cachedRotationEstimate(app, plans(k), planIndex(k), methodIndex);   % 評価と同じ推定（画面の記憶を使い回す）
+                        estimated = unit;   % 学習した Mark は計測値、学習しなかった Mark は推定値
+                        estimated.marks.measX(out.testIndex.X) = out.estimate.X;
+                        estimated.marks.measY(out.testIndex.Y) = out.estimate.Y;
+                        estimated.marks.validX(out.testIndex.X) = isfinite(out.estimate.X);
+                        estimated.marks.validY(out.testIndex.Y) = isfinite(out.estimate.Y);
+                        wafers(end + 1) = struct("label", unit.label, "points", ...
+                            alignest.highOrderUnitPoints(estimated, "計測値＋推定値"), "unit", unit); %#ok<AGROW>
+                    end
                 case "target"
                     run = app.TargetRun;
                     if isempty(run)
@@ -1945,6 +2050,11 @@ classdef (Abstract) HighOrderTab < appui.Core
             switch source
                 case "data"
                     text = "「1. データ読込」の計測データ（" + app.FilePath + "）";
+                case "estimate"
+                    c = app.Controls;
+                    text = "「3. 結果一覧」の評価の推定値（手法 " + string(c.highOrderEstimateMethod.Items{ ...
+                        [c.highOrderEstimateMethod.ItemsData{:}] == c.highOrderEstimateMethod.Value}) + "｜" + ...
+                        string(c.highOrderEstimatePlan.Value) + "。学習した Mark は計測値）";
                 case "target"
                     text = "「5. 未知の座標の推定」の推定値（手法 " + app.TargetRun.method.label + "）";
                     if app.HighOrderRun.measured
@@ -1952,6 +2062,14 @@ classdef (Abstract) HighOrderTab < appui.Core
                     end
                 otherwise
                     text = "Excel・CSV（" + app.HighOrderFile.info.file + "）";
+            end
+        end
+
+        function onHighOrderStatOutlierChanged(app)
+            % 外れ値の判定の幅 n を変えたら設定に入れ、補正の評価の表を描き直す（計算し直さない）
+            app.Settings.highOrder.statOutlierN = app.Controls.highOrderStatOutlierN.Value;
+            if ~isempty(app.HighOrderRun)
+                showHighOrderSummary(app);
             end
         end
 
@@ -2562,20 +2680,6 @@ points = points(isfinite(points.shotNo), :);
 shots = table(points.shotNo(first), points.x(first) - points.localX(first), points.y(first) - points.localY(first), ...
     points.group(first), points.waferRtUsed(first), points.waferRtX(first), points.waferRtY(first), 'VariableNames', ...
     ["shotNo", "Xc", "Yc", "group", "waferRtUsed", "waferRtX", "waferRtY"]);
-end
-
-function scale = stackArrowScale(values, sizeMm)
-% Shot を重ねる図の矢印の倍率 [mm/nm]：大きさの95%点の矢印が Shot の短い辺の ARROW_RATIO 倍
-% （alignest.plot.shotStackMap の自動の倍率と同じ。図を並べるとき、3つの図の値をまとめて決める）
-ARROW_RATIO = 0.18;
-magnitude = sort(hypot(values(:, 1), values(:, 2)));
-magnitude = magnitude(isfinite(magnitude));
-scale = 0;   % 0 なら shotStackMap が決める（値が無い・Shot の大きさが分からない）
-if isempty(magnitude) || magnitude(end) <= 0 || any(~isfinite(sizeMm))
-    return
-end
-reference = magnitude(max(1, ceil(0.95 * numel(magnitude))));
-scale = min(sizeMm) * ARROW_RATIO / max(reference, eps);
 end
 
 function residuals = residualColumns(residual, pointKeys, allKeys, pointValues, leverage)

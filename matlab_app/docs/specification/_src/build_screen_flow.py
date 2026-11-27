@@ -15,6 +15,19 @@ from deckkit import (ACCENTS, text_lines, BODY, CONTENT_LEFT, CONTENT_WIDTH, COR
 from features import APP_NAME, VERSION_NOTE
 
 HERE = Path(__file__).resolve().parent
+# アプリのタブの見出しの色（業務でつながるタブ：2〜5 は青、6・7 は橙。appui.Core の ESTIMATION_TAB_COLOR・CORRECTION_TAB_COLOR）
+ESTIMATION_COLOR, ESTIMATION_TINT = "005CAB", "DCE8F5"
+CORRECTION_COLOR, CORRECTION_TINT = "B85C00", "F8E6D3"
+OTHER_COLOR, OTHER_TINT = "4A4E69", "ECEDF2"
+
+
+def tab_colors(number):
+    """タブの番号（1〜8）の色と淡い色（アプリの見出しの色分けと同じ）"""
+    if 2 <= number <= 5:
+        return ESTIMATION_COLOR, ESTIMATION_TINT
+    if number in (6, 7):
+        return CORRECTION_COLOR, CORRECTION_TINT
+    return OTHER_COLOR, OTHER_TINT
 DEFAULT_OUTPUT = HERE.parent / f"{APP_NAME}_画面遷移図.pptx"
 DECK_NAME = f"{APP_NAME} 画面遷移図"
 
@@ -115,12 +128,12 @@ def build(output: Path, reference: Path):
     columns = [
         ("1. データ読込", ["② 列の対応・座標の単位", "Wafer マップ", "Shot レイアウト", "Shot 重ね合わせ", "質的変数の交互作用", "ばらつき分解（図・表）"]),
         ("2. 面内推定の設定", ["上の帯：評価を始める・設定", "計測設定（計測マップ：成分の差・統計量の差）", "比べる手法", "評価・Overlay 補正"]),
-        ("3. 結果一覧", ["［表・グラフ］表・グラフ・基準の手法との比較・Wafer のベスト・ワースト",
+        ("3. 結果一覧", ["［表・グラフ］表・グラフ・基準の手法との比較・Waferベスト/ワースト",
                        "［計測配置］計測を足す場所・計測配置の比較・補正の悪化",
                        "［誤差の分析］推定値と誤差の分布・残差の箱ひげ図・推定値と実測値の散布図・残差と説明変数・分布の比較・処理時間の内訳",
                        "［補正の比較］実測値と推定値の補正・補正残差のばらつき分解"]),
         ("4. Waferごとのマップ", ["マップ（1 つの条件）", "並べて比べる条件", "Shot スタックマップ"]),
-        ("5. 未知の座標の推定", ["図", "推定値の表", "補正のモデル", "補正値", "補正残差のマップ"]),
+        ("5. 未知の座標の推定", ["図", "推定値の表", "補正のモデル（項のチェック）", "補正値", "補正残差のマップ", "補正の比較"]),
         ("6. Shot高次補正", ["［入力と項］Excel・CSV の列・使う項と VIF・k の選定",
                           "［結果］補正の評価・マップ・ヒストグラム・補正値テーブル・書き出し",
                           "［比べる］結果の履歴・他の Wafer の補正・補正の比較・2 つの条件を並べる・λ・c のスイープ・Wafer の比較"]),
@@ -131,7 +144,7 @@ def build(output: Path, reference: Path):
     gap = (CONTENT_WIDTH - sum(widths)) / 7
     x = CONTENT_LEFT
     for index, ((title, items), w) in enumerate(zip(columns, widths)):
-        color, tint = ACCENTS[index % 4]
+        color, tint = tab_colors(index + 1)   # アプリと同じ色分け
         arrow(slide, x + w / 2, 2.05, x + w / 2, 2.3, color=MUTED, head=False)
         box(slide, x, 2.3, w, 0.62, fill=color)
         text(slide, x + 0.04, 2.3, w - 0.08, 0.62, title, size=10.5, color=WHITE, bold=True, align="c", anchor="m")
@@ -139,6 +152,8 @@ def build(output: Path, reference: Path):
         text(slide, x + 0.06, 3.04, w - 0.12, 2.95, items, size=9, color=INK, bullets=True, space_after=2)
         x += w + gap
     text(slide, CONTENT_LEFT, 6.12, 2.3, 0.3, "別の窓・ダイアログ", size=11, color=MUTED, bold=True)
+    text(slide, 3.0, 6.12, 9.7, 0.3, "見出しの色はアプリのタブの色分け：2〜5（面内推定の流れ）は青、6・7（Shot 内の補正）は橙",
+         size=10, color=MUTED, align="r")
     windows = ["ヘルプ（機能編・技術編）", "記録を見る（評価の記録）", "進み具合（一時中断）", "ファイルを選ぶ・保存する", "知らせ（注意・エラー）"]
     for index, label in enumerate(windows):
         node(slide, CONTENT_LEFT + index * 2.45, 6.42, 2.3, 0.45, label, fill=NAVY, color=WHITE, size=10, line_color=None)
@@ -153,12 +168,12 @@ def build(output: Path, reference: Path):
         "3": (xs[2], 1.6, "結果一覧", "表・グラフ・計測配置・誤差・補正"),
         "4": (xs[3], 1.6, "Waferごとのマップ", "1 つの条件の残差、条件を並べる"),
         "5": (xs[2], 3.65, "未知の座標の推定", "補正のモデルは 2. と同じ設定"),
-        "6": (xs[3], 3.65, "Shot高次補正", "入力：1 の計測データ・5 の推定値・Excel"),
+        "6": (xs[3], 3.65, "Shot高次補正", "入力：1 の計測データ・3 の評価の推定値・5 の推定値・Excel"),
         "7": (xs[3], 5.65, "Mark配置最適化", "入力：座標・1 の計測データ・6 の入力"),
-        "8": (xs[1], 5.65, "計測Mapローテ", "補正のモデル：2 の Overlay か 6 の高次補正"),
+        "8": (xs[1], 5.65, "計測Mapローテ", "入力：1・3・5・6 の Excel、補正：2 か 6"),
     }
-    for index, (key, (x, y, title, note)) in enumerate(nodes.items()):
-        color, tint = ACCENTS[index % 4]
+    for key, (x, y, title, note) in nodes.items():
+        color, tint = tab_colors(int(key))   # アプリと同じ色分け
         screen_node(slide, x, y, w, h, key, title, note, color, tint)
     arrow(slide, xs[0] + w + 0.02, 2.1, xs[1] - 0.02, 2.1, color=INK, width=1.75)
     tag(slide, xs[0] + w - 0.3, 1.3, 1.1, "データ", size=9.5)
@@ -189,13 +204,14 @@ def build(output: Path, reference: Path):
             ["2. 面内推定の設定", "評価の結果", "3. 結果一覧・4. マップ", "評価が終わると「3. 結果一覧」を開く"],
             ["3. 結果一覧", "計測を足す場所（候補の Shot・Mark）", "2. 面内推定の設定", "「必ず計測の欄に入れる」で必ず計測する shotNo・Mark に足す"],
             ["3. 結果一覧", "評価の学習パターン", "5. 未知の座標の推定", "学習データに選ぶ（その Wafer の学習 Shot だけで推定）"],
-            ["3.・5.", "評価の推定値・未知の座標の推定値", "8. 計測Mapローテ・6.", "ばらつき・FB の入力、Shot 高次補正の入力"],
-            ["2.・5.", "Overlay 補正のモデル", "2.・5.・8.", "同じ設定。どちらで変えても同じ（FB の補正のモデルにも使う）"],
+            ["3.・5.", "評価の推定値・未知の座標の推定値", "6.・8.", "Shot 高次補正の入力、ばらつき・FB の入力"],
+            ["2. 面内推定の設定", "Overlay 補正のモデル（基準の補正）", "5.・8.", "補正の比較の基準、FB の補正のモデル"],
             ["6. Shot高次補正", "入力のデータ・補正の式・回帰", "7. Mark配置最適化", "入力「6. の入力」、「6. の式を写す」"],
             ["6. Shot高次補正", "Shot 高次補正の設定", "8. 計測Mapローテ", "FB の補正のモデル「6. の Shot 高次補正」"],
-            ["8. 計測Mapローテ", "計測マップの Excel", "2. 面内推定の設定", "計測点の選び方「Excel 取込」で読む"],
+            ["6. Shot高次補正", "読み込んだ Excel・CSV", "8. 計測Mapローテ", "入力「6. Shot高次補正で読み込んだデータ」"],
+            ["8. 計測Mapローテ", "計測マップの Excel", "2. 面内推定の設定", "計測点の選び方「Excel 取込」で読む（Pro 版）"],
             ["6. Shot高次補正", "点ごとの値（計測データの形）", "1.・6.", "書き出したファイルをそのまま読み直す"]]
-    table(slide, CONTENT_LEFT, 1.55, [2.2, 3.2, 2.55, 4.18], rows, size=11, header_size=12, row_h=0.47, bold_first=True)
+    table(slide, CONTENT_LEFT, 1.5, [2.2, 3.2, 2.55, 4.18], rows, size=10.5, header_size=11.5, row_h=0.43, bold_first=True)
 
     # 6 UC1 全体
     slide = deck.body("UC1　手法比較の評価", "UC1 手法比較の評価 ― 読み込みから結果のマップまで")
@@ -268,7 +284,7 @@ def build(output: Path, reference: Path):
 
     # 9 UC1 結果の見方
     slide = deck.body("UC1　手法比較の評価", "「3. 結果一覧」の中の移り方 ― 4 つのまとまりと絞り込み")
-    chain(slide, [("表・グラフ", "表・グラフ・基準の手法との比較・Wafer のベスト・ワースト"),
+    chain(slide, [("表・グラフ", "表・グラフ・基準の手法との比較・Waferベスト/ワースト"),
                   ("計測配置", "計測を足す場所・計測配置の比較・補正の悪化"),
                   ("誤差の分析", "誤差の分布・箱ひげ図・散布図・残差と説明変数・分布の比較・処理時間"),
                   ("補正の比較", "実測値と推定値の補正・補正残差のばらつき分解")], y=1.55, h=1.15)
@@ -279,21 +295,21 @@ def build(output: Path, reference: Path):
          "右上の 1 段目は書き出し、2 段目は読み込み。", size=11, color=INK, anchor="m")
 
     # 10 UC2
-    slide = deck.body("UC2　未知の座標の推定", "UC2 未知の座標の推定 ― 推定値と重ね合わせ補正値を求める")
+    slide = deck.body("UC2　未知の座標の推定", "UC2 未知の座標の推定 ― 推定値を足して高次の補正を見積もる")
     chain(slide, [("点を決める", "Excel・CSV を読む、全 Shot に置く・格子で置く"),
-                  ("条件を選ぶ", "Wafer・学習データ（全 Mark か学習パターン）・手法"),
-                  ("推定する", "外挿・Wafer の外・学習に無い Mark 番号を知らせる"),
-                  ("補正値を計算", "実測値＋推定値で Overlay 補正のモデルを当てはめる"),
-                  ("書き出す", "推定値・補正値・補正の残差を Excel に")], y=1.55, h=1.15)
-    screen(slide, "s14_target.png", CONTENT_LEFT, 3.0, 5.9, "図：推定値の色・学習点・凸包の破線・外挿の ×")
-    screen(slide, "s15_target_overlay.png", 6.83, 3.0, 5.9, "補正値：点の種類ごとの |平均|+3σ と係数")
+                  ("推定する", "Wafer・学習データ・手法。外挿・Wafer の外を知らせる"),
+                  ("補正のモデル", "高次の式を選び、項をチェックで選ぶ"),
+                  ("補正値を計算", "実測値＋推定値＋未知の座標で当てはめる"),
+                  ("全計測と比べる", "①〜④ の補正後の |平均|+3σ を比べる")], y=1.55, h=1.15)
+    screen(slide, "s15b_target_model.png", CONTENT_LEFT, 3.0, 5.9, "補正のモデル：式と項のチェック（0次・1次は外せない）")
+    screen(slide, "s15c_target_compare.png", 6.83, 3.0, 5.9, "補正の比較：① 全計測・② 一部＋推定（基準）、③・④ 未知の座標を足す")
     box(slide, CONTENT_LEFT, 6.45, CONTENT_WIDTH, 0.42, fill=CORAL_TINT)
-    text(slide, 0.8, 6.45, 11.8, 0.42, "「補正のモデル」で式を変えると「計算し直してください」と出る →「このモデルで重ね合わせ補正値を計算する」で計算し直す。",
-         size=11, color=INK, anchor="m")
+    text(slide, 0.8, 6.45, 11.8, 0.42, "④ が ② より小さければ、未知の座標の推定値を足した高次の補正で、一部計測でも重ね合わせがよくなる見込み。"
+         "補正残差のマップは並べる・Shot スタックマップ・円も。", size=11, color=INK, anchor="m")
 
     # 11 UC3
     slide = deck.body("UC3　Shot 高次補正", "UC3 Shot 高次補正 ― 計算して、比べて、決める")
-    chain(slide, [("入力と Wafer", "1 の計測データ・5 の推定値・Excel（列を選ぶ）"),
+    chain(slide, [("入力と Wafer", "計測データ・評価の推定値・5 の推定値・Excel"),
                   ("式・くくり・項", "補正の式・くくり・Wafer 補正・Shot 共通・VIF"),
                   ("回帰", "最小二乗・Huber・LAD と正則化（L2・L1）"),
                   ("補正を計算する", "補正の評価・マップ・補正値テーブル"),
@@ -301,7 +317,7 @@ def build(output: Path, reference: Path):
     screen(slide, "s16_highorder_summary.png", CONTENT_LEFT, 3.0, 5.9, "結果：補正の評価（段階ごとの残差）")
     screen(slide, "s17_highorder_map.png", 6.83, 3.0, 5.9, "結果：マップ（高次補正の残差）")
     box(slide, CONTENT_LEFT, 6.45, CONTENT_WIDTH, 0.42, fill=PANEL)
-    text(slide, 0.8, 6.45, 11.8, 0.42, "設定・入力を変えると、計算の前に決まらない項と足りない Shot を ⚠ で知らせ、結果の上に「計算し直してください」と出す。",
+    text(slide, 0.8, 6.45, 11.8, 0.42, "補正の評価には外れ値（中央値 ± n × MAD の外）を除いた |平均|+3σ も出る。設定・入力を変えると「計算し直してください」と出す。",
          size=11, color=INK, anchor="m")
 
     # 12 UC4
@@ -384,8 +400,8 @@ def build(output: Path, reference: Path):
     # 16 共通の操作
     slide = deck.body("共通の操作", "どの画面からも使う操作 ― メニュー・ヘルプ・進み具合の窓")
     screen(slide, "s22_help.png", CONTENT_LEFT, 1.55, 5.2, "ヘルプの窓（機能編・技術編を左上で切り替える）")
-    items = [("メニュー「設定」", "ライト・ダーク、文字の大きさ、凡例の位置、Scan 方向の向きと色、画面の大きさに合わせる、乱数の種"),
-             ("図の右クリック", "その図だけの凡例の位置を選ぶ（すべての図の設定に従う、で戻す）"),
+    items = [("メニュー「設定」", "文字の大きさ、Scan 方向の向きと色、画面の大きさに合わせる、乱数の種（Pro 版はライト・ダーク、凡例の位置も）"),
+             ("図の右クリック（Pro 版）", "その図だけの凡例の位置を選ぶ（すべての図の設定に従う、で戻す）"),
              ("進み具合の窓", "評価・推定値の計算・書き出しで出る。「一時中断」（× も同じ）で途中までの結果を残す"),
              ("知らせ", "注意（計算はできる）は橙、処理が止まるエラーは赤の文字か知らせの窓。理由と直し方を書く")]
     for index, (heading, body) in enumerate(items):
@@ -399,8 +415,8 @@ def build(output: Path, reference: Path):
             ["G2", "2. 面内推定の設定", "計測点・手法・評価の条件、計測マップ、評価を始める", "G3（評価が終わると開く）、W3"],
             ["G3", "3. 結果一覧", "指標・集計、表・グラフ・分析、書き出し・読み込み", "G4、G2（計測を足す）、G5・G8（推定値）"],
             ["G4", "4. Waferごとのマップ", "条件を選ぶ・並べる・Shot スタックマップ", "—"],
-            ["G5", "5. 未知の座標の推定", "点を作る・推定する・補正値を計算する・書き出す", "G6・G8（推定値）"],
-            ["G6", "6. Shot高次補正", "入力・式・回帰、補正を計算する、比べる、書き出す", "G7（入力・式）、G8（補正のモデル）"],
+            ["G5", "5. 未知の座標の推定", "点を作る・推定する・補正のモデル・補正値・全計測と比べる", "G6・G8（推定値）"],
+            ["G6", "6. Shot高次補正", "入力・式・回帰、補正を計算する、比べる、書き出す", "G7（入力・式）、G8（補正・Excel）"],
             ["G7", "7. Mark配置最適化", "候補の Mark・乱数 Shot・配置を最適化・書き出す", "—"],
             ["G8", "8. 計測Mapローテ", "ばらつき・計測マップ・FB の検証・書き出す", "G2（Excel 取込）"],
             ["W1", "ヘルプの窓", "機能編・技術編の切り替え", "メニュー「ヘルプ」から"],

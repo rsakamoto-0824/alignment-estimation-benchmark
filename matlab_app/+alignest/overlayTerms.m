@@ -2,6 +2,8 @@ function terms = overlayTerms(model)
 %OVERLAYTERMS Shot 内の補正式の項（係数番号と、Shot 内座標 x・y のべき）。
 %   terms.dx・terms.dy は 項の数 × 3 の行列 [係数番号 k, x のべき, y のべき]。
 %   model = "linear"：1次（k1〜k6：並進・倍率・回転・直交度）
+%           "quadratic"（2次：k1〜k12）・"custom"（カスタム：k1〜k38）：alignest.highOrderTerms の同じ名前の式の項
+%           （「5. 未知の座標の推定」の補正のモデルで使う。メーカーの式は変えない）
 %           "asml"・"canon"・"nikon"：Shot 高次補正の式。Canon・Nikon は Overlay 計測ルールの式（項・係数番号・変数・符号は
 %           変えない）。ASML は k1〜k19 のすべての項（3次までの全項。2026-10-30 のユーザーの指示で、ルールの式
 %           dx = k1 + k3*x + k5*y + k7*x^2 + k11*y^2 + k13*x^3 + k19*y^3、dy = k2 + k4*y + k6*x + k8*y^2 + k10*x*y + k12*x^2
@@ -28,7 +30,13 @@ switch string(model)
             29, 0, 4; 41, 0, 5; 55, 0, 6];
         terms.dy = [2, 0, 0; 4, 0, 1; 6, 1, 0; 8, 0, 2; 10, 1, 1; 12, 2, 0; 14, 0, 3; 16, 1, 2; 18, 2, 1; ...
             22, 0, 4; 24, 1, 3; 32, 0, 5; 34, 1, 4; 44, 0, 6; 46, 1, 5];
+    case {"quadratic", "custom"}
+        % 2次・カスタムは Shot 高次補正の式の表から作る（番号の付け方は Canon・Nikon と同じ）
+        table_ = alignest.highOrderTerms(string(model));
+        terms.dx = [table_.k(table_.axis == "dx"), table_.xPower(table_.axis == "dx"), table_.yPower(table_.axis == "dx")];
+        terms.dy = [table_.k(table_.axis == "dy"), table_.xPower(table_.axis == "dy"), table_.yPower(table_.axis == "dy")];
     otherwise
-        error('alignest:overlayModel', 'Shot 内の補正式は linear・asml・canon・nikon のいずれかです: %s', model);
+        error('alignest:overlayModel', ['Shot 内の補正式は linear・quadratic・custom・asml・canon・nikon のいずれかです:' ...
+            ' %s'], model);
 end
 end

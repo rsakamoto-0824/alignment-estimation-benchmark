@@ -70,6 +70,14 @@ if choice.perShot ~= "none"
 end
 design = [blocks{:}];
 terms = vertcat(termParts{:});
+% 使わない項（choice.excludedTerms。"成分|dx（dy）|x のべき,y のべき" の文字。「5. 未知の座標の推定」の補正のモデルの
+% チェックで外した項）の列を除く
+if isfield(choice, "excludedTerms") && ~isempty(choice.excludedTerms)
+    keys = alignest.overlayTermKeys(terms, axisIndex);
+    keep = ~ismember(keys, string(choice.excludedTerms));
+    design = design(:, keep);
+    terms = terms(keep, :);
+end
 end
 
 function table_ = pick(terms, axisIndex)

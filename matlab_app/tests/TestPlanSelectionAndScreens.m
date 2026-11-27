@@ -21,10 +21,15 @@ classdef TestPlanSelectionAndScreens < matlab.unittest.TestCase
 
     methods (Test)
         function defaultsChanged(testCase)
-            % 初期設定：X・Y の質的変数を別に選ぶ（はじめは同じ選択）、Huber の c = 3、GAM は質的変数あり、Mark の数は1 Shot あたり
+            % 初期設定：X・Y の質的変数を別に選ぶ（X 成分は Mark 番号だけ、Y 成分は Scan 方向・Mark 番号）、Huber の c = 3、
+            % GAM は質的変数あり、Mark の数は1 Shot あたり、計測率は 30〜80 %、交換法の初期配置の数は 3
             defaults = alignest.defaultSettings();
             testCase.verifyTrue(defaults.factors.separateY);
-            testCase.verifyEqual(alignest.factorChoice(defaults, "Y"), alignest.factorChoice(defaults, "X"));
+            testCase.verifyFalse(defaults.factors.scan, "X 成分は初期設定では Scan 方向を使わない");
+            testCase.verifyTrue(defaults.factors.mark);
+            testCase.verifyTrue(defaults.factors.y.scan && defaults.factors.y.mark);
+            testCase.verifyEqual([defaults.sampling.rateStart, defaults.sampling.rateEnd, defaults.sampling.rateStep], [30, 80, 10]);
+            testCase.verifyEqual(defaults.sampling.exchangeStarts, 3);
             testCase.verifyEqual([defaults.highOrder.huberTuning, defaults.markLayout.huberTuning], [3, 3]);
             testCase.verifyEqual(alignest.recommendedMethods().gam.factorModes, "factor");
             testCase.verifyEqual(defaults.sampling.markCountBy, "perShot");

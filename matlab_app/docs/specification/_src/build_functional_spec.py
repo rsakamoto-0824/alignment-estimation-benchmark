@@ -203,7 +203,7 @@ def build(output: Path, reference: Path):
     # 8 出力
     slide = deck.body("02　入力と出力", "書き出すファイル ― 結果・補正値・計測マップ・図・設定")
     rows = [["出力", "形式", "作る画面", "主な中身"],
-            ["評価結果", "Excel", "3. 結果一覧", "説明・集計・集計_統計量・Wafer のベスト・ワースト・Wafer ごと・学習 Shot・処理時間・設定"],
+            ["評価結果", "Excel", "3. 結果一覧", "説明・集計・集計_統計量・Waferのベスト・ワースト・Wafer ごと・学習 Shot・処理時間・設定"],
             ["推定値", "Excel", "3. 結果一覧", "Mark ごとの座標・計測値・推定値・残差・区分・質的変数・Overlay 残差"],
             ["計測マップ", "Excel", "2. 面内推定の設定", "計測マップ（_Mark）・学習パターン・成分の差・成分の係数・統計量の差"],
             ["未知の座標の推定値・補正値", "Excel", "5. 未知の座標の推定", "推定値・説明・補正値・補正の残差・補正に使った点"],
@@ -233,15 +233,15 @@ def build(output: Path, reference: Path):
             ["GPR", "10 カーネル・ν を指定する Matérn・周期 × 説明変数（X,Y／X,Y,半径）× 質的変数の 6 通りの扱い", "共通"],
             ["TPS", "平滑化 GCV・なし・λ 指定 × 質的変数なし／Backfitting", "共通"],
             ["XY 多項式", "次数を指定（推奨の組み合わせは 5 次）", "共通"],
-            ["RBF", "ガウス型の動径基底＋1 次多項式（GCV）", "Pro"],
-            ["Kriging", "通常・Universal × バリオグラム 5 種 × Backfitting", "Pro"],
-            ["GAM", "P-spline・ガウス過程の形状関数（REML）× 質的変数あり／なし", "Pro"],
-            ["RT モデル", "次数を指定（X・Y を一緒に当てはめる）", "Pro"],
-            ["Fringe Zernike", "次数 1〜7（Z64 まで）× 質的変数なし／Backfitting", "Pro"]]
+            ["RBF", "ガウス型の動径基底＋1 次多項式（GCV）", "共通"],
+            ["Kriging", "通常・Universal × バリオグラム 5 種 × Backfitting", "共通"],
+            ["GAM", "P-spline・ガウス過程の形状関数（REML）× 質的変数あり／なし", "共通"],
+            ["Fringe Zernike", "次数 1〜7（Z64 まで）× 質的変数なし／Backfitting", "共通"],
+            ["RT モデル", "次数を指定（X・Y を一緒に当てはめる）", "Pro"]]
     table(slide, CONTENT_LEFT, 1.55, [1.75, 4.95, 0.75], rows, size=11, header_size=12, row_h=0.5,
           aligns=["l", "l", "c"], bold_first=True)
-    text(slide, CONTENT_LEFT, 6.12, 7.45, 0.75, "質的変数（Scan 方向・Mark 番号・Shot 行の奇偶・Slot の偶奇・ファイルの列）と"
-         "連続値の列を説明変数に足せる。初期設定は GPR だけ、「推奨の組み合わせ」で GPR・TPS・XY 5 次。", size=11, color=MUTED)
+    text(slide, CONTENT_LEFT, 6.12, 7.45, 0.75, "質的変数（初期設定：X は Mark 番号、Y は Scan 方向・Mark 番号）と連続値の列を説明変数に"
+         "足せる。初期設定は GPR だけ、「推奨の組み合わせ」で GPR・TPS・XY 5 次。", size=11, color=MUTED)
     heading_blocks(slide, 8.4, 1.55, 4.33, feature_blocks("2", ["評価・Overlay 補正"]), size="auto", max_y=3.6)
     panel(slide, 8.4, 3.75, 4.33, 3.1, "Overlay 補正の評価",
           ["実測値で補正した残差：全 Mark の計測値で補正", "推定値で補正した残差：学習しなかった Shot は推定値で補正し、計測値に当てる",
@@ -275,14 +275,14 @@ def build(output: Path, reference: Path):
               "グラフ：手法 × 選び方ごとの線（横軸は学習 Shot 数）",
               "評価が終わると開く。表・グラフで手法と学習 Shot 数を比べ、計測配置・誤差の分析・補正の比較の中のタブで掘り下げる。"
               "気になる条件は「4. Waferごとのマップ」で Wafer 上の残差を見る。", image_w=5.6)
-    tab_slide(deck, "5", "「5. 未知の座標の推定」― 計測していない点の値と補正値", "s14_target.png",
-              "格子の点を推定した図（学習点・凸包の破線）",
-              "点を Excel・CSV から読むか画面で作る → Wafer・学習データ・手法を選んで「推定する」→ 外挿の知らせを確かめる → "
-              "「重ね合わせ補正値を計算する」→ Excel に書き出す。")
+    tab_slide(deck, "5", "「5. 未知の座標の推定」― 計測していない点の値と補正値", "s15c_target_compare.png",
+              "補正の比較：全計測・一部計測＋面内推定 × 基準の補正・このタブの補正",
+              "点を読むか作る →「推定する」→ 補正のモデル（高次の式と項のチェック）を選ぶ →「重ね合わせ補正値を計算する」→ "
+              "「全計測と比べる」で、未知の座標の推定値を足した補正で重ね合わせがよくなるかを見る → Excel に書き出す。")
     tab_slide(deck, "6", "「6. Shot高次補正」― k パラメータを求めて比べる", "s16_highorder_summary.png",
               "補正の評価（段階ごとの残差の |平均|+3σ）",
-              "① 入力と Wafer → ② 補正の式・くくり・Wafer 補正・Shot 共通補正・使う項（VIF）→ ③ 回帰 →「補正を計算する」→ "
-              "結果を見て、比べる（補正の比較・λ のスイープ・k の選定）で条件を決める。")
+              "① 入力（計測データ・評価の推定値・未知の座標の推定値・Excel）と Wafer → ② 補正の式・くくり・Wafer 補正・Shot 共通補正・"
+              "使う項（VIF）→ ③ 回帰 →「補正を計算する」→ 外れ値を除いた |平均|+3σ も見て、比べる（補正の比較・λ のスイープ・k の選定）。")
     tab_slide(deck, "7", "「7. Mark配置最適化」― 少ない Mark でどこまで補正できるか", "s18_marklayout.png",
               "制御残差推移（横軸 I 効率）",
               "入力（座標・計測データ・6. の入力・Excel）→ 必ず計測する Mark → 補正の式と回帰 → 最低数・最大数 → "
@@ -294,8 +294,8 @@ def build(output: Path, reference: Path):
 
     # 18 共通の機能
     slide = deck.body("03　機能（タブごと）", "共通の機能 ― メニュー・図・ヘルプ・設定ファイル")
-    items = [("表示の設定", "ライト・ダーク、文字の大きさ（12〜20 pt）、凡例の位置（すべて・図ごと）、Scan 方向の向きと色、"
-                       "画面の大きさに合わせる。次に開いたときも同じ。"),
+    items = [("表示の設定", "文字の大きさ（12〜20 pt）、Scan 方向の向きと色、画面の大きさに合わせる。Pro 版はライト・ダークと"
+                       "凡例の位置も。タブは業務のつながりで色分け（2〜5 青・6〜7 橙）。"),
              ("乱数の種", "計測点の選び方と Mark 配置最適化で共通の 1 つの種。同じ種なら同じ結果（評価の結果が変わる設定）。"),
              ("図の保存・コピー", "凡例・色の目盛りも入れた PNG を保存、同じ画像をクリップボードへ。PowerPoint・Teams・メールに貼れる。"),
              ("ヘルプ", "別の窓。機能編（タブごとの使い方・用語）と技術編（式・計算の方法）を左上のボタンで切り替える。"),
@@ -309,31 +309,34 @@ def build(output: Path, reference: Path):
         card(slide, x, y, w, h, color, str(index + 1), heading, body, size=13)
 
     # 19 通常版と Pro 版
-    slide = deck.body("04　版と非機能", "通常版と Pro 版 ― 違うのは設定の 3 つだけ")
-    rows = [["設定", "通常版", "Pro 版"],
-            ["比べる手法", "GPR（カーネル・質的変数の扱いはすべて）・TPS・XY 多項式", "すべて（RBF・Kriging・Universal Kriging・GAM・RT モデル・Fringe Zernike も）"],
+    slide = deck.body("04　版と非機能", "通常版と Pro 版 ― 通常版で使わない機能")
+    rows = [["設定・機能", "通常版", "Pro 版"],
+            ["比べる手法", "RT モデル以外のすべて（GPR・TPS・RBF・Kriging・GAM・XY 多項式・Fringe Zernike）", "すべて（RT モデルも）"],
             ["計測点の選び方", "Shot 単位の I 最適・ランダム", "すべて（D 最適・Sobol 列・ポアソンディスク・Excel 取込・Mark 単位も）"],
-            ["Overlay 補正の成分", "組み込みの式（Wafer 成分の次数・1 次）", "「式を入力」も"]]
-    table(slide, CONTENT_LEFT, 1.55, [2.4, 4.6, 5.13], rows, size=12, header_size=13, row_h=0.72, bold_first=True)
+            ["Overlay 補正の成分", "組み込みの式（Wafer 成分の次数・1 次）", "「式を入力」も"],
+            ["指標・横軸", "Waferベスト/ワーストは R² だけ、補正の悪化は計測 Shot 数・Mark の数", "すべて（RMSE 以降の指標、推定誤差 RMSE の横軸も）"],
+            ["表示", "ライトモード、図ごとの既定の凡例の位置", "ダークモード、凡例の位置の変更も"]]
+    table(slide, CONTENT_LEFT, 1.5, [2.4, 5.6, 4.13], rows, size=11.5, header_size=12.5, row_h=0.5, bold_first=True)
     items = [("起動", "MATLAB：runAlignmentEstimationAppStandard（通常版）・runAlignmentEstimationApp（Pro 版）。"
                     "通常版の窓の名前に「（通常版）」が付く。"),
              ("設定の読み込み", "通常版で Pro 版の設定・既定の設定ファイルを読むと、使えない設定を使える設定に直して知らせる。"),
              ("配布", "buildStandaloneApp(edition=\"standard\") で通常版の exe（AlignmentEstimationAppStandard）を作る。")]
     for index, (heading, body) in enumerate(items):
         color, _ = ACCENTS[index]
-        card(slide, CONTENT_LEFT + index * 4.115, 4.65, 3.9, 2.2, color, str(index + 1), heading, body, size=11.5)
+        card(slide, CONTENT_LEFT + index * 4.115, 4.75, 3.9, 2.1, color, str(index + 1), heading, body, size=11.5)
 
     # 20 非機能要件
     slide = deck.body("04　版と非機能", "非機能要件 ― 動作環境・性能・頑健性・品質")
     rows = [["区分", "要件", "実現のしかた"],
             ["動作環境", "MATLAB R2022b で確認（R2021a 以上を想定）。Toolbox 不要", "最適化・検定は自作（+optim・+stats）。exe は同じ版の MATLAB Runtime で動く"],
-            ["性能", "起動・タブの切り替え・表示の変更を軽くする", "3〜8 のタブは初めて開いたときに作る。見えていない図は開いたときに描く"],
+            ["性能", "起動・タブの切り替え・評価を軽くする", "3〜8 のタブは初めて開いたときに作る。見えていない図は開いたときに描く。"
+             "候補の Shot が同じ Wafer は学習パターンを使い回す"],
             ["時間の見通し", "計算の前に目安、計算中に残り時間を出す", "推定 2 秒/条件＋学習パターンを作る時間で見積もる。実績から残りを出す"],
             ["継続性", "長い計算を止めて続きから計算できる", "一時中断・続きから再開・条件を追加して評価（済んだ組み合わせは使い回す）"],
             ["頑健性", "1 つの手法の失敗で止めない。入力の誤りは理由を出す", "失敗した行は指標を NaN、理由をメモに。注意は橙、止まるエラーは赤の文字"],
             ["使いやすさ", "画面は短い名前、詳しい説明はヘルプ", "ヘルプ（機能編・技術編）、文字の大きさ・色・凡例の設定"],
             ["セキュリティ", "外部サービス・認証情報を使わない。実データを入れない", "ネットにつながずに動く。リポジトリはサンプルデータだけ"],
-            ["品質", "計算が正しいこと", "自動テスト 333 件（45 ファイル）、Python 版との照合"]]
+            ["品質", "計算が正しいこと", "自動テスト 340 件（46 ファイル）、Python 版との照合"]]
     table(slide, CONTENT_LEFT, 1.55, [1.7, 4.6, 5.83], rows, size=11, header_size=12, row_h=0.58, bold_first=True)
 
     # 21 制約と注意事項

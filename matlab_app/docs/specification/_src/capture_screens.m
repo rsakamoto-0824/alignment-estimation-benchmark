@@ -34,6 +34,8 @@ shoot('s04_data_layout.png');
 selectTabs(app.Tabs.data, ["ばらつき分解"]);
 app.decomposeDataVariance("", "nested");
 shoot('s05_data_variance.png');
+app.decomposeDataVariance("", "components");
+shoot('s05b_data_components.png');
 
 app.openTab("settings");
 settings = app.Settings;
@@ -76,6 +78,19 @@ shoot('s14_target.png');
 app.computeTargetOverlay();
 selectTabs(app.Tabs.target, ["補正値"]);
 shoot('s15_target_overlay.png');
+% このタブの補正のモデル（高次の式と項のチェック）・補正残差のマップ（並べる）・補正の比較
+app.estimateTargets(1, results.plans(1).label, 1);
+app.setTargetCorrection(waferOrder=1, shotCommon="quadratic", perShot="linear");
+selectTabs(app.Tabs.target, ["補正のモデル"]);
+shoot('s15b_target_model.png');
+app.computeTargetOverlay();
+selectTabs(app.Tabs.target, ["補正残差のマップ"]);
+app.Controls.targetResidualCircles.Value = '100 135';
+app.drawTargetCorrectionMap("residual", "all", "vector", "side", "wafer");
+shoot('s15d_target_side.png');
+app.compareTargetCorrection();
+selectTabs(app.Tabs.target, ["補正の比較"]);
+shoot('s15c_target_compare.png');
 
 % ---- 想定利用 3：Shot 高次補正の評価 ----
 app.openTab("highOrder");

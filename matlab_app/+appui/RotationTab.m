@@ -30,6 +30,7 @@ classdef (Abstract) RotationTab < appui.Core
         function setRotationInput(app, source, methodIndex, plan, group)
             %SETROTATIONINPUT 入力を選ぶ（画面で選ぶのと同じ）。source："data"（1. データ読込の計測データ）・"estimate"
             %   （3. 結果一覧の評価の推定値：学習に使った Mark は計測値、ほかは推定値）・"target"（5. 未知の座標の推定値）・
+            %   "highOrderFile"（「6. Shot高次補正」で読み込んで列を選んだ Excel・CSV。loadHighOrderFile）・
             %   "file"（このタブで読み込んだ Excel・CSV。loadRotationFile）。
             %   methodIndex・plan：評価の推定値の手法の番号と学習パターン（"estimate" のとき）。group：対象の Wafer（"all"、
             %   "op:<Operation>"・"eqp:<EqpId>"・"both:<Operation>|<EqpId>"）。省略した値は今の選択のまま。
@@ -402,10 +403,12 @@ classdef (Abstract) RotationTab < appui.Core
             place(inputGrid, 2, 1);
             label(inputGrid, '入力', 1, 1);
             c.rotationSource = uidropdown(inputGrid, 'Items', {'1. データ読込の計測データ', '3. 結果一覧の評価の推定値', ...
-                '5. 未知の座標の推定値', 'Excel・CSV ファイル'}, 'ItemsData', {'data', 'estimate', 'target', 'file'}, ...
+                '5. 未知の座標の推定値', '6. Shot高次補正で読み込んだデータ', 'Excel・CSV ファイル'}, ...
+                'ItemsData', {'data', 'estimate', 'target', 'highOrderFile', 'file'}, ...
                 'ValueChangedFcn', @(~, ~) app.onRotationSourceChanged(), 'Tooltip', ['ばらつきと FB の検証に使う値。' ...
                 '評価の推定値：選んだ手法・学習パターンで、学習に使った Mark は計測値、ほかの Mark は推定値。未知の座標の' ...
-                '推定値：「5.」で推定した点の値（Wafer × 学習データの組み合わせごと）。Excel・CSV ファイル：下のボタンで' ...
+                '推定値：「5.」で推定した点の値（Wafer × 学習データの組み合わせごと）。6. のデータ：「6. Shot高次補正」で' ...
+                '読み込んで列を選んだ Excel・CSV。Excel・CSV ファイル：下のボタンで' ...
                 'このタブに読み込んだ表（列は右の「Excel・CSV の列」で選ぶ）。']);
             place(c.rotationSource, 1, 2);
             c.rotationLoadFile = uibutton(inputGrid, 'Text', 'Excel・CSV を読み込む…', ...
@@ -443,8 +446,10 @@ classdef (Abstract) RotationTab < appui.Core
             c.rotationShotStatistic = uidropdown(spreadGrid, 'Items', {'最大の Mark', '平均'}, 'ItemsData', {'max', 'mean'}, ...
                 'Enable', 'off', 'Tooltip', 'Shot ごとのとき、Shot の中の Mark の 3σ のうち、最も大きい値か平均を Shot の値にします。');
             place(c.rotationShotStatistic, 2, 2);
+            % ②・③ の手順のボタンは色を付けて目立たせる（Tag "primary" で、画面の色を変えても色を残す）
             c.rotationComputeVariability = uibutton(spreadHeader, 'Text', 'ばらつきを求める', 'Enable', 'off', ...
-                'ButtonPushedFcn', @(~, ~) app.onComputeRotationVariability());
+                'ButtonPushedFcn', @(~, ~) app.onComputeRotationVariability(), 'BackgroundColor', app.ROTATION_SPREAD_COLOR, ...
+                'FontColor', [1, 1, 1], 'FontWeight', 'bold', 'Tag', 'primary');
             place(c.rotationComputeVariability, 1, 2);
 
             mapHeader = sectionHeader('③ 計測の優先度と計測マップ', 7);
@@ -502,7 +507,8 @@ classdef (Abstract) RotationTab < appui.Core
                 '番号を付けたときは選べません）。']);
             place(c.rotationShotNumbers, 9, [1, 2]);
             c.rotationMakeMaps = uibutton(mapHeader, 'Text', '計測マップを作る', 'Enable', 'off', ...
-                'ButtonPushedFcn', @(~, ~) app.onMakeRotationMaps());
+                'ButtonPushedFcn', @(~, ~) app.onMakeRotationMaps(), 'BackgroundColor', app.ROTATION_MAP_COLOR, ...
+                'FontColor', [1, 1, 1], 'FontWeight', 'bold', 'Tag', 'primary');
             place(c.rotationMakeMaps, 1, 2);
 
             fbHeader = sectionHeader('④ FB の検証', 10);
@@ -751,13 +757,23 @@ classdef (Abstract) RotationTab < appui.Core
             % 選んだ入力の Wafer の計測データ（対象の選択肢・図の Shot の枠に使う。推定値の入力も元の Wafer の
             % Operation・装置を使う）。Excel・CSV ファイルなら、このタブで読み込んだ表のデータ
             units = struct("operation", {}, "eqpId", {});
-            if string(app.Controls.rotationSource.Value) == "file"
+            source = string(app.Controls.rotationSource.Value);
+            if source == "file"
                 if hasRotationFileData(app)
                     units = app.RotationFile.data.units;
+                end
+            elseif source == "highOrderFile"
+                if hasHighOrderFileData(app)
+                    units = app.HighOrderFile.data.units;   % 「6. Shot高次補正」で読み込んで列を選んだ表
                 end
             elseif ~isempty(app.Data)
                 units = app.Data.units;
             end
+        end
+
+        function yes = hasHighOrderFileData(app)
+            % 「6. Shot高次補正」で Excel・CSV を読み込み、列を選んで Wafer ごとのデータにしてあるか
+            yes = ~isempty(app.HighOrderFile) && isfield(app.HighOrderFile, "data") && ~isempty(app.HighOrderFile.data);
         end
 
         function yes = hasRotationFileData(app)
@@ -776,7 +792,8 @@ classdef (Abstract) RotationTab < appui.Core
             c.rotationCumulative.Enable = onOff(radiusView);
             c.rotationCumulativeRates.Enable = onOff(radiusView && c.rotationCumulative.Value);
             ready = (hasData && (source == "data" || (source == "estimate" && hasResults) || ...
-                (source == "target" && ~isempty(app.TargetRun)))) || (source == "file" && hasRotationFileData(app));
+                (source == "target" && ~isempty(app.TargetRun)))) || (source == "file" && hasRotationFileData(app)) || ...
+                (source == "highOrderFile" && hasHighOrderFileData(app));
             c.rotationComputeVariability.Enable = onOff(ready);
             c.rotationMakeMaps.Enable = onOff(~isempty(app.RotationVariability));
             c.rotationCompareAssignButton.Enable = onOff(~isempty(app.RotationVariability));
@@ -799,6 +816,12 @@ classdef (Abstract) RotationTab < appui.Core
                 case "target"
                     if isempty(app.TargetRun)
                         infoText = "「5. 未知の座標の推定」で推定してください。";
+                    end
+                case "highOrderFile"
+                    if ~hasHighOrderFileData(app)
+                        infoText = "「6. Shot高次補正」で Excel・CSV を読み込み、列を選んで「この列で使う」を押してください。";
+                    else
+                        infoText = sprintf("「6. Shot高次補正」で読み込んだデータ：%d Wafer。", numel(app.HighOrderFile.data.units));
                     end
                 case "file"
                     if isempty(app.RotationFile)
@@ -824,19 +847,32 @@ classdef (Abstract) RotationTab < appui.Core
                     error('alignest:noRotationFile', ['先に「Excel・CSV を読み込む…」で表を読み込み、「Excel・CSV の列」で' ...
                         '列を選んで「この列で使う」を押してください。']);
                 end
+            elseif source == "highOrderFile"
+                if ~hasHighOrderFileData(app)
+                    error('alignest:noRotationFile', ['先に「6. Shot高次補正」で Excel・CSV を読み込み、列を選んで' ...
+                        '「この列で使う」を押してください。']);
+                end
             elseif isempty(app.Data)
                 error('alignest:noData', '先に「1. データ読込」で計測データを読み込んでください。');
             end
             switch source
-                case {"data", "file"}
+                case {"data", "file", "highOrderFile"}
                     units = rotationUnits(app);
                     for k = 1:numel(units)
                         unit = units(k);
                         points = alignest.rotationPoints(alignest.highOrderUnitPoints(unit), unit.marks.markNo);
                         wafers(end + 1) = waferEntry(unit, unit.label, points); %#ok<AGROW>
                     end
-                    description = ternary(source == "data", "1. データ読込の計測データ", ...
-                        "Excel・CSV（" + string(fieldOr(fieldOr(app.RotationFile, "info", struct()), "file", "")) + "）");
+                    switch source
+                        case "data"
+                            description = "1. データ読込の計測データ";
+                        case "highOrderFile"
+                            description = "6. Shot高次補正の Excel・CSV（" + ...
+                                string(fieldOr(fieldOr(app.HighOrderFile, "info", struct()), "file", "")) + "）";
+                        otherwise
+                            description = "Excel・CSV（" + ...
+                                string(fieldOr(fieldOr(app.RotationFile, "info", struct()), "file", "")) + "）";
+                    end
                 case "estimate"
                     results = app.Results;
                     if isempty(results) || isImportedResults(results)
@@ -1514,10 +1550,16 @@ classdef (Abstract) RotationTab < appui.Core
 
         function yes = rotationHasShotNumbers(app)
             % 取り込んだデータに shotNo の列があるか（列が無ければ座標から付けた番号なので、図には重ねない）
-            if string(app.Controls.rotationSource.Value) == "file"
+            source = string(app.Controls.rotationSource.Value);
+            if source == "file"
                 mapping = struct();
                 if hasRotationFileData(app)
                     mapping = app.RotationFile.mapping;
+                end
+            elseif source == "highOrderFile"
+                mapping = struct();
+                if hasHighOrderFileData(app)
+                    mapping = app.HighOrderFile.mapping;
                 end
             else
                 mapping = app.AppliedMapping;

@@ -22,7 +22,7 @@ settings.data.valueColumn = "";             % 推定する値：""（X・Y 成�
                                             % （膜厚・線幅など。中では X 成分として扱い、Y 成分は使わない。alignest.valueSpec）
 settings.data.valueUnit = "nm";             % 1変数の単位（画面・Excel の表示だけに使う）
 % 質的変数（GPR・GAM・TPS／RBF／Kriging の Backfitting で使う）
-settings.factors.scan = true;           % Scan 方向（Direction）
+settings.factors.scan = false;          % Scan 方向（Direction）。X 成分は初期設定では使わない（Y 成分は factors.y.scan）
 settings.factors.mark = true;           % Mark 番号（markNo）
 settings.factors.shotRowParity = false; % Shot 配列の行（上から1行目）の奇数・偶数
 settings.factors.columns = strings(1, 0);  % ファイルのその他の列（標準の項目に対応づけなかった列）の名前
@@ -46,8 +46,8 @@ settings.sampling.nShotsEnd = 80;
 settings.sampling.nShotsStep = 5;
 settings.sampling.nShots = alignest.shotCountList(20, 80, 5);  % 開始・終了・刻みから作った並び（計算はこれを使う）
 settings.sampling.countBy = "shots";    % 学習 Shot 数の決め方：shots（Shot 数）／rate（計測率 [%]。Wafer の候補 Shot 数に対する割合）
-settings.sampling.rateStart = 10;       % 計測率 [%] の開始・終了・刻み（countBy = "rate" のとき。alignest.measurementRateList）
-settings.sampling.rateEnd = 40;
+settings.sampling.rateStart = 30;       % 計測率 [%] の開始・終了・刻み（countBy = "rate" のとき。alignest.measurementRateList）
+settings.sampling.rateEnd = 80;
 settings.sampling.rateStep = 10;
 settings.sampling.randomRepeats = 10;
 settings.sampling.seed = 20261017;   % 乱数の種（メニュー「設定」→「乱数の種…」。計測点の選び方と Mark 配置の最適化で共通）
@@ -59,7 +59,7 @@ settings.sampling.requireOuterShots = false;     % 最外周の Shot（alignest.
 settings.sampling.designOrder = 5;      % I 最適の基準モデルの多項式の次数
 settings.sampling.designFeatures = "XYR"; % I 最適の基準モデルの説明変数：XYR（X・Y・半径。5次で36項）・XY（X・Y。5次で21項）
                                         % （alignest.basis.designPolynomial。I 基準・D 基準もこのモデルで求める）
-settings.sampling.exchangeStarts = 10;  % 交換法の初期配置の数（Python 版は30）
+settings.sampling.exchangeStarts = 3;   % 交換法の初期配置の数（Python 版は30。時間は初期配置の数にほぼ比例する）
 settings.sampling.exchangeMaxIterations = 300;
 settings.sampling.constraints.radialZones = true;   % 制約：半径（同心円の区画ごとの数をそろえる）を使う
 settings.sampling.constraints.radialZoneEdgesMm = [67.5, 105];  % 同心円の区切り：Shot 中心の半径 [mm]（半径 150 mm の Wafer が前提）
@@ -112,6 +112,12 @@ settings.overlay.waferUseFormula = false;
 settings.overlay.waferFormula = struct("dx", "k1 + k3*x + k5*y", "dy", "k2 + k4*y + k6*x");
 settings.overlay.shotFormula = struct("dx", "k1 + k3*x + k5*y", "dy", "k2 + k4*y + k6*x");
 settings.overlay.perShotFormula = struct("dx", "k1 + k3*x + k5*y", "dy", "k2 + k4*y + k6*x");  % Shot ごとの成分の式（Shot 内の座標）
+% 「5. 未知の座標の推定」の補正のモデル（基準の補正＝上の overlay とは別。未知の座標の推定値を足して高次の式で補正するため。
+% alignest.targetCorrectionChoice）。excludedTerms はチェックを外した項（alignest.overlayTermKeys。0次・1次は外さない）
+settings.targetCorrection.waferOrder = 1;           % Wafer 成分の次数（0 = なし、1〜5）
+settings.targetCorrection.shotCommon = "none";      % Shot 共通成分：none・linear・quadratic・asml・canon・nikon・custom
+settings.targetCorrection.perShot = "linear";       % Shot ごとの成分：none・translation・linear
+settings.targetCorrection.excludedTerms = strings(1, 0);
 
 % Shot 高次補正の評価（「6. Shot高次補正」のタブ。alignest.highOrderOptions。推定の評価には使わない）
 settings.highOrder.maker = "custom";       % 補正の式：asml（k1〜k19 の全項）・canon・nikon（Overlay 計測ルールの式）・
@@ -147,6 +153,7 @@ settings.highOrder.vifThreshold = 10;      % 「VIF で選ぶ」のしきい値�
 % 回帰（loss・huberTuning・regularization・lambda）は [X, Y] の2つで X・Y 別にできる（1つなら X・Y で同じ）
 settings.highOrder.loss = "ols";           % 回帰の損失関数：ols（最小二乗）・huber（Huber）・lad（最小絶対偏差）
 settings.highOrder.huberTuning = 3;        % Huber の定数 c（大きいほど最小二乗に近い。1.345 で正規分布の誤差のとき効率 95%）
+settings.highOrder.statOutlierN = 3;       % 補正の評価の「外れ値を除く」|平均|+3σ：中央値 ± n × 1.4826 × MAD の外を外れ値とする n
 settings.highOrder.regularization = "none"; % 正則化：none（なし）・l2（係数を小さくする）・l1（効かない項の係数を 0 にする）
 settings.highOrder.penaltyOrders = 2:6;    % 正則化をかける項の次数（1〜6 から選ぶ。定数 k1・k2 と Wafer 成分にはかけない）
 settings.highOrder.penaltyOrdersY = -1;    % Y の正則化をかける項の次数（-1 なら X と同じ）

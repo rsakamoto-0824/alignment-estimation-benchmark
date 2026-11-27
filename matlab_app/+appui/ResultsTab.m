@@ -231,10 +231,16 @@ classdef (Abstract) ResultsTab < appui.Core
             drawMeasurementCandidates(app);
         end
 
-        function added = addMeasurementCandidates(app)
+        function added = addMeasurementCandidates(app, target)
             %ADDMEASUREMENTCANDIDATES 「必ず計測の欄に入れる」：出した候補のうち「足す」にチェックを入れた候補を「2. 面内推定の設定」の
             %   必ず計測する shotNo（単位が Mark なら必ず計測する Mark）に足す（setMeasurementSelection と同じ。2. 面内推定の設定の計測の
             %   指定にも出る）。added は足した場所（shotNo の数、または "shotNo-markNo" の文字）。
+            %   target = "shot"（「Mark の Shot を必ず計測する shotNo に入れる」）：単位が Mark の候補の Mark のある Shot を、
+            %   必ず計測する shotNo に足す（同じ Shot は1つ。Shot 単位の学習パターンに効く）。
+            arguments
+                app
+                target (1, 1) string {mustBeMember(target, ["item", "shot"])} = "item"
+            end
             ensureTab(app, "results");   % まだ作っていないタブなら作る（画面の操作と同じに使えるように）
             found = app.MeasurementCandidates;
             if isempty(found) || height(found.table) == 0
@@ -243,6 +249,17 @@ classdef (Abstract) ResultsTab < appui.Core
             chosen = found.table(found.selected, :);
             if height(chosen) == 0
                 error('alignest:noCandidates', '必ず計測に足す候補の「足す」にチェックを入れてください。');
+            end
+            if target == "shot"
+                if found.level ~= "mark"
+                    error('alignest:noCandidates', '「Mark の Shot を入れる」は、単位を Mark にして出した候補で使います。');
+                end
+                added = unique(reshape(chosen.shotNo, 1, []), 'stable');
+                setMeasurementSelection(app, "shot", added, "required");
+                app.Controls.candidateInfo.Text = char(sprintf(['「2. 面内推定の設定」の「必ず計測する shotNo」に、選んだ Mark のある' ...
+                    ' Shot %d 個（%s）を足しました。「2. 面内推定の設定」で評価し直すと、その Shot を計測した結果になります。'], ...
+                    numel(added), strjoin(string(added), " ")));
+                return
             end
             if found.level == "mark"
                 added = reshape(chosen.key, 1, []);
@@ -266,12 +283,16 @@ classdef (Abstract) ResultsTab < appui.Core
                 error('alignest:importedResults', ['Excel から読み込んだ結果は書き出せません（読み込んだファイル「%s」を' ...
                     'そのまま使ってください）。'], app.Results.imported);
             end
-            % Wafer のベスト・ワーストの総合は、画面で選んでいる指標で書き出す
+            % Waferベスト/ワーストの総合は、画面で選んでいる指標で書き出す（通常版は R² の指標だけ）
             overallMetrics = missing;
             if ~isempty(app.WaferRanking)
                 overallMetrics = app.WaferRanking.overallMetrics;
             end
-            alignest.exportResults(app.Results, filePath, app.FilePath, overallMetrics);
+            [metrics, defaultOverall] = rankingMetricChoice(app);
+            if isscalar(overallMetrics) && ismissing(overallMetrics) && ~isempty(defaultOverall)
+                overallMetrics = defaultOverall;
+            end
+            alignest.exportResults(app.Results, filePath, app.FilePath, overallMetrics, metrics);
         end
 
         function results = importResultsFrom(app, filePath)
@@ -922,8 +943,8 @@ classdef (Abstract) ResultsTab < appui.Core
             c.comparisonNote = uilabel(compareGrid, 'WordWrap', 'on', 'Text', '');
             c.comparisonTable = uitable(compareGrid, 'RowName', {}, ...
                 'ColumnName', {'手法', '列', '基準との差', '95% 区間', '基準より良かった割合', 'Wafer 数'});
-            % Wafer のベスト・ワースト：指標ごとに、最も良い・平均に近い・最も悪い Wafer（指標でワーストが違うことがある）
-            c.waferRankingTab = uitab(groups(1), 'Title', 'Wafer のベスト・ワースト');
+            % Waferベスト/ワースト：指標ごとに、最も良い・平均に近い・最も悪い Wafer（指標でワーストが違うことがある）
+            c.waferRankingTab = uitab(groups(1), 'Title', 'Waferベスト/ワースト');
             rankingGrid = uigridlayout(c.waferRankingTab, [4, 2], 'RowHeight', {'fit', '1x', '1x', 'fit'}, ...
                 'ColumnWidth', {'1x', 300}, 'Padding', 8, 'RowSpacing', 8, 'ColumnSpacing', 12);
             registerResponsiveColumn(app, rankingGrid, 2);
@@ -967,7 +988,7 @@ classdef (Abstract) ResultsTab < appui.Core
             c.candidateWafer = uidropdown(chooseGrid, 'Items', {'—'}, 'Enable', 'off', 'Tooltip', ['すべての Wafer：場所ごとに、' ...
                 '評価した Wafer の点をまとめて比べます（必ず計測する Shot・Mark はすべての Wafer に当てるため）。']);
             place(c.candidateWafer, 2, 3);
-            ruleGrid = uigridlayout(candidateGrid, [2, 9], 'ColumnWidth', {170, 150, 90, 90, 150, 80, 90, 'fit', 'fit'}, ...
+            ruleGrid = uigridlayout(candidateGrid, [2, 10], 'ColumnWidth', {170, 150, 90, 90, 150, 80, 90, 'fit', 'fit', 'fit'}, ...
                 'RowHeight', {'fit', 'fit'}, 'Padding', 0);
             place(ruleGrid, 2, [1, 2]);
             label(ruleGrid, '基準', 1, 1);
@@ -1008,6 +1029,12 @@ classdef (Abstract) ResultsTab < appui.Core
                 'ButtonPushedFcn', @(~, ~) app.onAddMeasurementCandidates(), 'Tooltip', ['出した候補を「2. 面内推定の設定」の' ...
                 '「必ず計測する shotNo」（単位が Mark なら「必ず計測する Mark」）に足します（2. 面内推定の設定の計測の指定にも出ます）。']);
             place(c.addCandidatesButton, 2, 9);
+            % 単位が Mark の候補は、その Mark のある Shot を必ず計測する shotNo に足すこともできる（Shot 単位の学習パターンに効く）
+            c.addCandidateShotsButton = uibutton(ruleGrid, 'Text', 'Mark の Shot を入れる', ...
+                'Enable', 'off', 'ButtonPushedFcn', @(~, ~) app.onAddMeasurementCandidates("shot"), 'Tooltip', ['単位が Mark の' ...
+                '候補のうち「足す」にチェックを入れた Mark のある Shot を、「2. 面内推定の設定」の「必ず計測する shotNo」に' ...
+                '足します（同じ Shot の Mark は1つにまとめます）。']);
+            place(c.addCandidateShotsButton, 2, 10);
             candidateTableGrid = uigridlayout(candidateGrid, [2, 1], 'RowHeight', {'1x', 'fit'}, 'Padding', 0, ...
                 'RowSpacing', 4);
             place(candidateTableGrid, 3, 1);
@@ -1075,10 +1102,14 @@ classdef (Abstract) ResultsTab < appui.Core
             place(degradationControls, 1, 1);
             onDegradation = @(~, ~) app.drawOverlayDegradation();
             label(degradationControls, '横軸', 1, 1);
-            c.degradationXAxis = uidropdown(degradationControls, 'Items', {'推定誤差 RMSE', ...
-                '計測する Mark の数', '学習 Shot 数'}, 'ItemsData', {'error', 'marks', 'shots'}, 'Enable', 'off', ...
-                'ValueChangedFcn', onDegradation, 'Tooltip', ['推定誤差：学習しなかった点の RMSE（X・Y 合計。上の「集計」で' ...
-                'Wafer をまとめる）。計測する Mark の数・学習 Shot 数：学習パターンの列ごとの Wafer の平均。']);
+            % 横軸の初期値は計測する Shot の数（学習 Shot 数）。推定誤差 RMSE の横軸は Pro 版だけ
+            [xItems, xValues] = deal({'計測 Shot 数', '計測する Mark の数', '推定誤差 RMSE'}, {'shots', 'marks', 'error'});
+            if ~isPro(app)
+                [xItems, xValues] = deal(xItems(1:2), xValues(1:2));
+            end
+            c.degradationXAxis = uidropdown(degradationControls, 'Items', xItems, 'ItemsData', xValues, 'Enable', 'off', ...
+                'ValueChangedFcn', onDegradation, 'Tooltip', ['計測 Shot 数・計測する Mark の数：学習パターンの列ごとの' ...
+                ' Wafer の平均。推定誤差（Pro 版）：学習しなかった点の RMSE（X・Y 合計。上の「集計」で Wafer をまとめる）。']);
             place(c.degradationXAxis, 1, 2);
             label(degradationControls, '縦軸', 1, 3);
             c.degradationYAxis = uidropdown(degradationControls, 'Items', {'推定による増加', '推定による変化'}, ...
@@ -1344,11 +1375,8 @@ classdef (Abstract) ResultsTab < appui.Core
             c.correctionVarianceViews = uitabgroup(varianceGrid);
             c.correctionVarianceChartTab = uitab(c.correctionVarianceViews, 'Title', '図');
             varianceTableTab = uitab(c.correctionVarianceViews, 'Title', '表');
-            c.correctionVarianceAxesGrid = uigridlayout(c.correctionVarianceChartTab, [2, 2], 'Padding', 4, 'RowSpacing', 6, ...
-                'ColumnSpacing', 8);
-            c.correctionVarianceAxes = [uiaxes(c.correctionVarianceAxesGrid), uiaxes(c.correctionVarianceAxesGrid), ...
-                uiaxes(c.correctionVarianceAxesGrid), uiaxes(c.correctionVarianceAxesGrid)];
-            set(c.correctionVarianceAxes, 'Visible', 'off');
+            [c.correctionVarianceAxesGrid, c.correctionVarianceAxes, c.correctionVarianceLegendAxes] = ...
+                varianceAxesLayout(app, c.correctionVarianceChartTab);
             c.correctionVarianceTable = uitable(uigridlayout(varianceTableTab, [1, 1], 'Padding', 4), 'RowName', {}, ...
                 'Data', table());
             c.correctionVarianceInfo = uilabel(varianceGrid, 'WordWrap', 'on', 'Text', app.CORRECTION_VARIANCE_NOTE);
@@ -1474,8 +1502,11 @@ classdef (Abstract) ResultsTab < appui.Core
                 "手法・学習パターン・Wafer と基準を確かめてから、もう一度試してください。");
         end
 
-        function onAddMeasurementCandidates(app)
-            runWithAlert(app, @() app.addMeasurementCandidates(), "必ず計測の欄に入れられませんでした", ...
+        function onAddMeasurementCandidates(app, target)
+            if nargin < 2
+                target = "item";
+            end
+            runWithAlert(app, @() app.addMeasurementCandidates(target), "必ず計測の欄に入れられませんでした", ...
                 "「候補を出す」で候補を出し、足す候補にチェックを入れてから、もう一度試してください。");
         end
 
@@ -1531,6 +1562,7 @@ classdef (Abstract) ResultsTab < appui.Core
             found = app.MeasurementCandidates;
             hasCandidates = ~isempty(found) && height(found.table) > 0;
             c.addCandidatesButton.Enable = onOff(hasCandidates && any(found.selected));
+            c.addCandidateShotsButton.Enable = onOff(hasCandidates && any(found.selected) && found.level == "mark");
             set([c.selectAllCandidatesButton, c.clearCandidatesButton], 'Enable', onOff(hasCandidates));
             if isempty(found)
                 c.candidateInfo.Text = ['手法・学習パターン・Wafer と基準・選び方（上位 n か閾値）を選んで「候補を出す」を押すと、' ...
@@ -1594,15 +1626,32 @@ classdef (Abstract) ResultsTab < appui.Core
                 "必ず計測する %s に足します。", nnz(found.selected), ternary(found.level == "mark", "Mark", "shotNo")));
         end
 
+        function [metrics, overall] = rankingMetricChoice(app)
+            % Waferベスト/ワーストで比べる指標と総合の既定の指標。Pro 版は空（alignest.waferRanking の既定：すべての指標）、
+            % 通常版は R²（X・Y・X と Y の合計。1変数はその値）だけで、総合は X と Y の合計の R²
+            [metrics, overall] = deal(strings(1, 0));
+            if isPro(app) || isempty(app.Results)
+                return
+            end
+            names = alignest.waferRanking(app.Results).metrics;
+            metrics = names(startsWith(names, "R2_"));
+            overall = metrics(endsWith(metrics, "_XY"));   % 1変数の指標も名前は R2_XY
+        end
+
         function updateWaferRanking(app, keepSelection)
-            % 結果が変わったら「Wafer のベスト・ワースト」を求め直す。keepSelection が true なら、総合に使う指標の選択を残す
+            % 結果が変わったら「Waferベスト/ワースト」を求め直す。keepSelection が true なら、総合に使う指標の選択を残す
             % （評価点の絞り込み。指標の種類は同じ）。false なら既定の指標（新しい結果）
             c = app.Controls;
             if keepSelection && ~isempty(app.WaferRanking)
                 ranking = alignest.waferRanking(app.Results, app.WaferRanking.metrics, ...
                     reshape(string(c.rankingOverallMetrics.Value), 1, []));
             else
-                ranking = alignest.waferRanking(app.Results);
+                [metrics, overall] = rankingMetricChoice(app);
+                if isempty(metrics)
+                    ranking = alignest.waferRanking(app.Results);
+                else
+                    ranking = alignest.waferRanking(app.Results, metrics, overall);
+                end
             end
             app.WaferRanking = ranking;
             c.rankingOverallMetrics.Items = cellstr(shortMetricLabels(ranking.metricLabels));
@@ -1623,7 +1672,7 @@ classdef (Abstract) ResultsTab < appui.Core
         end
 
         function showWaferRanking(app)
-            % 「Wafer のベスト・ワースト」の2つの表：指標ごとのベスト・平均に近い・ワーストの Wafer と、Wafer ごとの値
+            % 「Waferベスト/ワースト」の2つの表：指標ごとのベスト・平均に近い・ワーストの Wafer と、Wafer ごとの値
             % （ベストの値は最良の色、ワーストの値は注意の色、平均に近い Wafer の値は太字）
             c = app.Controls;
             ranking = app.WaferRanking;
@@ -1972,7 +2021,7 @@ classdef (Abstract) ResultsTab < appui.Core
                 c.compareEstimatedCorrectionButton, c.correctionVarianceButton], 'Enable', onOff(~imported && ~isempty(app.Data)));
             app.EstimatedCorrection = [];
             showEstimatedCorrection(app);
-            % Wafer のベスト・ワースト（初めは推定値と誤差の分布と同じ手法・最も多い学習 Shot 数、総合の指標は既定）
+            % Waferベスト/ワースト（初めは推定値と誤差の分布と同じ手法・最も多い学習 Shot 数、総合の指標は既定）
             c.rankingMethod.Items = cellstr(labels);
             c.rankingMethod.ItemsData = 1:numel(labels);
             c.rankingMethod.Value = order(1);
@@ -2756,7 +2805,7 @@ end
 end
 
 function text = rankingSummaryText(rows, metricLabels, ranking)
-% 「Wafer のベスト・ワースト」の表の下の説明：ワースト・ベストになった Wafer と指標の数（指標で違うかが分かる）、総合
+% 「Waferベスト/ワースト」の表の下の説明：ワースト・ベストになった Wafer と指標の数（指標で違うかが分かる）、総合
 nMetrics = height(rows) - 1;
 overall = rows(end, :);
 if max(rows.nWafers) <= 1

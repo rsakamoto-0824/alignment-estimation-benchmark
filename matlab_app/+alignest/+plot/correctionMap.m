@@ -8,7 +8,7 @@ function summary = correctionMap(ax, correction, unit, options)
 %   options.source："all"（すべての点）・"target"（未知の座標だけ）・"measured"（実測値＝学習点だけ）・
 %                   "estimated"（学習しなかった Mark の推定値だけ）
 %   options.titleText：題名の1行目（2行目に値の名前と |平均| + 3σ を足す。options.showStatistics = false なら
-%   1行目だけ）、options.waferRadiusMm：Wafer の半径 [mm]、options.legendLocation：凡例の位置（既定は図の下）。
+%   1行目だけ）、options.waferRadiusMm：Wafer の半径 [mm]、options.legendLocation：凡例の位置（既定は図の下。"none" なら凡例を描かない）。
 %   options.valueLabel：値の名前を変えるとき（例："Shot ごとの1次で補正した残差"。既定は options.value の名前）、
 %   options.markMeasured：false なら実測値の点に四角を重ねない（すべての点が計測値のとき。「6. Shot高次補正」）。
 %   options.scaleMmPerNm・colorLimit・magnitudeLimit：矢印の倍率・色の範囲・矢印の色の上限（0 なら値から決める。図を並べる
@@ -90,7 +90,7 @@ if any(targets)
         'Color', TARGET_COLOR, 'LineStyle', 'none', 'DisplayName', sprintf('未知の座標の点（%d 点）', nnz(targets)));
 end
 hold(ax, 'off');
-if ~isempty(items)
+if ~isempty(items) && options.legendLocation ~= "none"   % "none" は凡例を描かない（図を並べるとき。MATLAB の 'none' は手で置く位置）
     columns = min(numel(items), MAX_LEGEND_COLUMNS);
     if contains(options.legendLocation, ["east", "west"])
         columns = 1;   % 横に置くときは縦に並べる

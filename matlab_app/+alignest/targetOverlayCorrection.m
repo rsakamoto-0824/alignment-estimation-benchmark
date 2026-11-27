@@ -1,6 +1,8 @@
-function correction = targetOverlayCorrection(unit, training, method, settings, targetTable)
+function correction = targetOverlayCorrection(unit, training, method, settings, targetTable, choice)
 %TARGETOVERLAYCORRECTION 未知の座標を推定した後に、重ね合わせ（Overlay）補正値を求める。
 %   correction = alignest.targetOverlayCorrection(unit, training, method, settings, targetTable)
+%   correction = alignest.targetOverlayCorrection(..., choice)   % 補正モデルを渡す（既定は「2. 面内推定の設定」の
+%                Overlay 補正 alignest.overlayChoice。「5. 未知の座標の推定」の補正のモデルは alignest.targetCorrectionChoice）
 %   補正に使う点（X・Y 別）：
 %   - 元の実測値：学習に使った Mark の計測値（training は alignest.predictTargets と同じ）
 %   - 推定値     ：学習しなかった Shot（Mark）の有効な Mark の推定値（学習パターンのとき。alignest.estimateWafer）
@@ -17,22 +19,31 @@ function correction = targetOverlayCorrection(unit, training, method, settings, 
 %   correction.points：表（source・name・shotNo・x・y・valueX・valueY・correctionX・correctionY・residualX・residualY）
 %   correction.summary：表（axis・source・n・valueMean3Sigma・residualMean3Sigma）。|平均| + 3σ [nm]
 %   correction.description：補正モデルの説明、correction.messages：注意
+%   correction.markCorrection：Wafer の Mark ごとの補正量（Mark の数 × 2：X・Y。補正に使った Mark だけ値。全計測・
+%   一部計測＋面内推定の補正を、計測値のある Mark で比べるときに使う。alignest.targetCorrectionComparison）
 arguments
     unit struct
     training
     method struct
     settings struct
     targetTable table
+    choice = []
 end
 RELATIVE_TOLERANCE = 1e-9;   % 前の項で表せる割合がこれより大きい列（ほぼ一次従属な項）は 0 にする
 SOURCE_LABELS = ["実測値（学習点）", "推定値（学習しなかった Mark）", "推定値（未知の座標）"];
 COMPONENT_NAMES = ["wafer", "shotCommon", "perShot"];
 COMPONENT_LABELS = ["Wafer 成分", "Shot 共通成分", "Shot ごとの成分"];
 AXIS_NAMES = ["X", "Y"];
-choice = alignest.overlayChoice(settings);
+if nargin < 6 || isempty(choice)
+    choice = alignest.overlayChoice(settings);
+end
 if ~choice.enabled
-    error('alignest:overlayModel', ['補正モデルがありません。「2. 面内推定の設定」の Overlay 補正で、Wafer 成分・Shot 共通成分・' ...
-        'Shot ごとの成分のどれかを選んでください（%s）。'], choice.description);
+    modelName = "「2. 面内推定の設定」の Overlay 補正";
+    if isfield(choice, "modelName")
+        modelName = choice.modelName;
+    end
+    error('alignest:overlayModel', '補正モデルがありません。%sで、Wafer 成分・Shot 共通成分・Shot ごとの成分のどれかを選んでください（%s）。', ...
+        modelName, choice.description);
 end
 marks = unit.marks;
 shots = unit.shots;
@@ -107,8 +118,10 @@ rows = find(used);
 sourceLabel = SOURCE_LABELS(source(rows)).';
 correction.points = table(sourceLabel, names(rows), shotNo(rows), xy(rows, 1), xy(rows, 2), values(rows, 1), ...
     values(rows, 2), corrections(rows, 1), corrections(rows, 2), residuals(rows, 1), residuals(rows, 2), ...
+    points.markXmm(rows), points.markYmm(rows), ...
     'VariableNames', ["source", "name", "shotNo", "x", "y", "valueX", "valueY", "correctionX", "correctionY", ...
-    "residualX", "residualY"]);
+    "residualX", "residualY", "localX", "localY"]);   % localX・localY：Shot 内の座標 [mm]（Shot スタックマップに使う）
+correction.markCorrection = corrections(1:nMarks, :);
 correction.summary = summarize(values, residuals, source, SOURCE_LABELS, AXIS_NAMES);
 correction.description = choice.description;
 messages = strings(0, 1);

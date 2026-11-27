@@ -13,13 +13,15 @@ from __future__ import annotations
 
 APP_NAME = "面内推定評価ツール"
 APP_FORMAL = "Lithography Utilities for Correction Analysis and Sampling Optimization（LUCAS）"
-VERSION_NOTE = "2026年11月27日時点（main 19acdf9）"
+VERSION_NOTE = "2026年11月27日時点"
 
 EDITION_LABELS = {"共通": "通常版・Pro 版", "Pro": "Pro 版だけ", "一部": "通常版は一部"}
 
 
-def F(name, desc, ops, out, impl, ed="共通"):
-    return {"name": name, "desc": desc, "ops": ops, "out": out, "impl": impl, "ed": ed}
+def F(name, desc, ops, out, impl, ed="共通", std_desc=None, std_ops=None):
+    """1 つの機能。ed = "一部" の機能は、通常版の内容（std_desc・std_ops）も書く（詳細機能一覧 HTML は通常版の内容を出す）"""
+    return {"name": name, "desc": desc, "ops": ops, "out": out, "impl": impl, "ed": ed,
+            "std_desc": std_desc or desc, "std_ops": std_ops or ops}
 
 
 SECTIONS = [
@@ -76,10 +78,15 @@ SECTIONS = [
                   "検定し、説明変数・カーネルを選ぶ目安を出す。", "質的変数、次数、「調べる」", "交互作用の図と検定の表",
                   "factorInteractions, stats.interactionTests"),
                 F("ばらつき分解（Lot・Wafer・Shot 間）", "計測値のばらつきを Lot 間・Wafer 間・Shot 間・その他に分ける（入れ子の分散分析、"
-                  "モーメント法）。縦軸は 3σ の配分の積み上げ（全体の 3σ を ◆）か分散。Operation ごとに並べ、EqpId があれば装置を切り替える。",
-                  "分け方、縦軸、装置", "積み上げ棒と分散の割合の表", "dataVarianceDecomposition, varianceDecomposition"),
-                F("ばらつき分解（成分）", "Wafer ごとの全体 Shift・Wafer 倍率・回転・Shot 倍率・回転の回帰係数（X・Y 別）を表とグラフに並べる。",
-                  "分け方「成分」", "回帰係数の表・グラフ", "componentCoefficients"),
+                  "モーメント法）。縦軸は 3σ の配分の積み上げ（全体の 3σ を ◆）か分散。Operation ごとに並べる。凡例は右の列にまとめ、"
+                  "4 つの図の大きさをそろえる。", "分け方、縦軸", "積み上げ棒と分散の割合の表",
+                  "dataVarianceDecomposition, varianceDecomposition, plot.varianceBars"),
+                F("ばらつき分解の絞り込み", "装置（EqpId）・ロット（LotID）・Operation、またはファイルのその他の列（Chuck など）を選び、"
+                  "1 つの値の計測（その他の列は Mark）だけで分ける。", "絞り込み（列・値）", "絞り込んだ結果",
+                  "dataVarianceDecomposition（column）"),
+                F("ばらつき分解（成分）", "Wafer ごとの全体 Shift・Wafer 倍率・回転と Wafer 成分の残留（Wafer レベルの回帰残差の 3σ）、"
+                  "Shot 倍率・回転と Shot 共通成分の残留（Shot レベルの回帰残差の 3σ）を X・Y 別に表とグラフに並べる（上の段 Wafer、下の段 Shot）。",
+                  "分け方「成分」", "回帰係数・残留の表・グラフ", "componentCoefficients"),
                 F("ばらつき分解の図・表の保存とコピー", "図を PNG で保存・クリップボードにコピー、表を Excel（「値」「説明」）・CSV に保存・"
                   "タブ区切りでコピー（Excel・PowerPoint の表に貼れる）。", "「図を保存…」「図をコピー」「表を保存…」「表をコピー」",
                   "PNG、Excel・CSV、クリップボード", "exportVarianceTable, copyVarianceTable, tableText"),
@@ -109,13 +116,17 @@ SECTIONS = [
             ]),
             ("計測設定（学習に使う計測点）", [
                 F("データの粒度", "Shot 単位（Shot を選び、その Mark をすべて使う）か Mark 単位（Mark を選ぶ）。", "① データの粒度",
-                  "—", "normalizeSamplingUnit, samplingUnitMethods", "一部"),
+                  "—", "normalizeSamplingUnit, samplingUnitMethods", "一部",
+                  std_desc="Shot 単位（Shot を選び、その Mark をすべて使う）。"),
                 F("アルゴリズム", "I 最適・D 最適・Sobol 列・ポアソンディスク・ランダム・Excel 取込から複数選び、選び方どうしを比べる。"
                   "通常版は I 最適・ランダムだけ。", "② アルゴリズム（Ctrl・Shift で複数）", "学習パターン",
-                  "buildPlanSpecs, planTrainingShots", "一部"),
+                  "buildPlanSpecs, planTrainingShots", "一部",
+                  std_desc="I 最適・ランダムから選ぶ（両方選ぶと選び方どうしを比べる）。"),
                 F("I 最適・D 最適", "基準モデル（X,Y,半径 か X,Y の多項式、初期 5 次）の平均予測分散（I）または det(M)（D）がよくなる組を"
-                  "交換法で探す。必ず計測する点は入れ替えない。", "基準モデルの次数・説明変数、交換法の初期配置の数", "学習パターン、I 基準・D 基準",
-                  "constrainedIOptimal, exchangeDesign, blockSwapValues, designCriteria", "一部"),
+                  "交換法で探す（交換法の初期配置の数は初期値 3）。必ず計測する点は入れ替えない。", "基準モデルの次数・説明変数、交換法の初期配置の数",
+                  "学習パターン、I 基準・D 基準", "constrainedIOptimal, exchangeDesign, blockSwapValues, designCriteria", "一部",
+                  std_desc="I 最適：基準モデル（X,Y,半径 か X,Y の多項式、初期 5 次）の平均予測分散がよくなる組を交換法で探す（交換法の"
+                           "初期配置の数は初期値 3）。必ず計測する点は入れ替えない。"),
                 F("Sobol 列・ポアソンディスク", "Sobol 列の点に近い Shot を順に選ぶ／選んだ点どうしの距離が d 以上になるように選ぶ。",
                   "アルゴリズムの選択", "学習パターン", "sobolSequence, sobolSelect, poissonDiskSelect", "Pro"),
                 F("ランダム", "制約を満たす組を乱数で選び、指定回数くり返す（乱数の種が同じなら同じ組）。", "ランダムの繰り返し回数",
@@ -124,12 +135,14 @@ SECTIONS = [
                   "「Excel ファイルを読み込む…」", "学習パターン", "readLayoutPlans, parseLayoutPlans", "Pro"),
                 F("制約", "半径（同心円の区切り [mm]）・4 象限・Scan 方向の区画ごとの数を、全候補の割合 × 選ぶ数 ± 許容幅にそろえる。",
                   "③ 制約（半径・象限・Scan 方向・許容幅）", "制約の違反量", "GroupQuota, shotGroupBounds, shotGroupViolation"),
-                F("学習 Shot/Mark 数", "開始・終了・刻み（Shot 数の初期値 20〜80、刻み 5）か計測率 [%] でスイープする。Mark 単位は Mark 数・1 Shot あたりの数も。",
+                F("学習 Shot/Mark 数", "開始・終了・刻み（Shot 数の初期値 20〜80、刻み 5）か計測率 [%]（初期値 30〜80 %、刻み 10）でスイープする。"
+                  "Mark 単位は Mark 数・1 Shot あたりの数も。",
                   "開始・終了・刻み、計測率で決める", "学習 Shot 数の並び（上限 100 通り）", "shotCountList, measurementRateList"),
                 F("必ず計測する Shot", "指定した shotNo と、選べば最外周の Shot を先に学習に入れ、残りを選ぶ（拡張 I 最適計画）。",
                   "必ず計測する shotNo、最外周の Shot をすべて必ず計測する", "必ず計測する Shot の数", "requiredShotIndex, outerShots"),
                 F("必ず計測する Mark・計測しない Shot/Mark", "Mark 単位で必ず選ぶ Mark、選ばない（評価には使う）Shot・Mark を指定する。",
-                  "shotNo-markNo を空白区切り、計測マップのクリック", "—", "markPlanFixedMarks, parseMarkKeys", "一部"),
+                  "shotNo-markNo を空白区切り、計測マップのクリック", "—", "markPlanFixedMarks, parseMarkKeys", "一部",
+                  std_desc="選ばない（評価には使う）Shot を指定する（Mark の指定は Mark 単位の Pro 版）。"),
                 F("Mark 単位の制約", "Shot ごとに n 点の計測を必須にする、Mark 番号ごとの計測数を全計測の割合・均等にそろえる。",
                   "Shot ごとに n 点、Mark 番号ごとの計測数", "—", "trainingMarks, markPlanTypes", "Pro"),
                 F("計測マップ", "Wafer と学習パターンを選んで、必ず計測（橙）・計測（青）・計測しない（白）・計測値なし（灰）の Shot を描く。"
@@ -143,23 +156,26 @@ SECTIONS = [
                   "「Excel に書き出す…」「図を画像で保存…」", "Excel、PNG", "exportMeasurementMap"),
             ]),
             ("比べる手法", [
-                F("推奨の組み合わせ・すべて選ぶ", "初期設定は GPR だけ。「推奨の組み合わせ」で GPR・TPS・XY 5 次多項式、「すべて選ぶ」ですべて。",
+                F("推奨の組み合わせ・すべて選ぶ", "初期設定は GPR だけ。「推奨の組み合わせ」で GPR・TPS・XY 5 次多項式、「すべて選ぶ」ですべて"
+                  "（通常版は RT モデルを除く）。",
                   "ボタン", "選んだ手法", "recommendedMethods"),
                 F("GPR（ガウス過程回帰）", "10 カーネル・ν を指定する Matérn・周期カーネル × 説明変数（X,Y／X,Y,半径）× 質的変数の 6 通りの扱い"
                   "（使わない・同時推定・Backfitting・同時推定＋交互作用・加法カーネル・加法カーネル＋交互作用）。",
                   "カーネル、説明変数、質的変数の扱い", "GPR の手法", "models.gprFit, models.gprPredict, models.gprPredictVariance"),
                 F("TPS（薄板スプライン）", "平滑化を GCV で選ぶ・なし・log10 λ を指定（複数で比べる）× 質的変数なし／Backfitting。",
                   "平滑化、Backfitting", "TPS の手法", "models.tpsFitPredict, models.spatialBackfit"),
-                F("RBF", "ガウス型の動径基底関数＋1 次多項式。広がりと平滑化は GCV。", "チェック", "RBF の手法", "models.rbfFitPredict", "Pro"),
+                F("RBF", "ガウス型の動径基底関数＋1 次多項式。広がりと平滑化は GCV。", "チェック", "RBF の手法", "models.rbfFitPredict"),
                 F("Kriging・Universal Kriging", "バリオグラム（linear・gaussian・power・exponential・spherical）× 質的変数なし／Backfitting。",
-                  "バリオグラム", "Kriging の手法", "models.krigingFitPredict, models.krigingFitVariogram", "Pro"),
+                  "バリオグラム", "Kriging の手法", "models.krigingFitPredict, models.krigingFitVariogram"),
                 F("GAM", "形状関数（P-spline・ガウス過程回帰）を項ごとに選び、λ は REML。質的変数あり／なし。", "形状関数、カーネル",
-                  "GAM の手法", "models.gamFitPredict, models.gamShapeFit", "Pro"),
-                F("XY 多項式・RT モデル", "次数を指定する多項式。RT モデルは X・Y を一緒に当てはめる（1 変数では使わない）。", "次数",
-                  "多項式の手法", "models.polynomialFitPredict, models.rtFitPredict", "一部"),
+                  "GAM の手法", "models.gamFitPredict, models.gamShapeFit"),
+                F("XY 多項式", "次数を指定する多項式。", "次数", "多項式の手法", "models.polynomialFitPredict"),
+                F("RT モデル", "X・Y を一緒に当てはめる RT モデル（次数を指定。1 変数では使わない）。", "次数", "RT モデルの手法",
+                  "models.rtFitPredict", "Pro"),
                 F("Fringe Zernike", "Fringe 番号の Zernike 多項式（次数 1〜7、Z64 まで）を単位円の座標で最小二乗近似。", "次数",
-                  "Zernike の手法", "models.zernikeFitPredict, basis.fringeZernikeModes", "Pro"),
-                F("質的変数", "Scan 方向・Mark 番号・Shot 行の奇偶・Slot の偶奇・ファイルの列を選ぶ。X 成分と Y 成分で別にできる。",
+                  "Zernike の手法", "models.zernikeFitPredict, basis.fringeZernikeModes"),
+                F("質的変数", "Scan 方向・Mark 番号・Shot 行の奇偶・Slot の偶奇・ファイルの列を選ぶ。X 成分と Y 成分で別にできる"
+                  "（初期設定は X 成分が Mark 番号、Y 成分が Scan 方向・Mark 番号）。",
                   "質的変数の選択", "—", "factorNames, factorChoice, basis.effectCoding"),
                 F("連続値の列", "数値の列を説明変数に足す（Wafer ごとに平均 0、座標と同じ標準偏差にそろえる）。", "連続値の列",
                   "手法の名前に列が付く", "continuousFeatures, numericColumns"),
@@ -175,8 +191,8 @@ SECTIONS = [
                 F("評価に使う Wafer", "すべて・枚数・割合で、先頭からかランダムに Wafer を選ぶ。", "評価に使う Wafer の欄",
                   "評価した Wafer", "evaluationUnitIndex"),
                 F("Overlay 補正の評価の成分", "Wafer 成分（なし・1〜5 次）・Shot 共通成分（なし・1 次）・Shot ごとの成分（なし・1 次）を組み合わせ、"
-                  "推定誤差で Overlay 残差がどれだけ増えるかを評価する。", "成分ごとのプルダウン", "OVL の 8 つの指標",
-                  "overlayCorrection, overlayDesign, overlayTerms"),
+                  "推定誤差で Overlay 残差がどれだけ増えるかを評価する（「5. 未知の座標の推定」の補正の比較の基準の補正にもなる）。",
+                  "成分ごとのプルダウン", "OVL の 8 つの指標", "overlayCorrection, overlayDesign, overlayTerms"),
                 F("補正の式の入力", "各成分で「式を入力」を選び、dx・dy の式（例：k1 + k3*x + k5*y）を書く。誤りは赤字で出して評価しない。",
                   "dx =・dy = の欄", "入力した式の補正", "parseCorrectionFormula", "Pro"),
             ]),
@@ -189,7 +205,7 @@ SECTIONS = [
             ("上の欄（絞り込み・書き出し・読み込み）", [
                 F("評価点の絞り込み", "半径・Scan 方向・最外周・shotNo の条件に合う評価点だけで指標を計算し直す（表・グラフ・マップに効く）。",
                   "半径の下限・上限、Shot の条件", "絞り込んだ指標", "filterResults, pointFilterMask"),
-                F("結果を Excel に書き出す", "説明・集計・集計_統計量・Wafer のベスト・ワースト・Wafer ごと・学習 Shot・処理時間・設定のシートを書く。",
+                F("結果を Excel に書き出す", "説明・集計・集計_統計量・Waferのベスト・ワースト・Wafer ごと・学習 Shot・処理時間・設定のシートを書く。",
                   "「結果を Excel に書き出す…」", "評価結果の Excel", "exportResults"),
                 F("推定値を Excel に書き出す", "Mark ごとの座標・計測値・推定値・残差・区分・質的変数（と Overlay 残差）を書く。範囲を選べる。",
                   "「推定値を Excel に書き出す…」", "推定値の Excel", "exportEstimates, collectEstimates"),
@@ -205,17 +221,24 @@ SECTIONS = [
                   "手法、選び方、横軸、エラーバー", "グラフ（PNG 保存・コピー）", "groupSelectionTypes, layoutErrorBars"),
                 F("基準の手法との比較", "同じ Wafer・学習パターンどうしの差の平均・95% 区間・基準より良かった Wafer の割合。", "基準の手法",
                   "比較の表", "pairedComparison"),
-                F("Wafer のベスト・ワースト", "指標ごとのベスト・平均に近い・ワーストの Wafer と、選んだ指標の順位の平均による総合。",
-                  "手法、学習パターン、総合に使う指標", "2 つの表", "waferRanking, perUnitValues"),
+                F("Waferベスト/ワースト", "指標ごとのベスト・平均に近い・ワーストの Wafer と、選んだ指標の順位の平均による総合。",
+                  "手法、学習パターン、総合に使う指標", "2 つの表", "waferRanking, perUnitValues", "一部",
+                  std_desc="R²（X・Y・X と Y の合計）ごとのベスト・平均に近い・ワーストの Wafer と、R²（X と Y の合計）の順位による総合"
+                           "（RMSE [nm] 以降の指標は Pro 版）。"),
             ]),
             ("計測配置", [
                 F("計測を足す場所", "推定誤差か GPR の推定の分散が大きい上位 n、または閾値より大きい Shot・Mark を、値のヒートマップと出す。"
                   "選んだ候補を「必ず計測」の欄に入れる。", "基準・値・集計・単位・選び方、「候補を出す」「必ず計測の欄に入れる」",
                   "候補の表とヒートマップ", "measurementCandidates, plot.valueHeatmap"),
+                F("Mark の Shot を入れる", "単位を Mark にして出した候補のうち「足す」を選んだ Mark のある Shot を、必ず計測する shotNo に足す"
+                  "（同じ Shot は 1 つ。Shot 単位の学習パターンに効く）。", "「Mark の Shot を入れる」", "必ず計測する shotNo",
+                  "addMeasurementCandidates（shot）"),
                 F("計測配置の比較", "選び方ごとに、計測する Mark の数・学習 Shot 数・D 効率・I 効率に対する指標と I 基準・D 基準を比べる。",
                   "横軸、エラーバー", "比較の図・表", "layoutComparison, drawLayoutComparison"),
-                F("補正の悪化", "推定誤差・計測する Mark の数・学習 Shot 数に対する、推定による重ね合わせ補正の悪化を手法 × 選び方の線で描く。",
-                  "手法、選び方、横軸", "悪化の図", "overlayDegradation"),
+                F("補正の悪化", "計測 Shot 数（初期値）・計測する Mark の数・推定誤差 RMSE に対する、推定による重ね合わせ補正の悪化を"
+                  "手法 × 選び方の線で描く。", "手法、選び方、横軸", "悪化の図", "overlayDegradation", "一部",
+                  std_desc="計測 Shot 数（初期値）・計測する Mark の数に対する、推定による重ね合わせ補正の悪化を手法 × 選び方の線で描く"
+                           "（推定誤差 RMSE の横軸は Pro 版）。"),
             ]),
             ("誤差の分析", [
                 F("推定値と誤差の分布", "ヒストグラム・正規性検定（Shapiro–Wilk・Anderson–Darling）・ANOVA。手法を複数選んで並べる。",
@@ -277,21 +300,28 @@ SECTIONS = [
                   "Wafer、学習データ、手法", "—", "estimateTargets"),
                 F("推定する", "評価と同じ計算で、点を計測値の無い Mark として足して推定する。外挿（凸包の外 0.5 mm 超）・Wafer の外（推定値 0）・"
                   "学習に無い Mark 番号を知らせる。", "「推定する」", "メッセージ、図、推定値の表", "predictTargets, estimateWafer"),
-                F("図・推定値の表", "推定値の矢印か色、学習点、学習点の範囲（凸包の破線）、外挿の点の ×。表は外挿・Wafer の外の行を色付き。",
-                  "図・補正に出す組み合わせ", "図、表", "plot.targetMap"),
+                F("図・推定値の表", "推定値の矢印か色、学習点、学習点の範囲（凸包の破線）、外挿の点の ×。任意の半径の円を重ねられる。"
+                  "表は外挿・Wafer の外の行を色付き。", "図・補正に出す組み合わせ、重ねる円 [mm]", "図、表", "plot.targetMap, plot.radiusCircles"),
                 F("推定値を Excel に書き出す", "「推定値」「説明」シートに書く（「推定値」はそのまま点として読み直せる）。",
                   "「推定値を Excel に書き出す…」", "Excel", "exportTargetEstimates"),
                 F("GPR の推定の分散", "GPR の手法では推定の分散を色の図・表・Excel に出す。", "—", "分散の図・列", "models.gprPredictVariance"),
             ]),
             ("重ね合わせ補正", [
-                F("重ね合わせ補正値を計算する", "元の実測値・学習しなかった Mark の推定値・未知の座標の推定値をまとめて、Overlay 補正のモデルを当てはめる。",
+                F("重ね合わせ補正値を計算する", "元の実測値・学習しなかった Mark の推定値・未知の座標の推定値をまとめて、このタブの補正のモデルを当てはめる。",
                   "「重ね合わせ補正値を計算する」", "補正前・補正後の |平均|+3σ と補正値（係数）", "targetOverlayCorrection"),
-                F("補正のモデル", "補正の式（Wafer 成分・Shot 共通・Shot ごと・dx/dy の式）をこのタブで変える（「2.」と同じ設定）。",
-                  "補正のモデルのタブ", "—", "overlayDesign"),
+                F("補正のモデル", "このタブの補正の式（「2.」の基準の補正とは別）。Wafer 成分（0〜5 次）・Shot 共通成分（1 次・2 次・ASML・Canon・"
+                  "Nikon・カスタム）・Shot ごとの成分を選び、項を表のチェックで選ぶ（0 次・1 次は外せない）。未知の座標の推定値で Shot 内の点が"
+                  "増えるので、高次の式で補正できる。", "式のプルダウン、項の「使う」、「すべての項を使う」", "項の表",
+                  "targetCorrectionChoice, targetCorrectionTerms, overlayTermKeys"),
                 F("補正値の書き出し", "「補正値」「補正の残差」「補正に使った点」シートと、点ごとの補正量・補正後の残差の列を足す。",
                   "「補正値を Excel に書き出す…」", "Excel", "exportTargetEstimates"),
-                F("補正残差のマップ", "補正後の残差・補正量・補正前の値を矢印か色で描く。点の種類で絞れる。", "値、点、表示",
-                  "マップ（PNG 保存・コピー）", "plot.correctionMap, drawTargetCorrectionMap"),
+                F("補正残差のマップ", "補正後の残差・補正量・補正前の値を矢印か色で描く。補正前・補正量・残差を並べる（矢印の倍率をそろえる）、"
+                  "Shot スタックマップ（全 Shot を Shot 内の座標で重ねる）、任意の半径の円を重ねる。点の種類で絞れる。",
+                  "値、点、表示、並べ方、図、重ねる円 [mm]", "マップ（PNG 保存・コピー）",
+                  "plot.correctionMap, plot.shotStackMap, drawTargetCorrectionMap"),
+                F("補正の比較（全計測と比べる）", "① 全計測・② 一部計測＋面内推定を基準の補正（2. の条件）で、③ 全計測・④ 一部計測＋面内推定に"
+                  "未知の座標の推定値を足してこのタブの補正で補正し、計測値のある Mark の補正後の |平均|+3σ を表・棒・残差の図で比べる。",
+                  "「全計測と比べる」、図の補正", "比較の表・棒・図（PNG 保存・コピー）", "targetCorrectionComparison, compareTargetCorrection"),
             ]),
         ],
     },
@@ -300,8 +330,9 @@ SECTIONS = [
         "summary": "計測値・推定値・Excel の値で Shot 高次補正の k パラメータを求め、補正の効果を評価・比較する。右の中のタブは 入力と項／結果／比べる の3つのまとまり。",
         "groups": [
             ("① 入力のデータ", [
-                F("入力のデータ", "1. の計測データ・5. の推定値（実測値も使う）・Excel・CSV（列の名前は自由、読んだ後で列を選ぶ）から選び、Wafer を選ぶ。",
-                  "入力、「Excel・CSV から読み込む…」、Excel・CSV の列、Wafer", "Wafer ごとのデータ",
+                F("入力のデータ", "1. の計測データ・3. の評価の推定値（手法・学習パターン。学習した Mark は計測値）・5. の推定値（実測値も使う）・"
+                  "Excel・CSV（列の名前は自由、読んだ後で列を選ぶ）から選び、Wafer を選ぶ。",
+                  "入力、手法・学習、「Excel・CSV から読み込む…」、Excel・CSV の列、Wafer", "Wafer ごとのデータ",
                   "readHighOrderFile, prepareHighOrderData, highOrderColumns"),
             ]),
             ("② 補正の式と k パラメータ", [
@@ -331,6 +362,9 @@ SECTIONS = [
             ("結果", [
                 F("補正の評価", "補正前・Wafer 高次補正だけ・＋Shot 共通補正・Shot ごとの 1 次・高次補正の残差の |平均|+3σ、|残差| の 95% 点・中央値（内周・外周も）。",
                   "内周・外周に分けて出す", "評価の表", "shotHighOrder（summary）"),
+                F("外れ値を除いた |平均|+3σ", "Wafer ごと・軸ごとに、高次補正の残差の中央値から n × 1.4826 × MAD より離れた点を外れ値として除いた "
+                  "|平均|+3σ と、除いた点の数を出す（n は初期値 3。変えても計算し直さない）。", "外れ値の判定 n", "評価の表・Excel の列",
+                  "highOrderTrimmedSummary"),
                 F("マップ", "Wafer 上・Shot を重ねる・1 つの Shot で、矢印・色・グリッド（変形した Shot の枠）を描く。並べる・Wafer を重ねる。",
                   "値、図の種類、表示、グリッドの刻み・倍率", "マップ（PNG 保存・コピー）",
                   "drawHighOrderMap, plot.correctionMap, plot.shotStackMap, plot.shotGridMap"),
@@ -395,11 +429,13 @@ SECTIONS = [
         "summary": "Shot・Mark ごとのばらつき（3σ）で計測の優先度を分け、n 枚のローテーションの計測マップを作り、FB の補正値で検証する。",
         "groups": [
             ("① 入力", [
-                F("入力と対象", "計測データ・評価の推定値・未知の座標の推定値・このタブで読む Excel・CSV から選び、Operation・装置で絞る。",
+                F("入力と対象", "計測データ・評価の推定値・未知の座標の推定値・6. で読み込んだ Excel・CSV・このタブで読む Excel・CSV から選び、"
+                  "Operation・装置で絞る。",
                   "入力、「Excel・CSV を読み込む…」、対象", "—", "setRotationInput, rotationColumns"),
             ]),
             ("② ばらつき", [
-                F("ばらつきを求める", "同じ Shot・Mark の Wafer 間の 3σ（X・Y・長さ |v|）。Shot ごとは Mark の最大か平均。", "単位、Shot ごとの集計、「ばらつきを求める」",
+                F("ばらつきを求める", "同じ Shot・Mark の Wafer 間の 3σ（X・Y・長さ |v|）。Shot ごとは Mark の最大か平均（ボタンは青緑）。",
+                  "単位、Shot ごとの集計、「ばらつきを求める」",
                   "ばらつきの表と図", "markVariability"),
                 F("3σ の分布・半径と指標", "3σ の分布か、半径に対する 3σ と累積 [%] の線・累積率の半径を描く。", "図の種類、累積を重ねる、累積率",
                   "ばらつきの図", "radialCumulative"),
@@ -407,7 +443,8 @@ SECTIONS = [
             ("③ 優先度と計測マップ", [
                 F("優先度", "X・Y・|v| の 3σ のしきい値（値か累積 %）で優先度を分ける。外周の半径以上・指定した Shot は優先度 1。",
                   "指標、しきい値、優先度 1 の外周・Shot", "優先度", "rotationMaps"),
-                F("計測マップを作る", "優先度 1 は毎回、最も低い優先度は M 枚に 1 回計測するマップを作る（振り分けは I 最適・D 最適・ポアソンディスク・ランダム・表の順）。",
+                F("計測マップを作る", "優先度 1 は毎回、最も低い優先度は M 枚に 1 回計測するマップを作る（振り分けは I 最適・D 最適・ポアソンディスク・"
+                  "ランダム・表の順。ボタンは青）。",
                   "計測マップの数、振り分け、「計測マップを作る」", "計測マップの図と表", "rotationMaps, rotationCriterionExchange"),
                 F("振り分けの比較", "5 つの振り分けを、マップ間の KL・全体との KL・最大の空白・I 基準・D 基準で比べる。", "「比べる」",
                   "比較の表と棒", "compareRotationAssignments, rotationMapMetrics"),
@@ -428,12 +465,12 @@ SECTIONS = [
         "summary": "どのタブでも使う表示の設定・図の保存・ヘルプ・起動と終了の機能。",
         "groups": [
             ("メニュー「設定」", [
-                F("ライトモード・ダークモード", "画面の欄・表・図の色を切り替える（次に開いたときも同じ）。", "設定 → ライトモード・ダークモード",
-                  "画面の色", "setTheme, applyTheme"),
+                F("ライトモード・ダークモード", "画面の欄・表・図の色を切り替える（次に開いたときも同じ。ダークモードでは空の表をしまい、白く浮かせない）。",
+                  "設定 → ライトモード・ダークモード", "画面の色", "setTheme, applyTheme, watchTables", "Pro"),
                 F("文字の大きさ", "12・14・16（標準）・18・20 pt。図の文字・決まった幅の欄も同じ比で変える。", "設定 → 文字の大きさ",
                   "画面の文字", "setFontSize, scaleFonts"),
                 F("凡例の位置", "すべての図、または図を右クリックしてその図だけの凡例の位置を選ぶ。", "設定 → 凡例の位置、図の右クリック",
-                  "凡例", "setLegendLocation, resetLegendOverrides"),
+                  "凡例", "setLegendLocation, resetLegendOverrides", "Pro"),
                 F("Scan 方向の向きと色", "Scan 方向 1・2 の向き（▲・▼）と色を選ぶ（推定の結果は変わらない）。", "設定 → Scan 方向の向きと色",
                   "図の印と色", "setScanStyle, resetScanStyle"),
                 F("画面の大きさに合わせる", "今の画面の中央に、画面に収まる大きさで合わせ直す（別の画面に移ったときは自動）。", "設定 → 画面の大きさに合わせる",
@@ -447,7 +484,10 @@ SECTIONS = [
                   "ヘルプの窓", "openHelp, help/help.html"),
                 F("タブを初めて開いたときに作る", "3〜8 のタブは初めて開いたときに中身を作る（起動を速くするため）。", "タブのクリック",
                   "「タブを準備しています」", "ensureTab, finishBuiltTab"),
-                F("通常版と Pro 版", "通常版は比べる手法・計測点の選び方・Overlay の式を絞る。Pro 版の設定を読むと使える設定に直して知らせる。",
+                F("タブの色分け", "業務でつながるタブを見出しの文字の色で分ける：2〜5（面内推定の設定・結果一覧・マップ・未知の座標）は青、"
+                  "6・7（Shot 高次補正・Mark 配置）は橙。", "—", "タブの見出し", "startApp（ESTIMATION_TAB_COLOR・CORRECTION_TAB_COLOR）"),
+                F("通常版と Pro 版", "通常版は RT モデル・計測点の選び方（D 最適・Sobol 列・ポアソンディスク・Excel 取込・Mark 単位）・Overlay の式・"
+                  "ダークモード・凡例の位置・一部の指標と横軸を使わない。Pro 版の設定を読むと使える設定に直して知らせる。",
                   "runAlignmentEstimationAppStandard・runAlignmentEstimationApp", "窓の名前「（通常版）」", "editionSettings"),
             ]),
         ],

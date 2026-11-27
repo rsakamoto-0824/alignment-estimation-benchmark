@@ -1,4 +1,4 @@
-function exportResults(results, filePath, sourceFile, overallMetrics)
+function exportResults(results, filePath, sourceFile, overallMetrics, rankingMetrics)
 %EXPORTRESULTS 評価結果を Excel ファイル（.xlsx）に書き出す。Excel 本体は不要。
 %   シート：説明／集計_<指標>（XY の RMSE・MAE・R²、X・Y の RMSE、平均値・中央値に対する改善率。Wafer の平均）／
 %   集計_統計量（同じ指標の 平均・中央値・ワースト値・95%値 を縦に並べた表）／Waferごと／
@@ -11,6 +11,7 @@ arguments
     filePath (1, 1) string
     sourceFile (1, 1) string = ""
     overallMetrics (1, :) string = missing
+    rankingMetrics (1, :) string = strings(1, 0)   % Waferのベスト・ワーストで比べる指標（空ならすべて。通常版は R² だけ）
 end
 SUMMARY_METRICS = ["RMSE_XY", "MAE_XY", "R2_XY", "RMSE_X", "RMSE_Y", "improveMeanPct_XY", ...
     "improveMedianPct_XY"];
@@ -112,11 +113,13 @@ perWafer.Properties.VariableNames = cellstr(headers);
 writetable(perWafer, filePath, 'Sheet', 'Waferごと');
 
 % Wafer のベスト・平均に近い・ワースト（指標ごとと総合）
-if isscalar(overallMetrics) && ismissing(overallMetrics)
-    ranking = alignest.waferRanking(results);
-else
-    ranking = alignest.waferRanking(results, alignest.waferRanking(results).metrics, overallMetrics);
+if isempty(rankingMetrics)
+    rankingMetrics = alignest.waferRanking(results).metrics;
 end
+if isscalar(overallMetrics) && ismissing(overallMetrics)
+    overallMetrics = alignest.waferRanking(results, rankingMetrics).overallMetrics;
+end
+ranking = alignest.waferRanking(results, rankingMetrics, intersect(overallMetrics, rankingMetrics, 'stable'));
 writetable(rankingSheet(ranking), filePath, 'Sheet', 'Waferのベスト・ワースト');
 
 % 学習 Shot

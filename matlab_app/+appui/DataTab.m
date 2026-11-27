@@ -6,19 +6,27 @@ classdef (Abstract) DataTab < appui.Core
 
     methods
         % ---- 画面の操作と同じことをするメソッド（ボタンからも自動テストからも呼ぶ）
-        function result = decomposeDataVariance(app, eqpId, kind)
+        function result = decomposeDataVariance(app, eqpId, kind, column)
             %DECOMPOSEDATAVARIANCE 「ばらつき分解」：読み込んだ計測値を、分け方 kind = "nested" なら、ばらつき（分散）を Lot 間・
             %   Wafer 間・Shot 間・その他に分け、3σ の配分の積み上げ（「縦軸」で分散の積み上げにも切り替える）と分散の割合の棒、
             %   表に出す（Operation の列があれば Operation ごとに棒を並べる）。kind = "components" なら、Wafer ごとの全体 Shift・
             %   Wafer 倍率・回転・Shot 倍率・回転の回帰係数を、成分ごとの図と表に出す（alignest.dataVarianceDecomposition）。
             %   eqpId：使う装置（EqpId の値。"" = すべての装置）。省略すると画面の選択。result は分けた結果。
+            %   column：絞り込む列（"EqpId"（既定）・"LotID"・"Operation"・ファイルのその他の列）。このとき eqpId はその列の値。
             c = app.Controls;
             if isempty(app.Data)
                 error('alignest:noData', '先に計測データを読み込んでください。');
             end
+            if nargin >= 4
+                if ~any(strcmp(c.varianceColumn.ItemsData, char(column)))
+                    error('alignest:varianceDecomposition', '絞り込む列「%s」がありません。', column);
+                end
+                c.varianceColumn.Value = char(column);
+                refreshVarianceValues(app);
+            end
             if nargin >= 2
                 if ~any(strcmp(c.varianceEqp.ItemsData, char(eqpId)))
-                    error('alignest:varianceDecomposition', '装置「%s」の計測がありません。', eqpId);
+                    error('alignest:varianceDecomposition', '「%s」の計測がありません。', eqpId);
                 end
                 c.varianceEqp.Value = char(eqpId);
             end
@@ -156,12 +164,12 @@ classdef (Abstract) DataTab < appui.Core
             if ~deferCharts
                 drawShotOverlay(app);
             end
-            % ばらつき分解：装置の選択肢を作り、すべての装置で一度分ける
-            eqpIds = unique(string({app.Data.units.eqpId}));
-            eqpIds = eqpIds(eqpIds ~= "");
-            setChoices(app.Controls.varianceEqp, ["すべての装置", reshape("装置 " + eqpIds, 1, [])], ...
-                [{''}, reshape(cellstr(eqpIds), 1, [])]);
-            app.Controls.varianceEqp.Enable = onOff(~isempty(eqpIds));
+            % ばらつき分解：絞り込む列（装置・ロット・Operation・ファイルのその他の列）の選択肢を作り、すべての計測で一度分ける
+            columns = ["EqpId", "LotID", "Operation", reshape(string(app.Data.attributeNames), 1, [])];
+            names = ["装置（EqpId）", "ロット（LotID）", "Operation", reshape(string(app.Data.attributeNames), 1, [])];
+            setChoices(app.Controls.varianceColumn, names, cellstr(columns));
+            app.Controls.varianceColumn.Enable = 'on';
+            refreshVarianceValues(app);
             try
                 updateDataVariance(app, ~deferCharts);
             catch err
@@ -443,14 +451,15 @@ classdef (Abstract) DataTab < appui.Core
             % （false なら、そのタブを開いたときに描く。読み込みを速くするため）
             c = app.Controls;
             result = alignest.dataVarianceDecomposition(app.Data.units, string(c.varianceEqp.Value), ...
-                alignest.valueSpec(app.Settings.data), string(c.varianceKind.Value));
+                alignest.valueSpec(app.Settings.data), string(c.varianceKind.Value), string(c.varianceColumn.Value));
             app.DataVariance = result;
             if draw
                 showVarianceDecomposition(app, result, "data");
             end
             parts = sprintf("%d 計測", result.nUnits);
-            if result.eqpId ~= ""
-                parts = "装置 " + result.eqpId + "：" + parts;
+            if result.filterValue ~= ""
+                parts = string(c.varianceColumn.Items{strcmp(c.varianceColumn.ItemsData, result.filterColumn)}) + " = " + ...
+                    result.filterValue + "：" + parts;
             end
             notes = strings(1, 0);
             if result.kind == "components"
@@ -458,8 +467,8 @@ classdef (Abstract) DataTab < appui.Core
                     parts = parts + "、Operation の区切りは縦の点線";
                 end
                 text = parts + "。Wafer ごとの回帰係数：全体 Shift・Wafer 倍率・Wafer 回転（Shot ごとの n 点の平均を Shot 中心の" + ...
-                    "座標に当てはめる）と、Shot 倍率・Shot 回転（それを除いた値を Shot 内の座標に当てはめる）。倍率・回転の単位は " + ...
-                    result.unitLabel + "/mm。式はヘルプ。";
+                    "座標に当てはめる）と、Shot 倍率・Shot 回転（それを除いた値を Shot 内の座標に当てはめる）。上の段は Wafer、" + ...
+                    "下の段は Shot の成分で、残留はそれぞれの回帰残差の 3σ。倍率・回転の単位は " + result.unitLabel + "/mm。式はヘルプ。";
             else
                 if result.hasOperation
                     parts = parts + "、Operation ごとの棒";
@@ -745,39 +754,45 @@ classdef (Abstract) DataTab < appui.Core
             c.varianceTab = uitab(c.dataTabs, 'Title', 'ばらつき分解');
             varianceGrid = uigridlayout(c.varianceTab, [3, 1], 'RowHeight', {'fit', '1x', 'fit'}, 'Padding', 8, ...
                 'RowSpacing', 6);
-            varianceControls = uigridlayout(varianceGrid, [1, 8], 'ColumnWidth', {'fit', 240, 'fit', 220, 'fit', 110, '1x', 'fit'}, ...
-                'Padding', 0);
-            label(varianceControls, '装置（EqpId）', 1, 1);
+            varianceControls = uigridlayout(varianceGrid, [1, 9], 'ColumnWidth', {'fit', 170, 200, 'fit', 220, 'fit', 110, ...
+                '1x', 'fit'}, 'Padding', 0);
+            label(varianceControls, '絞り込み', 1, 1);
+            c.varianceColumn = uidropdown(varianceControls, 'Items', {'装置（EqpId）'}, 'ItemsData', {'EqpId'}, 'Enable', 'off', ...
+                'ValueChangedFcn', @(~, ~) app.onVarianceColumnChanged(), 'Tooltip', ['絞り込む列：装置・ロット・Operation、' ...
+                'またはファイルのその他の列（Chuck など。Mark ごとの値）。右で値を選ぶと、その値の計測（Mark）だけで分けます。']);
+            place(c.varianceColumn, 1, 2);
             c.varianceEqp = uidropdown(varianceControls, 'Items', {'すべての装置'}, 'ItemsData', {''}, 'Enable', 'off', ...
-                'ValueChangedFcn', @(~, ~) app.onVarianceChoiceChanged(), 'Tooltip', ['ばらつきを分ける装置。すべての装置か、' ...
-                '1つの装置の計測だけ（EqpId の列があるとき）。']);
-            place(c.varianceEqp, 1, 2);
-            label(varianceControls, '分け方', 1, 3);
+                'ValueChangedFcn', @(~, ~) app.onVarianceChoiceChanged(), 'Tooltip', ['左の列の値。すべてか、1つの値の' ...
+                '計測（その他の列は Mark）だけ。']);
+            place(c.varianceEqp, 1, 3);
+            label(varianceControls, '分け方', 1, 4);
             c.varianceKind = uidropdown(varianceControls, 'Items', {'Lot・Wafer・Shot 間', '成分（Shift・倍率・回転）'}, ...
                 'ItemsData', {'nested', 'components'}, 'Value', 'nested', 'ValueChangedFcn', @(~, ~) app.onVarianceChoiceChanged(), ...
                 'Tooltip', ['Lot・Wafer・Shot 間：Lot 間・Wafer 間・Shot 間・その他（Shot 内）の分散成分（入れ子の分散分析。' ...
                 '足すと全体の分散）。成分：Wafer ごとの全体 Shift・Wafer 倍率・Wafer 回転（Shot ごとの n 点の平均で求める）と、' ...
-                'それを除いた値で求める Shot 倍率・Shot 回転の回帰係数（X・Y それぞれ）。式はヘルプ。']);
-            place(c.varianceKind, 1, 4);
-            label(varianceControls, '縦軸', 1, 5);
+                'それを除いた値で求める Shot 倍率・Shot 回転の回帰係数（X・Y それぞれ）と、それぞれの回帰の残差の 3σ' ...
+                '（Wafer 成分・Shot 共通成分の残留）。式はヘルプ。']);
+            place(c.varianceKind, 1, 5);
+            label(varianceControls, '縦軸', 1, 6);
             c.varianceQuantity = varianceQuantityDropdown(varianceControls, @(~, ~) app.setVarianceQuantity("data"));
-            place(c.varianceQuantity, 1, 6);
+            place(c.varianceQuantity, 1, 7);
             [outputGrid, c.varianceOutputs] = varianceOutputButtons(app, varianceControls, "data");   % 図・表の保存とコピー（右端）
-            place(outputGrid, 1, 8);
+            place(outputGrid, 1, 9);
             % 図と表は中のタブで切り替える。Lot・Wafer・Shot 間は上の格子（上：3σ の配分か分散、下：割合。左：X、右：Y）、
             % 成分は下の格子（全体 Shift・Wafer 倍率・回転・Shot 倍率・回転の回帰係数）だけを見せる
             c.varianceViews = uitabgroup(varianceGrid);
             c.varianceChartTab = uitab(c.varianceViews, 'Title', '図');
             varianceTableTab = uitab(c.varianceViews, 'Title', '表');
             c.varianceChartGrid = uigridlayout(c.varianceChartTab, [2, 1], 'RowHeight', {'1x', 0}, 'Padding', 0, 'RowSpacing', 0);
-            c.varianceAxesGrid = uigridlayout(c.varianceChartGrid, [2, 2], 'Padding', 4, 'RowSpacing', 6, 'ColumnSpacing', 8);
-            c.varianceAxes = [uiaxes(c.varianceAxesGrid), uiaxes(c.varianceAxesGrid), uiaxes(c.varianceAxesGrid), ...
-                uiaxes(c.varianceAxesGrid)];
-            set(c.varianceAxes, 'Visible', 'off');
-            coefficientGrid = uigridlayout(c.varianceChartGrid, [1, 5], 'Padding', 4, 'ColumnSpacing', 8);
-            c.coefficientAxes = gobjects(1, 5);
-            for k = 1:5
+            [c.varianceAxesGrid, c.varianceAxes, c.varianceLegendAxes] = varianceAxesLayout(app, c.varianceChartGrid);
+            % 成分：上の段に Wafer の成分（全体 Shift・Wafer 倍率・回転・残留）、下の段に Shot 共通の成分（倍率・回転・残留）
+            coefficientGrid = uigridlayout(c.varianceChartGrid, [2, 4], 'Padding', 4, 'ColumnSpacing', 8, 'RowSpacing', 6);
+            c.coefficientAxes = gobjects(1, 7);
+            positions = [1, 1; 1, 2; 1, 3; 1, 4; 2, 1; 2, 2; 2, 3];
+            for k = 1:7
                 c.coefficientAxes(k) = uiaxes(coefficientGrid);
+                c.coefficientAxes(k).Layout.Row = positions(k, 1);
+                c.coefficientAxes(k).Layout.Column = positions(k, 2);
             end
             set(c.coefficientAxes, 'Visible', 'off');
             c.varianceTable = uitable(uigridlayout(varianceTableTab, [1, 1], 'Padding', 4), 'RowName', {}, 'Data', table());
@@ -832,6 +847,40 @@ classdef (Abstract) DataTab < appui.Core
         function onSheetChanged(app)
             runWithAlert(app, @() app.loadFile(app.FilePath, string(app.Controls.sheet.Value)), ...
                 "シートを読み込めませんでした", "別のシートを選ぶか、ファイルの中身を確かめてください。");
+        end
+
+        function onVarianceColumnChanged(app)
+            % 絞り込む列を変えた：値の選択肢を作り直し（すべて）、分け直す
+            refreshVarianceValues(app);
+            onVarianceChoiceChanged(app);
+        end
+
+        function refreshVarianceValues(app)
+            % 「ばらつき分解」の絞り込む列の値の選択肢（装置・ロット・Operation は計測ごと、その他の列は Mark ごとの値）
+            c = app.Controls;
+            column = string(c.varianceColumn.Value);
+            values = strings(1, 0);
+            if ~isempty(app.Data)
+                units = app.Data.units;
+                fields = struct("EqpId", "eqpId", "LotID", "lotId", "Operation", "operation");
+                if isfield(fields, column)
+                    values = string({units.(fields.(column))});
+                else
+                    for unit = reshape(units, 1, [])
+                        position = find(unit.attributeNames == column, 1);
+                        if ~isempty(position)
+                            values = [values, reshape(string(unit.marks.attributes(:, position)), 1, [])]; %#ok<AGROW>
+                        end
+                    end
+                end
+                values = unique(values(values ~= ""));
+            end
+            if column == "EqpId"
+                setChoices(c.varianceEqp, ["すべての装置", reshape("装置 " + values, 1, [])], [{''}, reshape(cellstr(values), 1, [])]);
+            else
+                setChoices(c.varianceEqp, ["すべて", reshape(values, 1, [])], [{''}, reshape(cellstr(values), 1, [])]);
+            end
+            c.varianceEqp.Enable = onOff(~isempty(values));
         end
 
         function onVarianceChoiceChanged(app)
@@ -1230,7 +1279,8 @@ classdef (Abstract) DataTab < appui.Core
             app.DataVariance = [];
             showVarianceDecomposition(app, [], "data");
             setChoices(c.varianceEqp, "すべての装置", {''});
-            c.varianceEqp.Enable = 'off';
+            setChoices(c.varianceColumn, "装置（EqpId）", {'EqpId'});
+            set([c.varianceEqp, c.varianceColumn], 'Enable', 'off');
             c.varianceInfo.Text = 'データを読み込むと、計測値のばらつきを Lot 間・Wafer 間・Shot 間・その他に分けて描きます。';
             if isfield(c, 'measurePanel')
                 clearMeasurePanel(app);

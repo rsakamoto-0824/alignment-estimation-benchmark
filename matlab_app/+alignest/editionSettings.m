@@ -2,7 +2,8 @@ function [settings, changes] = editionSettings(settings, edition)
 %EDITIONSETTINGS 通常版で使えない設定を、通常版で使える設定に直す（Pro 版はそのまま）。
 %   [settings, changes] = alignest.editionSettings(settings, edition)
 %   edition："standard"（通常版）・"pro"（Pro 版）。通常版で使えるのは次のとおり（ほかの設定・タブは Pro 版と同じ）。
-%   - 比べる手法：GPR・TPS・XY 多項式（RBF・Kriging・Universal Kriging・GAM・RT モデル・Fringe Zernike は使わない）
+%   - 比べる手法：RT モデル以外のすべて（GPR・TPS・RBF・Kriging・Universal Kriging・GAM・XY 多項式・Fringe Zernike。
+%     RT モデルは使わない）
 %   - 計測点の選び方：Shot 単位の I 最適・ランダム（D 最適・Sobol 列・ポアソンディスク・Excel 取込・Mark 単位は使わない。
 %     Mark 単位の選び方は同じアルゴリズムの Shot 単位にする。残らなければ I 最適）
 %   - Overlay 補正の成分：組み込みの式だけ（「式を入力」は使わない。Wafer 成分は次数、Shot 共通成分は「なし」、
@@ -19,8 +20,7 @@ if edition == "pro"
 end
 % 比べる手法
 methods = settings.methods;
-proMethods = {"RBF", ["rbf", "enabled"]; "Kriging", ["kriging", "ordinary"]; "Universal Kriging", ["kriging", "universal"]; ...
-    "GAM", ["gam", "enabled"]; "RT モデル", ["rt", "enabled"]; "Fringe Zernike", ["zernike", "enabled"]};
+proMethods = {"RT モデル", ["rt", "enabled"]};   % Pro 版だけの手法
 dropped = strings(1, 0);
 for k = 1:size(proMethods, 1)
     path = proMethods{k, 2};
@@ -31,7 +31,7 @@ for k = 1:size(proMethods, 1)
 end
 settings.methods = methods;
 if ~isempty(dropped)
-    changes(end + 1) = "比べる手法：" + strjoin(dropped, "・") + "（通常版は GPR・TPS・XY 多項式）";
+    changes(end + 1) = "比べる手法：" + strjoin(dropped, "・") + "（通常版は RT モデルを使わない）";
 end
 % 計測点の選び方（Shot 単位の I 最適・ランダム）
 sampling = settings.sampling;

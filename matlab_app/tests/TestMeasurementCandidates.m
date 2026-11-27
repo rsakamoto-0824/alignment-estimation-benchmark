@@ -94,6 +94,8 @@ classdef TestMeasurementCandidates < matlab.unittest.TestCase
             testCase.verifyTrue(issorted(top.value, 'descend'));
             testCase.verifyEqual(size(c.candidateTable.Data, 1), 5);
             testCase.verifyEqual(string(c.addCandidatesButton.Enable), "on");
+            testCase.verifyEqual(string(c.addCandidateShotsButton.Enable), "off", "「Mark の Shot を入れる」は単位が Mark の候補だけ");
+            testCase.verifyError(@() app.addMeasurementCandidates("shot"), 'alignest:noCandidates');
             testCase.verifyNotEmpty(findobj(c.candidateAxes, 'DisplayName', '計測を足す候補（Shot の点の中心）'));
             testCase.verifyNotEmpty(findall(c.candidateAxes, 'Type', 'image'), "値のヒートマップ");
             testCase.verifyTrue(contains(string(c.candidateAxes.Colorbar.Label.String), "推定誤差"));
@@ -120,6 +122,12 @@ classdef TestMeasurementCandidates < matlab.unittest.TestCase
             testCase.verifyTrue(all(ismember(marks.key([1, 3, 4]), app.Settings.sampling.requiredMarks)), ...
                 "必ず計測する Mark に入る");
             testCase.verifyFalse(ismember(marks.key(2), app.Settings.sampling.requiredMarks), "外した候補は入れない");
+            % 「Mark の Shot を入れる」：チェックを入れた Mark のある Shot を、必ず計測する shotNo に足す（同じ Shot は1つ）
+            testCase.verifyEqual(string(c.addCandidateShotsButton.Enable), "on");
+            shots = app.addMeasurementCandidates("shot");
+            testCase.verifyEqual(shots, unique(reshape(marks.shotNo([1, 3, 4]), 1, []), 'stable'));
+            testCase.verifyTrue(all(ismember(shots, app.Settings.sampling.requiredShots)), "必ず計測する shotNo に入る");
+            testCase.verifyTrue(contains(string(c.candidateInfo.Text), "必ず計測する shotNo"));
             % すべて外すと足せない。key で選ぶこともできる
             c.clearCandidatesButton.ButtonPushedFcn([], []);
             testCase.verifyEqual(c.candidateTable.Data(:, 1), num2cell(false(4, 1)));

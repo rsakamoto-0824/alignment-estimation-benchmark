@@ -31,6 +31,12 @@ classdef (Abstract) Core < handle
                                         % 画面の色の切り替えがどれも遅くなるので、開くまで作らない）
         MIN_CONTENT_SIZE = [1200, 700]     % 窓がこれより小さいときは、中身をこの大きさに保ってスクロールで見る（欄が詰まって崩れないように）
         PRIMARY_COLOR = [0.0, 0.36, 0.67]
+        ESTIMATION_TAB_COLOR = [0.0, 0.36, 0.67]   % 業務でつながるタブの見出しの文字の色：2〜5（面内推定の設定・結果一覧・
+        CORRECTION_TAB_COLOR = [0.72, 0.36, 0.0]   % マップ・未知の座標）は青、6・7（Shot 高次補正・Mark 配置）は橙
+        ROTATION_SPREAD_COLOR = [0.0, 0.48, 0.45]   % 「8. 計測Mapローテ」の「ばらつきを求める」の色（青緑）
+        ROTATION_MAP_COLOR = [0.0, 0.36, 0.67]      % 同じく「計測マップを作る」の色（青）
+        TARGET_COMPARE_TABLE_HEIGHT = 160   % 「5. 未知の座標の推定」の補正の比較の表の高さ [px]（補正 4 行が見える）
+        VARIANCE_LEGEND_WIDTH = 150     % ばらつき分解の図の右の、凡例だけの列の幅 [px]（4つの図の大きさをそろえる）
         ARROW_COLORS = [0.0, 0.33, 0.62; 0.0, 0.33, 0.62; 0.75, 0.25, 0.10]  % 楕円と重ねるときの矢印（計測値・推定値・残差）
         NONE_LABEL = "（なし）"
         MAX_CURVES = 8
@@ -104,8 +110,10 @@ classdef (Abstract) Core < handle
         ResizedCharts = strings(1, 0)  % まだ描き直していない図（RESIZE_CHARTS の名前。開いたときに描き直す）：窓の大きさを変えたあとの図と、
                                        % 画面を出しているときにデータを読み込んだ直後の、見えていない「1. データ読込」の図
         BuiltTabs = strings(1, 0)      % 中身を作った LAZY_TABS のタブ（ensureTab）
-        Edition = "pro"                % 版："pro"（Pro 版。すべての設定）・"standard"（通常版。比べる手法・計測点の選び方・
-                                       % Overlay の式を絞る。alignest.editionSettings）
+        TableListeners = event.listener.empty   % 表の中身が変わったことを知る見張り（ダークモードで空の表をしまう。watchTables）
+        ThemeHiddenTables = gobjects(1, 0)      % ダークモードで中身が空なのでしまった表（中身が入るか、ライトモードで戻す）
+        Edition = "pro"                % 版："pro"（Pro 版。すべての設定）・"standard"（通常版。RT モデル・計測点の選び方・
+                                       % Overlay の式・表示・指標を絞る。alignest.editionSettings）
         CurrentMonitor = 0      % 窓の中心がある画面の番号（get(groot, 'MonitorPositions') の行）
         ResponsiveColumns = struct("grid", {}, "column", {}, "width", {})  % 窓の幅に合わせて狭める欄（registerResponsiveColumn）
         TargetSelection = zeros(0, 1)  % 推定する点の表で選んでいる行（「選んだ行を削除」で使う）
@@ -144,7 +152,7 @@ classdef (Abstract) Core < handle
         RotationHistorySelection = zeros(1, 0)   % 「8.」の条件の比較で選んでいる履歴の番号
         RotationFile = []            % 「8.」で読み込んだ Excel・CSV（raw・info：alignest.readHighOrderFile、data：選んだ列で整理した
                                      %  Wafer ごとのデータ（alignest.prepareHighOrderData。まだなら []）、mapping・directionRule）
-        WaferRanking = []       % 「3. 結果一覧」の「Wafer のベスト・ワースト」の結果（alignest.waferRanking。結果が変わると求め直す）
+        WaferRanking = []       % 「3. 結果一覧」の「Waferベスト/ワースト」の結果（alignest.waferRanking。結果が変わると求め直す）
         MeasureRangeStart = []  % 「2. 面内推定の設定」の計測マップで「範囲で選ぶ」の1点目（Wafer・図の種類・角の座標・図・印。無ければ []）
         MeasurementCandidates = []  % 「3. 結果一覧」の「計測を足す場所」で最後に出した候補（alignest.measurementCandidates の表と条件）
         MarkLayoutFile = []     % 「7. Mark配置最適化」で読み込んだ Excel・CSV（raw・info：alignest.readHighOrderFile、mapping、
@@ -241,6 +249,10 @@ classdef (Abstract) Core < handle
             app.Tabs.markLayout = uitab(app.TabGroup, 'Title', '7. Mark配置最適化');
             app.Tabs.rotation = uitab(app.TabGroup, 'Title', '8. 計測Mapローテ');
             app.TabGroup.SelectionChangedFcn = @(~, event) app.onTabChanged(event);
+            % 業務でつながるタブを見出しの文字の色で分ける（タブの見出しの地はどちらの画面の色でも明るい）
+            set([app.Tabs.settings, app.Tabs.results, app.Tabs.map, app.Tabs.target], 'ForegroundColor', ...
+                app.ESTIMATION_TAB_COLOR);
+            set([app.Tabs.highOrder, app.Tabs.markLayout], 'ForegroundColor', app.CORRECTION_TAB_COLOR);
             buildDataTab(app);
             buildSettingsTab(app);
             buildRunTab(app);   % 「3. 結果一覧」から後のタブは ensureTab で作る（下の lazyTabs）
@@ -262,6 +274,7 @@ classdef (Abstract) Core < handle
                     'Checked', onOff(size_ == app.FONT_SIZE), 'MenuSelectedFcn', @(~, ~) app.setFontSize(size_));
             end
             legendMenu = uimenu(viewMenu, 'Text', '凡例の位置');
+            app.Controls.legendMenu = legendMenu;
             app.Controls.legendItems = gobjects(1, 0);
             for k = 1:numel(app.LEGEND_CHOICES)
                 choice = app.LEGEND_CHOICES(k);
@@ -271,6 +284,11 @@ classdef (Abstract) Core < handle
             uimenu(legendMenu, 'Text', '図ごとに選んだ位置をすべて戻す', 'Separator', 'on', ...
                 'MenuSelectedFcn', @(~, ~) app.resetLegendOverrides());
             uimenu(legendMenu, 'Text', '（図を右クリックすると、その図だけの位置を選べます）', 'Enable', 'off');
+            if ~isPro(app)
+                % 通常版：ダークモードと凡例の位置の変更は Pro 版だけ（メニューに出さない）
+                set([app.Controls.themeLight, app.Controls.themeDark, legendMenu], 'Visible', 'off');
+                fontMenu.Separator = 'off';
+            end
             % Scan 方向 1・2 の向き（▲・▼）と色（図の印と色だけ。推定の結果は変わらない。設定 display に入る）
             scanMenu = uimenu(viewMenu, 'Text', 'Scan 方向の向きと色');
             app.Controls.scanUpItems = [ ...
@@ -293,6 +311,7 @@ classdef (Abstract) Core < handle
             % ヘルプは「設定」の右隣のメニューから別の窓で開く（機能編・技術編）
             app.Controls.helpMenu = uimenu(app.Figure, 'Text', 'ヘルプ', 'MenuSelectedFcn', @(~, ~) app.openHelp());
             prepareFonts(app, app.Figure);
+            watchTables(app, app.Figure);   % ダークモードで空の表が白く浮かないように（Display.watchTables）
             settingsToControls(app);
             refreshRunSummary(app);
             if app.DefaultsSource ~= ""
@@ -307,8 +326,9 @@ classdef (Abstract) Core < handle
                 end
             end
             if visible
-                % 前回選んだ表示の設定を使う（自動テストなど画面を出さないときは標準のまま）。読めない値は使わない
-                if string(loadPreference(app, 'theme', 'light')) == "dark"
+                % 前回選んだ表示の設定を使う（自動テストなど画面を出さないときは標準のまま）。読めない値は使わない。
+                % 画面の色・凡例の位置は Pro 版だけ（通常版はライトモード・図ごとの既定の位置）
+                if isPro(app) && string(loadPreference(app, 'theme', 'light')) == "dark"
                     setTheme(app, "dark");
                 end
                 savedSize = loadPreference(app, 'fontSize', app.FONT_SIZE);
@@ -317,11 +337,13 @@ classdef (Abstract) Core < handle
                     setFontSize(app, savedSize);
                 end
                 savedLocation = string(loadPreference(app, 'legendLocation', 'auto'));
-                if isscalar(savedLocation) && any(savedLocation == app.LEGEND_CHOICES)
+                if isPro(app) && isscalar(savedLocation) && any(savedLocation == app.LEGEND_CHOICES)
                     app.LegendLocation = savedLocation;
                 end
-                app.LegendOverrides = validLegendOverrides(loadPreference(app, 'legendOverrides', struct()), ...
-                    app.LEGEND_CHOICES);
+                if isPro(app)
+                    app.LegendOverrides = validLegendOverrides(loadPreference(app, 'legendOverrides', struct()), ...
+                        app.LEGEND_CHOICES);
+                end
                 markLegendItems(app);
                 % 「6. Shot高次補正」で保存した項の組み合わせ（同じ名前なら、既定の設定ファイルより前回保存したものを使う）
                 savedSets = loadPreference(app, 'highOrderTermSets', {});
@@ -539,7 +561,7 @@ classdef (Abstract) Core < handle
                 c.degradationTypes, ...
                 c.candidateMethod, c.candidateGroup, c.candidateWafer, c.candidateCriterion, c.candidateAxis, ...
                 c.candidateStatistic, c.candidateLevel, c.candidateMode, c.candidateCount, c.candidateThreshold, ...
-                c.findCandidatesButton, c.addCandidatesButton, c.selectAllCandidatesButton, c.clearCandidatesButton, ...
+                c.findCandidatesButton, c.addCandidatesButton, c.addCandidateShotsButton, c.selectAllCandidatesButton, c.clearCandidatesButton, ...
                 c.filterResults.apply, c.filterMap.apply], 'Enable', 'off');
             showFilter(app);
             showWaferRanking(app);
@@ -760,12 +782,16 @@ classdef (Abstract) Core < handle
             % result が空なら消す
             c = app.Controls;
             if target == "data"
-                [axesList, axesGrid, table_, quantityControl] = deal(c.varianceAxes, c.varianceAxesGrid, c.varianceTable, ...
-                    c.varianceQuantity);
+                [axesList, axesGrid, table_, quantityControl, legendAxes] = deal(c.varianceAxes, c.varianceAxesGrid, ...
+                    c.varianceTable, c.varianceQuantity, c.varianceLegendAxes);
             else
-                [axesList, axesGrid, table_, quantityControl] = deal(c.correctionVarianceAxes, ...
-                    c.correctionVarianceAxesGrid, c.correctionVarianceTable, c.correctionVarianceQuantity);
+                [axesList, axesGrid, table_, quantityControl, legendAxes] = deal(c.correctionVarianceAxes, ...
+                    c.correctionVarianceAxesGrid, c.correctionVarianceTable, c.correctionVarianceQuantity, ...
+                    c.correctionVarianceLegendAxes);
             end
+            cla(legendAxes, 'reset');
+            legend(legendAxes, 'off');
+            legendAxes.Visible = 'off';
             quantity = string(quantityControl.Value);
             % 図・表の保存とコピーのボタンは、分けた結果があるときだけ押せる
             set(c.(ternary(target == "data", "varianceOutputs", "correctionVarianceOutputs")), 'Enable', onOff(~isempty(result)));
@@ -795,7 +821,9 @@ classdef (Abstract) Core < handle
                 return
             end
             nAxes = numel(result.axes);
-            axesGrid.ColumnWidth = [repmat({'1x'}, 1, nAxes), repmat({0}, 1, 2 - nAxes)];   % 1変数なら左の列だけ
+            widths = axesGrid.ColumnWidth;   % 3列目は凡例だけの図（決まった幅のまま）
+            widths(1:2) = [repmat({'1x'}, 1, nAxes), repmat({0}, 1, 2 - nAxes)];   % 1変数なら左の列だけ
+            axesGrid.ColumnWidth = widths;
             set(axesList, 'Visible', 'off');
             labels = result.categories;
             names = labels;
@@ -803,8 +831,9 @@ classdef (Abstract) Core < handle
                 names = result.categoryNames;   % 表には長い名前
             end
             for a = 1:nAxes
+                % 凡例は右の列の図にまとめて出す（X・Y の図の大きさを同じにする）
                 alignest.plot.varianceBars(axesList(a), axesList(a + 2), result, result.axes(a), quantity=quantity, ...
-                    unitLabel=result.unitLabel, showLegend=a == nAxes, categoryLabels=labels);
+                    unitLabel=result.unitLabel, showLegend=false, categoryLabels=labels, legendAxes=legendAxes);
             end
             styleAxes(app, axesList(ismember(1:4, [1:nAxes, 3:2 + nAxes])), app.AXES_FONT_SIZE);
             % 表：棒・軸ごとに、段の 3σ（縦軸が分散なら分散）・割合と全体
@@ -851,9 +880,9 @@ classdef (Abstract) Core < handle
             nWafers = numel(result.wafers);
             nAxes = numel(result.axes);
             nComponents = numel(result.components);
-            % 単位：全体 Shift は値の単位、倍率・回転は 値の単位/mm（座標は mm）
+            % 単位：全体 Shift と残留（回帰残差の 3σ）は値の単位、倍率・回転は 値の単位/mm（座標は mm）
             units = repmat(result.unitLabel + "/mm", 1, nComponents);
-            units(result.components == "全体 Shift") = result.unitLabel;
+            units(result.components == "全体 Shift" | contains(result.components, "残留")) = result.unitLabel;
             values = nan(nWafers, nComponents, nAxes);
             counts = zeros(nWafers, nAxes);
             for a = 1:nAxes
@@ -930,9 +959,20 @@ classdef (Abstract) Core < handle
             end
             % Shot 高次補正のヒストグラム（3段 × X・Y）：画面と同じ3段に並べ、凡例（画面では上の行の文字）は下に足す
             histogramRows = string(figureName) == "highOrderHistogram" && numel(items) == 6;
-            % ばらつき分解（Lot・Wafer・Shot 間）：画面と同じ2段（上：3σ の配分か分散、下：分散の割合）に並べる
-            varianceRows = any(string(figureName) == ["variance", "correctionVariance"]) && ...
-                ~isVarianceComponents(app, figureName) && mod(numel(items), 2) == 0;
+            % ばらつき分解（Lot・Wafer・Shot 間）：画面と同じ2段（上：3σ の配分か分散、下：分散の割合）に並べ、凡例だけの図を
+            % 右に足す。成分は画面と同じ2段（上：Wafer の成分 4 つ、下：Shot 共通の成分 3 つ）
+            legendHandles = gobjects(1, 0);   % 凡例だけの図（cla(ax, 'reset') で Tag が消えるので、部品で見分ける）
+            for name = ["varianceLegendAxes", "correctionVarianceLegendAxes"]
+                if isfield(app.Controls, name)
+                    legendHandles(end + 1) = app.Controls.(name); %#ok<AGROW>
+                end
+            end
+            isLegend = arrayfun(@(item) any(item == legendHandles), items);
+            legendItems = items(isLegend);
+            items = items(~isLegend);
+            isVariance = any(string(figureName) == ["variance", "correctionVariance"]);
+            componentRows = isVariance && isVarianceComponents(app, figureName) && numel(items) == 7;
+            varianceRows = isVariance && ~isVarianceComponents(app, figureName) && mod(numel(items), 2) == 0;
             images = cell(1, numel(items));
             for k = 1:numel(items)
                 file = [tempname, '.png'];
@@ -946,10 +986,19 @@ classdef (Abstract) Core < handle
                 pixels = stackImages(rows, app.IMAGE_GAP_PIXELS);
                 return
             end
+            if componentRows
+                pixels = stackImages({joinImages(images(1:4), app.IMAGE_GAP_PIXELS), ...
+                    joinImages(images(5:7), app.IMAGE_GAP_PIXELS)}, app.IMAGE_GAP_PIXELS);
+                return
+            end
             if varianceRows
                 half = numel(images) / 2;
                 pixels = stackImages({joinImages(images(1:half), app.IMAGE_GAP_PIXELS), ...
                     joinImages(images(half + 1:end), app.IMAGE_GAP_PIXELS)}, app.IMAGE_GAP_PIXELS);
+                if ~isempty(legendItems)
+                    pixels = joinImages({pixels, axesLegendImage(legendItems(1), app.IMAGE_RESOLUTION)}, ...
+                        app.IMAGE_GAP_PIXELS);
+                end
                 return
             end
             pixels = joinImages(images, app.IMAGE_GAP_PIXELS);
@@ -969,7 +1018,7 @@ classdef (Abstract) Core < handle
         function items = figureItems(app, figureName)
             % 保存する図（saveFigureImage）：axes か、並べた図の tiledlayout
             owners = struct("chart", "results", "map", "results", "correctionVariance", "results", "target", "target", ...
-                "targetResidual", "target", ...
+                "targetResidual", "target", "targetCompare", "target", ...
                 "highOrder", "highOrder", "highOrderPair", "highOrder", "highOrderHistogram", "highOrder", ...
                 "markLayoutChart", "markLayout", "markLayoutMap", "markLayout", "markLayoutShape", "markLayout");
             if isfield(owners, figureName)
@@ -985,10 +1034,11 @@ classdef (Abstract) Core < handle
                     % ばらつき分解（1. データ読込）：Lot・Wafer・Shot 間は 2 × 2 の図、成分は回帰係数の図。「表」のタブを
                     % 見ていても書き出せるように、「図」のタブを開く（見えていない図は大きさが決まらない）
                     c.varianceViews.SelectedTab = c.varianceChartTab;
-                    items = ternary(isVarianceComponents(app, figureName), c.coefficientAxes, c.varianceAxes);
+                    items = ternary(isVarianceComponents(app, figureName), c.coefficientAxes, ...
+                        [c.varianceAxes, c.varianceLegendAxes]);
                 case "correctionVariance"
                     c.correctionVarianceViews.SelectedTab = c.correctionVarianceChartTab;   % 補正残差のばらつき分解（3. 結果一覧）
-                    items = c.correctionVarianceAxes;
+                    items = [c.correctionVarianceAxes, c.correctionVarianceLegendAxes];
                 case "map"
                     if string(c.mapView.Value) == "single"
                         items = c.mapAxes;
@@ -1001,7 +1051,9 @@ classdef (Abstract) Core < handle
                 case "target"
                     items = c.targetAxes;
                 case "targetResidual"
-                    items = c.targetResidualAxes;
+                    items = c.targetResidualAxesList;   % 並べたときは3つ（使わない図は中身が無い）
+                case "targetCompare"
+                    items = [c.targetCompareBarAxes, c.targetCompareMapAxes];
                 case "highOrder"
                     items = [c.highOrderAxes, c.highOrderAxes2, c.highOrderAxes3];   % 並べたときは3つ（使わない図は中身が無い）
                 case "highOrderPair"
@@ -1017,6 +1069,24 @@ classdef (Abstract) Core < handle
                 otherwise
                     error('alignest:figureName', '保存する図の名前が違います: %s', figureName);
             end
+        end
+
+        function [grid, axesList, legendAxes] = varianceAxesLayout(app, parent)
+            % ばらつき分解（Lot・Wafer・Shot 間）の図の並び：2 × 2（上：3σ の配分か分散、下：分散の割合。左：X、右：Y）と、
+            % 右の列に凡例だけの図（凡例を図の外に出すと、凡例のある図だけ狭くなるので、4つの図の大きさをそろえるため）
+            grid = uigridlayout(parent, [2, 3], 'ColumnWidth', {'1x', '1x', app.VARIANCE_LEGEND_WIDTH}, 'Padding', 4, ...
+                'RowSpacing', 6, 'ColumnSpacing', 8);
+            axesList = gobjects(1, 4);
+            positions = [1, 1; 1, 2; 2, 1; 2, 2];
+            for k = 1:4
+                axesList(k) = uiaxes(grid);
+                axesList(k).Layout.Row = positions(k, 1);
+                axesList(k).Layout.Column = positions(k, 2);
+            end
+            legendAxes = uiaxes(grid);
+            legendAxes.Layout.Row = [1, 2];
+            legendAxes.Layout.Column = 3;
+            set([axesList, legendAxes], 'Visible', 'off');
         end
 
         function [grid, buttons] = varianceOutputButtons(app, parent, target)
@@ -1148,6 +1218,32 @@ for k = 1:numel(items)
 end
 legend(target, 'Location', 'north', 'Orientation', 'horizontal', 'Box', 'off', ...
     'NumColumns', min(LEGEND_COLUMNS, max(numel(items), 1)), 'FontSize', LEGEND_FONT_SIZE, 'Interpreter', 'none');
+file = [tempname, '.png'];
+exportgraphics(helper, file, 'Resolution', resolution);
+pixels = imread(file);
+delete(file);
+end
+
+function pixels = axesLegendImage(ax, resolution)
+% 凡例だけの図 ax（ばらつき分解の右の列）の凡例の画像：凡例の項目（色の四角・印）を見えない図に描き直して書き出す
+LEGEND_FONT_SIZE = 12;
+helper = figure('Visible', 'off', 'Color', 'w', 'Units', 'pixels', 'Position', [0, 0, 260, 320]);
+cleanup = onCleanup(@() delete(helper));
+target = axes(helper, 'Visible', 'off');
+hold(target, 'on');
+items = gobjects(1, 0);
+for source = reshape(ax.Legend.PlotChildren, 1, [])
+    if isa(source, 'matlab.graphics.primitive.Patch')
+        items(end + 1) = patch(target, NaN, NaN, source.FaceColor, 'EdgeColor', 'none', ...
+            'DisplayName', source.DisplayName); %#ok<AGROW>
+    else
+        items(end + 1) = plot(target, NaN, NaN, 'LineStyle', 'none', 'Marker', source.Marker, ...
+            'MarkerSize', source.MarkerSize, 'MarkerFaceColor', source.MarkerFaceColor, ...
+            'MarkerEdgeColor', source.MarkerEdgeColor, 'DisplayName', source.DisplayName); %#ok<AGROW>
+    end
+end
+legend(target, items, 'Location', 'west', 'Box', 'off', 'FontSize', LEGEND_FONT_SIZE, 'Interpreter', 'none', ...
+    'TextColor', [0, 0, 0]);
 file = [tempname, '.png'];
 exportgraphics(helper, file, 'Resolution', resolution);
 pixels = imread(file);
