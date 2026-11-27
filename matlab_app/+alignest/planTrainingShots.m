@@ -1,4 +1,4 @@
-function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm)
+function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm, chosenShots)
 %PLANTRAININGSHOTS 1つの Wafer（評価の単位）で、学習に使う Shot を選ぶ。
 %   候補は、X か Y の有効な計測値を1点以上持つ Shot。選ばなかった候補 Shot の Mark を評価に使う。
 %   I 最適の基準モデルは、説明変数 X・Y・半径（sampling.designFeatures = "XYR"、既定）か X・Y（"XY"）の多項式
@@ -8,6 +8,9 @@ function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm)
 %   象限）、Scan方向（scanDirection）。各区画の Shot 数を割合 × 選ぶ数 ± slack に収める。Mark 単位は Mark の半径・偏角と、
 %   その Mark の Shot の Scan 方向で区画に分け、区画ごとの Mark の数をそろえる。
 %   乱数は sampling.seed・Shot 数・繰り返し番号から決めるので、候補が同じ Wafer では同じ Shot が選ばれる。
+%   plan = alignest.planTrainingShots(unit, spec, sampling, waferRadiusMm, chosenShots)：Shot を選ばず、chosenShots（unit.shots の
+%   番号）を学習に使うとして、学習に使う Mark の数と I 基準・D 基準・効率だけを求める（同じ配置の別の Wafer の学習パターンを
+%   使い回すとき。alignest.cachedTrainingPlan）。
 %   Excel で指定したパターン（type "manual"）：spec.shotNos の Shot（spec.markNos があれば、その Shot・Mark の組の Mark）を
 %   学習に使う。Excel で指定した優先順（type "file"）：spec.required の項目は必ず学習に使い、残りを spec.shotNos の順に
 %   足して学習 Shot 数にする（Mark 単位は、Mark の数 = round(spec.markPerShot × 候補 Shot 数)、計測率で決めるときは
@@ -49,6 +52,14 @@ function plan = planTrainingShots(unit, spec, sampling, waferRadiusMm)
 %   （alignest.designCriteria。基準モデルの項数より学習点が少ないなど、求められないときは NaN）。
 shots = unit.shots;
 candidates = find(shots.nValidX + shots.nValidY > 0);
+if nargin >= 5
+    % 選んだ Shot の組の Mark の数と I 基準・D 基準だけ（Shot は選び直さない）
+    plan = struct("shotIndex", sort(chosenShots(:)));
+    plan.nMarks = nnz(ismember(unit.marks.shotIndex, plan.shotIndex) & (unit.marks.validX | unit.marks.validY));
+    [plan.criterionI, plan.criterionD, plan.efficiencyI, plan.efficiencyD] = planCriteria(unit, candidates, ...
+        plan.shotIndex, sampling, waferRadiusMm);
+    return
+end
 plan = struct("label", spec.label, "group", spec.group, "type", spec.type, "repeat", spec.repeat, ...
     "shotIndex", zeros(0, 1), "shotNos", zeros(0, 1), "nShots", 0, "criterion", NaN, ...
     "violation", 0, "criterionI", NaN, "criterionD", NaN, "ok", false, "message", "", ...

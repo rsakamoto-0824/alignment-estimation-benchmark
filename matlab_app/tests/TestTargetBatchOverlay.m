@@ -205,9 +205,7 @@ classdef TestTargetBatchOverlay < matlab.unittest.TestCase
             cleanup = onCleanup(@() delete(app));
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.xlsx'));
             app.applyMapping();
-            settings = app.Settings;
-            [settings.overlay.waferOrder, settings.overlay.shotCommon, settings.overlay.perShot] = deal(1, "none", "none");
-            app.setSettings(settings);
+            app.setTargetCorrection(waferOrder=1, shotCommon="none", perShot="none");
             point = alignest.targetTemplate(1);
             [point.Xmm, point.Ymm] = deal(10, 5);
             app.setTargetPoints(point);
@@ -221,49 +219,105 @@ classdef TestTargetBatchOverlay < matlab.unittest.TestCase
         end
 
         function appCorrectionModelAndMap(testCase)
-            % 画面：「補正のモデル」で変えた式は「2. 面内推定の設定」と同じ設定（逆も同じ）。計算の後にモデルを変えると
-            % 計算し直すよう知らせる。「補正残差のマップ」に残差のベクトル場を描く
+            % 画面：「補正のモデル」は「2. 面内推定の設定」の Overlay 補正（基準の補正）とは別の設定。計算の後にモデルを
+            % 変えると計算し直すよう知らせる。「補正残差のマップ」に残差のベクトル場を描く（3つ並べる・Shot スタックマップ・円）
             app = AlignmentEstimationApp(false);
             cleanup = onCleanup(@() delete(app));
             app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.xlsx'));
             app.applyMapping();
-            c = app.Controls;
-            testCase.verifyEqual(c.targetOverlayShotCommon.Value, c.overlayShotCommon.Value);
             app.setTargetPoints(alignest.targetGrid(40, 140));
             app.estimateTargets([1, 2], "all", 1);
+            c = app.Controls;
             testCase.verifyEmpty(app.drawTargetCorrectionMap(), "補正値を計算する前は描かない");
+            testCase.verifyEqual(c.targetCorrectionWafer.Value, 1, "初期値：Wafer 1次＋Shot ごとの1次");
+            testCase.verifyEqual(string(c.targetCorrectionPerShot.Value), "linear");
             app.computeTargetOverlay();
-            summary = app.drawTargetCorrectionMap("residual", "all", "vector");
+            summary = app.drawTargetCorrectionMap("residual", "all", "vector", "single", "wafer");
             testCase.verifyGreaterThan(summary.n, 0);
             testCase.verifyTrue(contains(c.targetResidualInfo.Text, "補正後の残差"));
             testCase.verifyEqual(c.targetResidualSave.Enable, matlab.lang.OnOffSwitchState('on'));
-            % 「補正のモデル」で変える → 設定と「2. 面内推定の設定」の欄も変わる。補正値は前のモデルなので知らせる
-            newPerShot = 'none';   % 今と違うもの（並進は選べない）
-            if string(c.targetOverlayPerShot.Value) == "none"
-                newPerShot = 'linear';
-            end
-            c.targetOverlayPerShot.Value = newPerShot;
-            c.targetOverlayPerShot.ValueChangedFcn([], []);
-            testCase.verifyEqual(app.Settings.overlay.perShot, string(newPerShot));
-            testCase.verifyEqual(c.overlayPerShot.Value, newPerShot);
-            testCase.verifyTrue(startsWith(string(c.targetOverlayInfo.Text), "⚠ 補正モデルを変えました"));
+            % 補正前・補正量・残差を並べる：3つの図。Shot スタックマップでも3つ。Wafer 上の図には円を重ねる
+            summary = app.drawTargetCorrectionMap("residual", "all", "vector", "side", "wafer");
+            testCase.verifyEqual(string({summary.valueLabel}), ["補正前の値", "補正量", "補正後の残差"]);
+            testCase.verifyEqual(arrayfun(@(ax) string(ax.Visible), c.targetResidualAxesList), ["on", "on", "on"]);
+            c.targetResidualCircles.Value = '50 100';
+            summary = app.drawTargetCorrectionMap("residual", "all", "vector", "side", "wafer");
+            circles = findobj(c.targetResidualAxesList(1), '-regexp', 'DisplayName', '^半径');
+            testCase.verifyNumElements(circles, 2, "半径 50・100 mm の円");
+            stack = app.drawTargetCorrectionMap("residual", "all", "vector", "side", "stack");
+            testCase.verifyNumElements(stack, 3);
+            testCase.verifyGreaterThan(min([stack.n]), 0, "Shot スタックマップにも点を描く");
+            testCase.verifyTrue(contains(c.targetResidualInfo.Text, "Shot 内の座標で重ねた図"));
+            single = app.drawTargetCorrectionMap("residual", "all", "X", "single", "wafer");
+            testCase.verifyNumElements(single, 1);
+            testCase.verifyEqual(arrayfun(@(ax) string(ax.Visible), c.targetResidualAxesList(2:3)), ["off", "off"], ...
+                "使わない図はしまう");
+            % 「補正のモデル」の式を変えても「2. 面内推定の設定」の Overlay 補正（基準）は変わらない。補正値は前のモデルなので知らせる
+            baseline = app.Settings.overlay;
+            app.setTargetCorrection(shotCommon="quadratic");
+            testCase.verifyEqual(app.Settings.targetCorrection.shotCommon, "quadratic");
+            testCase.verifyEqual(app.Settings.overlay, baseline);
             testCase.verifyTrue(startsWith(string(c.targetResidualInfo.Text), "⚠ 補正モデルを変えました"));
-            % 式の誤りは両方の欄の下に出る。「2. 面内推定の設定」で変えると「補正のモデル」も変わる
-            c.targetOverlayShotCommon.Value = 'formula';
-            c.targetOverlayShotCommon.ValueChangedFcn([], []);
-            testCase.verifyEqual(c.targetOverlayShotDx.Enable, matlab.lang.OnOffSwitchState('on'));
-            c.targetOverlayShotDx.Value = 'k1 + (x)';
-            c.targetOverlayShotDx.ValueChangedFcn([], []);
-            testCase.verifyNotEmpty(c.targetOverlayError.Text);
-            testCase.verifyEqual(c.targetOverlayError.Text, c.overlayFormulaError.Text);
-            c.overlayShotCommon.Value = 'linear';
-            c.overlayShotCommon.ValueChangedFcn([], []);
-            testCase.verifyEqual(c.targetOverlayShotCommon.Value, 'linear');
-            testCase.verifyEqual(c.targetOverlayShotDx.Enable, matlab.lang.OnOffSwitchState('off'));
-            % 計算し直すと知らせは消え、新しいモデルの補正値になる
+            % 項のチェック：2次の項は外せる、0次・1次の項は外せない。外した項は補正に使わない
+            terms = alignest.targetCorrectionTerms(app.Settings);
+            quadratic = terms(terms.component == "shotCommon" & terms.order == 2, :);
+            testCase.verifyNotEmpty(quadratic);
+            terms = app.setTargetCorrectionTermUsed(quadratic.key(1), false);
+            testCase.verifyFalse(terms.used(terms.key == quadratic.key(1)));
+            testCase.verifyEqual(app.Settings.targetCorrection.excludedTerms, quadratic.key(1));
+            testCase.verifyFalse(c.targetCorrectionTable.Data.("使う")(terms.key == quadratic.key(1)));
+            required = terms.key(find(terms.required, 1));
+            testCase.verifyError(@() app.setTargetCorrectionTermUsed(required, false), 'alignest:targetCorrection');
             overlay = app.computeTargetOverlay();
-            testCase.verifyTrue(contains(overlay{1}.description, "並進"));
-            testCase.verifyFalse(startsWith(string(c.targetOverlayInfo.Text), "⚠"));
+            testCase.verifyFalse(startsWith(string(c.targetResidualInfo.Text), "⚠"), "計算し直すと知らせは消える");
+            testCase.verifyTrue(contains(overlay{1}.description, "2次"));
+            % 式を変えると、式に無くなった項のチェックは捨てる。「すべての項を使う」で全部使う
+            app.setTargetCorrection(shotCommon="linear");
+            testCase.verifyEmpty(app.Settings.targetCorrection.excludedTerms);
+            app.setTargetCorrection(shotCommon="quadratic");
+            app.setTargetCorrectionTermUsed(quadratic.key(1), false);
+            app.setTargetCorrectionTerms("all");
+            testCase.verifyEmpty(app.Settings.targetCorrection.excludedTerms);
+        end
+
+        function comparisonOfCorrections(testCase)
+            % 「補正の比較」：① 全計測｜基準 ② 一部計測＋面内推定｜基準 ③ 全計測＋未知の座標 ④ 一部計測＋面内推定＋未知の座標
+            % を、計測値のある Mark の補正後の |平均|+3σ で比べる。全 Mark で推定したときは ①・③ だけ
+            app = AlignmentEstimationApp(false);
+            cleanup = onCleanup(@() delete(app));
+            app.loadFile(fullfile(testCase.Root, 'sample_data', 'sample_alignment.xlsx'));
+            app.applyMapping();
+            settings = app.Settings;
+            [settings.overlay.waferOrder, settings.overlay.shotCommon, settings.overlay.perShot] = deal(1, "linear", "none");
+            settings.sampling.method = "random";
+            [settings.sampling.nShots, settings.sampling.nShotsStart, settings.sampling.nShotsEnd] = deal(20, 20, 20);
+            settings.methods = alignest.recommendedMethods("none");
+            settings.methods.polynomial.enabled = true;
+            app.setSettings(settings);
+            app.runEvaluationNow(false);
+            app.setTargetPoints(alignest.targetGrid(40, 140));
+            app.setTargetCorrection(waferOrder=1, shotCommon="quadratic", perShot="none");
+            app.estimateTargets(1, "all", 1);
+            comparison = app.compareTargetCorrection();
+            testCase.verifyEqual(unique(comparison.table.scenario, 'stable'), ["① 全計測｜基準の補正"; ...
+                "③ 全計測＋未知の座標｜このタブの補正"], "全 Mark で推定したときは全計測の2つ");
+            testCase.verifyEqual(comparison.table.axis(1:2), ["X"; "Y"]);
+            testCase.verifyTrue(all(comparison.table.residual <= comparison.table.before + 1e-9), "補正すると小さくなる");
+            testCase.verifyEqual(comparison.table.targets(1), 0, "基準の補正は未知の座標を使わない");
+            testCase.verifyGreaterThan(comparison.table.targets(3), 0);
+            testCase.verifyNotEmpty(app.Controls.targetCompareTable.Data);
+            % 学習パターン（一部計測）で推定すると 4 つ。② ④ は ① ③ と同じ Mark で比べる
+            app.estimateTargets(1, app.Results.plans(1).label, 1);
+            comparison = app.compareTargetCorrection();
+            scenarios = unique(comparison.table.scenario, 'stable');
+            testCase.verifyEqual(extractBefore(scenarios, 2), ["①"; "②"; "③"; "④"]);
+            testCase.verifyEqual(comparison.table.n(comparison.table.axis == "X"), ...
+                repmat(comparison.table.n(1), 4, 1), "同じ Mark で比べる");
+            testCase.verifyNumElements(comparison.maps, 4);
+            testCase.verifyEqual(size(comparison.maps(1).residual, 2), 2);
+            c = app.Controls;
+            testCase.verifyEqual(numel(c.targetCompareScenario.Items), 4, "図に出す補正を選べる");
+            testCase.verifyEqual(c.targetCompareSave.Enable, matlab.lang.OnOffSwitchState('on'));
         end
     end
 end

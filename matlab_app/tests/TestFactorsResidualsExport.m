@@ -23,6 +23,7 @@ classdef TestFactorsResidualsExport < matlab.unittest.TestCase
             data.units = data.units(1:2);
             settings = alignest.defaultSettings();
             settings.factors.separateY = false;   % Y 成分も X 成分と同じ質的変数
+            settings.factors.scan = true;         % Scan 方向・Mark 番号の組から始める（初期設定の X 成分は Scan 方向を使わない）
             settings.sampling.nShots = 20;
             settings.methods = alignest.recommendedMethods("none");
             settings.methods.tps.enabled = true;

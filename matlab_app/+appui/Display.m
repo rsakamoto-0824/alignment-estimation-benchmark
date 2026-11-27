@@ -36,6 +36,9 @@ classdef (Abstract) Display < appui.Core
             if ~any(mode == ["light", "dark"])
                 error('alignest:theme', '画面の色は light（ライトモード）か dark（ダークモード）です: %s', mode);
             end
+            if mode == "dark" && ~isPro(app)
+                error('alignest:edition', 'ダークモードは Pro 版の機能です。');
+            end
             previous = themePalette(app.Theme);
             app.Theme = mode;
             applyTheme(app, previous, themePalette(mode));
@@ -70,6 +73,9 @@ classdef (Abstract) Display < appui.Core
             %   したときのメニュー）。location = "inherit" で、その図の指定をやめて、すべての図の設定に従う。
             %   描いてある図はすぐに置き直し、これから描く図にも使う。画面を出しているときは、次に開いたときも同じにする。
             location = string(location);
+            if ~isPro(app)
+                error('alignest:edition', '凡例の位置の変更は Pro 版の機能です。');
+            end
             if nargin < 3
                 if ~(isscalar(location) && any(location == app.LEGEND_CHOICES))
                     error('alignest:legendLocation', '凡例の位置は %s のどれかです: %s', ...
@@ -231,6 +237,7 @@ classdef (Abstract) Display < appui.Core
             % （図を描き直す関数は cla(ax, 'reset') で既定値に戻すので、そのまま新しい色になる）
             fig = app.Figure;
             fig.Color = new.background;
+            restoreEmpty = onCleanup(@() app.refreshEmptyTables());   % 最後に、空の表をしまう・戻す
             set(fig, 'DefaultAxesColor', new.axes, 'DefaultAxesXColor', new.axisLine, 'DefaultAxesYColor', new.axisLine, ...
                 'DefaultAxesZColor', new.axisLine, 'DefaultAxesGridColor', new.grid, 'DefaultAxesMinorGridColor', new.grid, ...
                 'DefaultTextColor', new.text, 'DefaultLegendTextColor', new.text, 'DefaultLegendColor', new.axes, ...
@@ -242,7 +249,7 @@ classdef (Abstract) Display < appui.Core
             % まだ作っていないタブ（ensureTab）は、作るときに今の色で作るので、ここでは描き直さない
             if ~isempty(app.Results) && isTabBuilt(app, "results")
                 refreshResults(app);
-                showWaferRanking(app);   % Wafer のベスト・ワーストの色
+                showWaferRanking(app);   % Waferベスト/ワーストの色
             end
             if ~isempty(app.TargetRun) && isTabBuilt(app, "target")
                 showTargetRun(app);   % 外挿の行の色・メッセージの色を新しい色の組にする
@@ -268,6 +275,40 @@ classdef (Abstract) Display < appui.Core
             end
         end
 
+        function watchTables(app, root)
+            % root の中の表の中身（Data）が変わったら、ダークモードで空の表をしまう（MATLAB R2022b の表は、行の無い所と
+            % 見出しの地の色を変えられず白く浮くため）。中身が入れば出す
+            for table_ = reshape(findall(root, 'Type', 'uitable'), 1, [])
+                app.TableListeners(end + 1) = addlistener(table_, 'Data', 'PostSet', ...
+                    @(~, event) app.updateEmptyTable(event.AffectedObject));
+                updateEmptyTable(app, table_);
+            end
+        end
+
+        function updateEmptyTable(app, table_)
+            % ダークモードで中身が空の表をしまい、中身が入ったら（またはライトモードなら）しまった表を出す
+            if ~isvalid(table_)
+                return
+            end
+            hidden = any(app.ThemeHiddenTables == table_);
+            empty = isempty(table_.Data);
+            if app.Theme == "dark" && empty && ~hidden && table_.Visible == "on"
+                table_.Visible = 'off';
+                app.ThemeHiddenTables(end + 1) = table_;
+            elseif hidden && (~empty || app.Theme ~= "dark")
+                table_.Visible = 'on';
+                app.ThemeHiddenTables(app.ThemeHiddenTables == table_) = [];
+            end
+        end
+
+        function refreshEmptyTables(app)
+            % 画面の色を変えたあと、すべての表を確かめ直す（しまった表を戻す・空の表をしまう）
+            app.ThemeHiddenTables = app.ThemeHiddenTables(isvalid(app.ThemeHiddenTables));
+            for table_ = reshape(findall(app.Figure, 'Type', 'uitable'), 1, [])
+                updateEmptyTable(app, table_);
+            end
+        end
+
         function finishBuiltTab(app, root)
             % 後から作ったタブ（ensureTab）の部品に、起動のときに画面全体にしたこと（文字の大きさ・決まった大きさの行と列・
             % 入れ子のタブを開いたときの文字の付け直し）をし、今の文字の大きさ・画面の色に合わせる
@@ -284,6 +325,7 @@ classdef (Abstract) Display < appui.Core
             if app.Theme ~= "light"
                 themeObjects(findall(root), themePalette("light"), app.Palette);
             end
+            watchTables(app, root);
         end
 
         function prepareFonts(app, root)
@@ -688,7 +730,10 @@ classdef (Abstract) Display < appui.Core
 
         function attachLegendMenu(app, ax)
             % 図（と凡例）を右クリックしたときに、その図だけの凡例の位置を選ぶメニューを出す（メニューは図ごとに1つ。
-            % 凡例の無い図には付けない。並べた図は、凡例が1つでもあれば、どの図からも選べる）
+            % 凡例の無い図には付けない。並べた図は、凡例が1つでもあれば、どの図からも選べる）。通常版は凡例の位置を変えない
+            if ~isPro(app)
+                return
+            end
             legends = ax.Legend;
             if isa(ax.Parent, 'matlab.graphics.layout.TiledChartLayout')
                 legends = findobj(ax.Parent.Children, 'flat', 'Type', 'legend');

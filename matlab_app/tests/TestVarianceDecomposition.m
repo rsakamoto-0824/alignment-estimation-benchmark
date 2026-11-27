@@ -112,21 +112,38 @@ classdef TestVarianceDecomposition < matlab.unittest.TestCase
             % Shot 回転 0.5（Shot 内 X）
             points.valueY = 5 + 0.04 * points.shotY + 0.03 * points.shotX - 0.2 * points.localY + 0.5 * points.localX;
             result = alignest.componentCoefficients(points);
-            testCase.verifyEqual(result.components, ["全体 Shift", "Wafer 倍率", "Wafer 回転", "Shot 倍率", "Shot 回転"]);
+            testCase.verifyEqual(result.components, ["全体 Shift", "Wafer 倍率", "Wafer 回転", "Wafer 成分の残留 3σ", ...
+                "Shot 倍率", "Shot 回転", "Shot 共通成分の残留 3σ"]);
             testCase.verifyEqual(result.kind, "components");
             testCase.verifyEqual(result.wafers, ["W1", "W2", "W3"]);
             coefficient = @(table_, axisName, k) table_.coefficient(table_.axis == axisName & table_.waferIndex == k).';
+            terms = [1, 2, 3, 5, 6];   % 回帰係数（4・7 番目は残留）
             for k = 1:wafers
-                testCase.verifyEqual(coefficient(result.table, "X", k), [k, 0.01 * k, -0.02, 0.3, 0.1 * k], 'AbsTol', 1e-10);
-                testCase.verifyEqual(coefficient(result.table, "Y", k), [5, 0.04, 0.03, -0.2, 0.5], 'AbsTol', 1e-10);
+                x = coefficient(result.table, "X", k);
+                y = coefficient(result.table, "Y", k);
+                testCase.verifyEqual(x(terms), [k, 0.01 * k, -0.02, 0.3, 0.1 * k], 'AbsTol', 1e-10);
+                testCase.verifyEqual(y(terms), [5, 0.04, 0.03, -0.2, 0.5], 'AbsTol', 1e-10);
+                testCase.verifyEqual([x([4, 7]), y([4, 7])], zeros(1, 4), 'AbsTol', 1e-9, "式で表せる値なので残留は 0");
             end
+            % 残留：式に無い形を足すと、その形の 3σ が残る（Wafer レベル：Shot 中心の X·Y、Shot レベル：Shot 内の x·y。
+            % どちらも、この配置では式の項と直交するので、回帰残差はその形そのもの）
+            withRest = points;
+            withRest.valueY = withRest.valueY + 0.001 * withRest.shotX .* withRest.shotY + 0.01 * withRest.localX .* withRest.localY;
+            rest = alignest.componentCoefficients(withRest);
+            y = coefficient(rest.table, "Y", 1);
+            mine = withRest.wafer == "W1";
+            testCase.verifyEqual(y(4), 3 * std(0.001 * withRest.shotX(mine) .* withRest.shotY(mine)), 'RelTol', 1e-9, ...
+                "Wafer 成分の残留 = Wafer レベルの回帰残差の 3σ");
+            testCase.verifyEqual(y(7), 3 * std(0.01 * withRest.localX(mine) .* withRest.localY(mine)), 'RelTol', 1e-9, ...
+                "Shot 共通成分の残留 = Shot レベルの回帰残差の 3σ");
+            testCase.verifyEqual(y(terms), [5, 0.04, 0.03, -0.2, 0.5], 'AbsTol', 1e-10, "足した形は係数を変えない");
             testCase.verifyEqual(unique(result.table.n), nMarks * nShots);
             % 値の無い点は使わない（Shot の平均と Shot 内の座標の平均は残りの点で求めるので、Shot の係数は変わらない）
             points.valueX(5) = NaN;
             missing = alignest.componentCoefficients(points);
             rows = missing.table(missing.table.axis == "X" & missing.table.waferIndex == 1, :);
             testCase.verifyEqual(rows.n(1), nMarks * nShots - 1);
-            testCase.verifyEqual(rows.coefficient(4:5).', [0.3, 0.1], 'AbsTol', 1e-10);
+            testCase.verifyEqual(rows.coefficient(5:6).', [0.3, 0.1], 'AbsTol', 1e-10);
             % Shot が足りず決まらない係数は NaN（Shot が2つでは Wafer の倍率・回転は決まらない）
             few = alignest.componentCoefficients(points(points.wafer == "W1" & points.shot <= 2, :));
             testCase.verifyTrue(all(isnan(few.table.coefficient(few.table.component == "Wafer 倍率"))));
@@ -201,17 +218,32 @@ classdef TestVarianceDecomposition < matlab.unittest.TestCase
             testCase.verifyEqual(one.nUnits, nnz(string({units.eqpId}) == "EXP02"));
             testCase.verifyEqual(one.categories, "OP-M2-ALIGN", "EXP02 の計測は2つ目の Operation だけ");
             testCase.verifyFalse(one.useLot, "その装置の計測の Lot は1つ");
-            testCase.verifyTrue(contains(string(c.varianceInfo.Text), "装置 EXP02"));
+            testCase.verifyTrue(contains(string(c.varianceInfo.Text), "EXP02"));
+            % 凡例は右の列の凡例だけの図にまとめ、X・Y の図には出さない（4つの図の大きさをそろえる）
+            testCase.verifyNotEmpty(c.varianceLegendAxes.Legend, "凡例だけの図");
+            testCase.verifyTrue(all(arrayfun(@(ax) isempty(ax.Legend) || strcmp(ax.Legend.Visible, 'off'), c.varianceAxes)));
+            % 装置以外の列でも絞り込める（ロット：計測ごと）
+            testCase.verifyEqual(string(c.varianceColumn.ItemsData(1:3)), ["EqpId", "LotID", "Operation"]);
+            lotResult = app.decomposeDataVariance("", "nested", "LotID");
+            lots = string(c.varianceEqp.ItemsData(2:end));
+            testCase.verifyNotEmpty(lots);
+            oneLot = app.decomposeDataVariance(lots(1), "nested", "LotID");
+            testCase.verifyEqual(oneLot.nUnits, nnz(string({units.lotId}) == lots(1)));
+            testCase.verifyEqual(oneLot.filterColumn, "LotID");
+            testCase.verifyLessThanOrEqual(oneLot.nUnits, lotResult.nUnits);
+            app.decomposeDataVariance("", "nested", "EqpId");
             testCase.verifyError(@() app.decomposeDataVariance("NONE"), 'alignest:varianceDecomposition');
             % 分け方「成分」：Wafer ごとの回帰係数の図（成分ごと）と表（Wafer × 軸 の行）。3σ・分散は出さず「縦軸」も使わない
             components = app.decomposeDataVariance("", "components");
-            testCase.verifyEqual(components.components, ["全体 Shift", "Wafer 倍率", "Wafer 回転", "Shot 倍率", "Shot 回転"]);
+            testCase.verifyEqual(components.components, ["全体 Shift", "Wafer 倍率", "Wafer 回転", "Wafer 成分の残留 3σ", ...
+                "Shot 倍率", "Shot 回転", "Shot 共通成分の残留 3σ"]);
             testCase.verifyEqual(sort(components.wafers), sort(string({units.label})));
             testCase.verifyEqual(height(c.varianceTable.Data), 2 * numel(units), "Wafer × 軸（X・Y）の行");
             names = string(c.varianceTable.Data.Properties.VariableNames);
             testCase.verifyEqual(names, ["No.", "Operation", "Wafer", "軸", "全体 Shift [nm]", "Wafer 倍率 [nm/mm]", ...
-                "Wafer 回転 [nm/mm]", "Shot 倍率 [nm/mm]", "Shot 回転 [nm/mm]", "点の数"]);
-            testCase.verifyFalse(any(contains(names, ["3σ", "分散"])), "3σ・分散は出さない");
+                "Wafer 回転 [nm/mm]", "Wafer 成分の残留 3σ [nm]", "Shot 倍率 [nm/mm]", "Shot 回転 [nm/mm]", ...
+                "Shot 共通成分の残留 3σ [nm]", "点の数"]);
+            testCase.verifyFalse(any(contains(names, ["3σ の配分", "単独の 3σ", "分散"])), "段の 3σ・分散は出さない（残留は回帰残差の 3σ）");
             testCase.verifyEqual(string(c.varianceQuantity.Enable), "off");
             expected = components.table.coefficient(components.table.axis == "X" & components.table.component == "Wafer 倍率");
             xLine = findobj(c.coefficientAxes(2), 'Type', 'line', 'DisplayName', 'X');

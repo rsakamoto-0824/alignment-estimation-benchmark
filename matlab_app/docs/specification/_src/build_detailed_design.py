@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from deckkit import (ACCENTS, BODY, CONTENT_LEFT, CONTENT_WIDTH, CORAL, CORAL_TINT, DEFAULT_REFERENCE, GOLD,
-                     GOLD_TINT, INK, LINE, MUTED, NAVY, NAVY_PANEL, PANEL, PURPLE, PURPLE_TINT, TEAL, TEAL_TINT, WHITE,
+                     GOLD_TINT, INK, JP, LINE, MUTED, NAVY, NAVY_PANEL, PANEL, PURPLE, PURPLE_TINT, TEAL, TEAL_TINT, WHITE,
                      Deck, agenda, arrow, box, card, circle, closing, cover, elbow, heading_blocks, node, panel,
                      point_bar, table, tag, text)
 from features import APP_NAME, VERSION_NOTE
@@ -82,7 +82,7 @@ def build(output: Path, reference: Path):
             arrow(slide, 4.9, y + 0.98, 4.9, y + 1.15, color=INK)
     side = [("help/help.html", "メニュー「ヘルプ」の中身（機能編・技術編）。exe にも入れる"),
             ("build/buildStandaloneApp.m", "MATLAB Compiler で exe を作る（版を選べる）"),
-            ("tests/", f"自動テスト（{numbers['test_files']} ファイル・333 件）と Python 版の基準値"),
+            ("tests/", f"自動テスト（{numbers['test_files']} ファイル・340 件）と Python 版の基準値"),
             ("sample_data/", "模擬データ・未知の座標の例・1 変数の見本")]
     y = 1.6
     for heading, body in side:
@@ -235,13 +235,13 @@ def build(output: Path, reference: Path):
              "buildPlanSpecs(settings.sampling)：学習パターンの仕様（選び方 × 数）",
              "evaluationUnitIndex：評価に使う Wafer を決める",
              "for Wafer（評価の単位）",
-             "    for 学習パターン：planLayoutKey で同じ配置の Wafer は作った計画を使い回す（cachedTrainingPlan）",
+             "    for 学習パターン：同じ配置の Wafer は作った計画を使い回す（cachedTrainingPlan。Shot 単位は候補の Shot、Mark 単位は使える Mark）",
              "        for 手法：estimateWafer（異常値の除外 → 当てはめ → 評価点の推定）",
              "            computeMetrics（推定誤差の指標）・overlayCorrection（Overlay 補正の評価）",
              "            progressFcn(完了数, 全体数, 説明) が false なら中断（resume に続きを入れる）",
              "            失敗した手法は指標を NaN、note に理由（止めない）",
              "summarizeResults で集計、results に計算時間・記録・設定を入れる"]
-    text(slide, 0.8, 1.65, 6.85, 5.1, lines, size=11, color=INK, font="BIZ UDGothic", space_after=4)
+    text(slide, 0.8, 1.65, 6.85, 5.1, lines, size=11, color=INK, font=JP, space_after=4)   # 処理の流れ（字下げで入れ子を示す）も Meiryo UI
     panel(slide, 8.05, 1.55, 4.68, 2.5, "続きから再開（\"resume\"）",
           ["previous に済んだ組み合わせ（Wafer｜学習パターン｜手法）はそのまま使う", "設定が中断したときと違えば止める（sameRunSettings）",
            "計算時間は前と後を足す"], fill=TEAL_TINT, size=11, heading_size=13)
@@ -259,7 +259,7 @@ def build(output: Path, reference: Path):
             ["ポアソンディスク", "poissonDiskSelect", "距離 d 以上のダーツ投げ。d は数を選べる最大の値を二分法で探す"],
             ["ランダム", "randomFeasibleShots・markPlanTypes", "制約を満たす組を乱数で。繰り返し回数だけ作る（同じ種なら同じ組）"],
             ["Excel 取込", "readLayoutPlans・parseLayoutPlans", "パターン（1・0）と優先順（1・2・3…）の列。計測マップの Excel も読む"],
-            ["共通", "planTrainingShots・trainingMarks・requiredShotIndex・outerShots", "必ず計測する Shot・Mark を先に入れる。制約の違反量を記録する"]]
+            ["共通", "planTrainingShots・cachedTrainingPlan・planLayoutKey", "必ず計測する点を先に入れる。候補の Shot が同じ Wafer は Shot 単位の計画を使い回し、I・D 基準だけ求め直す"]]
     table(slide, CONTENT_LEFT, 1.5, [2.4, 3.85, 5.88], rows, size=10.5, header_size=11.5, row_h=0.55, bold_first=True)
     text(slide, CONTENT_LEFT, 6.05, CONTENT_WIDTH, 0.8,
          "基準モデル：basis.designPolynomial（X,Y,半径 は x^a y^b（a+b ≤ 次数）と r·x^a y^b（a+b ≤ 次数−1）、5 次で 36 項）。"
@@ -296,13 +296,14 @@ def build(output: Path, reference: Path):
             ["実測値で補正した残差", "全 Mark の計測値で補正のモデルを当てはめ、計測値 − 補正量"],
             ["推定値で補正した残差", "学習 Shot は計測値、学習しなかった Shot は推定値で当てはめ、その補正を計測値に当てる"],
             ["推定による変化", "推定値で補正した残差 − 実測値で補正した残差（= 2 つの補正量の差）"]]
-    table(slide, CONTENT_LEFT, 1.5, [3.0, 9.13], rows, size=11.5, header_size=12, row_h=0.5, bold_first=True)
-    blocks = [("設計行列（overlayDesign・overlayTerms）", "Wafer 成分（Shot 中心を Wafer 半径で割った座標の 0〜5 次）・Shot 共通成分（Shot 内の座標、全 Shot で同じ係数）・"
-                                                    "Shot ごとの成分（Shot ごとに別の係数）を横に並べ、X・Y 別に最小二乗"),
-              ("補正量だけを使う（overlayProjector）", "成分どうしで重なる項・決まらない係数があっても、当てはめた値は一つに決まるので、係数は求めずに射影で補正量を出す"),
-              ("式の入力（parseCorrectionFormula）", "項を + − でつなぎ、係数 × x・y のべき（9 まで）。全角も読む。係数の名前・符号は補正量に影響しない（項の形だけ使う）"),
-              ("指標", "OVL 残差（実測値で補正・推定値で補正）・推定による変化・増加の |平均|+3σ（X・Y）の 8 つを results.table に足す")]
-    heading_blocks(slide, CONTENT_LEFT, 3.75, CONTENT_WIDTH, blocks, heading_size=13, size=11, gap=0.1)
+    table(slide, CONTENT_LEFT, 1.45, [3.0, 9.13], rows, size=11.5, header_size=12, row_h=0.45, bold_first=True)
+    blocks = [("設計行列（overlayDesign・overlayTerms）", "Wafer 成分（Shot 中心の座標の 0〜5 次）・Shot 共通成分（全 Shot で同じ係数）・"
+                                                    "Shot ごとの成分を横に並べ、X・Y 別に最小二乗"),
+              ("補正量だけを使う（overlayProjector）", "重なる項・決まらない係数があっても当てはめた値は一つなので、係数は求めずに射影で補正量を出す"),
+              ("式の入力（parseCorrectionFormula）", "項を + − でつなぎ、係数 × x・y のべき（9 まで）。係数の名前・符号は補正量に影響しない"),
+              ("指標", "OVL 残差（実測値・推定値で補正）・推定による変化・増加の |平均|+3σ（X・Y）を results.table に足す"),
+              ("使わない項（overlayTermKeys）", "choice.excludedTerms の列を除く（「5. 未知の座標の推定」の補正のモデルのチェック）")]
+    heading_blocks(slide, CONTENT_LEFT, 3.45, CONTENT_WIDTH, blocks, size="auto", gap=0.06)
 
     # 16 Shot 高次補正
     slide = deck.body("04　補正・配置・ローテ", "Shot 高次補正の計算（shotHighOrder）")
@@ -321,8 +322,8 @@ def build(output: Path, reference: Path):
               ("回帰（robustRidgeFit）", "列を平均 0・標準偏差 1 にそろえ、最小二乗・Huber・LAD（重み付き最小二乗の繰り返し、尺度は MAD × 1.4826）と、"
                                        "選んだ次数の項だけに L2・L1（座標降下法）。1 点抜きの誤差も返す"),
               ("点が足りない組", "全体の項を減らす・その組だけ減らす・補正しない（shortage）。k1〜k6 も決まらない組は補正しない"),
-              ("比べる", "compareHighOrderConditions（条件の比較）・compareHighOrderShots（2 つの条件）・sweepHighOrder（λ・c）・"
-                        "transferHighOrder（他の Wafer）・highOrderTermSelection（変数重要度・ステップワイズ）")]
+              ("比べる・外れ値", "compareHighOrderConditions・compareHighOrderShots・sweepHighOrder・transferHighOrder・"
+                             "highOrderTermSelection。highOrderTrimmedSummary：中央値 ± n × 1.4826 × MAD の外を除いた |平均|+3σ（表示のたびに求める）")]
     heading_blocks(slide, CONTENT_LEFT, 3.25, CONTENT_WIDTH, blocks, heading_size=13, size=11, gap=0.12)
 
     # 17 Mark 配置とローテ
@@ -343,10 +344,11 @@ def build(output: Path, reference: Path):
           fill=PURPLE_TINT, size=11, heading_size=13.5)
 
     # 18 未知の座標
-    slide = deck.body("04　補正・配置・ローテ", "未知の座標の推定と重ね合わせ補正値")
-    chain_items = [("点の表", "readTargetPoints・targetGrid"), ("Shot を探す", "targetsAtShots（点を含む Shot・Scan 方向）"),
-                   ("推定", "predictTargets → estimateWafer（点を値の無い Mark として足す）"), ("判定", "凸包の外 0.5 mm 超は外挿、半径 150 mm 以上は Wafer の外"),
-                   ("補正値", "targetOverlayCorrection（実測値＋推定値で当てはめ）"), ("書き出し", "exportTargetEstimates")]
+    slide = deck.body("04　補正・配置・ローテ", "未知の座標の推定・補正のモデル・補正の比較")
+    chain_items = [("点の表", "readTargetPoints・targetGrid"), ("推定", "predictTargets → estimateWafer（点を値の無い Mark として足す）"),
+                   ("補正のモデル", "targetCorrectionChoice・targetCorrectionTerms（項のチェック）"),
+                   ("補正値", "targetOverlayCorrection（実測値＋推定値＋未知の座標。choice を渡す）"),
+                   ("補正の比較", "targetCorrectionComparison（①〜④ を計測値のある Mark で比べる）"), ("書き出し", "exportTargetEstimates")]
     for index, (heading, body) in enumerate(chain_items):
         x = CONTENT_LEFT + index * 2.05
         color, tint = ACCENTS[index % 4]
@@ -356,8 +358,10 @@ def build(output: Path, reference: Path):
         text(slide, x + 0.12, 2.25, 1.62, 1.4, body, size=9.5, color=BODY)
         if index < 5:
             arrow(slide, x + 1.87, 2.65, x + 2.03, 2.65, color=INK)
-    blocks = [("評価と同じ計算", "学習しなかった Mark と同じ点を渡すと、評価の推定値と一致する（テストで確認）。学習データは全 Mark か評価の学習パターン"),
-              ("学習に無い Mark 番号", "Mark 番号の効果を全 Mark の平均（効果コード 0）として推定し、メッセージに出す"),
+    blocks = [("2 つの補正モデル", "基準の補正 = settings.overlay（2. の Overlay 補正）、このタブの補正 = settings.targetCorrection"
+                                   "（Wafer 0〜5 次・Shot 共通 1 次/2 次/ASML/Canon/Nikon/カスタム・Shot ごと・excludedTerms）"),
+              ("補正の比較", "markCorrection（Mark ごとの補正量）を計測値のある Mark に当て、①全計測・②一部＋推定（基準）と"
+                            "③全計測＋未知・④一部＋推定＋未知（このタブ）の |平均|+3σ を比べる"),
               ("補正値の係数", "mm の座標での値（1 次は nm/mm = ppm）。重なる項・決まらない項は前の成分（Wafer → Shot 共通 → Shot ごと）に含めて 0 とし、メモに書く")]
     heading_blocks(slide, CONTENT_LEFT, 4.0, CONTENT_WIDTH, blocks, heading_size=13, size=11.5, gap=0.14)
 
@@ -369,11 +373,12 @@ def build(output: Path, reference: Path):
             ["sampling", "計測点の選び方・粒度・制約・学習 Shot/Mark 数・必ず計測・乱数の種", "method・unit・nShotsStart・seed"],
             ["methods", "比べる手法とその中身", "gpr・tps・rbf・kriging・gam・polynomial・rt・zernike"],
             ["evaluation", "外周の半径・異常値の除外・処理時間・評価に使う Wafer", "outerRadiusMm・outlierMethod"],
-            ["overlay", "Overlay 補正の成分と式", "waferOrder・shotCommon・perShot・式"],
-            ["highOrder", "6. の式・くくり・Wafer 補正・Shot 共通・項・回帰・項の組み合わせ", "maker・unit・lambda・termSets"],
+            ["overlay", "Overlay 補正の成分と式（基準の補正）", "waferOrder・shotCommon・perShot・式"],
+            ["targetCorrection", "5. の補正のモデル（基準とは別）", "waferOrder・shotCommon・perShot・excludedTerms"],
+            ["highOrder", "6. の式・くくり・Wafer 補正・Shot 共通・項・回帰・外れ値の n", "maker・unit・lambda・statOutlierN"],
             ["markLayout", "7. の式・回帰・Mark の数・乱数の形・座標", "minMarks・shapes・orderSigmaNm"],
             ["display", "Scan 方向の向きと色（推定の結果は変わらない）", "scan1Up・色"]]
-    table(slide, CONTENT_LEFT, 1.5, [1.65, 6.0, 4.48], rows, size=10.5, header_size=11.5, row_h=0.42, bold_first=True)
+    table(slide, CONTENT_LEFT, 1.5, [1.9, 5.75, 4.48], rows, size=10.5, header_size=11.5, row_h=0.39, bold_first=True)
     flow = ["defaultSettings", "siteDefaults", "loadSettings・upgrade〇〇", "editionSettings", "settingsToControls"]
     for index, label in enumerate(flow):
         x = CONTENT_LEFT + index * 2.47
@@ -422,7 +427,8 @@ def build(output: Path, reference: Path):
             ["色をまとめて塗る", "部品の種類ごとにまとめて色を入れ、新しい色になっている所は変えない", "ライト・ダークの切り替え"],
             ["文字の大きさを読み直さない", "標準の大きさのときは図の文字を読み直さない", "表示の切り替え"],
             ["交換法の候補をまとめて計算", "blockSwapValues：入れ替えの候補の基準を一度に求める（選ぶ点・値は以前と同じ）", "I 最適・D 最適の学習パターン"],
-            ["学習パターンを使い回す", "planLayoutKey：値の無い Mark が同じ Wafer は作った計画を使う", "評価の全体の時間"],
+            ["学習パターンを使い回す", "Shot 単位は候補の Shot が同じ Wafer、Mark 単位は使える Mark が同じ Wafer で作った計画を使う"
+             "（Shot の中の Mark の欠けが違えば I・D 基準だけ求め直す）", "Wafer が多いときの評価の時間"],
             ["時間の目安", "estimateRunSeconds・planSecondsGuide・exchangeSecondsGuide", "計算の前の見通し"]]
     table(slide, CONTENT_LEFT, 1.5, [3.2, 5.9, 3.03], rows, size=10.5, header_size=11.5, row_h=0.55, bold_first=True)
     text(slide, CONTENT_LEFT, 6.05, CONTENT_WIDTH, 0.8, "交換法の時間は初期配置の数にほぼ比例する（初期配置 1 つ・学習 Shot 1 つあたり約 0.01 秒、"
@@ -431,8 +437,9 @@ def build(output: Path, reference: Path):
     # 23 版
     slide = deck.body("06　性能・版・テスト・配布", "版（通常版・Pro 版）の実現")
     node(slide, CONTENT_LEFT, 1.65, 3.3, 0.8, "edition（\"pro\"・\"standard\"）", fill=NAVY, color=WHITE, size=13, line_color=None)
-    targets = [(4.55, 1.35, "設定を直す", "alignest.editionSettings：手法・選び方・Overlay の式を通常版で使える値に。直した項目を返す"),
-               (4.55, 2.65, "欄を作らない", "isPro(app)：SettingsTab で Pro 版だけの手法の欄を作らず、選択肢を絞る"),
+    targets = [(4.55, 1.35, "設定を直す", "alignest.editionSettings：RT モデル・選び方・Overlay の式を通常版で使える値に。直した項目を返す"),
+               (4.55, 2.65, "欄を作らない", "isPro(app)：RT モデルの欄・選び方・Overlay の式（SettingsTab）、ダークモード・凡例の位置（Core・"
+                                        "Display）、指標と横軸（ResultsTab）を通常版では出さない"),
                (4.55, 3.95, "読み込みで知らせる", "setSettings・settingsToControls が editionSettings を通し、変えたら知らせる"),
                (4.55, 5.25, "配布物を分ける", "buildStandaloneApp(edition=)：実行ファイルの名前と出力フォルダを版ごとに")]
     for index, (x, y, heading, body) in enumerate(targets):
@@ -455,9 +462,10 @@ def build(output: Path, reference: Path):
             ["Python 版との照合", "TestPythonReference", "GPR・TPS・Kriging・GAM・I 最適が Python 版と一致"],
             ["Shot 高次補正", "TestShotHighOrder（7 ファイル）", "式の項・VIF・回帰・くくり・段階・スイープ・書き出し"],
             ["配置・ローテ", "TestMarkLayout・TestRotationMaps", "I 最適の配置・乱数の形・優先度・振り分け・FB"],
+            ["未知の座標・補正の比較", "TestTargetPrediction・TestTargetBatchOverlay・TestCorrectionModelsAndInputs", "推定・補正のモデルの項・①〜④ の比較・6. と 8. の入力"],
             ["画面の流れ", "TestAppWorkflow・TestScreenFitAndOverlays・TestEdition ほか", "画面の操作から Excel まで、遅延のタブ、版"]]
-    table(slide, CONTENT_LEFT, 1.5, [2.4, 5.2, 4.53], rows, size=10.5, header_size=11.5, row_h=0.5, bold_first=True)
-    text(slide, CONTENT_LEFT, 6.1, CONTENT_WIDTH, 0.75, f"cd tests; runAllTests で全 333 件（{numbers['test_files']} ファイル）。"
+    table(slide, CONTENT_LEFT, 1.45, [2.4, 5.2, 4.53], rows, size=10.5, header_size=11.5, row_h=0.46, bold_first=True)
+    text(slide, CONTENT_LEFT, 6.15, CONTENT_WIDTH, 0.7, f"cd tests; runAllTests で全 340 件（{numbers['test_files']} ファイル）。"
          "画面のテストは AlignmentEstimationApp(false)（画面を出さない）。ヘルプ・表示の設定の保存先（getpref）に書かない作り。", size=10.5,
          color=MUTED)
 

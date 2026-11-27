@@ -16,6 +16,7 @@ arguments
     options.unitLabel (1, 1) string = "nm"
     options.showLegend (1, 1) logical = true
     options.categoryLabels (1, :) string = strings(1, 0)
+    options.legendAxes = []   % 凡例だけを描く図（渡すと凡例はここに出し、棒の図には出さない。図の大きさをそろえるため）
 end
 COMPONENT_NAMES = ["Lot 間", "Wafer 間", "Shot 間", "その他"];
 COMPONENT_COLORS = [0.49, 0.33, 0.66; 0.00, 0.45, 0.74; 0.40, 0.65, 0.20; 0.62, 0.62, 0.62];
@@ -135,7 +136,10 @@ for c = 1:nCategories
     end
 end
 hold(percentAx, 'off');
-if options.showLegend
+if ~isempty(options.legendAxes)
+    drawSharedLegend(options.legendAxes, components, colors, options.quantity == "sigma3", TOTAL_NAME, TOTAL_COLOR, ...
+        TOTAL_MARKER_SIZE);
+elseif options.showLegend
     legend(percentAx, 'Location', 'eastoutside', 'Interpreter', 'none', 'Box', 'off');
     if options.quantity == "sigma3"
         legend(valueAx, 'Location', 'eastoutside', 'Interpreter', 'none', 'Box', 'off');   % 「全体の 3σ」の印も見せる
@@ -168,4 +172,21 @@ if nCategories <= style.maxLabels
     end
 end
 hold(ax, 'off');
+end
+
+function drawSharedLegend(ax, components, colors, withTotal, totalName, totalColor, markerSize)
+% 凡例だけの図：段の色の四角（と全体の 3σ の印）を見えない点で描き、凡例だけを出す（軸は出さない）
+cla(ax, 'reset');
+hold(ax, 'on');
+items = gobjects(1, 0);
+for k = 1:numel(components)
+    items(end + 1) = patch(ax, NaN, NaN, colors(k, :), 'EdgeColor', 'none', 'DisplayName', components(k)); %#ok<AGROW>
+end
+if withTotal
+    items(end + 1) = plot(ax, NaN, NaN, 'd', 'MarkerSize', markerSize, 'MarkerFaceColor', totalColor, ...
+        'MarkerEdgeColor', totalColor, 'LineStyle', 'none', 'DisplayName', totalName);
+end
+hold(ax, 'off');
+ax.Visible = 'off';
+legend(ax, items, 'Location', 'west', 'Interpreter', 'none', 'Box', 'off');
 end

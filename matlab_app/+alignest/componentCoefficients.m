@@ -1,6 +1,6 @@
 function result = componentCoefficients(points, options)
-%COMPONENTCOEFFICIENTS Wafer ごとの成分の回帰係数（全体 Shift・Wafer 倍率・Wafer 回転・Shot 倍率・Shot 回転。X・Y それぞれ）
-%   （「1. データ読込」の「ばらつき分解」の分け方「成分」）。
+%COMPONENTCOEFFICIENTS Wafer ごとの成分の回帰係数（全体 Shift・Wafer 倍率・Wafer 回転・Shot 倍率・Shot 回転。X・Y それぞれ）と、
+%   それぞれの段の回帰で残った分（Wafer 成分の残留・Shot 共通成分の残留の 3σ）（「1. データ読込」の「ばらつき分解」の分け方「成分」）。
 %   result = alignest.componentCoefficients(points)
 %   result = alignest.componentCoefficients(points, valueColumns=["valueX", "valueY"], axisNames=["X", "Y"], ...
 %       categories=Operation などの並び)
@@ -14,6 +14,9 @@ function result = componentCoefficients(points, options)
 %      全体 Shift は Wafer 中心（座標 0）の値。
 %   2. Shot 共通の成分：Wafer の成分を除いた値（点の値 − その Shot の平均）を、Shot 内の座標（Shot ごとに平均を引く）に当てはめる。
 %      X：Shot 倍率 × Shot 内 X + Shot 回転 × Shot 内 Y、Y：Shot 倍率 × Shot 内 Y + Shot 回転 × Shot 内 X
+%   残留（回帰で表せなかった分。値の単位の 3σ = 3 × 標本標準偏差。点ごとに数える）：
+%   - Wafer 成分の残留：Wafer レベルの回帰残差（Shot の平均 − 1. の当てはめ値。Shot の点にその Shot の残差を数える）
+%   - Shot 共通成分の残留：Shot レベルの回帰残差（Shot の平均を除いた値 − 2. の当てはめ値）
 %   1変数の値（axisNames が1つ）は X と同じ向き。点・Shot が足りず決まらない係数は NaN。
 %   result.table：category・waferIndex（表の順の番号）・wafer（画面の名前）・axis・component・coefficient・n（使った点の数）。
 %   result.components（成分の名前）・categories・axes・wafers（Wafer の画面の名前。表の順）・waferCategories（Wafer ごとの
@@ -24,7 +27,8 @@ arguments
     options.axisNames (1, :) string = ["X", "Y"]
     options.categories (1, :) string = strings(1, 0)
 end
-COMPONENTS = ["全体 Shift", "Wafer 倍率", "Wafer 回転", "Shot 倍率", "Shot 回転"];
+COMPONENTS = ["全体 Shift", "Wafer 倍率", "Wafer 回転", "Wafer 成分の残留 3σ", "Shot 倍率", "Shot 回転", ...
+    "Shot 共通成分の残留 3σ"];
 if numel(options.valueColumns) ~= numel(options.axisNames)
     error('alignest:varianceDecomposition', '値の列と軸の名前の数が違います。');
 end
@@ -89,19 +93,34 @@ result.kind = "components";
 end
 
 function coefficients = waferCoefficients(values, shotKey, coordinates)
-% 1枚の Wafer・1つの軸の係数 [全体 Shift, Wafer 倍率, Wafer 回転, Shot 倍率, Shot 回転]。
-% coordinates：点ごとの [Wafer 倍率の座標, Wafer 回転の座標, Shot 倍率の座標, Shot 回転の座標]（Shot 中心・Shot 内）
-coefficients = nan(1, 5);
+% 1枚の Wafer・1つの軸の値 [全体 Shift, Wafer 倍率, Wafer 回転, Wafer 成分の残留 3σ, Shot 倍率, Shot 回転,
+% Shot 共通成分の残留 3σ]。coordinates：点ごとの [Wafer 倍率の座標, Wafer 回転の座標, Shot 倍率の座標, Shot 回転の座標]
+coefficients = nan(1, 7);
 [~, ~, shot] = unique(shotKey);
 weights = accumarray(shot, 1);
 shotMean = accumarray(shot, values) ./ weights;
 shotCenter = [accumarray(shot, coordinates(:, 1)), accumarray(shot, coordinates(:, 2))] ./ weights;
-coefficients(1:3) = weightedFit([ones(numel(weights), 1), shotCenter], shotMean, weights);
+waferDesign = [ones(numel(weights), 1), shotCenter];
+coefficients(1:3) = weightedFit(waferDesign, shotMean, weights);
+% Wafer レベルの回帰残差（Shot の平均 − 当てはめ値）を、Shot の点の数だけ数えた 3σ
+waferResidual = shotMean - waferDesign * coefficients(1:3).';
+coefficients(4) = sigma3(waferResidual(shot));
 % Wafer の成分（Shot の平均）を除いた値を、Shot ごとに平均を引いた Shot 内の座標に当てはめる（Shot 共通の成分）
 within = values - shotMean(shot);
 local = coordinates(:, 3:4);
 localMean = [accumarray(shot, local(:, 1)), accumarray(shot, local(:, 2))] ./ weights;
-coefficients(4:5) = weightedFit(local - localMean(shot, :), within, ones(numel(values), 1));
+localDesign = local - localMean(shot, :);
+coefficients(5:6) = weightedFit(localDesign, within, ones(numel(values), 1));
+% Shot レベルの回帰残差（Shot の平均を除いた値 − 当てはめ値）の 3σ
+coefficients(7) = sigma3(within - localDesign * coefficients(5:6).');
+end
+
+function value = sigma3(residuals)
+% 残差の 3σ（3 × 標本標準偏差）。当てはめられなかった（NaN）・点が2点未満なら NaN
+value = NaN;
+if numel(residuals) >= 2 && all(isfinite(residuals))
+    value = 3 * std(residuals);
+end
 end
 
 function beta = weightedFit(design, values, weights)

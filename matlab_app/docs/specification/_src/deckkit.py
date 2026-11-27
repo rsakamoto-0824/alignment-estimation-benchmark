@@ -17,7 +17,7 @@ from pptx.util import Inches
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent.parent / "kernel_guide" / "_src"))
-from pptkit import (BODY, CORAL, CORAL_TINT, GOLD, GOLD_TINT, INK, LIGHT, LIGHT2, LINE, MUTED, NAVY,  # noqa: E402,F401
+from pptkit import (BODY, CORAL, CORAL_TINT, GOLD, GOLD_TINT, INK, JP, LIGHT, LIGHT2, LINE, MUTED, NAVY,  # noqa: E402,F401
                     NAVY_PANEL, PANEL, PURPLE, PURPLE_TINT, TEAL, TEAL_TINT, WHITE, background, box, chrome, circle,
                     line, point_bar, table, text)
 
@@ -42,6 +42,9 @@ class Deck:
         self.prs = Presentation(str(reference))
         self.prs.core_properties.title = title
         self.prs.core_properties.subject = "面内推定評価ツール（MATLAB アプリ）"
+        self.prs.core_properties.author = ""
+        self.prs.core_properties.last_modified_by = ""
+        use_theme_font(self.prs, JP)
         self.layout = self.prs.slides[0].slide_layout
         id_list = self.prs.slides._sldIdLst
         for slide_id in list(id_list):
@@ -74,6 +77,21 @@ class Deck:
         building = output.with_suffix(".building.pptx")
         self.prs.save(str(building))
         os.replace(building, output)
+
+
+def use_theme_font(prs, font: str):
+    """テーマの見出し・本文のフォント（英字・日本語）を font にする（文字に直接フォントを付けない所も同じフォントにする）"""
+    import re
+    for master in prs.slide_masters:
+        for rel in master.part.rels.values():
+            if not rel.reltype.endswith("/theme"):
+                continue
+            part = rel.target_part
+            xml = part.blob.decode("utf-8")
+            xml = re.sub(r'(<a:(?:major|minor)Font>\s*<a:latin typeface=")[^"]*(")', r"\g<1>" + font + r"\g<2>", xml)
+            xml = re.sub(r'(<a:(?:major|minor)Font>\s*<a:latin[^>]*/>\s*<a:ea typeface=")[^"]*(")', r"\g<1>" + font + r"\g<2>", xml)
+            xml = re.sub(r'(<a:font script="Jpan" typeface=")[^"]*(")', r"\g<1>" + font + r"\g<2>", xml)
+            part._blob = xml.encode("utf-8")
 
 
 def text_lines(content: str, width_in: float, size: float) -> int:
